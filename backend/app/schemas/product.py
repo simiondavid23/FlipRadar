@@ -5,9 +5,8 @@ from datetime import datetime
 
 class ProductCreate(BaseModel):
     name: str
-    asin: Optional[str] = None
     ean: Optional[str] = None
-    product_code: Optional[str] = None
+    sku: Optional[str] = None
     category: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
@@ -19,9 +18,8 @@ class ProductCreate(BaseModel):
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
-    asin: Optional[str] = None
     ean: Optional[str] = None
-    product_code: Optional[str] = None
+    sku: Optional[str] = None
     category: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
@@ -34,9 +32,8 @@ class ProductUpdate(BaseModel):
 class ProductResponse(BaseModel):
     id: int
     name: str
-    asin: Optional[str] = None
     ean: Optional[str] = None
-    product_code: Optional[str] = None
+    sku: Optional[str] = None
     category: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
@@ -80,5 +77,3 @@ class ProductDetailResponse(BaseModel):
     lowest_price: Optional[float] = None
     highest_price: Optional[float] = None
     average_price: Optional[float] = None
-
-

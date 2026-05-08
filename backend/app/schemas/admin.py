@@ -140,8 +140,8 @@ class AdminProductItem(BaseModel):
 
     id: int
     name: str
-    asin: Optional[str] = None
     ean: Optional[str] = None
+    sku: Optional[str] = None
     source: Optional[str] = None
     source_url: Optional[str] = None  # Direct link back to the seller page.
     category: Optional[str] = None

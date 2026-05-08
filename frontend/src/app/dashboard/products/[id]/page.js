@@ -144,9 +144,14 @@ export default function ProductDetailPage() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.5rem" }}>
               <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "white", margin: 0 }}>{product.name}</h1>
-              {product.asin && (
-                <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>
-                  ASIN: {product.asin}
+              {product.sku && (
+                <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80", fontFamily: "monospace" }}>
+                  SKU: {product.sku}
+                </span>
+              )}
+              {product.ean && (
+                <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(234,179,8,0.15)", color: "#facc15", fontFamily: "monospace" }}>
+                  EAN: {product.ean}
                 </span>
               )}
               {product.source && (

@@ -72,10 +72,10 @@ export default function AdminFavoritesPage() {
     const q = search.toLowerCase();
     return items.filter((it) => {
       const name = (it.product?.name || "").toLowerCase();
-      const asin = (it.product?.asin || "").toLowerCase();
+      const sku = (it.product?.sku || "").toLowerCase();
       const ownerEmail = (it.owner?.email || "").toLowerCase();
       const ownerName = (it.owner?.full_name || it.owner?.username || "").toLowerCase();
-      return name.includes(q) || asin.includes(q) || ownerEmail.includes(q) || ownerName.includes(q);
+      return name.includes(q) || sku.includes(q) || ownerEmail.includes(q) || ownerName.includes(q);
     });
   }, [items, search]);
 
@@ -168,7 +168,7 @@ export default function AdminFavoritesPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cauta dupa nume produs, ASIN sau utilizator..."
+            placeholder="Cauta dupa nume produs, SKU sau utilizator..."
             style={{
               width: "100%",
               padding: "0.625rem 0.75rem 0.625rem 2.25rem",
@@ -205,7 +205,7 @@ export default function AdminFavoritesPage() {
                   <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Tip</th>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Produs</th>
-                    <th style={{ padding: "0.5rem 0.5rem" }}>ASIN / EAN</th>
+                    <th style={{ padding: "0.5rem 0.5rem" }}>SKU / EAN</th>
                     <th style={{ padding: "0.5rem 0.5rem", textAlign: "right" }}>Pret</th>
                     {!userId && <th style={{ padding: "0.5rem 0.5rem" }}>Proprietar</th>}
                     <th style={{ padding: "0.5rem 0.5rem" }}>Note</th>
@@ -243,7 +243,7 @@ export default function AdminFavoritesPage() {
                           )}
                         </td>
                         <td style={{ padding: "0.625rem 0.5rem", color: "#cbd5e1", fontFamily: "monospace", fontSize: "0.75rem" }}>
-                          {it.product?.asin || it.product?.ean || "-"}
+                          {it.product?.sku || it.product?.ean || "-"}
                         </td>
                         <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "white", fontWeight: 500 }}>
                           {it.product?.current_price != null

@@ -51,7 +51,7 @@ async def import_csv(
                 skipped += 1
                 continue
 
-            asin = row.get("asin") or row.get("ASIN", "")
+            sku = row.get("sku") or row.get("SKU", "")
             ean = row.get("ean") or row.get("EAN", "")
             category = row.get("category") or row.get("categorie", "")
             source = row.get("source") or row.get("sursa", "")
@@ -65,11 +65,10 @@ async def import_csv(
             except ValueError:
                 price = 0
 
-            # Check duplicate ASIN within the current user's products
-            if asin:
+            if sku:
                 existing = (
                     db.query(Product)
-                    .filter(Product.asin == asin, Product.user_id == current_user.id)
+                    .filter(Product.sku == sku, Product.user_id == current_user.id)
                     .first()
                 )
                 if existing:
@@ -79,7 +78,7 @@ async def import_csv(
             product = Product(
                 user_id=current_user.id,
                 name=name.strip(),
-                asin=asin.strip() if asin else None,
+                sku=sku.strip() if sku else None,
                 ean=ean.strip() if ean else None,
                 category=category.strip() if category else None,
                 source=source.strip() if source else None,
@@ -130,7 +129,7 @@ async def import_excel(
         return -1
 
     name_col = get_col(["name", "nume", "product_name", "produs"])
-    asin_col = get_col(["asin"])
+    sku_col = get_col(["sku"])
     ean_col = get_col(["ean", "barcode"])
     category_col = get_col(["category", "categorie"])
     price_col = get_col(["price", "pret", "current_price"])
@@ -148,14 +147,14 @@ async def import_excel(
                 skipped += 1
                 continue
 
-            asin = str(row[asin_col]).strip() if asin_col >= 0 and row[asin_col] else None
-            if asin == "None":
-                asin = None
+            sku = str(row[sku_col]).strip() if sku_col >= 0 and row[sku_col] else None
+            if sku == "None":
+                sku = None
 
-            if asin:
+            if sku:
                 existing = (
                     db.query(Product)
-                    .filter(Product.asin == asin, Product.user_id == current_user.id)
+                    .filter(Product.sku == sku, Product.user_id == current_user.id)
                     .first()
                 )
                 if existing:
@@ -172,7 +171,7 @@ async def import_excel(
             product = Product(
                 user_id=current_user.id,
                 name=name,
-                asin=asin,
+                sku=sku,
                 ean=str(row[ean_col]).strip() if ean_col >= 0 and row[ean_col] and str(row[ean_col]) != "None" else None,
                 category=str(row[category_col]).strip() if category_col >= 0 and row[category_col] and str(row[category_col]) != "None" else None,
                 source=str(row[source_col]).strip() if source_col >= 0 and row[source_col] and str(row[source_col]) != "None" else None,
@@ -206,10 +205,10 @@ async def export_products_excel(
     wb = Workbook()
     ws = wb.active
     ws.title = "Products"
-    ws.append(["ID", "Name", "ASIN", "EAN", "Category", "Source", "Source URL", "Price", "Currency", "Created At"])
+    ws.append(["ID", "Name", "SKU", "EAN", "Category", "Source", "Source URL", "Price", "Currency", "Created At"])
 
     for p in products:
-        ws.append([p.id, p.name, p.asin, p.ean, p.category, p.source, p.source_url, p.current_price, p.currency,
+        ws.append([p.id, p.name, p.sku, p.ean, p.category, p.source, p.source_url, p.current_price, p.currency,
                     p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else ""])
 
     output = io.BytesIO()
@@ -238,14 +237,14 @@ async def export_watchlist_excel(
     wb = Workbook()
     ws = wb.active
     ws.title = "Watchlist"
-    ws.append(["Product ID", "Product Name", "ASIN", "Price", "Currency", "Source", "Notes", "Added At"])
+    ws.append(["Product ID", "Product Name", "SKU", "Price", "Currency", "Source", "Notes", "Added At"])
 
     for item in items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
         ws.append([
             item.product_id,
             product.name if product else "N/A",
-            product.asin if product else "",
+            product.sku if product else "",
             product.current_price if product else "",
             product.currency if product else "",
             product.source if product else "",
@@ -272,7 +271,7 @@ async def download_template(
     wb = Workbook()
     ws = wb.active
     ws.title = "Products"
-    ws.append(["name", "asin", "ean", "category", "price", "currency", "source", "source_url"])
+    ws.append(["name", "sku", "ean", "category", "price", "currency", "source", "source_url"])
     ws.append(["Apple AirPods Pro 2", "", "194253944140", "electronics", "999.00", "RON", "emag.ro", "https://emag.ro/..."])
     ws.append(["Samsung Galaxy S24", "", "", "electronics", "3499.00", "RON", "altex.ro", "https://altex.ro/..."])
 

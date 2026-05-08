@@ -97,8 +97,8 @@ def _build_save_response(product: Product, is_new: bool, previous_price: Optiona
     return {
         "id": product.id,
         "name": product.name,
-        "asin": product.asin,
         "ean": product.ean,
+        "sku": product.sku,
         "category": product.category,
         "image_url": product.image_url,
         "description": product.description,
@@ -144,7 +144,7 @@ def create_product(
 
     Deduplication is scoped per user:
     1. EAN match within user's products -> update price + price_history.
-    2. ASIN match within user's products -> update price + price_history.
+    2. SKU match within user's products -> update price + price_history.
     3. Same (name, source) within user's products -> update price + price_history.
     4. Otherwise -> create a new product row owned by this user.
 
@@ -163,8 +163,8 @@ def create_product(
                 existing.image_url = product_data.image_url
             if product_data.ean and not existing.ean:
                 existing.ean = product_data.ean
-            if product_data.product_code and not existing.product_code:
-                existing.product_code = product_data.product_code
+            if product_data.sku and not existing.sku:
+                existing.sku = product_data.sku
 
             db.add(PriceHistory(
                 product_id=existing.id,
@@ -183,10 +183,10 @@ def create_product(
         if existing_ean:
             return _update_existing(existing_ean)
 
-    if product_data.asin:
-        existing_asin = user_products.filter(Product.asin == product_data.asin).first()
-        if existing_asin:
-            return _update_existing(existing_asin)
+    if product_data.sku:
+        existing_sku = user_products.filter(Product.sku == product_data.sku).first()
+        if existing_sku:
+            return _update_existing(existing_sku)
 
     if product_data.source:
         normalized = _normalize_name(product_data.name)

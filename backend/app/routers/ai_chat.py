@@ -13,7 +13,7 @@ from app.schemas.ai import ChatRequest, ChatResponse
 from app.utils.auth import get_current_user, require_feature
 
 _ai_user = require_feature("can_use_ai")
-from app.services.ai_service import chat_with_gemini
+from app.services.ai_service import chat_with_groq
 
 router = APIRouter(prefix="/api/ai", tags=["AI Chat"])
 
@@ -120,7 +120,7 @@ async def chat_support(
     user_context = _build_user_context(db, current_user)
     personalized_prompt = BASE_SYSTEM_PROMPT + user_context
 
-    response_text = await chat_with_gemini(
+    response_text = await chat_with_groq(
         message=request.message,
         system_prompt=personalized_prompt,
         history=request.history if request.history else [],

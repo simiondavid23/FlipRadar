@@ -72,7 +72,7 @@ export default function ImportExportPage() {
             <Upload style={{ width: "1.25rem", height: "1.25rem", color: "#3b82f6" }} /> Import Produse
           </h2>
           <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1rem" }}>
-            Incarca un fisier CSV sau Excel cu produse. Coloanele acceptate: name, asin, ean, category, price, currency, source, source_url
+            Incarca un fisier CSV sau Excel cu produse. Coloanele acceptate: name, sku, ean, category, price, currency, source, source_url
           </p>
 
           <div style={{ border: "2px dashed #334155", borderRadius: "0.75rem", padding: "2rem", textAlign: "center", marginBottom: "1rem" }}>
