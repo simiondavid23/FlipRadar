@@ -20,6 +20,18 @@ export default function ProductsPage() {
     current_price: "", currency: "EUR",
   });
   const [editSaving, setEditSaving] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(null);
+
+  const copyToClipboard = async (value, key) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((curr) => (curr === key ? null : curr)), 1200);
+    } catch {
+      alert("Nu am putut copia in clipboard. Verifica permisiunile browser-ului.");
+    }
+  };
 
   useEffect(() => {
     loadProducts();
@@ -220,7 +232,7 @@ export default function ProductsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cauta dupa nume, SKU, categorie..."
+              placeholder="Cauta dupa nume, SKU, EAN, categorie..."
               style={{
                 ...inputBaseStyle,
                 paddingLeft: "2.5rem",
@@ -386,19 +398,54 @@ export default function ProductsPage() {
                       onMouseLeave={(e) => { e.currentTarget.style.color = "white"; }}
                     >{product.name}</Link>
                     {product.sku && (
-                      <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80", fontFamily: "monospace" }}>
-                        SKU: {product.sku}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(product.sku, `sku-${product.id}`)}
+                        title="Click pentru a copia SKU-ul"
+                        style={{
+                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                          backgroundColor: copiedKey === `sku-${product.id}` ? "rgba(34,197,94,0.35)" : "rgba(34,197,94,0.15)",
+                          color: "#4ade80", fontFamily: "monospace",
+                          border: "none", cursor: "pointer",
+                        }}
+                      >
+                        {copiedKey === `sku-${product.id}` ? "Copiat!" : `SKU: ${product.sku}`}
+                      </button>
                     )}
                     {product.ean && (
-                      <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(234,179,8,0.15)", color: "#facc15", fontFamily: "monospace" }}>
-                        EAN: {product.ean}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(product.ean, `ean-${product.id}`)}
+                        title="Click pentru a copia EAN-ul"
+                        style={{
+                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                          backgroundColor: copiedKey === `ean-${product.id}` ? "rgba(234,179,8,0.35)" : "rgba(234,179,8,0.15)",
+                          color: "#facc15", fontFamily: "monospace",
+                          border: "none", cursor: "pointer",
+                        }}
+                      >
+                        {copiedKey === `ean-${product.id}` ? "Copiat!" : `EAN: ${product.ean}`}
+                      </button>
                     )}
                     {product.source && (
-                      <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa" }}>
-                        {product.source}
-                      </span>
+                      product.source_url ? (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(product.source_url, `url-${product.id}`)}
+                          title="Click pentru a copia linkul sursei"
+                          style={{
+                            padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                            backgroundColor: copiedKey === `url-${product.id}` ? "rgba(147,51,234,0.35)" : "rgba(147,51,234,0.15)",
+                            color: "#a78bfa", border: "none", cursor: "pointer",
+                          }}
+                        >
+                          {copiedKey === `url-${product.id}` ? "Copiat!" : product.source}
+                        </button>
+                      ) : (
+                        <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa" }}>
+                          {product.source}
+                        </span>
+                      )
                     )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>

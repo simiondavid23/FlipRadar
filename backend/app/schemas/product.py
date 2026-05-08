@@ -29,6 +29,18 @@ class ProductUpdate(BaseModel):
     currency: Optional[str] = None
 
 
+class ProductSourceResponse(BaseModel):
+    id: int
+    source: str
+    source_url: str
+    current_price: Optional[float] = None
+    currency: str
+    last_checked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class ProductResponse(BaseModel):
     id: int
     name: str
@@ -42,9 +54,26 @@ class ProductResponse(BaseModel):
     current_price: Optional[float] = None
     currency: str
     created_at: datetime
+    sources: List[ProductSourceResponse] = []
 
     class Config:
         from_attributes = True
+
+
+class RefreshSourceResult(BaseModel):
+    source: str
+    source_url: str
+    old_price: Optional[float] = None
+    new_price: Optional[float] = None
+    currency: str
+    changed: bool = False
+    success: bool = True
+    error: Optional[str] = None
+
+
+class RefreshAllSourcesResponse(BaseModel):
+    product: ProductResponse
+    results: List[RefreshSourceResult]
 
 
 class ProductSaveResponse(ProductResponse):

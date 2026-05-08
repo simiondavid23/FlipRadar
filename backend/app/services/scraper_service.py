@@ -971,3 +971,45 @@ def filter_by_relevance(products: list, query: str) -> list:
         # We had real results but none matched all tokens → be explicit.
         return [{"message": "Nu s-au gasit rezultate relevante pentru aceasta cautare."}]
     return []
+
+
+_FUZZY_FALLBACK_THRESHOLD = 5
+
+
+def filter_by_code(products: list, code: str, field: str) -> list:
+    """Keep products whose `field` (ean or sku) matches `code`.
+
+    Three buckets per result:
+      - field populated and matches  -> trusted exact match
+      - field populated but differs  -> drop (fuzzy fallback signature, e.g.
+        eMAG returning unrelated SKUs for an unrecognized SKU query)
+      - field is None                -> trust the scraper, BUT only when there
+        are few such results. Many None-field hits in a row indicate the
+        store fell back to keyword-fuzzy matching on a numeric query (eMAG
+        returns ~50 random products when an EAN isn't in its catalog).
+    """
+    code_norm = (code or "").strip().lstrip("0")
+    if not code_norm:
+        return products
+
+    sentinels = [p for p in products if isinstance(p, dict) and ("error" in p or "message" in p)]
+    real = [p for p in products if isinstance(p, dict) and "error" not in p and "message" not in p]
+
+    matched_with_field = []
+    matched_without_field = []
+    for p in real:
+        v = (p.get(field) or "").strip().lstrip("0")
+        if not v:
+            matched_without_field.append(p)
+        elif v == code_norm:
+            matched_with_field.append(p)
+
+    if matched_with_field:
+        return matched_with_field
+
+    if matched_without_field and len(matched_without_field) <= _FUZZY_FALLBACK_THRESHOLD:
+        return matched_without_field
+
+    if sentinels:
+        return sentinels
+    return [{"message": f"Nu s-au gasit produse cu {field.upper()}={code} pe aceasta sursa."}]

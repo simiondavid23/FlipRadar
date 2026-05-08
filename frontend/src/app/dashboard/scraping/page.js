@@ -11,11 +11,26 @@ const SOURCE_STYLES = {
   "pcgarage.ro": { bg: "rgba(168,85,247,0.2)", fg: "#c084fc" },
 };
 
+const SEARCH_TYPE_PLACEHOLDERS = {
+  name: "ex: MacBook Pro 14, crema hidratanta",
+  ean: "ex: 5901234567890 (8 sau 13 cifre)",
+  sku: "ex: MDE14ROA",
+};
+
 export default function ScrapingPage() {
   const [query, setQuery] = useState("");
+  const [searchType, setSearchType] = useState("name");
   const [source, setSource] = useState("all");
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const eanHint = (() => {
+    if (searchType !== "ean" || !query.trim()) return "";
+    const v = query.trim();
+    if (!/^\d+$/.test(v)) return "EAN-ul contine doar cifre.";
+    if (v.length !== 8 && v.length !== 13) return "EAN standard are 8 sau 13 cifre.";
+    return "";
+  })();
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -24,12 +39,12 @@ export default function ScrapingPage() {
     setResults(null);
     try {
       let res;
-      if (source === "altex") res = await scrapingAPI.searchAltex(query);
-      else if (source === "sole") res = await scrapingAPI.searchSole(query);
-      else if (source === "farmaciatei") res = await scrapingAPI.searchFarmaciatei(query);
-      else if (source === "emag") res = await scrapingAPI.searchEmag(query);
-      else if (source === "pcgarage") res = await scrapingAPI.searchPcgarage(query);
-      else res = await scrapingAPI.searchAll(query);
+      if (source === "altex") res = await scrapingAPI.searchAltex(query, undefined, searchType);
+      else if (source === "sole") res = await scrapingAPI.searchSole(query, undefined, searchType);
+      else if (source === "farmaciatei") res = await scrapingAPI.searchFarmaciatei(query, undefined, searchType);
+      else if (source === "emag") res = await scrapingAPI.searchEmag(query, undefined, searchType);
+      else if (source === "pcgarage") res = await scrapingAPI.searchPcgarage(query, undefined, searchType);
+      else res = await scrapingAPI.searchAll(query, undefined, searchType);
       setResults(res.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -111,25 +126,46 @@ export default function ScrapingPage() {
       </div>
 
       {/* Search */}
-      <form onSubmit={handleSearch} style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: "200px", position: "relative" }}>
-          <Search style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "#94a3b8" }} />
-          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cauta produse..."
-            style={{ ...inputStyle, width: "100%", padding: "0.75rem 1rem 0.75rem 2.5rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem", outline: "none" }} />
+      <form onSubmit={handleSearch} style={{ marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "stretch" }}>
+          <select value={searchType} onChange={(e) => setSearchType(e.target.value)}
+            title="Tipul codului dupa care cautam"
+            style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem", minWidth: "150px" }}>
+            <option value="name">Cauta dupa: Nume</option>
+            <option value="ean">Cauta dupa: EAN</option>
+            <option value="sku">Cauta dupa: SKU</option>
+          </select>
+          <div style={{ flex: 1, minWidth: "200px", position: "relative" }}>
+            <Search style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "#94a3b8" }} />
+            <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+              placeholder={SEARCH_TYPE_PLACEHOLDERS[searchType]}
+              inputMode={searchType === "ean" ? "numeric" : "text"}
+              style={{ ...inputStyle, width: "100%", padding: "0.75rem 1rem 0.75rem 2.5rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem", outline: "none" }} />
+          </div>
+          <select value={source} onChange={(e) => setSource(e.target.value)}
+            style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem" }}>
+            <option value="all">Toate sursele</option>
+            <option value="altex">Altex.ro</option>
+            <option value="sole">Sole.ro</option>
+            <option value="farmaciatei">Farmacia Tei</option>
+            <option value="emag">eMAG.ro</option>
+            <option value="pcgarage">PCGarage.ro</option>
+          </select>
+          <button type="submit" disabled={loading}
+            style={{ padding: "0.75rem 1.5rem", borderRadius: "0.5rem", backgroundColor: "#06b6d4", color: "white", fontWeight: 500, border: "none", cursor: "pointer", opacity: loading ? 0.5 : 1 }}>
+            {loading ? "Se cauta..." : "Cauta"}
+          </button>
         </div>
-        <select value={source} onChange={(e) => setSource(e.target.value)}
-          style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem" }}>
-          <option value="all">Toate sursele</option>
-          <option value="altex">Altex.ro</option>
-          <option value="sole">Sole.ro</option>
-          <option value="farmaciatei">Farmacia Tei</option>
-          <option value="emag">eMAG.ro</option>
-          <option value="pcgarage">PCGarage.ro</option>
-        </select>
-        <button type="submit" disabled={loading}
-          style={{ padding: "0.75rem 1.5rem", borderRadius: "0.5rem", backgroundColor: "#06b6d4", color: "white", fontWeight: 500, border: "none", cursor: "pointer", opacity: loading ? 0.5 : 1 }}>
-          {loading ? "Se cauta..." : "Cauta"}
-        </button>
+        {eanHint && (
+          <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#facc15" }}>
+            {eanHint}
+          </p>
+        )}
+        {searchType !== "name" && !eanHint && (
+          <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#94a3b8" }}>
+            Nu toate magazinele indexeaza dupa {searchType === "ean" ? "EAN" : "SKU"}. Sursele care nu o fac vor returna 0 rezultate.
+          </p>
+        )}
       </form>
 
       {/* Results */}

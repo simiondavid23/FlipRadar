@@ -1,14 +1,23 @@
 import asyncio
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from app.models.user import User
 from app.utils.auth import require_feature
 from app.services.scraper_service import (
     scrape_altex, scrape_sole, scrape_farmaciatei, scrape_emag, scrape_pcgarage,
-    filter_by_relevance,
+    filter_by_relevance, filter_by_code,
 )
 
 router = APIRouter(prefix="/api/scraping", tags=["Web Scraping"])
+
+
+def _apply_filter(items: list, query: str, search_type: Optional[str]) -> list:
+    if search_type == "ean":
+        return filter_by_code(items, query, "ean")
+    if search_type == "sku":
+        return filter_by_code(items, query, "sku")
+    return filter_by_relevance(items, query)
 
 # Whole scraping surface sits behind the `can_use_scraping` flag — it's the
 # heaviest outbound workload and the most abuse-prone, so admins get a single
@@ -34,10 +43,11 @@ _ALL_MAX = 100
 async def search_altex(
     q: str = Query(..., description="Search query"),
     max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
     """Search products on Altex.ro"""
-    results = filter_by_relevance(await scrape_altex(q, max_results), q)
+    results = _apply_filter(await scrape_altex(q, max_results), q, search_type)
     return {"source": "altex.ro", "query": q, "results": results, "count": len(results)}
 
 
@@ -45,10 +55,11 @@ async def search_altex(
 async def search_sole(
     q: str = Query(..., description="Search query"),
     max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
     """Search products on Sole.ro"""
-    results = filter_by_relevance(await scrape_sole(q, max_results), q)
+    results = _apply_filter(await scrape_sole(q, max_results), q, search_type)
     return {"source": "sole.ro", "query": q, "results": results, "count": len(results)}
 
 
@@ -56,10 +67,11 @@ async def search_sole(
 async def search_farmaciatei(
     q: str = Query(..., description="Search query"),
     max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
     """Search products on comenzi.farmaciatei.ro"""
-    results = filter_by_relevance(await scrape_farmaciatei(q, max_results), q)
+    results = _apply_filter(await scrape_farmaciatei(q, max_results), q, search_type)
     return {"source": "farmaciatei.ro", "query": q, "results": results, "count": len(results)}
 
 
@@ -67,10 +79,11 @@ async def search_farmaciatei(
 async def search_emag(
     q: str = Query(..., description="Search query"),
     max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
     """Search products on eMAG.ro"""
-    results = filter_by_relevance(await scrape_emag(q, max_results), q)
+    results = _apply_filter(await scrape_emag(q, max_results), q, search_type)
     return {"source": "emag.ro", "query": q, "results": results, "count": len(results)}
 
 
@@ -78,10 +91,11 @@ async def search_emag(
 async def search_pcgarage(
     q: str = Query(..., description="Search query"),
     max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
     """Search products on PCGarage.ro"""
-    results = filter_by_relevance(await scrape_pcgarage(q, max_results), q)
+    results = _apply_filter(await scrape_pcgarage(q, max_results), q, search_type)
     return {"source": "pcgarage.ro", "query": q, "results": results, "count": len(results)}
 
 
@@ -89,6 +103,7 @@ async def search_pcgarage(
 async def search_all_sources(
     q: str = Query(..., description="Search query"),
     max_results: int = Query(_ALL_DEFAULT, ge=1, le=_ALL_MAX),
+    search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
     """Search products across all sources in parallel."""
@@ -100,11 +115,11 @@ async def search_all_sources(
         scrape_pcgarage(q, max_results),
     )
 
-    altex_results = filter_by_relevance(altex_results, q)
-    sole_results = filter_by_relevance(sole_results, q)
-    farmaciatei_results = filter_by_relevance(farmaciatei_results, q)
-    emag_results = filter_by_relevance(emag_results, q)
-    pcgarage_results = filter_by_relevance(pcgarage_results, q)
+    altex_results = _apply_filter(altex_results, q, search_type)
+    sole_results = _apply_filter(sole_results, q, search_type)
+    farmaciatei_results = _apply_filter(farmaciatei_results, q, search_type)
+    emag_results = _apply_filter(emag_results, q, search_type)
+    pcgarage_results = _apply_filter(pcgarage_results, q, search_type)
 
     return {
         "query": q,

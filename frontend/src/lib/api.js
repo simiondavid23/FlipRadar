@@ -45,6 +45,7 @@ export const productsAPI = {
   getProduct: (id) => api.get(`/api/products/${id}`),
   createProduct: (data) => api.post("/api/products/", data),
   updateProduct: (id, data) => api.put(`/api/products/${id}`, data),
+  refreshPrice: (id) => api.post(`/api/products/${id}/refresh-price`),
   deleteProduct: (id) => api.delete(`/api/products/${id}`),
   calculateProfit: (data) => api.post("/api/products/calculate-profit", data),
 };
@@ -131,13 +132,20 @@ export const notificationsAPI = {
 };
 
 // Web Scraping
+const _scrapeParams = (query, max, searchType) => {
+  const params = { q: query };
+  if (max !== undefined && max !== null) params.max_results = max;
+  if (searchType && searchType !== "name") params.search_type = searchType;
+  return params;
+};
+
 export const scrapingAPI = {
-  searchAltex: (query, max) => api.get("/api/scraping/altex", { params: { q: query, max_results: max } }),
-  searchSole: (query, max) => api.get("/api/scraping/sole", { params: { q: query, max_results: max } }),
-  searchFarmaciatei: (query, max) => api.get("/api/scraping/farmaciatei", { params: { q: query, max_results: max } }),
-  searchEmag: (query, max) => api.get("/api/scraping/emag", { params: { q: query, max_results: max } }),
-  searchPcgarage: (query, max) => api.get("/api/scraping/pcgarage", { params: { q: query, max_results: max } }),
-  searchAll: (query, max) => api.get("/api/scraping/search-all", { params: { q: query, max_results: max } }),
+  searchAltex: (query, max, searchType) => api.get("/api/scraping/altex", { params: _scrapeParams(query, max, searchType) }),
+  searchSole: (query, max, searchType) => api.get("/api/scraping/sole", { params: _scrapeParams(query, max, searchType) }),
+  searchFarmaciatei: (query, max, searchType) => api.get("/api/scraping/farmaciatei", { params: _scrapeParams(query, max, searchType) }),
+  searchEmag: (query, max, searchType) => api.get("/api/scraping/emag", { params: _scrapeParams(query, max, searchType) }),
+  searchPcgarage: (query, max, searchType) => api.get("/api/scraping/pcgarage", { params: _scrapeParams(query, max, searchType) }),
+  searchAll: (query, max, searchType) => api.get("/api/scraping/search-all", { params: _scrapeParams(query, max, searchType) }),
 };
 
 // Import/Export

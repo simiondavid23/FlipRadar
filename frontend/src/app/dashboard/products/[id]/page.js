@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { productsAPI, watchlistAPI, alertsAPI } from "@/lib/api";
 import {
-  ArrowLeft, ExternalLink, Eye, Bell, Package, TrendingUp, TrendingDown, Minus, Trash2,
+  ArrowLeft, ExternalLink, Eye, Bell, Package, TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -24,6 +24,20 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [alertForm, setAlertForm] = useState({ show: false, target_price: "", currency: "EUR", alert_type: "price_drop" });
   const [alertMsg, setAlertMsg] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResults, setRefreshResults] = useState(null);
+  const [copiedKey, setCopiedKey] = useState(null);
+
+  const copyToClipboard = async (value, key) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((curr) => (curr === key ? null : curr)), 1200);
+    } catch {
+      alert("Nu am putut copia in clipboard. Verifica permisiunile browser-ului.");
+    }
+  };
 
   const loadProduct = useCallback(async () => {
     try {
@@ -63,6 +77,24 @@ export default function ProductDetailPage() {
       setTimeout(() => setAlertMsg(""), 3000);
     } catch (error) {
       setAlertMsg(error.response?.data?.detail || "Eroare la creare alerta");
+    }
+  };
+
+  const handleRefreshPrice = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshResults(null);
+    try {
+      const response = await productsAPI.refreshPrice(productId);
+      setRefreshResults(response.data.results || []);
+      await loadProduct();
+    } catch (error) {
+      setRefreshResults([{
+        source: "-", source_url: "", success: false,
+        error: error.response?.data?.detail || "Eroare la actualizarea pretului",
+      }]);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -145,19 +177,52 @@ export default function ProductDetailPage() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.5rem" }}>
               <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "white", margin: 0 }}>{product.name}</h1>
               {product.sku && (
-                <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80", fontFamily: "monospace" }}>
-                  SKU: {product.sku}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(product.sku, "sku-main")}
+                  title="Click pentru a copia SKU-ul"
+                  style={{
+                    padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                    backgroundColor: copiedKey === "sku-main" ? "rgba(34,197,94,0.35)" : "rgba(34,197,94,0.15)",
+                    color: "#4ade80", fontFamily: "monospace", border: "none", cursor: "pointer",
+                  }}
+                >
+                  {copiedKey === "sku-main" ? "Copiat!" : `SKU: ${product.sku}`}
+                </button>
               )}
               {product.ean && (
-                <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(234,179,8,0.15)", color: "#facc15", fontFamily: "monospace" }}>
-                  EAN: {product.ean}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(product.ean, "ean-main")}
+                  title="Click pentru a copia EAN-ul"
+                  style={{
+                    padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                    backgroundColor: copiedKey === "ean-main" ? "rgba(234,179,8,0.35)" : "rgba(234,179,8,0.15)",
+                    color: "#facc15", fontFamily: "monospace", border: "none", cursor: "pointer",
+                  }}
+                >
+                  {copiedKey === "ean-main" ? "Copiat!" : `EAN: ${product.ean}`}
+                </button>
               )}
               {product.source && (
-                <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa" }}>
-                  {product.source}
-                </span>
+                product.source_url ? (
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(product.source_url, "url-main")}
+                    title="Click pentru a copia linkul sursei"
+                    style={{
+                      padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                      backgroundColor: copiedKey === "url-main" ? "rgba(147,51,234,0.35)" : "rgba(147,51,234,0.15)",
+                      color: "#a78bfa", border: "none", cursor: "pointer",
+                    }}
+                  >
+                    {copiedKey === "url-main" ? "Copiat!" : product.source}
+                  </button>
+                ) : (
+                  <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa" }}>
+                    {product.source}
+                  </span>
+                )
               )}
             </div>
             {product.category && (
@@ -176,6 +241,23 @@ export default function ProductDetailPage() {
             </div>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              onClick={handleRefreshPrice}
+              disabled={refreshing || !product.sources || product.sources.length === 0}
+              title={!product.sources || product.sources.length === 0 ? "Produsul nu are nicio sursa scrapeable" : `Interogheaza ${product.sources.length} sursa/surse`}
+              style={{
+                display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80",
+                border: "none",
+                cursor: refreshing || !product.sources || product.sources.length === 0 ? "not-allowed" : "pointer",
+                fontSize: "0.8125rem", fontWeight: 500,
+                opacity: refreshing || !product.sources || product.sources.length === 0 ? 0.55 : 1,
+              }}
+            >
+              <RefreshCw style={{ width: "14px", height: "14px", animation: refreshing ? "spin 1s linear infinite" : "none" }} />
+              {refreshing ? "Se actualizeaza..." : `Refresh pret (${product.sources?.length || 0})`}
+            </button>
             <button
               onClick={handleAddToWatchlist}
               title="Adauga in watchlist"
@@ -223,6 +305,35 @@ export default function ProductDetailPage() {
             </button>
           </div>
         </div>
+
+        {refreshResults && refreshResults.length > 0 && (
+          <div style={{
+            marginTop: "0.75rem", padding: "0.75rem", borderRadius: "0.5rem",
+            backgroundColor: "rgba(15,23,42,0.6)", border: "1px solid var(--border-color)",
+            display: "flex", flexDirection: "column", gap: "0.375rem",
+          }}>
+            <div style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 500, marginBottom: "0.25rem" }}>
+              Rezultat refresh per sursa
+            </div>
+            {refreshResults.map((r, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem" }}>
+                <span style={{
+                  padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                  backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa", minWidth: "100px", textAlign: "center",
+                }}>{r.source}</span>
+                {r.success ? (
+                  r.changed ? (
+                    <span style={{ color: "#86efac" }}>{r.old_price ?? "?"} -&gt; <strong>{r.new_price}</strong> {r.currency}</span>
+                  ) : (
+                    <span style={{ color: "#94a3b8" }}>neschimbat: {r.new_price} {r.currency}</span>
+                  )
+                ) : (
+                  <span style={{ color: "#fca5a5" }}>{r.error || "esec"}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Alert form inline */}
         {alertForm.show && (
@@ -284,6 +395,64 @@ export default function ProductDetailPage() {
           </p>
         )}
       </div>
+
+      {product.sources && product.sources.length > 0 && (
+        <div style={{
+          backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+        }}>
+          <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", marginBottom: "0.75rem" }}>
+            Surse stocate ({product.sources.length})
+          </h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {product.sources.map((s) => {
+              const isCheapest = s.source === product.source && s.source_url === product.source_url;
+              return (
+                <div key={s.id} style={{
+                  display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.75rem",
+                  backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem",
+                  border: isCheapest ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-color)",
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(s.source_url, `src-url-${s.id}`)}
+                    title="Click pentru a copia linkul sursei"
+                    style={{
+                      padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                      backgroundColor: copiedKey === `src-url-${s.id}` ? "rgba(147,51,234,0.35)" : "rgba(147,51,234,0.15)",
+                      color: "#a78bfa", minWidth: "100px", textAlign: "center",
+                      border: "none", cursor: "pointer",
+                    }}
+                  >
+                    {copiedKey === `src-url-${s.id}` ? "Copiat!" : s.source}
+                  </button>
+                  <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: isCheapest ? "#4ade80" : "white" }}>
+                    {s.current_price ?? "—"} {s.currency}
+                  </span>
+                  {isCheapest && (
+                    <span style={{ fontSize: "0.6875rem", color: "#4ade80", fontWeight: 500 }}>cea mai mica</span>
+                  )}
+                  <span style={{ flex: 1 }} />
+                  {s.last_checked_at && (
+                    <span style={{ fontSize: "0.6875rem", color: "#64748b" }}>
+                      Verificat: {new Date(s.last_checked_at).toLocaleString("ro-RO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  )}
+                  <a
+                    href={s.source_url} target="_blank" rel="noopener noreferrer"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.25rem", color: "#60a5fa",
+                      fontSize: "0.75rem", textDecoration: "none",
+                    }}
+                  >
+                    <ExternalLink style={{ width: "12px", height: "12px" }} /> Vezi
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Price stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1rem" }}>

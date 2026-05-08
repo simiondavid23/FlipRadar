@@ -104,13 +104,38 @@ def run_migrations():
             pass
         migrations.append("ALTER TABLE products DROP COLUMN IF EXISTS asin")
 
-    if not migrations:
-        return
+    if migrations:
+        with engine.begin() as conn:
+            for stmt in migrations:
+                try:
+                    conn.execute(text(stmt))
+                    print(f"[DB Migrate] Applied: {stmt}")
+                except Exception as e:
+                    print(f"[DB Migrate] Failed: {stmt} -> {e}")
 
+    _backfill_product_sources()
+
+
+def _backfill_product_sources():
+    """Populate product_sources from existing products that don't yet have a row."""
+    inspector = inspect(engine)
+    if not _table_exists(inspector, "product_sources") or not _table_exists(inspector, "products"):
+        return
     with engine.begin() as conn:
-        for stmt in migrations:
-            try:
-                conn.execute(text(stmt))
-                print(f"[DB Migrate] Applied: {stmt}")
-            except Exception as e:
-                print(f"[DB Migrate] Failed: {stmt} -> {e}")
+        rows_to_copy = conn.execute(text("""
+            SELECT p.id, p.source, p.source_url, p.current_price, p.currency
+            FROM products p
+            LEFT JOIN product_sources ps ON ps.product_id = p.id
+            WHERE p.source IS NOT NULL AND p.source_url IS NOT NULL AND ps.id IS NULL
+        """)).fetchall()
+        if not rows_to_copy:
+            return
+        for r in rows_to_copy:
+            conn.execute(
+                text("""
+                    INSERT INTO product_sources (product_id, source, source_url, current_price, currency, created_at, updated_at)
+                    VALUES (:pid, :src, :surl, :price, :cur, NOW(), NOW())
+                """),
+                {"pid": r[0], "src": r[1], "surl": r[2], "price": r[3], "cur": r[4] or "EUR"},
+            )
+        print(f"[DB Migrate] Backfilled {len(rows_to_copy)} product_sources rows from existing products")
