@@ -11,12 +11,12 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProduct, setNewProduct] = useState({
-    name: "", asin: "", ean: "", category: "", source: "", source_url: "",
+    name: "", sku: "", ean: "", category: "", source: "", source_url: "",
     current_price: "", currency: "EUR", image_url: "", description: "",
   });
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState({
-    name: "", asin: "", ean: "", category: "", source: "", source_url: "",
+    name: "", sku: "", ean: "", category: "", source: "", source_url: "",
     current_price: "", currency: "EUR",
   });
   const [editSaving, setEditSaving] = useState(false);
@@ -52,7 +52,7 @@ export default function ProductsPage() {
       };
       await productsAPI.createProduct(productData);
       setShowAddForm(false);
-      setNewProduct({ name: "", asin: "", ean: "", category: "", source: "", source_url: "", current_price: "", currency: "EUR", image_url: "", description: "" });
+      setNewProduct({ name: "", sku: "", ean: "", category: "", source: "", source_url: "", current_price: "", currency: "EUR", image_url: "", description: "" });
       loadProducts();
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare la adaugare produs");
@@ -91,7 +91,7 @@ export default function ProductsPage() {
     setEditingId(product.id);
     setEditValues({
       name: product.name || "",
-      asin: product.asin || "",
+      sku: product.sku || "",
       ean: product.ean || "",
       category: product.category || "",
       source: product.source || "",
@@ -116,7 +116,7 @@ export default function ProductsPage() {
     try {
       const payload = {
         name: editValues.name.trim(),
-        asin: editValues.asin || null,
+        sku: editValues.sku || null,
         ean: editValues.ean || null,
         category: editValues.category || null,
         source: editValues.source || null,
@@ -220,7 +220,7 @@ export default function ProductsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cauta dupa nume, ASIN, categorie..."
+              placeholder="Cauta dupa nume, SKU, categorie..."
               style={{
                 ...inputBaseStyle,
                 paddingLeft: "2.5rem",
@@ -289,10 +289,10 @@ export default function ProductsPage() {
               </div>
               <div>
                 <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
-                  ASIN
+                  SKU
                 </label>
-                <input type="text" value={newProduct.asin} onChange={(e) => setNewProduct({...newProduct, asin: e.target.value})}
-                  placeholder="ex: B08N5WRWNW" style={inputBaseStyle} />
+                <input type="text" value={newProduct.sku} onChange={(e) => setNewProduct({...newProduct, sku: e.target.value})}
+                  placeholder="ex: MDE14ROA" style={inputBaseStyle} />
               </div>
               <div>
                 <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
@@ -385,14 +385,9 @@ export default function ProductsPage() {
                       onMouseEnter={(e) => { e.currentTarget.style.color = "#60a5fa"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = "white"; }}
                     >{product.name}</Link>
-                    {product.asin && (
-                      <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>
-                        ASIN: {product.asin}
-                      </span>
-                    )}
-                    {product.product_code && (
+                    {product.sku && (
                       <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80", fontFamily: "monospace" }}>
-                        Cod: {product.product_code}
+                        SKU: {product.sku}
                       </span>
                     )}
                     {product.ean && (
@@ -531,10 +526,10 @@ export default function ProductsPage() {
                     </div>
                     <div>
                       <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.25rem", color: "var(--text-secondary)" }}>
-                        ASIN
+                        SKU
                       </label>
-                      <input type="text" value={editValues.asin}
-                        onChange={(e) => setEditValues({ ...editValues, asin: e.target.value })}
+                      <input type="text" value={editValues.sku}
+                        onChange={(e) => setEditValues({ ...editValues, sku: e.target.value })}
                         style={inputBaseStyle} />
                     </div>
                     <div>

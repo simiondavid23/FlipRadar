@@ -67,13 +67,35 @@ def _altex_product_url(url_key: Optional[str], sku: Optional[str]) -> str:
     return f"https://altex.ro/{url_key}/cpd/{sku}/"
 
 
+_ALTEX_BAD_PATH_CHARS = re.compile(r'[/\\"\'<>{}|`]')
+
+
+def _sanitize_altex_query(query: str) -> str:
+    cleaned = _ALTEX_BAD_PATH_CHARS.sub(" ", query or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+_ALTEX_SKU_FROM_URL_RE = re.compile(r"/cpd/([^/?#]+)/?", re.IGNORECASE)
+
+
+def _altex_sku_from_url(source_url: Optional[str]) -> Optional[str]:
+    if not source_url:
+        return None
+    match = _ALTEX_SKU_FROM_URL_RE.search(source_url)
+    return match.group(1) if match else None
+
+
 def _sync_scrape_altex(query: str, max_results: int) -> list:
     """Call Altex's internal Fenrir API (used by their own React frontend).
 
     The API accepts `size` up to ~100 in a single call, so no pagination loop
     is needed: we request min(max_results, 100) in one shot.
     """
-    encoded = urllib.parse.quote(query.strip())
+    safe_query = _sanitize_altex_query(query)
+    if not safe_query:
+        return [{"error": "Query gol pentru Altex dupa sanitizare."}]
+    encoded = urllib.parse.quote(safe_query)
     size = min(max(max_results, 1), _MAX_ALTEX_SIZE)
     url = f"https://fenrir.altex.ro/v2/catalog/search/{encoded}?size={size}"
     try:
@@ -140,7 +162,7 @@ def _sync_scrape_altex(query: str, max_results: int) -> list:
                 "image_url": _altex_image_url(item.get("image") or item.get("thumbnail")),
                 "in_stock": in_stock,
                 "ean": ean if ean else None,
-                "product_code": sku or None,
+                "sku": sku or None,
             })
         except Exception:
             continue
@@ -252,7 +274,7 @@ def _sync_scrape_sole(query: str, max_results: int) -> list:
                 "image_url": _sole_image_url(item),
                 "in_stock": in_stock,
                 "ean": None,
-                "product_code": sole_code,
+                "sku": sole_code,
             })
         except Exception:
             continue
@@ -353,7 +375,7 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
                 "image_url": image_url,
                 "in_stock": in_stock,
                 "ean": None,
-                "product_code": pid,
+                "sku": pid,
             })
         except Exception:
             continue
@@ -399,8 +421,8 @@ def _sync_scrape_farmaciatei(query: str, max_results: int) -> list:
 
         new_this_page = 0
         for p in page_products:
-            # Dedupe by product_code; fall back to source_url when missing.
-            key = p.get("product_code") or p.get("source_url") or p.get("name")
+            # Dedupe by sku; fall back to source_url when missing.
+            key = p.get("sku") or p.get("source_url") or p.get("name")
             if key and key in seen_codes:
                 continue
             if key:
@@ -530,7 +552,7 @@ def _parse_emag_page(soup: BeautifulSoup) -> list:
                 "image_url": image_url,
                 "in_stock": in_stock,
                 "ean": None,
-                "product_code": product_id,
+                "sku": product_id,
             })
         except Exception:
             continue
@@ -576,7 +598,7 @@ def _sync_scrape_emag(query: str, max_results: int) -> list:
 
         new_this_page = 0
         for p in page_products:
-            key = p.get("product_code") or p.get("source_url") or p.get("name")
+            key = p.get("sku") or p.get("source_url") or p.get("name")
             if key and key in seen_codes:
                 continue
             if key:
@@ -660,13 +682,12 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
             if avail_el and "outofstock" in " ".join(avail_el.get("class", [])):
                 in_stock = False
 
-            # Product ID is exposed via the installments-popup link as ?pid=<id>.
-            product_code: Optional[str] = None
+            sku: Optional[str] = None
             rates = card.select_one("a.rates_installments[href*='pid=']")
             if rates:
                 m = re.search(r"pid=(\d+)", rates.get("href", ""))
                 if m:
-                    product_code = m.group(1)
+                    sku = m.group(1)
 
             products.append({
                 "name": name,
@@ -679,7 +700,7 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
                 "image_url": image_url,
                 "in_stock": in_stock,
                 "ean": None,
-                "product_code": product_code,
+                "sku": sku,
             })
         except Exception:
             continue
@@ -725,7 +746,7 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
 
         new_this_page = 0
         for p in page_products:
-            key = p.get("product_code") or p.get("source_url") or p.get("name")
+            key = p.get("sku") or p.get("source_url") or p.get("name")
             if key and key in seen_codes:
                 continue
             if key:
@@ -845,22 +866,22 @@ def refresh_price_from_source(
     source: Optional[str],
     source_url: Optional[str],
     product_name: Optional[str],
-    product_code: Optional[str] = None,
+    sku: Optional[str] = None,
 ) -> Optional[float]:
     """Re-fetch the current price for a product from its source magazin.
 
     Returneaza un float (pretul nou in moneda magazinului) sau None daca nu
-    am putut gasi produsul. Strategie: lansam o cautare cu product_code (mai
-    precisa) sau cu numele si gasim rezultatul cu acelasi source_url.
+    am putut gasi produsul. Strategie: lansam o cautare cu SKU (mai precisa)
+    sau cu numele si gasim rezultatul cu acelasi source_url.
     """
     if not source or not source_url:
         return None
     scraper = _SCRAPERS_BY_SOURCE.get(source.lower())
     if not scraper:
         return None
-    # Preferam product_code (SKU exact) pentru Altex; pentru restul, numele
-    # produsului e cel mai bun query disponibil.
-    query = (product_code or product_name or "").strip()
+    if not sku and source.lower() == "altex.ro":
+        sku = _altex_sku_from_url(source_url)
+    query = (sku or product_name or "").strip()
     if not query:
         return None
     try:

@@ -60,7 +60,7 @@ export default function ScrapingPage() {
         source_url: product.source_url,
         image_url: product.image_url,
         ean: product.ean || null,
-        product_code: product.product_code || null,
+        sku: product.sku || null,
       });
       alert(buildSaveMessage(res.data, product.name));
     } catch (e) {
@@ -73,7 +73,7 @@ export default function ScrapingPage() {
       const saved = await productsAPI.createProduct({
         name: product.name, current_price: product.price, currency: product.currency || "RON",
         source: product.source, source_url: product.source_url, image_url: product.image_url,
-        ean: product.ean || null, product_code: product.product_code || null,
+        ean: product.ean || null, sku: product.sku || null,
       });
       await favoritesAPI.addFavorite({ product_id: saved.data.id, is_blacklisted: false });
       const status = saved.data.is_new
@@ -163,9 +163,9 @@ export default function ScrapingPage() {
                               EAN: {product.ean}
                             </span>
                           )}
-                          {!product.ean && product.product_code && (
+                          {!product.ean && product.sku && (
                             <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(148,163,184,0.1)", color: "#94a3b8" }}>
-                              Cod: {product.product_code}
+                              SKU: {product.sku}
                             </span>
                           )}
                         </div>

@@ -55,7 +55,7 @@ def _refresh_prices_for_alerts(db: Session, product_ids: set[int]) -> int:
             source=product.source,
             source_url=product.source_url,
             product_name=product.name,
-            product_code=product.product_code,
+            sku=product.sku,
         )
         if new_price is None:
             print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({product.source}). Folosesc pretul stocat: {product.current_price} {product.currency}")

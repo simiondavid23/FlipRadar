@@ -55,10 +55,10 @@ export default function AdminProductsPage() {
     const q = search.toLowerCase();
     return products.filter((p) => {
       const name = (p.name || "").toLowerCase();
-      const asin = (p.asin || "").toLowerCase();
+      const sku = (p.sku || "").toLowerCase();
       const ean = (p.ean || "").toLowerCase();
       const ownerEmail = (p.owner?.email || "").toLowerCase();
-      return name.includes(q) || asin.includes(q) || ean.includes(q) || ownerEmail.includes(q);
+      return name.includes(q) || sku.includes(q) || ean.includes(q) || ownerEmail.includes(q);
     });
   }, [products, search]);
 
@@ -122,7 +122,7 @@ export default function AdminProductsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cauta dupa nume, ASIN, EAN sau email proprietar..."
+            placeholder="Cauta dupa nume, SKU, EAN sau email proprietar..."
             style={{
               width: "100%",
               padding: "0.625rem 0.75rem 0.625rem 2.25rem",
@@ -160,7 +160,7 @@ export default function AdminProductsPage() {
                   <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Nume</th>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Sursa</th>
-                    <th style={{ padding: "0.5rem 0.5rem" }}>ASIN / EAN</th>
+                    <th style={{ padding: "0.5rem 0.5rem" }}>SKU / EAN</th>
                     <th style={{ padding: "0.5rem 0.5rem", textAlign: "right" }}>Pret</th>
                     {!userId && <th style={{ padding: "0.5rem 0.5rem" }}>Proprietar</th>}
                     <th style={{ padding: "0.5rem 0.5rem" }}>Adaugat</th>
@@ -183,7 +183,7 @@ export default function AdminProductsPage() {
                       </td>
                       <td style={{ padding: "0.625rem 0.5rem", color: "#cbd5e1" }}>{p.source || "-"}</td>
                       <td style={{ padding: "0.625rem 0.5rem", color: "#cbd5e1", fontFamily: "monospace", fontSize: "0.75rem" }}>
-                        {p.asin || p.ean || "-"}
+                        {p.sku || p.ean || "-"}
                       </td>
                       <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "white", fontWeight: 500 }}>
                         {p.current_price != null ? `${p.current_price} ${p.currency || ""}` : "-"}

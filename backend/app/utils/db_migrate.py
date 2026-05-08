@@ -76,14 +76,15 @@ def run_migrations():
     ):
         migrations.append("ALTER TABLE products ADD COLUMN user_id INTEGER REFERENCES users(id)")
 
-    # Products: product_code (cod intern al magazinului - ex: SKU Altex din /cpd/CODE/)
-    if _table_exists(inspector, "products") and not _column_exists(
-        inspector, "products", "product_code"
-    ):
-        migrations.append("ALTER TABLE products ADD COLUMN product_code VARCHAR")
-
-    # Products: drop UNIQUE constraint on asin (two users may track the same ASIN)
     if _table_exists(inspector, "products"):
+        has_product_code = _column_exists(inspector, "products", "product_code")
+        has_sku = _column_exists(inspector, "products", "sku")
+        if has_product_code and not has_sku:
+            migrations.append("ALTER TABLE products RENAME COLUMN product_code TO sku")
+        elif not has_product_code and not has_sku:
+            migrations.append("ALTER TABLE products ADD COLUMN sku VARCHAR")
+
+    if _table_exists(inspector, "products") and _column_exists(inspector, "products", "asin"):
         try:
             uniques = inspector.get_unique_constraints("products")
             for uq in uniques:
@@ -97,12 +98,11 @@ def run_migrations():
         try:
             indexes = inspector.get_indexes("products")
             for idx in indexes:
-                if idx.get("unique") and idx.get("column_names") == ["asin"]:
-                    migrations.append(
-                        f'DROP INDEX IF EXISTS "{idx["name"]}"'
-                    )
+                if idx.get("column_names") == ["asin"]:
+                    migrations.append(f'DROP INDEX IF EXISTS "{idx["name"]}"')
         except Exception:
             pass
+        migrations.append("ALTER TABLE products DROP COLUMN IF EXISTS asin")
 
     if not migrations:
         return

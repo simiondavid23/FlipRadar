@@ -216,7 +216,7 @@ def _product_item(p: Optional[Product]) -> Optional[AdminProductItem]:
     if p is None:
         return None
     return AdminProductItem(
-        id=p.id, name=p.name, asin=p.asin, ean=p.ean, source=p.source,
+        id=p.id, name=p.name, ean=p.ean, sku=p.sku, source=p.source,
         source_url=p.source_url, category=p.category,
         current_price=p.current_price, currency=p.currency,
         image_url=p.image_url, created_at=p.created_at,

@@ -50,7 +50,7 @@ def clean_json_response(text: str) -> str:
     return raw_json
 
 
-async def chat_with_gemini(message: str, system_prompt: str = "", history: list = None) -> str:
+async def chat_with_groq(message: str, system_prompt: str = "", history: list = None) -> str:
     """Send a message to Groq and get a response."""
     try:
         messages = []

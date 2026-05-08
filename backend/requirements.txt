@@ -35,9 +35,7 @@ playwright==1.58.0
 playwright-stealth==2.0.3
 curl_cffi==0.15.0
 
-# AI (Gemini + Groq)
-google-generativeai==0.8.6
-google-genai==1.67.0
+# AI (Groq)
 groq==1.1.1
 
 # Import / Export
