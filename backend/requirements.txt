@@ -1,0 +1,49 @@
+# FlipRadar - dependinte backend
+# Python 3.11+ recomandat
+
+# Framework web
+fastapi==0.135.1
+uvicorn==0.41.0
+starlette==0.52.1
+
+# Baza de date
+SQLAlchemy==2.0.48
+psycopg2-binary==2.9.11
+
+# Validare & serializare
+pydantic==2.12.5
+pydantic_core==2.41.5
+email-validator==2.3.0
+
+# Autentificare & securitate
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==4.0.1
+cryptography==46.0.5
+
+# HTTP & form parsing
+python-multipart==0.0.22
+requests==2.32.5
+httpx==0.28.1
+
+# Configurare
+python-dotenv==1.2.2
+
+# Scraping
+beautifulsoup4==4.14.3
+playwright==1.58.0
+playwright-stealth==2.0.3
+curl_cffi==0.15.0
+
+# AI (Gemini + Groq)
+google-generativeai==0.8.6
+google-genai==1.67.0
+groq==1.1.1
+
+# Import / Export
+openpyxl==3.1.5
+reportlab==4.4.10
+
+# Scheduler (verificare alerte)
+APScheduler==3.11.2
+tzlocal==5.3.1
