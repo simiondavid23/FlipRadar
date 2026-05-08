@@ -1,0 +1,123 @@
+import asyncio
+
+from fastapi import APIRouter, Depends, Query
+from app.models.user import User
+from app.utils.auth import require_feature
+from app.services.scraper_service import (
+    scrape_altex, scrape_sole, scrape_farmaciatei, scrape_emag, scrape_pcgarage,
+    filter_by_relevance,
+)
+
+router = APIRouter(prefix="/api/scraping", tags=["Web Scraping"])
+
+# Whole scraping surface sits behind the `can_use_scraping` flag — it's the
+# heaviest outbound workload and the most abuse-prone, so admins get a single
+# toggle to shut it off per user.
+_scraping_user = require_feature("can_use_scraping")
+
+# --- Result-cap tuning -------------------------------------------------------
+# Earlier this router limited each source to 30 products and the aggregate
+# search to 20/site. Users reported missing relevant matches — e.g. a search
+# for "rtx 5070" returned only 15 products because search-all capped each
+# source at a tiny number. The scraper layer now paginates across multiple
+# HTML pages, so we raise the caps to reflect real catalog sizes (eMAG
+# ~78/page, PCGarage ~20/page, Farmacia Tei ~60/page, Altex up to 100 in one
+# API call). Defaults are generous so the UI shows "all matching products"
+# without the user having to tweak query params.
+_PER_SITE_DEFAULT = 100
+_PER_SITE_MAX = 300
+_ALL_DEFAULT = 50
+_ALL_MAX = 100
+
+
+@router.get("/altex")
+async def search_altex(
+    q: str = Query(..., description="Search query"),
+    max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    current_user: User = Depends(_scraping_user),
+):
+    """Search products on Altex.ro"""
+    results = filter_by_relevance(await scrape_altex(q, max_results), q)
+    return {"source": "altex.ro", "query": q, "results": results, "count": len(results)}
+
+
+@router.get("/sole")
+async def search_sole(
+    q: str = Query(..., description="Search query"),
+    max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    current_user: User = Depends(_scraping_user),
+):
+    """Search products on Sole.ro"""
+    results = filter_by_relevance(await scrape_sole(q, max_results), q)
+    return {"source": "sole.ro", "query": q, "results": results, "count": len(results)}
+
+
+@router.get("/farmaciatei")
+async def search_farmaciatei(
+    q: str = Query(..., description="Search query"),
+    max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    current_user: User = Depends(_scraping_user),
+):
+    """Search products on comenzi.farmaciatei.ro"""
+    results = filter_by_relevance(await scrape_farmaciatei(q, max_results), q)
+    return {"source": "farmaciatei.ro", "query": q, "results": results, "count": len(results)}
+
+
+@router.get("/emag")
+async def search_emag(
+    q: str = Query(..., description="Search query"),
+    max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    current_user: User = Depends(_scraping_user),
+):
+    """Search products on eMAG.ro"""
+    results = filter_by_relevance(await scrape_emag(q, max_results), q)
+    return {"source": "emag.ro", "query": q, "results": results, "count": len(results)}
+
+
+@router.get("/pcgarage")
+async def search_pcgarage(
+    q: str = Query(..., description="Search query"),
+    max_results: int = Query(_PER_SITE_DEFAULT, ge=1, le=_PER_SITE_MAX),
+    current_user: User = Depends(_scraping_user),
+):
+    """Search products on PCGarage.ro"""
+    results = filter_by_relevance(await scrape_pcgarage(q, max_results), q)
+    return {"source": "pcgarage.ro", "query": q, "results": results, "count": len(results)}
+
+
+@router.get("/search-all")
+async def search_all_sources(
+    q: str = Query(..., description="Search query"),
+    max_results: int = Query(_ALL_DEFAULT, ge=1, le=_ALL_MAX),
+    current_user: User = Depends(_scraping_user),
+):
+    """Search products across all sources in parallel."""
+    altex_results, sole_results, farmaciatei_results, emag_results, pcgarage_results = await asyncio.gather(
+        scrape_altex(q, max_results),
+        scrape_sole(q, max_results),
+        scrape_farmaciatei(q, max_results),
+        scrape_emag(q, max_results),
+        scrape_pcgarage(q, max_results),
+    )
+
+    altex_results = filter_by_relevance(altex_results, q)
+    sole_results = filter_by_relevance(sole_results, q)
+    farmaciatei_results = filter_by_relevance(farmaciatei_results, q)
+    emag_results = filter_by_relevance(emag_results, q)
+    pcgarage_results = filter_by_relevance(pcgarage_results, q)
+
+    return {
+        "query": q,
+        "sources": {
+            "altex": {"results": altex_results, "count": len(altex_results)},
+            "sole": {"results": sole_results, "count": len(sole_results)},
+            "farmaciatei": {"results": farmaciatei_results, "count": len(farmaciatei_results)},
+            "emag": {"results": emag_results, "count": len(emag_results)},
+            "pcgarage": {"results": pcgarage_results, "count": len(pcgarage_results)},
+        },
+        "total_results": (
+            len(altex_results) + len(sole_results)
+            + len(farmaciatei_results) + len(emag_results)
+            + len(pcgarage_results)
+        ),
+    }
