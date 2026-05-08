@@ -4,21 +4,45 @@ Runs periodically to compare product prices against alert thresholds.
 Handles both price_drop and price_rise directions and converts currencies when needed.
 When an alert fires, a matching Notification is created and (if SMTP configured) an email is sent.
 
-Inainte de verificare, re-scrapeaza pretul curent pentru produsele cu alerte
-active (din magazinele integrate), ca sa lucram cu valori reale de pe site,
-nu cu pretul vechi din momentul adaugarii produsului.
+Inainte de verificare, re-scrapeaza pretul curent pentru toate produsele
+scrapeable (din magazinele integrate), nu doar cele cu alerte. Cererile sunt
+secventiale cu delay aleator intre ele ca sa nu fie blocate ca trafic abuziv.
 """
-from datetime import datetime
+import random
+import time
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.alert import Alert
 from app.models.product import Product
+from app.models.product_source import ProductSource
 from app.models.user import User
 from app.models.notification import Notification
 from app.models.price_history import PriceHistory
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
 from app.services.scraper_service import refresh_price_from_source
+
+_SCRAPE_DELAY_RANGE = (0.6, 1.4)
+
+
+def _recompute_primary_snapshot(product: Product) -> None:
+    sources_with_price = [s for s in product.sources if s.current_price is not None]
+    if not sources_with_price:
+        return
+    base_currency = product.currency or "EUR"
+    def price_in_base(s: ProductSource) -> float:
+        if (s.currency or base_currency).upper() == base_currency.upper():
+            return float(s.current_price)
+        try:
+            return float(convert(s.current_price, s.currency, base_currency))
+        except Exception:
+            return float(s.current_price)
+    cheapest = min(sources_with_price, key=price_in_base)
+    product.current_price = cheapest.current_price
+    product.currency = cheapest.currency or base_currency
+    product.source = cheapest.source
+    product.source_url = cheapest.source_url
 
 
 def _make_notification(alert: Alert, product: Product, price_in_alert_currency: float) -> Notification:
@@ -38,43 +62,53 @@ def _make_notification(alert: Alert, product: Product, price_in_alert_currency: 
     )
 
 
-def _refresh_prices_for_alerts(db: Session, product_ids: set[int]) -> int:
-    """Re-scrape pretul pentru produsele referite de alertele active.
-
-    Pentru fiecare produs din `product_ids`, incearca sa preia pretul curent
-    de pe magazinul-sursa (Altex, eMAG, sole, FarmaciaTei, PCGarage). Daca
-    obtine un pret nou, actualizeaza `Product.current_price` si adauga o
-    intrare in `price_history`. Returneaza numarul de produse refrshate.
+def _refresh_all_scrapeable_products(db: Session) -> int:
+    """Re-scrape pretul pentru fiecare ProductSource din DB. Cererile sunt
+    secventiale cu delay aleator intre ele ca sa nu fie blocate ca trafic
+    abuziv. Dupa refresh, snapshot-ul Product (current_price, source,
+    source_url) e recalculat = sursa cu pretul cel mai mic. Returneaza
+    numarul de surse cu pret schimbat.
     """
+    rows = db.query(ProductSource).all()
+    total = len(rows)
+    if total == 0:
+        return 0
+    print(f"[AlertChecker] Refresh preturi pentru {total} sursa(e) scrapeabila(e)...")
+
     refreshed = 0
-    for pid in product_ids:
-        product = db.query(Product).filter(Product.id == pid).first()
-        if not product:
-            continue
+    touched_products: dict[int, Product] = {}
+    now = datetime.now(timezone.utc)
+    for i, ps in enumerate(rows):
+        if i > 0:
+            time.sleep(random.uniform(*_SCRAPE_DELAY_RANGE))
+        product = ps.product
         new_price = refresh_price_from_source(
-            source=product.source,
-            source_url=product.source_url,
+            source=ps.source,
+            source_url=ps.source_url,
             product_name=product.name,
             sku=product.sku,
         )
+        ps.last_checked_at = now
         if new_price is None:
-            print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({product.source}). Folosesc pretul stocat: {product.current_price} {product.currency}")
+            print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({ps.source}). Folosesc pretul stocat: {ps.current_price} {ps.currency}")
             continue
-        old_price = product.current_price
+        old_price = ps.current_price
         if old_price != new_price:
-            product.current_price = new_price
+            ps.current_price = new_price
             db.add(PriceHistory(
                 product_id=product.id,
                 price=new_price,
-                currency=product.currency or "EUR",
-                source=product.source,
+                currency=ps.currency or "EUR",
+                source=ps.source,
             ))
             refreshed += 1
-            print(f"[AlertChecker] Pret actualizat pentru \"{product.name[:50]}\": {old_price} -> {new_price} {product.currency}")
+            touched_products[product.id] = product
+            print(f"[AlertChecker] Pret actualizat pentru \"{product.name[:50]}\" ({ps.source}): {old_price} -> {new_price} {ps.currency}")
         else:
-            # acelasi pret — nu adaugam istoric, doar log
-            print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\": {new_price} {product.currency}")
-    if refreshed > 0:
+            print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
+    for product in touched_products.values():
+        _recompute_primary_snapshot(product)
+    if refreshed > 0 or touched_products:
         db.commit()
     return refreshed
 
@@ -86,17 +120,15 @@ def check_alerts() -> int:
     """
     db: Session = SessionLocal()
     try:
+        # Pas 1: refresh pret pentru toate produsele scrapeable, nu doar cele
+        # cu alerte. Pasul 2 (evaluarea alertelor) vede deja preturile fresh.
+        _refresh_all_scrapeable_products(db)
+
         active_alerts = (
             db.query(Alert)
             .filter(Alert.is_active == True, Alert.is_triggered == False)
             .all()
         )
-
-        # Pas 1: re-scrapeaza preturile produselor cu alerte active.
-        product_ids = {a.product_id for a in active_alerts if a.product_id}
-        if product_ids:
-            print(f"[AlertChecker] Refresh preturi pentru {len(product_ids)} produs(e) cu alerte active...")
-            _refresh_prices_for_alerts(db, product_ids)
 
         triggered_count = 0
         emails_sent = 0

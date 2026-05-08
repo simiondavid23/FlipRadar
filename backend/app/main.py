@@ -8,7 +8,7 @@ from app.routers import favorites, notifications, scraping, import_export
 from app.routers import currency, inventory, sales
 
 # Import all models
-from app.models import user, product, price_history
+from app.models import user, product, price_history, product_source
 from app.models import watchlist as watchlist_model
 from app.models import alert, chat_message, support_ticket
 from app.models import favorite, notification
