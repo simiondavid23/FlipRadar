@@ -54,12 +54,12 @@ export default function AIReportPage() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.375rem" }}>
             <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#0891b2", display: "flex" }}>
-              <FileBarChart style={{ width: "20px", height: "20px", color: "white" }} />
+              <FileBarChart style={{ width: "20px", height: "20px", color: "var(--text-primary)" }} />
             </div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>Raport AI</h1>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Raport Piata</h1>
           </div>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginLeft: "3rem" }}>
-            Genereaza un raport complet al activitatii tale pe FlipRadar
+            Analiza de piata generata automat pentru categoria ta de produse
           </p>
         </div>
         <button onClick={generateReport} disabled={loading}
@@ -67,7 +67,7 @@ export default function AIReportPage() {
             display: "flex", alignItems: "center", gap: "0.5rem",
             padding: "0.625rem 1.25rem", borderRadius: "0.625rem",
             backgroundColor: loading ? "#374151" : "#0891b2",
-            border: "none", color: "white", fontWeight: 600, fontSize: "0.875rem",
+            border: "none", color: "var(--text-primary)", fontWeight: 600, fontSize: "0.875rem",
             cursor: loading ? "not-allowed" : "pointer", transition: "all 0.15s ease",
             opacity: loading ? 0.7 : 1,
           }}
@@ -99,14 +99,14 @@ export default function AIReportPage() {
           <div style={cardStyle}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>Scor de Activitate</h3>
-                <p style={{ fontSize: "0.8125rem", color: "#94a3b8", margin: 0 }}>Bazat pe utilizarea platformei</p>
+                <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>Scor de Activitate</h3>
+                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Bazat pe utilizarea platformei</p>
               </div>
               <div style={{ textAlign: "center" }}>
                 <p style={{ fontSize: "3rem", fontWeight: 700, color: getScoreColor(report.scor_activitate), margin: 0, lineHeight: 1 }}>
                   {report.scor_activitate}
                 </p>
-                <p style={{ fontSize: "0.6875rem", color: "#94a3b8", margin: 0 }}>din 100</p>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-secondary)", margin: 0 }}>din 100</p>
               </div>
             </div>
           </div>
@@ -115,16 +115,16 @@ export default function AIReportPage() {
           <div style={cardStyle}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
               <Activity style={{ width: "16px", height: "16px", color: "#60a5fa" }} />
-              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", margin: 0 }}>Rezumat General</h3>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Rezumat General</h3>
             </div>
-            <p style={{ color: "#cbd5e1", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.rezumat_general}</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.rezumat_general}</p>
           </div>
 
           {/* Key Stats */}
           <div style={cardStyle}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
               <TrendingUp style={{ width: "16px", height: "16px", color: "#4ade80" }} />
-              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", margin: 0 }}>Statistici Cheie</h3>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Statistici Cheie</h3>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {report.statistici_cheie?.map((stat, i) => (
@@ -132,7 +132,7 @@ export default function AIReportPage() {
                   <div style={{ width: "22px", height: "22px", borderRadius: "50%", backgroundColor: "rgba(59,130,246,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: "1px" }}>
                     <span style={{ fontSize: "0.6875rem", fontWeight: 700, color: "#60a5fa" }}>{i + 1}</span>
                   </div>
-                  <p style={{ fontSize: "0.8125rem", color: "#cbd5e1", margin: 0 }}>{stat}</p>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>{stat}</p>
                 </div>
               ))}
             </div>
@@ -141,12 +141,12 @@ export default function AIReportPage() {
           {/* Two columns: Products + Alerts */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <div style={cardStyle}>
-              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", marginBottom: "0.75rem" }}>Analiza Produse</h3>
-              <p style={{ color: "#cbd5e1", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.produse_recomandate}</p>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.75rem" }}>Analiza Produse</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.produse_recomandate}</p>
             </div>
             <div style={cardStyle}>
-              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", marginBottom: "0.75rem" }}>Status Alerte</h3>
-              <p style={{ color: "#cbd5e1", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.alerte_status}</p>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.75rem" }}>Status Alerte</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.alerte_status}</p>
             </div>
           </div>
 
@@ -154,22 +154,22 @@ export default function AIReportPage() {
           <div style={cardStyle}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
               <TrendingUp style={{ width: "16px", height: "16px", color: "#a78bfa" }} />
-              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", margin: 0 }}>Tendinte</h3>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Tendinte</h3>
             </div>
-            <p style={{ color: "#cbd5e1", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.tendinte}</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", lineHeight: 1.7, margin: 0 }}>{report.tendinte}</p>
           </div>
 
           {/* Recommendations */}
           <div style={cardStyle}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
               <Lightbulb style={{ width: "16px", height: "16px", color: "#facc15" }} />
-              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", margin: 0 }}>Recomandari</h3>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Recomandari</h3>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {report.recomandari?.map((rec, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.625rem", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)" }}>
                   <Lightbulb style={{ width: "14px", height: "14px", color: "#facc15", marginTop: "2px", flexShrink: 0 }} />
-                  <p style={{ fontSize: "0.8125rem", color: "#cbd5e1", margin: 0 }}>{rec}</p>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>{rec}</p>
                 </div>
               ))}
             </div>
@@ -181,14 +181,14 @@ export default function AIReportPage() {
             backgroundColor: "rgba(59,130,246,0.08)",
             border: "1px solid rgba(59,130,246,0.25)",
           }}>
-            <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", marginBottom: "0.5rem" }}>Urmatorul Pas Recomandat</h3>
+            <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>Urmatorul Pas Recomandat</h3>
             <p style={{ color: "#93c5fd", fontSize: "0.875rem", margin: 0 }}>{report.urmatorul_pas}</p>
           </div>
         </div>
       ) : !loading && (
         <div style={{ ...cardStyle, padding: "3rem", textAlign: "center" }}>
           <FileBarChart style={{ width: "2.5rem", height: "2.5rem", margin: "0 auto 0.75rem", color: "var(--text-secondary)" }} />
-          <p style={{ fontSize: "1rem", color: "white", marginBottom: "0.375rem" }}>Genereaza un raport AI</p>
+          <p style={{ fontSize: "1rem", color: "var(--text-primary)", marginBottom: "0.375rem" }}>Genereaza un raport AI</p>
           <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
             Apasa butonul de mai sus pentru a primi o analiza completa a activitatii tale.
           </p>

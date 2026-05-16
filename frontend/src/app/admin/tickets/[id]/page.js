@@ -66,7 +66,7 @@ export default function AdminTicketDetail() {
   }
 
   if (!ticket) {
-    return <p style={{ color: "white", textAlign: "center" }}>Ticketul nu a fost gasit.</p>;
+    return <p style={{ color: "var(--text-primary)", textAlign: "center" }}>Ticketul nu a fost gasit.</p>;
   }
 
   const cardStyle = {
@@ -90,10 +90,10 @@ export default function AdminTicketDetail() {
             <ArrowLeft style={{ width: "14px", height: "14px" }} /> Inapoi la pagina principala
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "white", margin: 0 }}>{ticket.subject}</h1>
+            <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{ticket.subject}</h1>
             <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: st.bg, color: st.color }}>{st.label}</span>
           </div>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "0.25rem 0 0" }}>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0.25rem 0 0" }}>
             De la: {ticket.user.full_name || ticket.user.username} ({ticket.user.email}) • {new Date(ticket.created_at).toLocaleDateString("ro-RO")}
           </p>
         </div>
@@ -117,14 +117,14 @@ export default function AdminTicketDetail() {
               <div key={msg.id} style={{ display: "flex", gap: "0.75rem", justifyContent: msg.is_admin ? "flex-end" : "flex-start" }}>
                 {!msg.is_admin && (
                   <div style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: "#7c3aed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <User style={{ width: "16px", height: "16px", color: "white" }} />
+                    <User style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
                   </div>
                 )}
                 <div style={{
                   maxWidth: "70%", padding: "0.75rem 1rem", borderRadius: "1rem",
                   ...(msg.is_admin
-                    ? { backgroundColor: "#2563eb", color: "white", borderBottomRightRadius: "0.25rem" }
-                    : { backgroundColor: "#334155", color: "#e2e8f0", borderBottomLeftRadius: "0.25rem" }),
+                    ? { backgroundColor: "#2563eb", color: "var(--text-primary)", borderBottomRightRadius: "0.25rem" }
+                    : { backgroundColor: "var(--bg-elevated)", color: "var(--text-primary)", borderBottomLeftRadius: "0.25rem" }),
                 }}>
                   <p style={{ fontSize: "0.6875rem", fontWeight: 600, margin: "0 0 0.25rem", opacity: 0.7 }}>
                     {msg.is_admin ? "Admin" : msg.sender_name}
@@ -136,7 +136,7 @@ export default function AdminTicketDetail() {
                 </div>
                 {msg.is_admin && (
                   <div style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Shield style={{ width: "16px", height: "16px", color: "white" }} />
+                    <Shield style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
                   </div>
                 )}
               </div>
@@ -154,12 +154,12 @@ export default function AdminTicketDetail() {
                 style={{
                   flex: 1, padding: "0.75rem 1rem", borderRadius: "0.625rem",
                   backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                  color: "white", fontSize: "0.875rem", outline: "none",
+                  color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
                 }} />
               <button type="submit" disabled={sending || !reply.trim()}
                 style={{
                   padding: "0.75rem 1.25rem", borderRadius: "0.625rem",
-                  backgroundColor: "#2563eb", border: "none", color: "white",
+                  backgroundColor: "#2563eb", border: "none", color: "var(--text-primary)",
                   cursor: sending ? "not-allowed" : "pointer",
                   opacity: sending || !reply.trim() ? 0.5 : 1,
                   display: "flex", alignItems: "center", gap: "0.375rem",

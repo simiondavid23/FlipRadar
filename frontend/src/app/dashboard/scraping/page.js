@@ -112,17 +112,17 @@ export default function ScrapingPage() {
   };
 
   const allResults = getAllResults().filter(r => !r.error && !r.message);
-  const inputStyle = { backgroundColor: "#0f172a", border: "1px solid #334155" };
-  const cardStyle = { backgroundColor: "#1e293b", border: "1px solid #334155" };
+  const inputStyle = { backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)" };
+  const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)" };
 
   return (
     <div>
       <div style={{ marginBottom: "2rem" }}>
-        <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "white", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <Globe style={{ width: "2rem", height: "2rem", color: "#06b6d4" }} />
           Web Scraping
         </h1>
-        <p style={{ color: "#94a3b8", marginTop: "0.5rem" }}>Cauta produse pe Altex.ro, Sole.ro, Farmacia Tei, eMAG.ro si PCGarage.ro</p>
+        <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>Cauta produse pe Altex.ro, Sole.ro, Farmacia Tei, eMAG.ro si PCGarage.ro</p>
       </div>
 
       {/* Search */}
@@ -130,20 +130,20 @@ export default function ScrapingPage() {
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "stretch" }}>
           <select value={searchType} onChange={(e) => setSearchType(e.target.value)}
             title="Tipul codului dupa care cautam"
-            style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem", minWidth: "150px" }}>
+            style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "var(--text-primary)", fontSize: "0.875rem", minWidth: "150px" }}>
             <option value="name">Cauta dupa: Nume</option>
             <option value="ean">Cauta dupa: EAN</option>
             <option value="sku">Cauta dupa: SKU</option>
           </select>
           <div style={{ flex: 1, minWidth: "200px", position: "relative" }}>
-            <Search style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "#94a3b8" }} />
+            <Search style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-secondary)" }} />
             <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder={SEARCH_TYPE_PLACEHOLDERS[searchType]}
               inputMode={searchType === "ean" ? "numeric" : "text"}
-              style={{ ...inputStyle, width: "100%", padding: "0.75rem 1rem 0.75rem 2.5rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem", outline: "none" }} />
+              style={{ ...inputStyle, width: "100%", padding: "0.75rem 1rem 0.75rem 2.5rem", borderRadius: "0.5rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none" }} />
           </div>
           <select value={source} onChange={(e) => setSource(e.target.value)}
-            style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "white", fontSize: "0.875rem" }}>
+            style={{ ...inputStyle, padding: "0.75rem 1rem", borderRadius: "0.5rem", color: "var(--text-primary)", fontSize: "0.875rem" }}>
             <option value="all">Toate sursele</option>
             <option value="altex">Altex.ro</option>
             <option value="sole">Sole.ro</option>
@@ -152,7 +152,7 @@ export default function ScrapingPage() {
             <option value="pcgarage">PCGarage.ro</option>
           </select>
           <button type="submit" disabled={loading}
-            style={{ padding: "0.75rem 1.5rem", borderRadius: "0.5rem", backgroundColor: "#06b6d4", color: "white", fontWeight: 500, border: "none", cursor: "pointer", opacity: loading ? 0.5 : 1 }}>
+            style={{ padding: "0.75rem 1.5rem", borderRadius: "0.5rem", backgroundColor: "#06b6d4", color: "var(--text-primary)", fontWeight: 500, border: "none", cursor: "pointer", opacity: loading ? 0.5 : 1 }}>
             {loading ? "Se cauta..." : "Cauta"}
           </button>
         </div>
@@ -162,7 +162,7 @@ export default function ScrapingPage() {
           </p>
         )}
         {searchType !== "name" && !eanHint && (
-          <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#94a3b8" }}>
+          <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
             Nu toate magazinele indexeaza dupa {searchType === "ean" ? "EAN" : "SKU"}. Sursele care nu o fac vor returna 0 rezultate.
           </p>
         )}
@@ -172,13 +172,13 @@ export default function ScrapingPage() {
       {loading && (
         <div style={{ ...cardStyle, borderRadius: "1rem", padding: "3rem", textAlign: "center" }}>
           <div style={{ width: "2.5rem", height: "2.5rem", border: "4px solid #06b6d4", borderTop: "4px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 1rem" }} />
-          <p style={{ color: "#94a3b8" }}>Se cauta produse pe {source === "all" ? "toate sursele" : source}...</p>
+          <p style={{ color: "var(--text-secondary)" }}>Se cauta produse pe {source === "all" ? "toate sursele" : source}...</p>
         </div>
       )}
 
       {results && !loading && (
         <div>
-          <p style={{ color: "#94a3b8", marginBottom: "1rem", fontSize: "0.875rem" }}>
+          <p style={{ color: "var(--text-secondary)", marginBottom: "1rem", fontSize: "0.875rem" }}>
             {allResults.length} produse gasite {results.query ? `pentru "${results.query}"` : ""}
           </p>
 
@@ -192,7 +192,7 @@ export default function ScrapingPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.375rem", flexWrap: "wrap" }}>
-                          <h3 style={{ fontWeight: 600, color: "white", fontSize: "1rem" }}>{product.name}</h3>
+                          <h3 style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "1rem" }}>{product.name}</h3>
                           <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: style.bg, color: style.fg }}>{product.source}</span>
                           {product.ean && (
                             <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(250,204,21,0.15)", color: "#facc15" }}>
@@ -200,7 +200,7 @@ export default function ScrapingPage() {
                             </span>
                           )}
                           {!product.ean && product.sku && (
-                            <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(148,163,184,0.1)", color: "#94a3b8" }}>
+                            <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(148,163,184,0.1)", color: "var(--text-secondary)" }}>
                               SKU: {product.sku}
                             </span>
                           )}
@@ -218,7 +218,7 @@ export default function ScrapingPage() {
                               <>
                                 <span style={{
                                   fontSize: "0.875rem",
-                                  color: "#94a3b8",
+                                  color: "var(--text-secondary)",
                                   textDecoration: "line-through",
                                 }}>
                                   {product.original_price.toFixed(2)} {cur}
@@ -245,16 +245,16 @@ export default function ScrapingPage() {
                       </div>
                       <div style={{ display: "flex", gap: "0.375rem" }}>
                         <button onClick={() => saveProduct(product)} title="Salveaza in baza de date"
-                          style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "#94a3b8", cursor: "pointer" }}>
+                          style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
                           <Plus style={{ width: "1.25rem", height: "1.25rem" }} />
                         </button>
                         <button onClick={() => addToFavorites(product)} title="Adauga la favorite"
-                          style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "#94a3b8", cursor: "pointer" }}>
+                          style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
                           <Heart style={{ width: "1.25rem", height: "1.25rem" }} />
                         </button>
                         {product.source_url && (
                           <a href={product.source_url} target="_blank" rel="noopener noreferrer"
-                            style={{ padding: "0.5rem", borderRadius: "0.5rem", color: "#94a3b8" }}>
+                            style={{ padding: "0.5rem", borderRadius: "0.5rem", color: "var(--text-secondary)" }}>
                             <ExternalLink style={{ width: "1.25rem", height: "1.25rem" }} />
                           </a>
                         )}
@@ -266,9 +266,9 @@ export default function ScrapingPage() {
             </div>
           ) : (
             <div style={{ ...cardStyle, borderRadius: "1rem", padding: "3rem", textAlign: "center" }}>
-              <ShoppingBag style={{ width: "4rem", height: "4rem", margin: "0 auto 1rem", color: "#475569" }} />
-              <p style={{ color: "white", marginBottom: "0.5rem" }}>Nu s-au gasit produse</p>
-              <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Incearca alt termen de cautare sau alta sursa.</p>
+              <ShoppingBag style={{ width: "4rem", height: "4rem", margin: "0 auto 1rem", color: "var(--text-secondary)" }} />
+              <p style={{ color: "var(--text-primary)", marginBottom: "0.5rem" }}>Nu s-au gasit produse</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Incearca alt termen de cautare sau alta sursa.</p>
             </div>
           )}
         </div>
@@ -276,9 +276,9 @@ export default function ScrapingPage() {
 
       {!results && !loading && (
         <div style={{ ...cardStyle, borderRadius: "1rem", padding: "3rem", textAlign: "center" }}>
-          <Globe style={{ width: "4rem", height: "4rem", margin: "0 auto 1rem", color: "#475569" }} />
-          <p style={{ color: "white", fontSize: "1.125rem", marginBottom: "0.5rem" }}>Cauta produse pe magazinele online</p>
-          <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Introdu un termen de cautare pentru a gasi produse pe Altex.ro, Sole.ro, Farmacia Tei, eMAG.ro si PCGarage.ro</p>
+          <Globe style={{ width: "4rem", height: "4rem", margin: "0 auto 1rem", color: "var(--text-secondary)" }} />
+          <p style={{ color: "var(--text-primary)", fontSize: "1.125rem", marginBottom: "0.5rem" }}>Cauta produse pe magazinele online</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Introdu un termen de cautare pentru a gasi produse pe Altex.ro, Sole.ro, Farmacia Tei, eMAG.ro si PCGarage.ro</p>
         </div>
       )}
     </div>

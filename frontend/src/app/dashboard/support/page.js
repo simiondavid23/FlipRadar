@@ -148,11 +148,11 @@ export default function SupportPage() {
   const statusConfig = {
     open: { label: "Deschis", color: "#60a5fa", bg: "rgba(59,130,246,0.15)", icon: AlertCircle },
     in_progress: { label: "In curs", color: "#facc15", bg: "rgba(234,179,8,0.15)", icon: Clock },
-    closed: { label: "Inchis", color: "#94a3b8", bg: "rgba(148,163,184,0.15)", icon: CheckCircle2 },
+    closed: { label: "Inchis", color: "var(--text-secondary)", bg: "rgba(148,163,184,0.15)", icon: CheckCircle2 },
   };
 
   const priorityConfig = {
-    low: { label: "Scazuta", color: "#94a3b8" },
+    low: { label: "Scazuta", color: "var(--text-secondary)" },
     normal: { label: "Normala", color: "#60a5fa" },
     high: { label: "Ridicata", color: "#f87171" },
   };
@@ -164,9 +164,9 @@ export default function SupportPage() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.25rem" }}>
             <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-              <MessageCircle style={{ width: "20px", height: "20px", color: "white" }} />
+              <MessageCircle style={{ width: "20px", height: "20px", color: "var(--text-primary)" }} />
             </div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>Support</h1>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Asistent AI</h1>
           </div>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginLeft: "3rem" }}>
             Intreaba AI-ul sau deschide un ticket catre echipa de suport
@@ -189,7 +189,7 @@ export default function SupportPage() {
                 display: "flex", alignItems: "center", gap: "0.375rem",
                 padding: "0.5rem 0.75rem", borderRadius: "0.5rem",
                 backgroundColor: "transparent", border: "1px solid var(--border-color)",
-                color: "#94a3b8", cursor: "pointer", fontSize: "0.8125rem",
+                color: "var(--text-secondary)", cursor: "pointer", fontSize: "0.8125rem",
               }}
             >
               <Trash2 style={{ width: "14px", height: "14px" }} /> Sterge istoric
@@ -205,36 +205,36 @@ export default function SupportPage() {
           borderRadius: "0.75rem", padding: "1.5rem", marginBottom: "1.5rem",
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <h2 style={{ color: "white", fontWeight: 600, margin: 0, fontSize: "1rem" }}>
+            <h2 style={{ color: "var(--text-primary)", fontWeight: 600, margin: 0, fontSize: "1rem" }}>
               <Ticket style={{ width: "16px", height: "16px", display: "inline", marginRight: "0.375rem", color: "#facc15" }} />
               Creeaza ticket nou
             </h2>
             <button onClick={() => setShowTicketForm(false)}
-              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.25rem" }}>
+              style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: "1.25rem" }}>
               ×
             </button>
           </div>
           <form onSubmit={submitTicket}>
             <div style={{ marginBottom: "0.75rem" }}>
-              <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Subiect *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Subiect *</label>
               <input required value={ticketForm.subject}
                 onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })}
                 placeholder="Ex: Problema la creare alerta"
                 style={{
                   backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                  borderRadius: "0.5rem", color: "white", padding: "0.625rem 0.875rem",
+                  borderRadius: "0.5rem", color: "var(--text-primary)", padding: "0.625rem 0.875rem",
                   fontSize: "0.875rem", width: "100%", outline: "none",
                 }}
               />
             </div>
             <div style={{ marginBottom: "1rem" }}>
-              <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Descriere *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Descriere *</label>
               <textarea required value={ticketForm.message}
                 onChange={(e) => setTicketForm({ ...ticketForm, message: e.target.value })}
                 placeholder="Descrie problema cu cat mai multe detalii..."
                 style={{
                   backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                  borderRadius: "0.5rem", color: "white", padding: "0.625rem 0.875rem",
+                  borderRadius: "0.5rem", color: "var(--text-primary)", padding: "0.625rem 0.875rem",
                   fontSize: "0.875rem", width: "100%", outline: "none", minHeight: "100px",
                   resize: "vertical", fontFamily: "inherit",
                 }}
@@ -259,7 +259,7 @@ export default function SupportPage() {
               <button type="button" onClick={() => setShowTicketForm(false)}
                 style={{
                   padding: "0.625rem 1rem", borderRadius: "0.5rem",
-                  backgroundColor: "transparent", color: "#94a3b8",
+                  backgroundColor: "transparent", color: "var(--text-secondary)",
                   border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.875rem",
                 }}
               >
@@ -278,7 +278,7 @@ export default function SupportPage() {
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
             <div>
-              <h2 style={{ color: "white", fontWeight: 600, margin: 0, fontSize: "1rem" }}>
+              <h2 style={{ color: "var(--text-primary)", fontWeight: 600, margin: 0, fontSize: "1rem" }}>
                 #{activeTicket.id} — {activeTicket.subject}
               </h2>
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.375rem", alignItems: "center" }}>
@@ -298,7 +298,7 @@ export default function SupportPage() {
               </div>
             </div>
             <button onClick={() => setActiveTicket(null)}
-              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.25rem" }}>
+              style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: "1.25rem" }}>
               ×
             </button>
           </div>
@@ -313,11 +313,11 @@ export default function SupportPage() {
                   <span style={{ fontSize: "0.75rem", fontWeight: 600, color: m.is_admin ? "#c4b5fd" : "#93c5fd" }}>
                     {m.is_admin ? "Suport" : m.sender_name}
                   </span>
-                  <span style={{ fontSize: "0.6875rem", color: "#94a3b8" }}>
+                  <span style={{ fontSize: "0.6875rem", color: "var(--text-secondary)" }}>
                     {new Date(m.created_at).toLocaleString("ro-RO")}
                   </span>
                 </div>
-                <p style={{ color: "#e2e8f0", fontSize: "0.8125rem", margin: 0, whiteSpace: "pre-wrap" }}>{m.content}</p>
+                <p style={{ color: "var(--text-primary)", fontSize: "0.8125rem", margin: 0, whiteSpace: "pre-wrap" }}>{m.content}</p>
               </div>
             ))}
           </div>
@@ -328,12 +328,12 @@ export default function SupportPage() {
                 style={{
                   flex: 1, padding: "0.625rem 0.875rem", borderRadius: "0.5rem",
                   backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                  color: "white", fontSize: "0.875rem", outline: "none",
+                  color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
                 }}
               />
               <button type="submit"
                 style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "#2563eb",
-                  border: "none", color: "white", cursor: "pointer", fontSize: "0.875rem" }}>
+                  border: "none", color: "var(--text-primary)", cursor: "pointer", fontSize: "0.875rem" }}>
                 Trimite
               </button>
             </form>
@@ -347,7 +347,7 @@ export default function SupportPage() {
           backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
           borderRadius: "0.75rem", padding: "1rem 1.25rem", marginBottom: "1.5rem",
         }}>
-          <h3 style={{ color: "white", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.75rem" }}>
+          <h3 style={{ color: "var(--text-primary)", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.75rem" }}>
             <Ticket style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem", color: "#facc15" }} />
             Ticketele mele ({tickets.length})
           </h3>
@@ -368,7 +368,7 @@ export default function SupportPage() {
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <span style={{ color: "white", fontWeight: 500, fontSize: "0.875rem" }}>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 500, fontSize: "0.875rem" }}>
                         #{t.id} · {t.subject}
                       </span>
                       <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: sc.bg, color: sc.color }}>
@@ -383,7 +383,7 @@ export default function SupportPage() {
                         </span>
                       )}
                     </div>
-                    <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0.25rem 0 0" }}>
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>
                       {t.message_count} mesaje · {new Date(t.updated_at).toLocaleDateString("ro-RO")}
                     </p>
                   </div>
@@ -405,14 +405,14 @@ export default function SupportPage() {
             {messages.length === 0 && (
               <div style={{ textAlign: "center", padding: "3rem 0" }}>
                 <Bot style={{ width: "3rem", height: "3rem", margin: "0 auto 1rem", color: "#60a5fa", opacity: 0.5 }} />
-                <p style={{ fontSize: "1rem", color: "white", marginBottom: "0.375rem" }}>Bine ai venit la FlipRadar AI Support!</p>
-                <p style={{ fontSize: "0.8125rem", color: "#94a3b8", marginBottom: "1.5rem" }}>Pot sa te ajut cu intrebari despre:</p>
+                <p style={{ fontSize: "1rem", color: "var(--text-primary)", marginBottom: "0.375rem" }}>Bine ai venit la FlipRadar AI Support!</p>
+                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "1.5rem" }}>Pot sa te ajut cu intrebari despre:</p>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem", maxWidth: "400px", margin: "0 auto" }}>
                   {suggestedQuestions.map((q) => (
                     <button key={q} onClick={() => setInput(q)}
                       style={{
                         textAlign: "left", fontSize: "0.8125rem", padding: "0.75rem",
-                        borderRadius: "0.625rem", color: "#cbd5e1",
+                        borderRadius: "0.625rem", color: "var(--text-secondary)",
                         backgroundColor: "transparent", border: "1px solid var(--border-color)",
                         cursor: "pointer", transition: "all 0.15s ease",
                       }}
@@ -431,20 +431,20 @@ export default function SupportPage() {
                 <div key={i} style={{ display: "flex", gap: "0.75rem", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
                   {msg.role === "assistant" && (
                     <div style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <Bot style={{ width: "16px", height: "16px", color: "white" }} />
+                      <Bot style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
                     </div>
                   )}
                   <div style={{
                     maxWidth: "70%", padding: "0.75rem 1rem", borderRadius: "1rem",
                     ...(msg.role === "user"
-                      ? { backgroundColor: "#2563eb", color: "white", borderBottomRightRadius: "0.25rem" }
-                      : { backgroundColor: "#334155", color: "#e2e8f0", borderBottomLeftRadius: "0.25rem" }),
+                      ? { backgroundColor: "#2563eb", color: "var(--text-primary)", borderBottomRightRadius: "0.25rem" }
+                      : { backgroundColor: "var(--bg-elevated)", color: "var(--text-primary)", borderBottomLeftRadius: "0.25rem" }),
                   }}>
                     <p style={{ fontSize: "0.8125rem", whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.6 }}>{msg.content}</p>
                   </div>
                   {msg.role === "user" && (
                     <div style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: "#7c3aed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <User style={{ width: "16px", height: "16px", color: "white" }} />
+                      <User style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
                     </div>
                   )}
                 </div>
@@ -453,9 +453,9 @@ export default function SupportPage() {
               {loading && (
                 <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-start" }}>
                   <div style={{ width: "32px", height: "32px", borderRadius: "50%", backgroundColor: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Bot style={{ width: "16px", height: "16px", color: "white" }} />
+                    <Bot style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
                   </div>
-                  <div style={{ padding: "0.75rem 1rem", borderRadius: "1rem", backgroundColor: "#334155", borderBottomLeftRadius: "0.25rem" }}>
+                  <div style={{ padding: "0.75rem 1rem", borderRadius: "1rem", backgroundColor: "var(--bg-elevated)", borderBottomLeftRadius: "0.25rem" }}>
                     <div style={{ display: "flex", gap: "4px" }}>
                       <div style={{ width: "8px", height: "8px", backgroundColor: "#60a5fa", borderRadius: "50%", animation: "bounce 1s infinite" }} />
                       <div style={{ width: "8px", height: "8px", backgroundColor: "#60a5fa", borderRadius: "50%", animation: "bounce 1s infinite 0.15s" }} />
@@ -479,7 +479,7 @@ export default function SupportPage() {
                 <Headphones style={{ width: "18px", height: "18px", color: "#facc15", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: "200px" }}>
                   <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#facc15", margin: 0 }}>Doresti sa contactezi echipa de suport?</p>
-                  <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0.25rem 0 0" }}>Deschide un ticket si vom reveni catre tine.</p>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>Deschide un ticket si vom reveni catre tine.</p>
                 </div>
                 <button onClick={() => openTicketForm(true)}
                   style={{
@@ -490,7 +490,7 @@ export default function SupportPage() {
                   Creeaza ticket
                 </button>
                 <button onClick={() => setShowStaffForm(false)}
-                  style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "0.8125rem" }}>
+                  style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: "0.8125rem" }}>
                   Inchide
                 </button>
               </div>
@@ -505,12 +505,12 @@ export default function SupportPage() {
                 style={{
                   flex: 1, padding: "0.75rem 1rem", borderRadius: "0.625rem",
                   backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                  color: "white", fontSize: "0.875rem", outline: "none",
+                  color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
                 }} />
               <button type="submit" disabled={loading || !input.trim()}
                 style={{
                   padding: "0.75rem 1rem", borderRadius: "0.625rem",
-                  backgroundColor: "#2563eb", border: "none", color: "white",
+                  backgroundColor: "#2563eb", border: "none", color: "var(--text-primary)",
                   cursor: loading || !input.trim() ? "not-allowed" : "pointer",
                   opacity: loading || !input.trim() ? 0.5 : 1,
                 }}>

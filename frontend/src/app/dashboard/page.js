@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
-import { dashboardAPI } from "@/lib/api";
+import { dashboardAPI, productsAPI } from "@/lib/api";
 import Link from "next/link";
 import {
   Package, Eye, Bell, TrendingUp, AlertTriangle, Database,
-  Search, Boxes, ArrowRight, CalendarDays, ShoppingCart, Euro
+  Search, Boxes, ArrowRight, CalendarDays, ShoppingCart, Euro, Target
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -40,13 +40,13 @@ function StatCard({ title, value, icon: Icon, color, bgGlow, subtitle, href, val
               justifyContent: "center",
             }}
           >
-            <Icon style={{ width: "18px", height: "18px", color: "white" }} />
+            <Icon style={{ width: "18px", height: "18px", color: "var(--text-primary)" }} />
           </div>
           <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>{title}</p>
         </div>
-        <p style={{ fontSize: valueSize || "2.25rem", fontWeight: 700, color: valueColor || "white", lineHeight: 1, margin: 0 }}>{value}</p>
+        <p style={{ fontSize: valueSize || "2.25rem", fontWeight: 700, color: valueColor || "var(--text-primary)", lineHeight: 1, margin: 0 }}>{value}</p>
         {subtitle && (
-          <p style={{ fontSize: "0.75rem", marginTop: "0.5rem", color: "var(--text-secondary)", margin: "0.5rem 0 0" }}>{subtitle}</p>
+          <p style={{ fontSize: "0.75rem", marginTop: "0.5rem", color: "var(--text-muted)", margin: "0.5rem 0 0" }}>{subtitle}</p>
         )}
       </div>
     </>
@@ -124,13 +124,13 @@ function QuickAction({ href, icon: Icon, title, description, color }) {
           justifyContent: "center",
         }}
       >
-        <Icon style={{ width: "18px", height: "18px", color: "white" }} />
+        <Icon style={{ width: "18px", height: "18px", color: "var(--text-primary)" }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontWeight: 500, color: "white", fontSize: "0.875rem" }}>{title}</p>
+        <p style={{ fontWeight: 500, color: "var(--text-primary)", fontSize: "0.875rem" }}>{title}</p>
         <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{description}</p>
       </div>
-      <ArrowRight style={{ width: "16px", height: "16px", color: "#64748b", flexShrink: 0 }} />
+      <ArrowRight style={{ width: "16px", height: "16px", color: "var(--text-muted)", flexShrink: 0 }} />
     </Link>
   );
 }
@@ -150,7 +150,7 @@ function ActivityItem({ icon: Icon, label, value, color, isLast }) {
         <Icon style={{ width: "15px", height: "15px", color: color }} />
         <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{label}</span>
       </div>
-      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "white" }}>{value}</span>
+      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>{value}</span>
     </div>
   );
 }
@@ -158,6 +158,7 @@ function ActivityItem({ icon: Icon, label, value, color, isLast }) {
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [productsStats, setProductsStats] = useState(null);
   const [timeseries, setTimeseries] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -168,10 +169,11 @@ export default function DashboardPage() {
 
   const loadAll = async () => {
     try {
-      const [statsRes, tsRes, topRes] = await Promise.all([
+      const [statsRes, tsRes, topRes, productsStatsRes] = await Promise.all([
         dashboardAPI.getStats(),
         dashboardAPI.getSalesTimeseries(30),
         dashboardAPI.getTopProducts(5),
+        productsAPI.getStats().catch(() => ({ data: null })),
       ]);
       setStats(statsRes.data);
       setTimeseries((tsRes.data?.data || []).map((d) => ({
@@ -179,12 +181,28 @@ export default function DashboardPage() {
         label: new Date(d.day).toLocaleDateString("ro-RO", { day: "2-digit", month: "short" }),
       })));
       setTopProducts(topRes.data || []);
+      setProductsStats(productsStatsRes.data);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  const hasResaleData = productsStats && productsStats.produse_cu_pret_revanzare > 0;
+  const roiMediu = productsStats?.roi_mediu ?? 0;
+  let roiColor = "#4ade80";
+  let roiBgGlow = "radial-gradient(circle, rgba(34,197,94,0.6), transparent)";
+  let roiSubtitle = "Portofoliu excelent";
+  if (roiMediu < 10) {
+    roiColor = "#f87171";
+    roiBgGlow = "radial-gradient(circle, rgba(239,68,68,0.6), transparent)";
+    roiSubtitle = "Necesita optimizare";
+  } else if (roiMediu < 25) {
+    roiColor = "#facc15";
+    roiBgGlow = "radial-gradient(circle, rgba(250,204,21,0.6), transparent)";
+    roiSubtitle = "Portofoliu bun";
+  }
 
   if (loading) {
     return (
@@ -216,7 +234,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "2rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.625rem", fontWeight: 700, color: "white", margin: 0 }}>
+          <h1 style={{ fontSize: "1.625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
             Bine ai venit, {user?.full_name || user?.username}! 👋
           </h1>
           <p style={{ color: "var(--text-secondary)", marginTop: "0.375rem", fontSize: "0.875rem" }}>
@@ -235,7 +253,7 @@ export default function DashboardPage() {
           }}
         >
           <CalendarDays style={{ width: "14px", height: "14px", color: "#60a5fa" }} />
-          <span style={{ fontSize: "0.8125rem", color: "#94a3b8", textTransform: "capitalize" }}>{dateStr}</span>
+          <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", textTransform: "capitalize" }}>{dateStr}</span>
         </div>
       </div>
 
@@ -310,6 +328,94 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Profitability Summary Row */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        {hasResaleData ? (
+          <StatCard
+            title="Profit estimat total"
+            value={`${Number(productsStats.profit_estimat_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })}`}
+            icon={TrendingUp}
+            color="#16a34a"
+            bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
+            subtitle={`${productsStats.produse_profitabile || 0} produse profitabile`}
+            valueColor="#4ade80"
+            valueSize="2rem"
+          />
+        ) : (
+          <div
+            style={{
+              backgroundColor: "var(--bg-card)",
+              border: "1px dashed var(--border-color)",
+              borderRadius: "1rem",
+              padding: "1.5rem",
+              display: "flex", alignItems: "center", gap: "0.75rem",
+            }}
+          >
+            <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#16a34a", display: "flex" }}>
+              <TrendingUp style={{ width: "18px", height: "18px", color: "var(--text-primary)" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>Profit estimat total</p>
+              <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.5rem 0 0", lineHeight: 1.5 }}>
+                Adauga preturi de revanzare pentru a vedea profitabilitatea
+              </p>
+              <Link href="/dashboard/products" style={{
+                display: "inline-block", marginTop: "0.5rem",
+                fontSize: "0.75rem", color: "var(--blue-light)", textDecoration: "none", fontWeight: 500,
+              }}>
+                Mergi la produse →
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {hasResaleData ? (
+          <StatCard
+            title="ROI mediu portofoliu"
+            value={`${Number(roiMediu).toFixed(2)}%`}
+            icon={Target}
+            color={roiColor}
+            bgGlow={roiBgGlow}
+            subtitle={roiSubtitle}
+            valueColor={roiColor}
+            valueSize="2rem"
+          />
+        ) : (
+          <div
+            style={{
+              backgroundColor: "var(--bg-card)",
+              border: "1px dashed var(--border-color)",
+              borderRadius: "1rem",
+              padding: "1.5rem",
+              display: "flex", alignItems: "center", gap: "0.75rem",
+            }}
+          >
+            <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#facc15", display: "flex" }}>
+              <Target style={{ width: "18px", height: "18px", color: "var(--text-primary)" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>ROI mediu portofoliu</p>
+              <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.5rem 0 0", lineHeight: 1.5 }}>
+                Adauga preturi de revanzare pentru a vedea profitabilitatea
+              </p>
+              <Link href="/dashboard/products" style={{
+                display: "inline-block", marginTop: "0.5rem",
+                fontSize: "0.75rem", color: "var(--blue-light)", textDecoration: "none", fontWeight: 500,
+              }}>
+                Mergi la produse →
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Sales chart (last 30 days) */}
       <div
         style={{
@@ -321,7 +427,7 @@ export default function DashboardPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", margin: 0 }}>Vanzari si profit (ultimele 30 de zile)</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Vanzari si profit (ultimele 30 de zile)</h2>
           <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Valori in EUR</span>
         </div>
         <div style={{ width: "100%", height: 240 }}>
@@ -341,9 +447,9 @@ export default function DashboardPage() {
               <XAxis dataKey="label" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
-                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "0.5rem", fontSize: "0.75rem" }}
-                labelStyle={{ color: "#94a3b8" }}
-                itemStyle={{ color: "#e2e8f0" }}
+                contentStyle={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                labelStyle={{ color: "var(--text-secondary)" }}
+                itemStyle={{ color: "var(--text-primary)" }}
                 formatter={(v, name) => [`${Number(v).toFixed(2)} EUR`, name === "revenue_eur" ? "Venit" : "Profit"]}
               />
               <Area type="monotone" dataKey="revenue_eur" stroke="#3b82f6" strokeWidth={2} fill="url(#revGrad)" />
@@ -364,7 +470,7 @@ export default function DashboardPage() {
             marginBottom: "1.5rem",
           }}
         >
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", marginBottom: "1rem" }}>Top produse dupa venit</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Top produse dupa venit</h2>
           <div style={{ width: "100%", height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topProducts} layout="vertical" margin={{ top: 5, right: 16, left: 16, bottom: 0 }}>
@@ -372,9 +478,9 @@ export default function DashboardPage() {
                 <XAxis type="number" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
                 <YAxis type="category" dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} width={140} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "0.5rem", fontSize: "0.75rem" }}
-                  labelStyle={{ color: "#94a3b8" }}
-                  itemStyle={{ color: "#e2e8f0" }}
+                  contentStyle={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                  labelStyle={{ color: "var(--text-secondary)" }}
+                  itemStyle={{ color: "var(--text-primary)" }}
                   formatter={(v) => [`${Number(v).toFixed(2)} EUR`, "Venit"]}
                 />
                 <Bar dataKey="revenue_eur" fill="#9333ea" radius={[0, 4, 4, 0]} />
@@ -401,7 +507,7 @@ export default function DashboardPage() {
             padding: "1.5rem",
           }}
         >
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", marginBottom: "1rem" }}>Actiuni rapide</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Actiuni rapide</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             <QuickAction
               href="/dashboard/products"
@@ -436,7 +542,7 @@ export default function DashboardPage() {
             padding: "1.5rem",
           }}
         >
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", marginBottom: "1rem" }}>Rezumat activitate</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Rezumat activitate</h2>
           <div>
             <ActivityItem icon={AlertTriangle} label="Alerte declansate" value={stats?.triggered_alerts || 0} color="#facc15" />
             <ActivityItem icon={Database} label="Inregistrari de pret" value={stats?.total_price_records || 0} color="#22d3ee" />

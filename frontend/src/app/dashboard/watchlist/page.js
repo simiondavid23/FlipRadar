@@ -78,7 +78,7 @@ export default function WatchlistPage() {
 
   const selectStyle = {
     backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem", padding: "0.375rem 0.625rem", color: "white",
+    borderRadius: "0.5rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
     fontSize: "0.8125rem", outline: "none", cursor: "pointer",
   };
 
@@ -87,9 +87,9 @@ export default function WatchlistPage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>Watchlist</h1>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Radar Preturi</h1>
           <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-            Produsele pe care le urmaresti ({items.length} produse)
+            Monitorizeaza evolutia preturilor in timp real ({items.length} produse)
           </p>
         </div>
         {items.length > 0 && (
@@ -121,7 +121,7 @@ export default function WatchlistPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
-                    <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", margin: 0 }}>
+                    <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                       {item.product?.name || `Produs #${item.product_id}`}
                     </h3>
                     {item.product?.source && (
@@ -146,7 +146,7 @@ export default function WatchlistPage() {
                           autoFocus
                           style={{
                             flex: 1, backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                            borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "white",
+                            borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                             fontSize: "0.8125rem", outline: "none",
                           }}
                         />
@@ -160,7 +160,7 @@ export default function WatchlistPage() {
                         <button
                           onClick={cancelEdit}
                           title="Anuleaza"
-                          style={{ padding: "0.375rem", borderRadius: "0.375rem", backgroundColor: "rgba(148,163,184,0.15)", color: "#94a3b8", border: "none", cursor: "pointer" }}
+                          style={{ padding: "0.375rem", borderRadius: "0.375rem", backgroundColor: "rgba(148,163,184,0.15)", color: "var(--text-secondary)", border: "none", cursor: "pointer" }}
                         >
                           <X style={{ width: "14px", height: "14px" }} />
                         </button>
@@ -172,7 +172,7 @@ export default function WatchlistPage() {
                             &ldquo;{item.notes}&rdquo;
                           </span>
                         ) : (
-                          <span style={{ fontSize: "0.8125rem", fontStyle: "italic", color: "#475569" }}>
+                          <span style={{ fontSize: "0.8125rem", fontStyle: "italic", color: "var(--text-secondary)" }}>
                             Fara nota
                           </span>
                         )}
@@ -188,7 +188,7 @@ export default function WatchlistPage() {
                     <button
                       onClick={() => startEdit(item)}
                       title="Editeaza nota"
-                      style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", transition: "all 0.15s ease" }}
+                      style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease" }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(59,130,246,0.1)"; e.currentTarget.style.color = "#60a5fa"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#94a3b8"; }}
                     >
@@ -201,7 +201,7 @@ export default function WatchlistPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                       title="Deschide sursa"
-                      style={{ padding: "0.5rem", borderRadius: "0.5rem", display: "flex", color: "#94a3b8", textDecoration: "none", transition: "all 0.15s ease" }}
+                      style={{ padding: "0.5rem", borderRadius: "0.5rem", display: "flex", color: "var(--text-secondary)", textDecoration: "none", transition: "all 0.15s ease" }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "#60a5fa"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#94a3b8"; }}
                     >
@@ -211,7 +211,7 @@ export default function WatchlistPage() {
                   <button
                     onClick={() => handleRemove(item.id)}
                     title="Elimina din watchlist"
-                    style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", transition: "all 0.15s ease" }}
+                    style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease" }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)"; e.currentTarget.style.color = "#f87171"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#94a3b8"; }}
                   >
@@ -231,7 +231,7 @@ export default function WatchlistPage() {
           textAlign: "center",
         }}>
           <Eye style={{ width: "2.5rem", height: "2.5rem", margin: "0 auto 0.75rem", color: "var(--text-secondary)" }} />
-          <p style={{ fontSize: "1rem", color: "white", marginBottom: "0.375rem" }}>Watchlist-ul este gol</p>
+          <p style={{ fontSize: "1rem", color: "var(--text-primary)", marginBottom: "0.375rem" }}>Watchlist-ul este gol</p>
           <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
             Adauga produse din pagina de cautare pentru a le urmari aici.
           </p>

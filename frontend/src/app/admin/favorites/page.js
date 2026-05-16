@@ -15,7 +15,7 @@ const cardStyle = {
 };
 
 const KIND_TABS = [
-  { key: "all",       label: "Toate",      color: "#64748b" },
+  { key: "all",       label: "Toate",      color: "var(--text-muted)" },
   { key: "favorite",  label: "Favorite",   color: "#ec4899" },
   { key: "blacklist", label: "Blacklist",  color: "#dc2626" },
 ];
@@ -84,13 +84,13 @@ export default function AdminFavoritesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{ padding: "0.625rem", borderRadius: "0.75rem", backgroundColor: "#ec4899", display: "flex" }}>
-            <Heart style={{ width: 22, height: 22, color: "white" }} />
+            <Heart style={{ width: 22, height: 22, color: "var(--text-primary)" }} />
           </div>
           <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
               {userInfo ? `Favorite & Blacklist - ${userInfo.full_name || userInfo.username}` : "Favorite & Blacklist"}
             </h1>
-            <p style={{ fontSize: "0.8125rem", color: "#94a3b8", margin: 0 }}>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
               {userInfo ? userInfo.email : "Produsele marcate ca favorite sau puse pe blacklist"}
             </p>
           </div>
@@ -99,7 +99,7 @@ export default function AdminFavoritesPage() {
           display: "flex", alignItems: "center", gap: "0.375rem",
           padding: "0.5rem 1rem", borderRadius: "0.5rem",
           border: "1px solid var(--border-color)", textDecoration: "none",
-          fontSize: "0.8125rem", color: "#94a3b8",
+          fontSize: "0.8125rem", color: "var(--text-secondary)",
         }}>
           <ArrowLeft style={{ width: 14, height: 14 }} />
           Inapoi la pagina principala
@@ -124,7 +124,7 @@ export default function AdminFavoritesPage() {
               display: "flex", alignItems: "center", gap: "0.375rem",
               padding: "0.375rem 0.75rem", borderRadius: "0.375rem",
               backgroundColor: "rgba(255,255,255,0.06)", textDecoration: "none",
-              fontSize: "0.75rem", color: "#cbd5e1",
+              fontSize: "0.75rem", color: "var(--text-secondary)",
             }}
           >
             <X style={{ width: 12, height: 12 }} /> Vezi toti utilizatorii
@@ -147,7 +147,7 @@ export default function AdminFavoritesPage() {
                   borderRadius: "0.5rem",
                   border: "1px solid " + (active ? t.color : "transparent"),
                   backgroundColor: active ? `${t.color}22` : "transparent",
-                  color: active ? "white" : "#94a3b8",
+                  color: active ? "white" : "var(--text-secondary)",
                   fontSize: "0.8125rem",
                   fontWeight: active ? 600 : 400,
                   cursor: "pointer",
@@ -163,7 +163,7 @@ export default function AdminFavoritesPage() {
 
       <div style={{ ...cardStyle, marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", position: "relative" }}>
-          <Search style={{ width: 16, height: 16, color: "#64748b", position: "absolute", left: "0.75rem" }} />
+          <Search style={{ width: 16, height: 16, color: "var(--text-muted)", position: "absolute", left: "0.75rem" }} />
           <input
             type="text"
             value={search}
@@ -173,9 +173,9 @@ export default function AdminFavoritesPage() {
               width: "100%",
               padding: "0.625rem 0.75rem 0.625rem 2.25rem",
               borderRadius: "0.5rem",
-              backgroundColor: "#0f172a",
+              backgroundColor: "var(--bg-dark)",
               border: "1px solid var(--border-color)",
-              color: "white",
+              color: "var(--text-primary)",
               fontSize: "0.8125rem",
               outline: "none",
             }}
@@ -191,18 +191,18 @@ export default function AdminFavoritesPage() {
         ) : error ? (
           <p style={{ color: "#fca5a5", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>{error}</p>
         ) : filtered.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
             Niciun produs in aceasta categorie.
           </p>
         ) : (
           <>
-            <p style={{ color: "#94a3b8", fontSize: "0.75rem", margin: "0 0 0.75rem" }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.75rem", margin: "0 0 0.75rem" }}>
               {filtered.length} {filtered.length === 1 ? "produs" : "produse"} {search ? "(filtrate)" : "in total"}
             </p>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                 <thead>
-                  <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <tr style={{ textAlign: "left", color: "var(--text-muted)", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Tip</th>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Produs</th>
                     <th style={{ padding: "0.5rem 0.5rem" }}>SKU / EAN</th>
@@ -231,7 +231,7 @@ export default function AdminFavoritesPage() {
                             {tagLabel}
                           </span>
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", color: "white" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-primary)" }}>
                           <div
                             title={it.product?.name || "(produs sters)"}
                             style={{ maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "help" }}
@@ -239,13 +239,13 @@ export default function AdminFavoritesPage() {
                             {it.product?.name || "(produs sters)"}
                           </div>
                           {it.product?.source && (
-                            <div style={{ fontSize: "0.6875rem", color: "#64748b" }}>{it.product.source}</div>
+                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>{it.product.source}</div>
                           )}
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", color: "#cbd5e1", fontFamily: "monospace", fontSize: "0.75rem" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-secondary)", fontFamily: "monospace", fontSize: "0.75rem" }}>
                           {it.product?.sku || it.product?.ean || "-"}
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "white", fontWeight: 500 }}>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-primary)", fontWeight: 500 }}>
                           {it.product?.current_price != null
                             ? `${it.product.current_price} ${it.product.currency || ""}`
                             : "-"}
@@ -259,7 +259,7 @@ export default function AdminFavoritesPage() {
                             </Link>
                           </td>
                         )}
-                        <td style={{ padding: "0.625rem 0.5rem", color: "#94a3b8", fontSize: "0.75rem", maxWidth: "200px" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-secondary)", fontSize: "0.75rem", maxWidth: "200px" }}>
                           <div
                             title={it.notes || ""}
                             style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: it.notes ? "help" : "default" }}
@@ -267,7 +267,7 @@ export default function AdminFavoritesPage() {
                             {it.notes || "-"}
                           </div>
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", color: "#64748b", fontSize: "0.6875rem" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-muted)", fontSize: "0.6875rem" }}>
                           {it.added_at ? new Date(it.added_at).toLocaleDateString("ro-RO") : "-"}
                         </td>
                       </tr>

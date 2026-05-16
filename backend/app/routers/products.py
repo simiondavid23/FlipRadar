@@ -57,15 +57,20 @@ def _user_products_query(db: Session, user_id: int):
 def get_products(
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None),
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
+    price_min: Optional[float] = Query(None),
+    price_max: Optional[float] = Query(None),
+    roi_min: Optional[float] = Query(None),
     source: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List products owned by the current user."""
+    """List products owned by the current user with optional filters and sorting."""
     query = _user_products_query(db, current_user.id)
 
     if search:
@@ -79,15 +84,117 @@ def get_products(
             )
         )
     if category:
-        query = query.filter(Product.category == category)
-    if min_price is not None:
-        query = query.filter(Product.current_price >= min_price)
-    if max_price is not None:
-        query = query.filter(Product.current_price <= max_price)
+        query = query.filter(Product.category.ilike(f"%{category.strip()}%"))
+    if brand:
+        # No dedicated brand column — match against name (most product names lead with the brand)
+        query = query.filter(Product.name.ilike(f"%{brand.strip()}%"))
+
+    effective_min = price_min if price_min is not None else min_price
+    effective_max = price_max if price_max is not None else max_price
+    if effective_min is not None:
+        query = query.filter(Product.current_price >= effective_min)
+    if effective_max is not None:
+        query = query.filter(Product.current_price <= effective_max)
     if source:
         query = query.filter(Product.source == source)
 
+    if roi_min is not None:
+        # ROI = ((resale - current) / current) * 100, only when both are present and current > 0
+        query = query.filter(
+            Product.resale_price.isnot(None),
+            Product.current_price.isnot(None),
+            Product.current_price > 0,
+            ((Product.resale_price - Product.current_price) / Product.current_price * 100) >= roi_min,
+        )
+
+    sort_key = (sort_by or "").lower()
+    if sort_key == "price_asc":
+        query = query.order_by(Product.current_price.asc().nullslast())
+    elif sort_key == "price_desc":
+        query = query.order_by(Product.current_price.desc().nullslast())
+    elif sort_key == "name_asc":
+        query = query.order_by(Product.name.asc())
+    elif sort_key == "newest":
+        query = query.order_by(Product.created_at.desc())
+    elif sort_key == "roi_desc":
+        # Sort by resale_price - current_price descending (proxy for ROI)
+        query = query.order_by(
+            (Product.resale_price - Product.current_price).desc().nullslast()
+        )
+
     return query.offset(skip).limit(limit).all()
+
+
+@router.get("/filter-options")
+def get_filter_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return distinct brands and categories from the user's product catalog.
+
+    Brands are derived from the first token of the product name (cheap heuristic
+    since there's no dedicated brand column in the schema).
+    """
+    rows = (
+        db.query(Product.name, Product.category)
+        .filter(Product.user_id == current_user.id)
+        .all()
+    )
+    categories: set[str] = set()
+    brands: set[str] = set()
+    for name, category in rows:
+        if category:
+            categories.add(category.strip())
+        if name:
+            first_token = name.strip().split()[0] if name.strip() else ""
+            if len(first_token) >= 2:
+                brands.add(first_token)
+
+    return {
+        "brands": sorted(brands, key=lambda s: s.lower()),
+        "categories": sorted(categories, key=lambda s: s.lower()),
+    }
+
+
+@router.get("/stats")
+def get_products_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Profitability stats over the user's catalog (uses resale_price)."""
+    rows = (
+        db.query(Product.current_price, Product.resale_price)
+        .filter(Product.user_id == current_user.id)
+        .all()
+    )
+    profit_estimat_total = 0.0
+    roi_values: list[float] = []
+    produse_profitabile = 0
+    produse_fara_pret_revanzare = 0
+    total = len(rows)
+
+    for current_price, resale_price in rows:
+        if resale_price is None:
+            produse_fara_pret_revanzare += 1
+            continue
+        if current_price is None or current_price <= 0:
+            continue
+        diff = float(resale_price) - float(current_price)
+        if diff > 0:
+            profit_estimat_total += diff
+            produse_profitabile += 1
+        roi_values.append((diff / float(current_price)) * 100.0)
+
+    roi_mediu = round(sum(roi_values) / len(roi_values), 2) if roi_values else 0.0
+
+    return {
+        "total_products": total,
+        "profit_estimat_total": round(profit_estimat_total, 2),
+        "roi_mediu": roi_mediu,
+        "produse_profitabile": produse_profitabile,
+        "produse_fara_pret_revanzare": produse_fara_pret_revanzare,
+        "produse_cu_pret_revanzare": total - produse_fara_pret_revanzare,
+    }
 
 
 @router.get("/{product_id}", response_model=ProductDetailResponse)
@@ -143,6 +250,7 @@ def _build_save_response(product: Product, is_new: bool, previous_price: Optiona
         "source": product.source,
         "source_url": product.source_url,
         "current_price": product.current_price,
+        "resale_price": product.resale_price,
         "currency": product.currency,
         "created_at": product.created_at,
         "is_new": is_new,

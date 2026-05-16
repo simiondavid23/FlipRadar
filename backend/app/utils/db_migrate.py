@@ -45,6 +45,12 @@ def run_migrations():
     ):
         migrations.append("ALTER TABLE products ADD COLUMN ean VARCHAR")
 
+    # Products: resale_price column (estimated resale price for profit tracking)
+    if _table_exists(inspector, "products") and not _column_exists(
+        inspector, "products", "resale_price"
+    ):
+        migrations.append("ALTER TABLE products ADD COLUMN resale_price FLOAT")
+
     # Users: security question columns (for password reset flow)
     if _table_exists(inspector, "users") and not _column_exists(
         inspector, "users", "security_question"

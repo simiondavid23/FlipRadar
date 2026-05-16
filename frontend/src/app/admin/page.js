@@ -1,11 +1,13 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 import { adminAPI } from "@/lib/api";
 import Link from "next/link";
 import {
   Users, Package, Eye, Bell, MessageSquare, Shield, LogOut,
-  Clock, ChevronRight, Search,
+  Clock, ChevronRight, Search, FileBarChart, ChevronLeft,
+  Sun, Moon,
 } from "lucide-react";
 
 function StatCard({ title, value, icon: Icon, color, subtitle, href }) {
@@ -15,12 +17,12 @@ function StatCard({ title, value, icon: Icon, color, subtitle, href }) {
       <div style={{ position: "relative", zIndex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.75rem" }}>
           <div style={{ padding: "0.4rem", borderRadius: "0.5rem", backgroundColor: color, display: "flex" }}>
-            <Icon style={{ width: "16px", height: "16px", color: "white" }} />
+            <Icon style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
           </div>
-          <span style={{ fontSize: "0.8125rem", color: "#94a3b8" }}>{title}</span>
+          <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{title}</span>
         </div>
-        <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "white", margin: 0, lineHeight: 1 }}>{value}</p>
-        {subtitle && <p style={{ fontSize: "0.6875rem", color: "#64748b", margin: "0.375rem 0 0" }}>{subtitle}</p>}
+        <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, lineHeight: 1 }}>{value}</p>
+        {subtitle && <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", margin: "0.375rem 0 0" }}>{subtitle}</p>}
       </div>
     </>
   );
@@ -65,10 +67,42 @@ function StatCard({ title, value, icon: Icon, color, subtitle, href }) {
 
 export default function AdminDashboard() {
   const { logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [stats, setStats] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ticketSearch, setTicketSearch] = useState("");
+
+  // Products report state
+  const [reportFilters, setReportFilters] = useState({
+    price_min: "", price_max: "", date_from: "", date_to: "", category: "",
+  });
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [reportPage, setReportPage] = useState(1);
+  const PAGE_SIZE = 25;
+
+  const generateReport = async () => {
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const params = {};
+      if (reportFilters.price_min !== "") params.price_min = parseFloat(reportFilters.price_min);
+      if (reportFilters.price_max !== "") params.price_max = parseFloat(reportFilters.price_max);
+      if (reportFilters.date_from) params.date_from = reportFilters.date_from;
+      if (reportFilters.date_to) params.date_to = reportFilters.date_to;
+      if (reportFilters.category) params.category = reportFilters.category;
+      const res = await adminAPI.getProductsReport(params);
+      setReportData(res.data);
+      setReportPage(1);
+    } catch (e) {
+      console.error(e);
+      setReportError("Nu am putut genera raportul. Verifica filtrele si incearca din nou.");
+    } finally {
+      setReportLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -134,11 +168,11 @@ export default function AdminDashboard() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{ padding: "0.625rem", borderRadius: "0.75rem", backgroundColor: "#dc2626", display: "flex" }}>
-            <Shield style={{ width: "22px", height: "22px", color: "white" }} />
+            <Shield style={{ width: "22px", height: "22px", color: "var(--text-primary)" }} />
           </div>
           <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>Admin Dashboard</h1>
-            <p style={{ fontSize: "0.8125rem", color: "#94a3b8", margin: 0 }}>Panou de administrare FlipRadar</p>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Panou Administrare</h1>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Panou de administrare FlipRadar</p>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -151,6 +185,21 @@ export default function AdminDashboard() {
           }}>
             <Users style={{ width: "14px", height: "14px" }} /> Gestionare Utilizatori
           </Link>
+          <button onClick={toggleTheme}
+            title={theme === "light" ? "Comuta la tema intunecata" : "Comuta la tema luminoasa"}
+            style={{
+              display: "flex", alignItems: "center", gap: "0.5rem",
+              padding: "0.5rem 1rem", borderRadius: "0.5rem",
+              border: "1px solid var(--border-color)",
+              backgroundColor: "var(--bg-card)", color: "var(--text-secondary)",
+              cursor: "pointer", fontSize: "0.8125rem",
+            }}>
+            {theme === "light" ? (
+              <><Moon style={{ width: "14px", height: "14px" }} /> Tema intunecata</>
+            ) : (
+              <><Sun style={{ width: "14px", height: "14px" }} /> Tema luminoasa</>
+            )}
+          </button>
           <button onClick={logout} style={{
             display: "flex", alignItems: "center", gap: "0.375rem",
             padding: "0.5rem 1rem", borderRadius: "0.5rem",
@@ -183,12 +232,12 @@ export default function AdminDashboard() {
         {/* Support Tickets — open + in_progress only, with user search */}
         <div style={cardStyle}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", gap: "0.75rem", flexWrap: "wrap" }}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <MessageSquare style={{ width: "16px", height: "16px", color: "#60a5fa" }} /> Tickete Suport
-              <span style={{ fontSize: "0.6875rem", color: "#64748b", fontWeight: 400 }}>(deschise si in progres)</span>
+              <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 400 }}>(deschise si in progres)</span>
             </h2>
             <div style={{ position: "relative", flex: "0 1 220px", minWidth: "160px" }}>
-              <Search style={{ width: 14, height: 14, color: "#64748b", position: "absolute", left: "0.625rem", top: "0.5rem" }} />
+              <Search style={{ width: 14, height: 14, color: "var(--text-muted)", position: "absolute", left: "0.625rem", top: "0.5rem" }} />
               <input
                 type="text"
                 value={ticketSearch}
@@ -198,9 +247,9 @@ export default function AdminDashboard() {
                   width: "100%",
                   padding: "0.4rem 0.625rem 0.4rem 2rem",
                   borderRadius: "0.375rem",
-                  backgroundColor: "#0f172a",
+                  backgroundColor: "var(--bg-dark)",
                   border: "1px solid var(--border-color)",
-                  color: "white",
+                  color: "var(--text-primary)",
                   fontSize: "0.75rem",
                   outline: "none",
                 }}
@@ -222,24 +271,24 @@ export default function AdminDashboard() {
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "white" }}>{ticket.subject}</span>
+                      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>{ticket.subject}</span>
                       {getStatusBadge(ticket.status)}
                     </div>
-                    <span style={{ fontSize: "0.6875rem", color: "#64748b" }}>
+                    <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
                       {ticket.user.full_name || ticket.user.username} • {ticket.user.email} • {ticket.message_count} mesaje • {new Date(ticket.created_at).toLocaleDateString("ro-RO")}
                     </span>
                   </div>
-                  <ChevronRight style={{ width: "16px", height: "16px", color: "#64748b", flexShrink: 0 }} />
+                  <ChevronRight style={{ width: "16px", height: "16px", color: "var(--text-muted)", flexShrink: 0 }} />
                 </Link>
               ))}
               {visibleTickets.length > 8 && (
-                <p style={{ color: "#64748b", fontSize: "0.75rem", textAlign: "center", margin: "0.25rem 0 0" }}>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", textAlign: "center", margin: "0.25rem 0 0" }}>
                   ...si inca {visibleTickets.length - 8}. Deschide <Link href="/admin/tickets" style={{ color: "#60a5fa", textDecoration: "none" }}>lista completa</Link>.
                 </p>
               )}
             </div>
           ) : (
-            <p style={{ color: "#64748b", fontSize: "0.8125rem", textAlign: "center", padding: "2rem 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", textAlign: "center", padding: "2rem 0" }}>
               {ticketSearch ? "Niciun ticket gasit pentru cautarea curenta." : "Nu exista tickete deschise sau in progres."}
             </p>
           )}
@@ -248,7 +297,7 @@ export default function AdminDashboard() {
         {/* Recent Users */}
         <div style={cardStyle}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <Users style={{ width: "16px", height: "16px", color: "#4ade80" }} /> Utilizatori recenti
             </h2>
           </div>
@@ -265,18 +314,172 @@ export default function AdminDashboard() {
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: "0.8125rem", fontWeight: 500, color: "white", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <p style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {u.full_name || u.username}
                   </p>
-                  <p style={{ fontSize: "0.6875rem", color: "#64748b", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</p>
+                  <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</p>
                 </div>
-                <span style={{ fontSize: "0.6875rem", color: "#64748b", flexShrink: 0, marginLeft: "0.5rem" }}>
+                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", flexShrink: 0, marginLeft: "0.5rem" }}>
                   {u.created_at ? new Date(u.created_at).toLocaleDateString("ro-RO") : ""}
                 </span>
               </Link>
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Raport Produse */}
+      <div style={{ ...cardStyle, marginTop: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+          <FileBarChart style={{ width: "18px", height: "18px", color: "#a78bfa" }} />
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+            Raport Produse
+          </h2>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.75rem", marginBottom: "1rem" }}>
+          <div>
+            <label style={{ display: "block", fontSize: "0.6875rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret minim</label>
+            <input type="number" step="0.01" value={reportFilters.price_min}
+              onChange={(e) => setReportFilters({...reportFilters, price_min: e.target.value})}
+              style={{ width: "100%", padding: "0.4rem 0.625rem", borderRadius: "0.375rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.6875rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret maxim</label>
+            <input type="number" step="0.01" value={reportFilters.price_max}
+              onChange={(e) => setReportFilters({...reportFilters, price_max: e.target.value})}
+              style={{ width: "100%", padding: "0.4rem 0.625rem", borderRadius: "0.375rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.6875rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>De la data</label>
+            <input type="date" value={reportFilters.date_from}
+              onChange={(e) => setReportFilters({...reportFilters, date_from: e.target.value})}
+              style={{ width: "100%", padding: "0.4rem 0.625rem", borderRadius: "0.375rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.6875rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pana la data</label>
+            <input type="date" value={reportFilters.date_to}
+              onChange={(e) => setReportFilters({...reportFilters, date_to: e.target.value})}
+              style={{ width: "100%", padding: "0.4rem 0.625rem", borderRadius: "0.375rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.6875rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Categorie</label>
+            <input type="text" value={reportFilters.category}
+              onChange={(e) => setReportFilters({...reportFilters, category: e.target.value})}
+              placeholder="ex: electronics"
+              style={{ width: "100%", padding: "0.4rem 0.625rem", borderRadius: "0.375rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none" }}
+            />
+          </div>
+        </div>
+
+        <button onClick={generateReport} disabled={reportLoading}
+          style={{
+            padding: "0.5rem 1rem", borderRadius: "0.5rem",
+            backgroundColor: reportLoading ? "var(--bg-elevated)" : "var(--blue-primary)",
+            color: "var(--text-primary)", border: "none", cursor: reportLoading ? "wait" : "pointer",
+            fontSize: "0.8125rem", fontWeight: 500, marginBottom: "1rem",
+          }}>
+          {reportLoading ? "Se genereaza..." : "Genereaza raport"}
+        </button>
+
+        {reportError && (
+          <p style={{ color: "#f87171", fontSize: "0.75rem", marginBottom: "1rem" }}>{reportError}</p>
+        )}
+
+        {reportData && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem", marginBottom: "1rem" }}>
+              <div style={{ padding: "0.875rem", borderRadius: "0.625rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-secondary)", margin: 0 }}>Total produse</p>
+                <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: "0.25rem 0 0" }}>{reportData.summary.count}</p>
+              </div>
+              <div style={{ padding: "0.875rem", borderRadius: "0.625rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-secondary)", margin: 0 }}>Pret mediu</p>
+                <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--blue-light)", margin: "0.25rem 0 0" }}>{Number(reportData.summary.pret_mediu).toFixed(2)}</p>
+              </div>
+              <div style={{ padding: "0.875rem", borderRadius: "0.625rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-secondary)", margin: 0 }}>ROI mediu</p>
+                <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#a78bfa", margin: "0.25rem 0 0" }}>{Number(reportData.summary.roi_mediu).toFixed(2)}%</p>
+              </div>
+              <div style={{ padding: "0.875rem", borderRadius: "0.625rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-secondary)", margin: 0 }}>Profit estimat total</p>
+                <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#4ade80", margin: "0.25rem 0 0" }}>{Number(reportData.summary.profit_estimat_total).toFixed(2)}</p>
+              </div>
+            </div>
+
+            {reportData.products.length === 0 ? (
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", textAlign: "center", padding: "1.5rem 0" }}>
+                Niciun produs in intervalul/filtru selectat.
+              </p>
+            ) : (
+              <>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.75rem" }}>
+                    <thead>
+                      <tr>
+                        {["Produs", "Categorie", "Pret", "Pret revanzare", "ROI", "Sursa", "Data"].map((h) => (
+                          <th key={h} style={{ textAlign: "left", padding: "0.5rem 0.5rem", color: "var(--text-secondary)", fontWeight: 600, borderBottom: "1px solid var(--border-color)" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.products.slice((reportPage - 1) * PAGE_SIZE, reportPage * PAGE_SIZE).map((p) => (
+                        <tr key={p.id}>
+                          <td style={{ padding: "0.5rem", color: "var(--text-primary)", borderBottom: "1px solid var(--border-color)" }}>{p.name}</td>
+                          <td style={{ padding: "0.5rem", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)" }}>{p.category || "-"}</td>
+                          <td style={{ padding: "0.5rem", color: "var(--text-primary)", borderBottom: "1px solid var(--border-color)" }}>{p.price != null ? `${Number(p.price).toFixed(2)} ${p.currency || ""}` : "-"}</td>
+                          <td style={{ padding: "0.5rem", color: "#a78bfa", borderBottom: "1px solid var(--border-color)" }}>{p.resale_price != null ? `${Number(p.resale_price).toFixed(2)} ${p.currency || ""}` : "-"}</td>
+                          <td style={{ padding: "0.5rem", color: p.roi == null ? "var(--text-secondary)" : (p.roi >= 0 ? "#4ade80" : "#f87171"), fontWeight: 600, borderBottom: "1px solid var(--border-color)" }}>{p.roi == null ? "-" : `${Number(p.roi).toFixed(2)}%`}</td>
+                          <td style={{ padding: "0.5rem", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)" }}>{p.source || "-"}</td>
+                          <td style={{ padding: "0.5rem", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)" }}>{p.created_at ? new Date(p.created_at).toLocaleDateString("ro-RO") : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {reportData.products.length > PAGE_SIZE && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.75rem" }}>
+                    <button
+                      onClick={() => setReportPage((p) => Math.max(1, p - 1))}
+                      disabled={reportPage === 1}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "0.25rem",
+                        padding: "0.375rem 0.75rem", borderRadius: "0.375rem",
+                        backgroundColor: "transparent", color: reportPage === 1 ? "var(--text-muted)" : "var(--text-secondary)",
+                        border: "1px solid var(--border-color)", cursor: reportPage === 1 ? "not-allowed" : "pointer",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      <ChevronLeft style={{ width: "12px", height: "12px" }} /> Anterior
+                    </button>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                      Pagina {reportPage} din {Math.max(1, Math.ceil(reportData.products.length / PAGE_SIZE))}
+                    </span>
+                    <button
+                      onClick={() => setReportPage((p) => Math.min(Math.ceil(reportData.products.length / PAGE_SIZE), p + 1))}
+                      disabled={reportPage >= Math.ceil(reportData.products.length / PAGE_SIZE)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "0.25rem",
+                        padding: "0.375rem 0.75rem", borderRadius: "0.375rem",
+                        backgroundColor: "transparent", color: reportPage >= Math.ceil(reportData.products.length / PAGE_SIZE) ? "var(--text-muted)" : "var(--text-secondary)",
+                        border: "1px solid var(--border-color)", cursor: reportPage >= Math.ceil(reportData.products.length / PAGE_SIZE) ? "not-allowed" : "pointer",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      Urmator <ChevronRight style={{ width: "12px", height: "12px" }} />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

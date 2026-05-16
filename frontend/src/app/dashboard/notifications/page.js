@@ -47,7 +47,7 @@ export default function NotificationsPage() {
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
-  const cardStyle = { backgroundColor: "#1e293b", border: "1px solid #334155" };
+  const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)" };
 
   if (loading) {
     return (
@@ -61,26 +61,26 @@ export default function NotificationsPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "white", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <Bell style={{ width: "2rem", height: "2rem", color: "#fbbf24" }} />
             Notificari
             {unreadCount > 0 && (
               <span style={{ fontSize: "0.875rem", padding: "0.125rem 0.625rem", borderRadius: "9999px",
-                backgroundColor: "#dc2626", color: "white" }}>{unreadCount}</span>
+                backgroundColor: "#dc2626", color: "var(--text-primary)" }}>{unreadCount}</span>
             )}
           </h1>
-          <p style={{ color: "#94a3b8", marginTop: "0.5rem" }}>{notifications.length} notificari totale</p>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>{notifications.length} notificari totale</p>
         </div>
         {notifications.length > 0 && (
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button onClick={markAllAsRead}
               style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
-                fontSize: "0.875rem", cursor: "pointer", border: "1px solid #334155", backgroundColor: "transparent", color: "#94a3b8" }}>
+                fontSize: "0.875rem", cursor: "pointer", border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "var(--text-secondary)" }}>
               <CheckCheck style={{ width: "1rem", height: "1rem" }} /> Citeste toate
             </button>
             <button onClick={clearAll}
               style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
-                fontSize: "0.875rem", cursor: "pointer", border: "1px solid #334155", backgroundColor: "transparent", color: "#f87171" }}>
+                fontSize: "0.875rem", cursor: "pointer", border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "#f87171" }}>
               <Trash2 style={{ width: "1rem", height: "1rem" }} /> Sterge toate
             </button>
           </div>
@@ -100,12 +100,12 @@ export default function NotificationsPage() {
                   <Icon style={{ width: "1.25rem", height: "1.25rem", color: typeInfo.color, flexShrink: 0, marginTop: "0.125rem" }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <h3 style={{ fontWeight: 600, color: "white", fontSize: "0.9375rem" }}>{notif.title}</h3>
-                      <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      <h3 style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.9375rem" }}>{notif.title}</h3>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                         {new Date(notif.created_at).toLocaleDateString("ro-RO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
-                    <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginTop: "0.25rem" }}>{notif.message}</p>
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{notif.message}</p>
                   </div>
                   {!notif.is_read && (
                     <div style={{ width: "0.5rem", height: "0.5rem", borderRadius: "50%", backgroundColor: "#3b82f6", flexShrink: 0, marginTop: "0.375rem" }} />
@@ -117,9 +117,9 @@ export default function NotificationsPage() {
         </div>
       ) : (
         <div style={{ ...cardStyle, borderRadius: "1rem", padding: "3rem", textAlign: "center" }}>
-          <BellOff style={{ width: "4rem", height: "4rem", margin: "0 auto 1rem", color: "#475569" }} />
-          <p style={{ fontSize: "1.125rem", color: "white", marginBottom: "0.5rem" }}>Nu ai notificari</p>
-          <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Notificarile vor aparea aici cand se declanseaza alerte sau apar update-uri.</p>
+          <BellOff style={{ width: "4rem", height: "4rem", margin: "0 auto 1rem", color: "var(--text-secondary)" }} />
+          <p style={{ fontSize: "1.125rem", color: "var(--text-primary)", marginBottom: "0.5rem" }}>Nu ai notificari</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Notificarile vor aparea aici cand se declanseaza alerte sau apar update-uri.</p>
         </div>
       )}
     </div>
