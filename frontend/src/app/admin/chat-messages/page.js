@@ -16,7 +16,7 @@ const cardStyle = {
 };
 
 const ROLE_TABS = [
-  { key: "all",       label: "Toate",     color: "#64748b" },
+  { key: "all",       label: "Toate",     color: "var(--text-muted)" },
   { key: "user",      label: "Utilizator", color: "#2563eb" },
   { key: "assistant", label: "Asistent AI", color: "#9333ea" },
 ];
@@ -101,13 +101,13 @@ export default function AdminChatMessagesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{ padding: "0.625rem", borderRadius: "0.75rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <MessageCircle style={{ width: 22, height: 22, color: "white" }} />
+            <MessageCircle style={{ width: 22, height: 22, color: "var(--text-primary)" }} />
           </div>
           <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
               {userInfo ? `Mesaje AI - ${userInfo.full_name || userInfo.username}` : "Mesaje AI"}
             </h1>
-            <p style={{ fontSize: "0.8125rem", color: "#94a3b8", margin: 0 }}>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
               {userInfo ? userInfo.email : "Istoricul conversatiilor cu asistentul AI"}
             </p>
           </div>
@@ -116,7 +116,7 @@ export default function AdminChatMessagesPage() {
           display: "flex", alignItems: "center", gap: "0.375rem",
           padding: "0.5rem 1rem", borderRadius: "0.5rem",
           border: "1px solid var(--border-color)", textDecoration: "none",
-          fontSize: "0.8125rem", color: "#94a3b8",
+          fontSize: "0.8125rem", color: "var(--text-secondary)",
         }}>
           <ArrowLeft style={{ width: 14, height: 14 }} />
           Inapoi la pagina principala
@@ -141,7 +141,7 @@ export default function AdminChatMessagesPage() {
               display: "flex", alignItems: "center", gap: "0.375rem",
               padding: "0.375rem 0.75rem", borderRadius: "0.375rem",
               backgroundColor: "rgba(255,255,255,0.06)", textDecoration: "none",
-              fontSize: "0.75rem", color: "#cbd5e1",
+              fontSize: "0.75rem", color: "var(--text-secondary)",
             }}
           >
             <X style={{ width: 12, height: 12 }} /> Vezi toti utilizatorii
@@ -164,7 +164,7 @@ export default function AdminChatMessagesPage() {
                   borderRadius: "0.5rem",
                   border: "1px solid " + (active ? t.color : "transparent"),
                   backgroundColor: active ? `${t.color}22` : "transparent",
-                  color: active ? "white" : "#94a3b8",
+                  color: active ? "white" : "var(--text-secondary)",
                   fontSize: "0.8125rem",
                   fontWeight: active ? 600 : 400,
                   cursor: "pointer",
@@ -180,7 +180,7 @@ export default function AdminChatMessagesPage() {
 
       <div style={{ ...cardStyle, marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", position: "relative" }}>
-          <Search style={{ width: 16, height: 16, color: "#64748b", position: "absolute", left: "0.75rem" }} />
+          <Search style={{ width: 16, height: 16, color: "var(--text-muted)", position: "absolute", left: "0.75rem" }} />
           <input
             type="text"
             value={search}
@@ -190,9 +190,9 @@ export default function AdminChatMessagesPage() {
               width: "100%",
               padding: "0.625rem 0.75rem 0.625rem 2.25rem",
               borderRadius: "0.5rem",
-              backgroundColor: "#0f172a",
+              backgroundColor: "var(--bg-dark)",
               border: "1px solid var(--border-color)",
-              color: "white",
+              color: "var(--text-primary)",
               fontSize: "0.8125rem",
               outline: "none",
             }}
@@ -208,13 +208,13 @@ export default function AdminChatMessagesPage() {
         ) : error ? (
           <p style={{ color: "#fca5a5", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>{error}</p>
         ) : filtered.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
             Niciun mesaj in aceasta categorie.
           </p>
         ) : (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
-              <p style={{ color: "#94a3b8", fontSize: "0.75rem", margin: 0 }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.75rem", margin: 0 }}>
                 {filtered.length} mesaj{filtered.length === 1 ? "" : "e"} {search ? "(filtrate)" : "in total"}
               </p>
               {flaggedCount > 0 && (
@@ -274,12 +274,12 @@ export default function AdminChatMessagesPage() {
                           Semnalat
                         </span>
                       )}
-                      <span style={{ color: "#64748b", fontSize: "0.6875rem", marginLeft: "auto" }}>
+                      <span style={{ color: "var(--text-muted)", fontSize: "0.6875rem", marginLeft: "auto" }}>
                         {m.created_at ? new Date(m.created_at).toLocaleString("ro-RO") : "-"}
                       </span>
                     </div>
                     <p style={{
-                      margin: 0, color: "#e2e8f0", fontSize: "0.8125rem",
+                      margin: 0, color: "var(--text-primary)", fontSize: "0.8125rem",
                       lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
                     }}>
                       {displayContent}

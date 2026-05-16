@@ -33,6 +33,7 @@ async def analyze_product(
         source=request.source,
         currency=getattr(request, "currency", "EUR") or "EUR",
         user_name=current_user.full_name or current_user.username,
+        resale_price=getattr(request, "resale_price", None),
     )
     return AIResponse(result=result, success=True)
 
@@ -50,6 +51,8 @@ async def generate_listing(
         price=request.price,
         currency=getattr(request, "currency", "EUR") or "EUR",
         user_name=current_user.full_name or current_user.username,
+        product_condition=getattr(request, "product_condition", "Nou") or "Nou",
+        target_platform=getattr(request, "target_platform", "OLX") or "OLX",
     )
     return AIResponse(result=result, success=True)
 

@@ -242,6 +242,85 @@ def list_products(
     return [_product_item(p) for p in products]
 
 
+@router.get("/products/report")
+def products_report(
+    price_min: Optional[float] = Query(None),
+    price_max: Optional[float] = Query(None),
+    date_from: Optional[str] = Query(None, description="ISO date (inclusive)"),
+    date_to: Optional[str] = Query(None, description="ISO date (inclusive)"),
+    category: Optional[str] = Query(None),
+    limit: int = Query(2000, ge=1, le=10000),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Cross-user product report with filters + aggregate summary."""
+    from datetime import datetime as _dt
+
+    q = db.query(Product).options(joinedload(Product.user))
+    if price_min is not None:
+        q = q.filter(Product.current_price >= price_min)
+    if price_max is not None:
+        q = q.filter(Product.current_price <= price_max)
+    if category:
+        q = q.filter(Product.category.ilike(f"%{category.strip()}%"))
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            return _dt.fromisoformat(value)
+        except Exception:
+            return None
+
+    df = _parse(date_from)
+    dt = _parse(date_to)
+    if df is not None:
+        q = q.filter(Product.created_at >= df)
+    if dt is not None:
+        q = q.filter(Product.created_at <= dt)
+
+    products = q.order_by(Product.created_at.desc()).limit(limit).all()
+
+    price_values = [float(p.current_price) for p in products if p.current_price is not None]
+    roi_values: list[float] = []
+    profit_estimat_total = 0.0
+    for p in products:
+        if p.current_price and p.resale_price and float(p.current_price) > 0:
+            diff = float(p.resale_price) - float(p.current_price)
+            roi_values.append((diff / float(p.current_price)) * 100.0)
+            if diff > 0:
+                profit_estimat_total += diff
+
+    summary = {
+        "count": len(products),
+        "pret_mediu": round(sum(price_values) / len(price_values), 2) if price_values else 0.0,
+        "pret_min": round(min(price_values), 2) if price_values else 0.0,
+        "pret_max": round(max(price_values), 2) if price_values else 0.0,
+        "roi_mediu": round(sum(roi_values) / len(roi_values), 2) if roi_values else 0.0,
+        "profit_estimat_total": round(profit_estimat_total, 2),
+    }
+
+    rows = []
+    for p in products:
+        roi = None
+        if p.current_price and p.resale_price and float(p.current_price) > 0:
+            roi = round(((float(p.resale_price) - float(p.current_price)) / float(p.current_price)) * 100.0, 2)
+        rows.append({
+            "id": p.id,
+            "name": p.name,
+            "category": p.category,
+            "price": p.current_price,
+            "resale_price": p.resale_price,
+            "currency": p.currency,
+            "roi": roi,
+            "source": p.source,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "owner_email": p.user.email if p.user else None,
+        })
+
+    return {"products": rows, "summary": summary}
+
+
 @router.get("/watchlist", response_model=list[AdminWatchlistItem])
 def list_watchlist(
     user_id: Optional[int] = Query(None),

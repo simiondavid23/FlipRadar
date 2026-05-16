@@ -43,6 +43,8 @@ export const authAPI = {
 export const productsAPI = {
   getProducts: (params) => api.get("/api/products/", { params }),
   getProduct: (id) => api.get(`/api/products/${id}`),
+  getFilterOptions: () => api.get("/api/products/filter-options"),
+  getStats: () => api.get("/api/products/stats"),
   createProduct: (data) => api.post("/api/products/", data),
   updateProduct: (id, data) => api.put(`/api/products/${id}`, data),
   refreshPrice: (id) => api.post(`/api/products/${id}/refresh-price`),
@@ -98,6 +100,7 @@ export const adminAPI = {
   setUserActive: (id, isActive) => api.put(`/api/admin/users/${id}/active`, { is_active: isActive }),
   updateUserFeatures: (id, flags) => api.put(`/api/admin/users/${id}/features`, flags),
   getProducts: (params) => api.get("/api/admin/products", { params }),
+  getProductsReport: (params) => api.get("/api/admin/products/report", { params }),
   getWatchlist: (params) => api.get("/api/admin/watchlist", { params }),
   getAlerts: (params) => api.get("/api/admin/alerts", { params }),
   getInventory: (params) => api.get("/api/admin/inventory", { params }),
@@ -186,6 +189,11 @@ export const inventoryAPI = {
   importExcel: (formData) => api.post("/api/inventory/import-excel", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   }),
+};
+
+// Reports
+export const reportsAPI = {
+  getSummary: (params) => api.get("/api/reports/summary", { params }),
 };
 
 // Sales

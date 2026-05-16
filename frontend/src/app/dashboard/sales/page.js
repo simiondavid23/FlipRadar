@@ -4,17 +4,17 @@ import { salesAPI, inventoryAPI } from "@/lib/api";
 import { Receipt, Plus, Trash2, Pencil, TrendingUp, Coins, Euro, FileDown, Boxes } from "lucide-react";
 
 const inputStyle = {
-  backgroundColor: "#0f172a",
-  border: "1px solid #334155",
+  backgroundColor: "var(--bg-dark)",
+  border: "1px solid var(--border-color)",
   borderRadius: "0.5rem",
-  color: "white",
+  color: "var(--text-primary)",
   padding: "0.625rem 0.875rem",
   fontSize: "0.875rem",
   width: "100%",
   outline: "none",
 };
 
-const cardStyle = { backgroundColor: "#1e293b", border: "1px solid #334155" };
+const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)" };
 
 const emptyForm = {
   product_name: "",
@@ -165,19 +165,19 @@ export default function SalesPage() {
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem", flexWrap: "wrap", gap: "1rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "white", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <Receipt style={{ width: "2rem", height: "2rem", color: "#a78bfa" }} />
-            Vanzari
+            Registru Vanzari
           </h1>
-          <p style={{ color: "#94a3b8", marginTop: "0.5rem" }}>Inregistreaza si monitorizeaza vanzarile efectuate</p>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>Inregistreaza si monitorizeaza vanzarile efectuate</p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <button onClick={handleExportPDF}
-            style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "transparent", color: "white", fontWeight: 500, border: "1px solid #334155", cursor: "pointer" }}>
+            style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "transparent", color: "var(--text-primary)", fontWeight: 500, border: "1px solid var(--border-color)", cursor: "pointer" }}>
             <FileDown style={{ width: "1rem", height: "1rem" }} /> Export PDF
           </button>
           <button onClick={openCreate}
-            style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "#9333ea", color: "white", fontWeight: 500, border: "none", cursor: "pointer" }}>
+            style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "#9333ea", color: "var(--text-primary)", fontWeight: 500, border: "none", cursor: "pointer" }}>
             <Plus style={{ width: "1rem", height: "1rem" }} /> Adauga vanzare
           </button>
         </div>
@@ -188,19 +188,19 @@ export default function SalesPage() {
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.75rem" }}>
             <TrendingUp style={{ width: "1.125rem", height: "1.125rem", color: "#60a5fa" }} />
-            <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Vanzari</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Vanzari</p>
           </div>
-          <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "white" }}>
+          <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)" }}>
             {stats?.total_sales ?? "-"}
           </p>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem" }}>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
             {stats?.total_units_sold ?? 0} unitati vandute
           </p>
         </div>
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.75rem" }}>
             <Euro style={{ width: "1.125rem", height: "1.125rem", color: "#facc15" }} />
-            <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Venit total</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Venit total</p>
           </div>
           <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "#4ade80" }}>
             {(stats?.total_revenue_eur ?? 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR
@@ -209,19 +209,19 @@ export default function SalesPage() {
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.75rem" }}>
             <Coins style={{ width: "1.125rem", height: "1.125rem", color: "#a78bfa" }} />
-            <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Profit estimat</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Profit estimat</p>
           </div>
           <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "#a78bfa" }}>
             {(stats?.total_profit_eur ?? 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR
           </p>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem" }}>Venit minus cost declarat</p>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>Venit minus cost declarat</p>
         </div>
       </div>
 
       {/* Form modal */}
       {showForm && (
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1.5rem", marginBottom: "1.5rem" }}>
-          <h2 style={{ color: "white", fontWeight: 600, marginBottom: "1rem" }}>
+          <h2 style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "1rem" }}>
             {editingId ? "Editeaza vanzare" : "Inregistreaza vanzare noua"}
           </h2>
           <form onSubmit={handleSubmit}>
@@ -244,7 +244,7 @@ export default function SalesPage() {
                   ))}
                 </select>
                 {selectedInventoryItem && (
-                  <p style={{ color: "#94a3b8", fontSize: "0.6875rem", marginTop: "0.375rem" }}>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.6875rem", marginTop: "0.375rem" }}>
                     Stoc disponibil: <strong style={{ color: "#4ade80" }}>{selectedInventoryItem.quantity}</strong> · Pretul de cost si moneda au fost completate automat. Stocul se va scadea cu cantitatea vanduta.
                   </p>
                 )}
@@ -252,21 +252,21 @@ export default function SalesPage() {
             )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.75rem", marginBottom: "0.75rem" }}>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Produs vandut *</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Produs vandut *</label>
                 <input required style={inputStyle} value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })} placeholder="Ex: iPhone 14" disabled={!!selectedInventoryItem} title={selectedInventoryItem ? "Numele este preluat din inventar" : ""} />
               </div>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>
-                  Cantitate * {selectedInventoryItem ? <span style={{ color: "#64748b" }}>(max {selectedInventoryItem.quantity})</span> : null}
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>
+                  Cantitate * {selectedInventoryItem ? <span style={{ color: "var(--text-muted)" }}>(max {selectedInventoryItem.quantity})</span> : null}
                 </label>
                 <input required type="number" min="1" max={selectedInventoryItem?.quantity || undefined} style={inputStyle} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
               </div>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Pret vanzare *</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Pret vanzare *</label>
                 <input required type="number" step="0.01" min="0" style={inputStyle} value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} />
               </div>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Moneda *</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Moneda *</label>
                 <select style={inputStyle} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
                   <option value="RON">RON</option>
                   <option value="EUR">EUR</option>
@@ -274,29 +274,29 @@ export default function SalesPage() {
                 </select>
               </div>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Pret achizitie (optional)</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Pret achizitie (optional)</label>
                 <input type="number" step="0.01" min="0" style={inputStyle} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} placeholder="pentru calcul profit" />
               </div>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Platforma vanzare</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Platforma vanzare</label>
                 <input style={inputStyle} value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} placeholder="eMAG, OLX, Okazii, magazin propriu..." />
               </div>
               <div style={{ gridColumn: "span 2" }}>
-                <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Cumparator</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Cumparator</label>
                 <input style={inputStyle} value={form.buyer} onChange={(e) => setForm({ ...form, buyer: e.target.value })} placeholder="Nume sau email (optional)" />
               </div>
             </div>
             <div style={{ marginBottom: "1rem" }}>
-              <label style={{ color: "#94a3b8", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Note</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Note</label>
               <textarea style={{ ...inputStyle, minHeight: "72px", resize: "vertical" }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
             {error && <p style={{ color: "#f87171", fontSize: "0.875rem", marginBottom: "0.75rem" }}>{error}</p>}
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button type="submit" style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "#9333ea", color: "white", fontWeight: 500, border: "none", cursor: "pointer" }}>
+              <button type="submit" style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "#9333ea", color: "var(--text-primary)", fontWeight: 500, border: "none", cursor: "pointer" }}>
                 {editingId ? "Salveaza modificarile" : "Adauga vanzare"}
               </button>
               <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }}
-                style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "transparent", color: "#94a3b8", border: "1px solid #334155", cursor: "pointer" }}>
+                style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer" }}>
                 Anuleaza
               </button>
             </div>
@@ -311,9 +311,9 @@ export default function SalesPage() {
         </div>
       ) : sales.length === 0 ? (
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "3rem", textAlign: "center" }}>
-          <Receipt style={{ width: "3.5rem", height: "3.5rem", color: "#475569", margin: "0 auto 1rem" }} />
-          <p style={{ color: "white", marginBottom: "0.5rem" }}>Nicio vanzare inregistrata</p>
-          <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>Adauga prima vanzare pentru a monitoriza performanta ta.</p>
+          <Receipt style={{ width: "3.5rem", height: "3.5rem", color: "var(--text-secondary)", margin: "0 auto 1rem" }} />
+          <p style={{ color: "var(--text-primary)", marginBottom: "0.5rem" }}>Nicio vanzare inregistrata</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Adauga prima vanzare pentru a monitoriza performanta ta.</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -324,17 +324,17 @@ export default function SalesPage() {
               <div key={sale.id} style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1rem 1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <h3 style={{ color: "white", fontWeight: 600, fontSize: "1rem" }}>{sale.product_name}</h3>
+                    <h3 style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: "1rem" }}>{sale.product_name}</h3>
                     {sale.platform && (
                       <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#c4b5fd" }}>{sale.platform}</span>
                     )}
                   </div>
-                  <div style={{ color: "#94a3b8", fontSize: "0.8125rem", marginTop: "0.25rem" }}>
+                  <div style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginTop: "0.25rem" }}>
                     {sale.quantity} x {sale.sale_price?.toFixed?.(2) ?? sale.sale_price} {sale.currency}
                     {sale.buyer ? ` · ${sale.buyer}` : ""}
                   </div>
                   {sale.notes && (
-                    <p style={{ color: "#cbd5e1", fontSize: "0.8125rem", marginTop: "0.375rem" }}>{sale.notes}</p>
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginTop: "0.375rem" }}>{sale.notes}</p>
                   )}
                 </div>
                 <div style={{ textAlign: "right" }}>
@@ -349,7 +349,7 @@ export default function SalesPage() {
                 </div>
                 <div style={{ display: "flex", gap: "0.375rem" }}>
                   <button onClick={() => openEdit(sale)} title="Editeaza"
-                    style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "#94a3b8", cursor: "pointer" }}>
+                    style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
                     <Pencil style={{ width: "1.125rem", height: "1.125rem" }} />
                   </button>
                   <button onClick={() => handleDelete(sale.id)} title="Sterge"

@@ -90,13 +90,13 @@ export default function AdminSalesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{ padding: "0.625rem", borderRadius: "0.75rem", backgroundColor: "#16a34a", display: "flex" }}>
-            <ShoppingCart style={{ width: 22, height: 22, color: "white" }} />
+            <ShoppingCart style={{ width: 22, height: 22, color: "var(--text-primary)" }} />
           </div>
           <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
               {userInfo ? `Vanzari - ${userInfo.full_name || userInfo.username}` : "Toate vanzarile"}
             </h1>
-            <p style={{ fontSize: "0.8125rem", color: "#94a3b8", margin: 0 }}>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
               {userInfo ? userInfo.email : "Istoricul vanzarilor raportate de utilizatori"}
             </p>
           </div>
@@ -105,7 +105,7 @@ export default function AdminSalesPage() {
           display: "flex", alignItems: "center", gap: "0.375rem",
           padding: "0.5rem 1rem", borderRadius: "0.5rem",
           border: "1px solid var(--border-color)", textDecoration: "none",
-          fontSize: "0.8125rem", color: "#94a3b8",
+          fontSize: "0.8125rem", color: "var(--text-secondary)",
         }}>
           <ArrowLeft style={{ width: 14, height: 14 }} />
           Inapoi la pagina principala
@@ -128,7 +128,7 @@ export default function AdminSalesPage() {
             display: "flex", alignItems: "center", gap: "0.375rem",
             padding: "0.375rem 0.75rem", borderRadius: "0.375rem",
             backgroundColor: "rgba(255,255,255,0.06)", textDecoration: "none",
-            fontSize: "0.75rem", color: "#cbd5e1",
+            fontSize: "0.75rem", color: "var(--text-secondary)",
           }}>
             <X style={{ width: 12, height: 12 }} /> Vezi toate vanzarile
           </Link>
@@ -137,7 +137,7 @@ export default function AdminSalesPage() {
 
       <div style={{ ...cardStyle, marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", position: "relative" }}>
-          <Search style={{ width: 16, height: 16, color: "#64748b", position: "absolute", left: "0.75rem" }} />
+          <Search style={{ width: 16, height: 16, color: "var(--text-muted)", position: "absolute", left: "0.75rem" }} />
           <input
             type="text"
             value={search}
@@ -147,9 +147,9 @@ export default function AdminSalesPage() {
               width: "100%",
               padding: "0.625rem 0.75rem 0.625rem 2.25rem",
               borderRadius: "0.5rem",
-              backgroundColor: "#0f172a",
+              backgroundColor: "var(--bg-dark)",
               border: "1px solid var(--border-color)",
-              color: "white",
+              color: "var(--text-primary)",
               fontSize: "0.8125rem",
               outline: "none",
             }}
@@ -165,19 +165,19 @@ export default function AdminSalesPage() {
         ) : error ? (
           <p style={{ color: "#fca5a5", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>{error}</p>
         ) : filtered.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
             Nicio vanzare inregistrata.
           </p>
         ) : (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
-              <p style={{ color: "#94a3b8", fontSize: "0.75rem", margin: 0 }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.75rem", margin: 0 }}>
                 {filtered.length} vanzar{filtered.length === 1 ? "e" : "i"} {search ? "(filtrate)" : "in total"}
                 {" · "}
-                Bucati: <strong style={{ color: "white" }}>{totals.units}</strong>
+                Bucati: <strong style={{ color: "var(--text-primary)" }}>{totals.units}</strong>
               </p>
-              <p style={{ color: "#94a3b8", fontSize: "0.75rem", margin: 0 }}>
-                Venit: <strong style={{ color: "white" }}>{formatMoney(totals.revenue)}</strong>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.75rem", margin: 0 }}>
+                Venit: <strong style={{ color: "var(--text-primary)" }}>{formatMoney(totals.revenue)}</strong>
                 {" · "}
                 Profit: <strong style={{ color: totals.profit >= 0 ? "#4ade80" : "#f87171" }}>
                   {formatMoney(totals.profit)}
@@ -187,7 +187,7 @@ export default function AdminSalesPage() {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                 <thead>
-                  <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <tr style={{ textAlign: "left", color: "var(--text-muted)", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Produs</th>
                     <th style={{ padding: "0.5rem 0.5rem", textAlign: "right" }}>Cantitate</th>
                     <th style={{ padding: "0.5rem 0.5rem", textAlign: "right" }}>Pret vanzare</th>
@@ -206,7 +206,7 @@ export default function AdminSalesPage() {
                     const profit = cost != null ? qty * (sale - cost) : null;
                     return (
                       <tr key={s.id} style={{ borderTop: "1px solid var(--border-color)" }}>
-                        <td style={{ padding: "0.625rem 0.5rem", color: "white" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-primary)" }}>
                           <div
                             title={s.product_name}
                             style={{ maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "help" }}
@@ -214,16 +214,16 @@ export default function AdminSalesPage() {
                             {s.product_name}
                           </div>
                           {s.buyer && (
-                            <div style={{ fontSize: "0.6875rem", color: "#64748b" }}>Cumparator: {s.buyer}</div>
+                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>Cumparator: {s.buyer}</div>
                           )}
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "white", fontWeight: 500 }}>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-primary)", fontWeight: 500 }}>
                           {qty}
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "#cbd5e1" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-secondary)" }}>
                           {formatMoney(sale, s.currency)}
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "#cbd5e1" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-secondary)" }}>
                           {cost != null ? formatMoney(cost, s.currency) : "-"}
                         </td>
                         <td style={{
@@ -232,7 +232,7 @@ export default function AdminSalesPage() {
                         }}>
                           {profit != null ? formatMoney(profit, s.currency) : "-"}
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", color: "#cbd5e1" }}>{s.platform || "-"}</td>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-secondary)" }}>{s.platform || "-"}</td>
                         {!userId && (
                           <td style={{ padding: "0.625rem 0.5rem" }}>
                             <Link href={`/admin/sales?user=${s.owner.id}`} style={{
@@ -242,7 +242,7 @@ export default function AdminSalesPage() {
                             </Link>
                           </td>
                         )}
-                        <td style={{ padding: "0.625rem 0.5rem", color: "#64748b", fontSize: "0.6875rem" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-muted)", fontSize: "0.6875rem" }}>
                           {s.sold_at ? new Date(s.sold_at).toLocaleDateString("ro-RO") : "-"}
                         </td>
                       </tr>

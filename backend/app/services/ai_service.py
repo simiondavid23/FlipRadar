@@ -81,60 +81,76 @@ async def analyze_product_with_ai(
     source: str = "",
     currency: str = "EUR",
     user_name: str = "",
+    resale_price: float | None = None,
 ) -> str:
-    """Analyze a product for profitability using AI."""
+    """Analyze a product for resale on Romanian second-hand marketplaces.
+
+    Tailored for OLX / Vinted / Facebook Marketplace — does NOT mention Amazon
+    or other marketplaces outside the supported scope.
+    """
     greeting = f"Analizezi acest produs pentru {user_name}." if user_name else ""
-    prompt = f"""Esti un expert in comert online si revanzarea produselor pe marketplace-uri din Romania si UE (eMAG, Altex, OLX, Okazii, magazine proprii etc.). Calculezi profitabilitati cu cifre concrete, NU oferi raspunsuri vagi.
+
+    if resale_price and price and price > 0:
+        marja_value = float(resale_price) - float(price)
+        roi_value = (marja_value / float(price)) * 100.0
+        resale_line = f"PRET ESTIMAT REVANZARE: {resale_price} {currency}"
+        margin_line = (
+            f"MARJA BRUTA ESTIMATA: {round(marja_value, 2)} {currency} "
+            f"({round(roi_value, 1)}% ROI)"
+        )
+    else:
+        resale_line = "PRET ESTIMAT REVANZARE: necunoscut"
+        margin_line = "MARJA BRUTA ESTIMATA: necunoscuta — propune o sugestie de pret"
+
+    prompt = f"""Esti un expert in flipping si arbitraj pe pietele second-hand din Romania.
+Analizeaza acest produs pentru potentialul de revanzare pe OLX, Vinted sau Facebook Marketplace.
 
 {greeting}
-Analizeaza urmatorul produs si construieste o evaluare COMPLETA + NUMERICA pentru revanzare:
 
-Produs: {product_name}
-Categorie: {category if category else "Nespecificata"}
-Pret achizitie: {price if price else "Nespecificat"} {currency}
-Magazin sursa: {source if source else "Nespecificat"}
+PRODUS: {product_name}
+CATEGORIE: {category if category else "Nespecificata"}
+PRET ACHIZITIE: {price if price else "Nespecificat"} {currency}
+{resale_line}
+{margin_line}
+SURSA ACHIZITIE: {source if source else "Nespecificat"}
 
-Cerinte stricte la calculul cifrelor:
-- TOATE preturile in EUR (converteste din RON la curs ~5 RON/EUR daca e cazul).
-- pret_vanzare_estimat: pretul realist la care s-ar putea revinde pe piata RO/UE, dupa o cercetare scurta a categoriei. Daca nu ai informatii, estimeaza conservator (markup 20-50% peste pretul de achizitie).
-- profit_brut_eur: pret_vanzare_estimat - pret_achizitie_eur (cifra concreta in EUR).
-- costuri_operationale_eur: estimare pentru ambalare + transport + comision platforma (5-15% din pret_vanzare).
-- profit_net_eur: profit_brut_eur - costuri_operationale_eur (cifra concreta).
-- marja_neta_pct: (profit_net_eur / pret_vanzare_estimat) * 100, rotunjit la 1 zecimala.
-- roi_pct: (profit_net_eur / pret_achizitie_eur) * 100, rotunjit la 1 zecimala.
-- Toate cifrele trebuie sa fie consistente intre ele (sa se verifice matematic).
+Analizeaza tinand cont de:
+- Cererea tipica pentru aceasta categorie pe piata second-hand din Romania
+- Viteza de vanzare estimata (cate zile pana la vanzare)
+- Nivelul de concurenta pe OLX / Vinted / Facebook Marketplace pentru produse similare
+- Sezonalitatea categoriei in Romania
+- Riscurile specifice: dificultate de vanzare, depreciere rapida, produse greu de expediat
+- Daca pretul de achizitie lasa marja reala dupa costurile de livrare (~15-25 RON pentru curier in Romania)
 
-Raspunde STRICT in format JSON valid (fara markdown, fara ```), cu urmatoarea structura:
+Returneaza STRICT JSON valid fara text in afara JSON-ului si fara markdown:
 {{
-    "scor_profitabilitate": <numar 1-10, bazat pe ROI + demand + competitie>,
-    "verdict": "<RECOMANDAT/NEUTRU/NERECOMANDAT>",
-    "pret_achizitie_eur": <pret achizitie in EUR>,
-    "pret_vanzare_estimat": <numar in EUR>,
-    "profit_brut_eur": <numar in EUR>,
-    "costuri_operationale_eur": <numar in EUR>,
-    "profit_net_eur": <numar in EUR>,
-    "marja_neta_pct": <numar, ex: 18.5>,
-    "roi_pct": <numar, ex: 35.2>,
-    "nivel_competitie": "<scazut/mediu/ridicat>",
-    "explicatie_competitie": "<o propozitie despre cati vanzatori similari sunt si pe ce platforme>",
+    "verdict": "RECOMANDAT" | "NERECOMANDAT" | "CU REZERVE",
+    "score": <numar intreg 1-10>,
+    "roi_estimat": <numar reprezentand procentul ROI, 0 daca resale_price necunoscut>,
+    "viteza_vanzare": "rapida (1-7 zile)" | "medie (1-4 saptamani)" | "lenta (1-3 luni)",
+    "nivel_concurenta": "scazut" | "mediu" | "ridicat",
+    "sezonalitate": "<text scurt, max 15 cuvinte>",
+    "riscuri": ["<risc 1>", "<risc 2>", "<risc 3>"],
+    "platforme_recomandate": ["OLX", "Vinted", "Facebook Marketplace"],
+    "sfat_pret_revanzare": "<text scurt cu sugestie de pret daca resale_price lipseste, altfel comentariu despre prezentul pret>",
+    "recomandare_finala": "<text de 2-3 propozitii cu recomandarea concreta>",
+    "sumar": "<o singura propozitie rezumat>",
+    "scor_profitabilitate": <numar 1-10 — alias pentru score, pentru compatibilitate UI>,
     "demand_score": <numar 1-10>,
     "explicatie_demand": "<o propozitie despre cererea estimata>",
-    "sezonalitate": "<tot_anul/primavara_vara/toamna_iarna/sarbatori>",
+    "nivel_competitie": "<scazut | mediu | ridicat — alias pentru nivel_concurenta>",
+    "explicatie_competitie": "<o propozitie despre concurenta pe OLX/Vinted>",
     "explicatie_sezonalitate": "<o propozitie despre cand se vinde cel mai bine>",
-    "factori_risc": [
-        "<risc 1 concret>",
-        "<risc 2 concret>"
-    ],
-    "platforme_recomandate": [
-        "<platforma 1, ex: eMAG Marketplace>",
-        "<platforma 2, ex: OLX>"
-    ],
-    "sfaturi": [
-        "<sfat actionabil 1>",
-        "<sfat actionabil 2>",
-        "<sfat actionabil 3>"
-    ],
-    "explicatie_verdict": "<explicatie scurta 2-3 propozitii a verdictului, cu referire la cifrele de mai sus>"
+    "factori_risc": ["<copie din riscuri>"],
+    "explicatie_verdict": "<explicatie 2-3 propozitii a verdictului>",
+    "pret_achizitie_eur": <pret achizitie convertit in EUR (foloseste curs ~5 RON/EUR daca este RON)>,
+    "pret_vanzare_estimat": <pret estimat de revanzare in EUR>,
+    "profit_brut_eur": <profit brut estimat in EUR>,
+    "costuri_operationale_eur": <estimare costuri livrare + ambalare in EUR>,
+    "profit_net_eur": <profit net dupa costuri in EUR>,
+    "marja_neta_pct": <procentaj marja neta, 1 zecimala>,
+    "roi_pct": <procentaj ROI, 1 zecimala>,
+    "sfaturi": ["<sfat actionabil 1>", "<sfat actionabil 2>", "<sfat actionabil 3>"]
 }}"""
 
     try:
@@ -157,21 +173,86 @@ async def generate_product_listing(
     price: float = 0,
     currency: str = "EUR",
     user_name: str = "",
+    product_condition: str = "Nou",
+    target_platform: str = "OLX",
 ) -> str:
-    """Generate an optimized product listing for online marketplaces."""
-    byline = f"Pregatesti listingul pentru {user_name}, un vanzator care foloseste FlipRadar pentru a gasi produse profitabile pentru revanzare." if user_name else ""
-    prompt = f"""Esti un expert in copywriting si SEO pentru marketplace-uri online (eMAG Marketplace, OLX, Okazii, magazine proprii Shopify/WooCommerce).
+    """Generate an optimized product listing for second-hand marketplaces."""
+    byline = (
+        f"Pregatesti anuntul pentru {user_name}, un vanzator care foloseste FlipRadar "
+        f"pentru a gasi produse de revanzare pe piata second-hand din Romania."
+    ) if user_name else ""
+
+    condition_clean = (product_condition or "Nou").strip()
+    platform_clean = (target_platform or "OLX").strip()
+
+    if condition_clean.lower().startswith("second"):
+        condition_instructions = (
+            "Produsul este SECOND HAND. Fii transparent in anunt despre uzura: mentioneaza "
+            "starea reala (urme de utilizare normale, fara defecte majore daca e cazul), "
+            "evidentiaza raportul calitate/pret si motivul pentru care merita cumparat la "
+            "acest pret fata de unul nou."
+        )
+        price_instructions = (
+            "Sugereaza un pret realist pentru un produs second hand, cu mentiunea ca produsul "
+            "este verificat si functional."
+        )
+    elif condition_clean.lower().startswith("negociabil"):
+        condition_instructions = (
+            "Produsul este NEGOCIABIL. Mentioneaza explicit in anunt ca pretul este negociabil "
+            "si invita cumparatorul sa propuna o oferta."
+        )
+        price_instructions = (
+            "Sugereaza un pret de listing usor mai mare decat cel dorit (cu ~10-15%) pentru a "
+            "lasa marja de negociere. Mentioneaza in anunt 'pret negociabil'."
+        )
+    else:
+        condition_instructions = (
+            "Produsul este NOU (sigilat sau in ambalaj original). Mentioneaza acest aspect "
+            "clar in anunt si evidentiaza beneficiile cumpararii unui produs nou (garantie, "
+            "ambalaj original, fara uzura)."
+        )
+        price_instructions = "Sugereaza un pret competitiv comparativ cu alte oferte similare."
+
+    if platform_clean.lower() == "vinted":
+        platform_instructions = (
+            "Stilul anuntului trebuie sa fie CASUAL si SCURT, specific platformei Vinted. "
+            "Foloseste un ton prietenos, putine bullet point-uri, descriere de 100-200 cuvinte. "
+            "Evidentiaza marimea (daca e haine), starea si motivul vanzarii."
+        )
+    elif "facebook" in platform_clean.lower():
+        platform_instructions = (
+            "Stilul anuntului trebuie sa fie CONVERSATIONAL, fara bullet points, specific "
+            "platformei Facebook Marketplace. Foloseste paragrafe scurte, ton prietenos, "
+            "include detalii practice: livrare/ridicare, locatie, contact rapid."
+        )
+    else:
+        platform_instructions = (
+            "Stilul anuntului trebuie sa fie STRUCTURAT, cu specificatii tehnice clare, "
+            "specific platformei OLX. Include sectiuni: descriere, specificatii, conditii "
+            "de livrare. Foloseste bullet points pentru caracteristici."
+        )
+
+    prompt = f"""Esti un expert in copywriting pentru piete second-hand din Romania: OLX, Vinted si Facebook Marketplace.
 {byline}
-Genereaza un listing complet si optimizat SEO pentru urmatorul produs:
+Genereaza un anunt complet si optimizat pentru urmatorul produs:
 
 Produs: {product_name}
 Categorie: {category if category else "Nespecificata"}
 Caracteristici: {features if features else "Nespecificate"}
 Pret orientativ: {price if price else "Nespecificat"} {currency}
+Stare produs: {condition_clean}
+Platforma tinta: {platform_clean}
+
+INSTRUCTIUNI STARE PRODUS:
+{condition_instructions}
+{price_instructions}
+
+INSTRUCTIUNI PLATFORMA:
+{platform_instructions}
 
 Raspunde STRICT in format JSON valid (fara markdown, fara ```), cu urmatoarea structura:
 {{
-    "titlu": "<titlu optimizat SEO, max 200 caractere, cu cuvinte cheie relevante>",
+    "titlu": "<titlu adaptat platformei {platform_clean}, max 200 caractere, cu cuvinte cheie relevante>",
     "bullet_points": [
         "<bullet point 1 - beneficiu principal>",
         "<bullet point 2 - caracteristica cheie>",
@@ -179,11 +260,11 @@ Raspunde STRICT in format JSON valid (fara markdown, fara ```), cu urmatoarea st
         "<bullet point 4 - utilizare/compatibilitate>",
         "<bullet point 5 - garantie/bonus>"
     ],
-    "descriere": "<descriere completa 300-500 cuvinte, cu paragrafe, optimizata SEO>",
+    "descriere": "<descriere adaptata stilului platformei {platform_clean}, intre 150-500 cuvinte in functie de platforma>",
     "cuvinte_cheie": ["<cuvant1>", "<cuvant2>", "<cuvant3>", "<cuvant4>", "<cuvant5>"],
     "sfaturi_listing": [
-        "<sfat 1 pentru optimizare>",
-        "<sfat 2 pentru optimizare>"
+        "<sfat 1 specific platformei {platform_clean}>",
+        "<sfat 2 pentru cresterea sanselor de vanzare>"
     ]
 }}"""
     

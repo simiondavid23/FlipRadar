@@ -56,10 +56,10 @@ function DashboardContent({ children }) {
         }}
         className="mobile-header"
       >
-        <span style={{ fontSize: "1rem", fontWeight: 700, color: "white" }}>FlipRadar</span>
+        <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)" }}>FlipRadar</span>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          style={{ background: "none", border: "none", color: "white", cursor: "pointer", padding: "0.25rem" }}
+          style={{ background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", padding: "0.25rem" }}
         >
           {mobileMenuOpen ? <X style={{ width: "24px", height: "24px" }} /> : <Menu style={{ width: "24px", height: "24px" }} />}
         </button>

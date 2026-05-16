@@ -3,11 +3,38 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import axios from "axios";
-import { Mail, Lock, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap } from "lucide-react";
+import { useTheme } from "@/lib/theme";
+import { Mail, Lock, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap, Sun, Moon } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+function ThemeToggleFloating() {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button
+      onClick={toggleTheme}
+      title={theme === "light" ? "Comuta la tema intunecata" : "Comuta la tema luminoasa"}
+      style={{
+        position: "fixed", top: "1rem", right: "1rem", zIndex: 100,
+        padding: "0.5rem", borderRadius: "0.5rem",
+        border: "1px solid var(--border-color)",
+        backgroundColor: "var(--bg-card)",
+        color: "var(--text-secondary)",
+        cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {theme === "light" ? (
+        <Moon style={{ width: "20px", height: "20px" }} />
+      ) : (
+        <Sun style={{ width: "20px", height: "20px" }} />
+      )}
+    </button>
+  );
+}
+
 export default function LoginPage() {
+  const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -43,10 +70,10 @@ export default function LoginPage() {
   const inputStyle = {
     width: "100%",
     borderRadius: "0.75rem",
-    color: "white",
+    color: "var(--text-primary)",
     fontSize: "0.875rem",
-    backgroundColor: "#0f172a",
-    border: "1px solid #334155",
+    backgroundColor: "var(--bg-dark)",
+    border: "1px solid var(--border-color)",
     paddingLeft: "3rem",
     paddingRight: "1rem",
     paddingTop: "0.75rem",
@@ -54,16 +81,17 @@ export default function LoginPage() {
     outline: "none",
   };
 
-  const labelStyle = { display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.625rem", color: "#94a3b8" };
+  const labelStyle = { display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.625rem", color: "var(--text-secondary)" };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#0f172a" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
+      <ThemeToggleFloating />
       <div className="login-topbar" style={{ alignItems: "center", padding: "1.5rem", position: "relative", zIndex: 10 }}>
         <Image
-          src="/flipradar-logo.svg"
+          src={theme === "light" ? "/flipradar-logo-light.svg" : "/flipradar-logo.svg"}
           alt="FlipRadar"
-          width={200}
-          height={44}
+          width={180}
+          height={39}
           priority
           style={{ height: "auto" }}
         />
@@ -89,10 +117,10 @@ export default function LoginPage() {
             }}
           />
           <div style={{ position: "relative", zIndex: 10, textAlign: "center", maxWidth: "32rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <h1 style={{ fontSize: "2.25rem", fontWeight: 700, color: "white", lineHeight: 1.2 }}>
+            <h1 style={{ fontSize: "2.25rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.2 }}>
               Descopera produse <span style={{ color: "#60a5fa" }}>profitabile</span> pentru revanzare
             </h1>
-            <p style={{ color: "#94a3b8", fontSize: "1.125rem" }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: "1.125rem" }}>
               Analizeaza piata, monitorizeaza preturile si gaseste cele mai bune oportunitati de revanzare.
             </p>
             <div style={{ alignSelf: "center", display: "inline-flex", flexDirection: "column", gap: "0.75rem", paddingTop: "1rem" }}>
@@ -105,7 +133,7 @@ export default function LoginPage() {
                   <div style={{ width: "2.25rem", height: "2.25rem", borderRadius: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, backgroundColor: "rgba(37, 99, 235, 0.15)" }}>
                     <Icon style={{ width: "1rem", height: "1rem", color: "#60a5fa" }} />
                   </div>
-                  <span style={{ color: "#cbd5e1", fontSize: "0.875rem", textAlign: "left" }}>{text}</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: "0.875rem", textAlign: "left" }}>{text}</span>
                 </div>
               ))}
             </div>
@@ -123,12 +151,12 @@ export default function LoginPage() {
                 priority
                 style={{ marginBottom: "0.75rem" }}
               />
-              <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white" }}>FlipRadar</h1>
+              <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>FlipRadar</h1>
             </div>
 
             <div style={{ marginBottom: "2.5rem", textAlign: "center" }}>
-              <h2 style={{ fontSize: "1.875rem", fontWeight: 600, color: "white" }}>Autentificare</h2>
-              <p style={{ color: "#94a3b8", marginTop: "0.75rem", fontSize: "1rem" }}>Introdu datele contului tau<br />pentru a continua</p>
+              <h2 style={{ fontSize: "1.875rem", fontWeight: 600, color: "var(--text-primary)" }}>Autentificare</h2>
+              <p style={{ color: "var(--text-secondary)", marginTop: "0.75rem", fontSize: "1rem" }}>Introdu datele contului tau<br />pentru a continua</p>
             </div>
 
             {error && (
@@ -142,7 +170,7 @@ export default function LoginPage() {
               <div>
                 <label style={labelStyle}>Email</label>
                 <div style={{ position: "relative" }}>
-                  <Mail style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "#64748b", pointerEvents: "none", zIndex: 10 }} />
+                  <Mail style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-muted)", pointerEvents: "none", zIndex: 10 }} />
                   <input
                     type="email"
                     value={email}
@@ -157,7 +185,7 @@ export default function LoginPage() {
               <div>
                 <label style={labelStyle}>Parola</label>
                 <div style={{ position: "relative" }}>
-                  <Lock style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "#64748b", pointerEvents: "none", zIndex: 10 }} />
+                  <Lock style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-muted)", pointerEvents: "none", zIndex: 10 }} />
                   <input
                     type="password"
                     value={password}
@@ -180,7 +208,7 @@ export default function LoginPage() {
                     justifyContent: "center",
                     gap: "0.5rem",
                     borderRadius: "0.75rem",
-                    color: "white",
+                    color: "var(--text-primary)",
                     fontWeight: 500,
                     fontSize: "0.875rem",
                     border: "none",
@@ -209,12 +237,12 @@ export default function LoginPage() {
             </form>
 
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", margin: "2rem 0" }}>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "#1e293b" }} />
-              <span style={{ fontSize: "0.875rem", color: "#64748b" }}>sau</span>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "#1e293b" }} />
+              <div style={{ flex: 1, height: "1px", backgroundColor: "var(--bg-card)" }} />
+              <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>sau</span>
+              <div style={{ flex: 1, height: "1px", backgroundColor: "var(--bg-card)" }} />
             </div>
 
-            <p style={{ textAlign: "center", color: "#94a3b8", fontSize: "1rem" }}>
+            <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "1rem" }}>
               Nu ai cont?{" "}
               <Link href="/register" style={{ color: "#60a5fa", fontWeight: 500, textDecoration: "none" }}>
                 Creeaza cont gratuit
@@ -222,7 +250,7 @@ export default function LoginPage() {
             </p>
 
             <p style={{ textAlign: "center", fontSize: "1rem", marginTop: "1rem" }}>
-              <Link href="/reset-password" style={{ color: "#64748b", textDecoration: "none" }}>
+              <Link href="/reset-password" style={{ color: "var(--text-muted)", textDecoration: "none" }}>
                 Ai uitat parola?
               </Link>
             </p>

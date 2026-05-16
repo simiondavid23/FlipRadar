@@ -53,33 +53,33 @@ export default function ImportExportPage() {
     finally { setExportLoading(""); }
   };
 
-  const cardStyle = { backgroundColor: "#1e293b", border: "1px solid #334155" };
+  const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)" };
 
   return (
     <div>
       <div style={{ marginBottom: "2rem" }}>
-        <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "white", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <FileSpreadsheet style={{ width: "2rem", height: "2rem", color: "#22c55e" }} />
-          Import / Export
+          Gestionare Date
         </h1>
-        <p style={{ color: "#94a3b8", marginTop: "0.5rem" }}>Importa produse din Excel/CSV sau exporta datele tale</p>
+        <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>Importa produse din Excel/CSV sau exporta datele tale</p>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
         {/* Import Section */}
         <div style={{ ...cardStyle, borderRadius: "1rem", padding: "1.5rem" }}>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "white", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <Upload style={{ width: "1.25rem", height: "1.25rem", color: "#3b82f6" }} /> Import Produse
           </h2>
-          <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1rem" }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginBottom: "1rem" }}>
             Incarca un fisier CSV sau Excel cu produse. Coloanele acceptate: name, sku, ean, category, price, currency, source, source_url
           </p>
 
-          <div style={{ border: "2px dashed #334155", borderRadius: "0.75rem", padding: "2rem", textAlign: "center", marginBottom: "1rem" }}>
-            <File style={{ width: "2.5rem", height: "2.5rem", margin: "0 auto 0.75rem", color: "#475569" }} />
-            <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginBottom: "0.75rem" }}>Trage un fisier aici sau click pentru a selecta</p>
+          <div style={{ border: "2px dashed var(--border-color)", borderRadius: "0.75rem", padding: "2rem", textAlign: "center", marginBottom: "1rem" }}>
+            <File style={{ width: "2.5rem", height: "2.5rem", margin: "0 auto 0.75rem", color: "var(--text-secondary)" }} />
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginBottom: "0.75rem" }}>Trage un fisier aici sau click pentru a selecta</p>
             <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.txt" onChange={handleImport}
-              style={{ display: "block", margin: "0 auto", fontSize: "0.875rem", color: "#94a3b8" }} />
+              style={{ display: "block", margin: "0 auto", fontSize: "0.875rem", color: "var(--text-secondary)" }} />
           </div>
 
           {loading && <p style={{ color: "#3b82f6", fontSize: "0.875rem" }}>Se importa...</p>}
@@ -90,7 +90,7 @@ export default function ImportExportPage() {
                 <CheckCircle style={{ width: "1.25rem", height: "1.25rem", color: "#22c55e" }} />
                 <span style={{ color: "#22c55e", fontWeight: 600 }}>Import finalizat!</span>
               </div>
-              <p style={{ color: "#94a3b8", fontSize: "0.875rem" }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
                 {importResult.imported} produse importate, {importResult.skipped} omise (duplicate)
               </p>
             </div>
@@ -107,7 +107,7 @@ export default function ImportExportPage() {
 
           <button onClick={() => handleExport("template")} disabled={exportLoading === "template"}
             style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 1rem",
-              borderRadius: "0.5rem", border: "1px solid #334155", backgroundColor: "transparent", color: "#94a3b8",
+              borderRadius: "0.5rem", border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "var(--text-secondary)",
               cursor: "pointer", fontSize: "0.8125rem" }}>
             <Download style={{ width: "0.875rem", height: "0.875rem" }} />
             Descarca template Excel
@@ -116,31 +116,31 @@ export default function ImportExportPage() {
 
         {/* Export Section */}
         <div style={{ ...cardStyle, borderRadius: "1rem", padding: "1.5rem" }}>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "white", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <Download style={{ width: "1.25rem", height: "1.25rem", color: "#22c55e" }} /> Export Date
           </h2>
-          <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1.5rem" }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginBottom: "1.5rem" }}>
             Exporta produsele sau watchlist-ul tau in format Excel.
           </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <button onClick={() => handleExport("products")} disabled={!!exportLoading}
               style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem", borderRadius: "0.75rem",
-                border: "1px solid #334155", backgroundColor: "transparent", color: "white", cursor: "pointer", textAlign: "left" }}>
+                border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "var(--text-primary)", cursor: "pointer", textAlign: "left" }}>
               <FileSpreadsheet style={{ width: "2rem", height: "2rem", color: "#22c55e" }} />
               <div>
                 <p style={{ fontWeight: 600 }}>Export Produse</p>
-                <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.125rem" }}>Toate produsele din baza de date</p>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.125rem" }}>Toate produsele din baza de date</p>
               </div>
             </button>
 
             <button onClick={() => handleExport("watchlist")} disabled={!!exportLoading}
               style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem", borderRadius: "0.75rem",
-                border: "1px solid #334155", backgroundColor: "transparent", color: "white", cursor: "pointer", textAlign: "left" }}>
+                border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "var(--text-primary)", cursor: "pointer", textAlign: "left" }}>
               <FileText style={{ width: "2rem", height: "2rem", color: "#a78bfa" }} />
               <div>
                 <p style={{ fontWeight: 600 }}>Export Watchlist</p>
-                <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.125rem" }}>Produsele din watchlist-ul tau</p>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.125rem" }}>Produsele din watchlist-ul tau</p>
               </div>
             </button>
           </div>

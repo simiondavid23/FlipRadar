@@ -18,6 +18,7 @@ class Product(Base):
     source = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
     current_price = Column(Float, nullable=True)
+    resale_price = Column(Float, nullable=True)
     currency = Column(String, default="EUR")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

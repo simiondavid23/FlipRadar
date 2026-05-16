@@ -19,6 +19,7 @@ class ProductAnalysisRequest(BaseModel):
     price: Optional[float] = 0
     source: Optional[str] = ""
     currency: Optional[str] = "EUR"
+    resale_price: Optional[float] = None
 
 
 class ListingGenerationRequest(BaseModel):
@@ -27,6 +28,8 @@ class ListingGenerationRequest(BaseModel):
     features: Optional[str] = ""
     price: Optional[float] = 0
     currency: Optional[str] = "EUR"
+    product_condition: Optional[str] = "Nou"
+    target_platform: Optional[str] = "OLX"
 
 
 class AIResponse(BaseModel):

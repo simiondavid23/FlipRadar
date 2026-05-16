@@ -50,12 +50,12 @@ function StatTile({ icon: Icon, label, value, sublabel, color, href }) {
         padding: "0.4rem", borderRadius: "0.5rem",
         backgroundColor: color, display: "flex", flexShrink: 0,
       }}>
-        <Icon style={{ width: 14, height: 14, color: "white" }} />
+        <Icon style={{ width: 14, height: 14, color: "var(--text-primary)" }} />
       </div>
       <div style={{ minWidth: 0 }}>
-        <p style={{ margin: 0, color: "#94a3b8", fontSize: "0.6875rem" }}>{label}</p>
-        <p style={{ margin: 0, color: "white", fontSize: "1rem", fontWeight: 600 }}>{value}</p>
-        {sublabel && <p style={{ margin: "0.125rem 0 0", color: "#64748b", fontSize: "0.6875rem" }}>{sublabel}</p>}
+        <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.6875rem" }}>{label}</p>
+        <p style={{ margin: 0, color: "var(--text-primary)", fontSize: "1rem", fontWeight: 600 }}>{value}</p>
+        {sublabel && <p style={{ margin: "0.125rem 0 0", color: "var(--text-muted)", fontSize: "0.6875rem" }}>{sublabel}</p>}
       </div>
     </>
   );
@@ -220,11 +220,11 @@ export default function AdminUsersPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{ padding: "0.625rem", borderRadius: "0.75rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <Users style={{ width: 22, height: 22, color: "white" }} />
+            <Users style={{ width: 22, height: 22, color: "var(--text-primary)" }} />
           </div>
           <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>Gestionare Utilizatori</h1>
-            <p style={{ fontSize: "0.8125rem", color: "#94a3b8", margin: 0 }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Gestionare Utilizatori</h1>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
               Vizualizeaza activitatea conturilor si controleaza accesul la functionalitati
             </p>
           </div>
@@ -233,7 +233,7 @@ export default function AdminUsersPage() {
           display: "flex", alignItems: "center", gap: "0.375rem",
           padding: "0.5rem 1rem", borderRadius: "0.5rem",
           border: "1px solid var(--border-color)", textDecoration: "none",
-          fontSize: "0.8125rem", color: "#94a3b8",
+          fontSize: "0.8125rem", color: "var(--text-secondary)",
         }}>
           <ArrowLeft style={{ width: 14, height: 14 }} />
           Inapoi la pagina principala
@@ -260,7 +260,7 @@ export default function AdminUsersPage() {
       {/* Search */}
       <div style={{ ...cardStyle, marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", position: "relative" }}>
-          <Search style={{ width: 16, height: 16, color: "#64748b", position: "absolute", left: "0.75rem" }} />
+          <Search style={{ width: 16, height: 16, color: "var(--text-muted)", position: "absolute", left: "0.75rem" }} />
           <input
             type="text"
             value={search}
@@ -270,9 +270,9 @@ export default function AdminUsersPage() {
               width: "100%",
               padding: "0.625rem 0.75rem 0.625rem 2.25rem",
               borderRadius: "0.5rem",
-              backgroundColor: "#0f172a",
+              backgroundColor: "var(--bg-dark)",
               border: "1px solid var(--border-color)",
-              color: "white",
+              color: "var(--text-primary)",
               fontSize: "0.8125rem",
               outline: "none",
             }}
@@ -288,14 +288,14 @@ export default function AdminUsersPage() {
               <Loader2 style={{ width: 28, height: 28, color: "#60a5fa", animation: "spin 1s linear infinite" }} />
             </div>
           ) : filtered.length === 0 ? (
-            <p style={{ color: "#64748b", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
               Nu au fost gasiti utilizatori.
             </p>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                 <thead>
-                  <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <tr style={{ textAlign: "left", color: "var(--text-muted)", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Utilizator</th>
                     <th style={{ padding: "0.5rem 0.5rem" }}>Status</th>
                     <th style={{ padding: "0.5rem 0.5rem", textAlign: "right" }}>Produse</th>
@@ -323,8 +323,8 @@ export default function AdminUsersPage() {
                       >
                         <td style={{ padding: "0.625rem 0.5rem" }}>
                           <div style={{ display: "flex", flexDirection: "column" }}>
-                            <span style={{ color: "white", fontWeight: 500 }}>{u.full_name || u.username}</span>
-                            <span style={{ color: "#64748b", fontSize: "0.6875rem" }}>{u.email}</span>
+                            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{u.full_name || u.username}</span>
+                            <span style={{ color: "var(--text-muted)", fontSize: "0.6875rem" }}>{u.email}</span>
                           </div>
                         </td>
                         <td style={{ padding: "0.625rem 0.5rem" }}>
@@ -339,11 +339,11 @@ export default function AdminUsersPage() {
                             )}
                           </div>
                         </td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "#cbd5e1" }}>{u.products_count}</td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "#cbd5e1" }}>{u.watchlist_count}</td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "#cbd5e1" }}>{u.active_alerts_count}</td>
-                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "#cbd5e1" }}>{u.sales_count}</td>
-                        <td style={{ padding: "0.625rem 0.5rem", color: "#64748b", fontSize: "0.6875rem" }}>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-secondary)" }}>{u.products_count}</td>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-secondary)" }}>{u.watchlist_count}</td>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-secondary)" }}>{u.active_alerts_count}</td>
+                        <td style={{ padding: "0.625rem 0.5rem", textAlign: "right", color: "var(--text-secondary)" }}>{u.sales_count}</td>
+                        <td style={{ padding: "0.625rem 0.5rem", color: "var(--text-muted)", fontSize: "0.6875rem" }}>
                           {u.created_at ? new Date(u.created_at).toLocaleDateString("ro-RO") : "-"}
                         </td>
                       </tr>
@@ -365,7 +365,7 @@ export default function AdminUsersPage() {
                 position: "absolute", top: "0.75rem", right: "0.75rem",
                 padding: "0.375rem", borderRadius: "0.5rem",
                 background: "transparent", border: "1px solid var(--border-color)",
-                color: "#94a3b8", cursor: "pointer", display: "flex",
+                color: "var(--text-secondary)", cursor: "pointer", display: "flex",
               }}
             >
               <X style={{ width: 14, height: 14 }} />
@@ -379,10 +379,10 @@ export default function AdminUsersPage() {
               <>
                 {/* Identity */}
                 <div style={{ marginBottom: "1.25rem", paddingRight: "2rem" }}>
-                  <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "white", margin: 0 }}>
+                  <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
                     {detail.full_name || detail.username}
                   </h2>
-                  <p style={{ margin: "0.125rem 0 0", color: "#94a3b8", fontSize: "0.8125rem" }}>{detail.email}</p>
+                  <p style={{ margin: "0.125rem 0 0", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>{detail.email}</p>
                   <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
                     <Badge ok={detail.is_active} labelOn="Activ" labelOff="Dezactivat" />
                     {detail.is_admin && (
@@ -395,14 +395,14 @@ export default function AdminUsersPage() {
                         Admin
                       </span>
                     )}
-                    <span style={{ fontSize: "0.6875rem", color: "#64748b", alignSelf: "center" }}>
+                    <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", alignSelf: "center" }}>
                       Cont creat: {formatDate(detail.created_at)}
                     </span>
                   </div>
                 </div>
 
                 {/* Stats */}
-                <p style={{ fontSize: "0.6875rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.5rem" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.5rem" }}>
                   Statistici activitate
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -416,15 +416,15 @@ export default function AdminUsersPage() {
                   <StatTile icon={MessageCircle}  label="Mesaje AI"     value={detail.chat_messages_count} sublabel={detail.last_chat_at ? `Ultim: ${new Date(detail.last_chat_at).toLocaleDateString("ro-RO")}` : "Fara activitate"} color="#2563eb" href={`/admin/chat-messages?user=${detail.id}`} />
                 </div>
 
-                <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginBottom: "1rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
                   {detail.sales_count > 0 && (
-                    <span>Profit total: <strong style={{ color: "white" }}>{formatMoney(detail.sales_profit)}</strong> · </span>
+                    <span>Profit total: <strong style={{ color: "var(--text-primary)" }}>{formatMoney(detail.sales_profit)}</strong> · </span>
                   )}
-                  <span>Notificari necitite: <strong style={{ color: "white" }}>{detail.unread_notifications}</strong></span>
+                  <span>Notificari necitite: <strong style={{ color: "var(--text-primary)" }}>{detail.unread_notifications}</strong></span>
                 </div>
 
                 {/* Feature flags */}
-                <p style={{ fontSize: "0.6875rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.5rem" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.5rem" }}>
                   Permisiuni functionalitati
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", marginBottom: "1rem" }}>
@@ -444,7 +444,7 @@ export default function AdminUsersPage() {
                           opacity: disabled ? 0.6 : 1,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "white", fontSize: "0.8125rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-primary)", fontSize: "0.8125rem" }}>
                           <Icon style={{ width: 14, height: 14, color: on ? "#4ade80" : "#f87171" }} />
                           {label}
                         </div>
@@ -461,7 +461,7 @@ export default function AdminUsersPage() {
                 </div>
 
                 {/* Account active toggle */}
-                <p style={{ fontSize: "0.6875rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.5rem" }}>
+                <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.5rem" }}>
                   Stare cont
                 </p>
                 <button
@@ -495,7 +495,7 @@ export default function AdminUsersPage() {
                 )}
               </>
             ) : (
-              <p style={{ color: "#64748b", fontSize: "0.8125rem", textAlign: "center", padding: "2rem 0" }}>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", textAlign: "center", padding: "2rem 0" }}>
                 Nu am putut incarca detaliile.
               </p>
             )}

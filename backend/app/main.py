@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import auth, products, watchlist, alerts, dashboard, ai_chat, ai_analysis, admin, support
 from app.routers import favorites, notifications, scraping, import_export
-from app.routers import currency, inventory, sales
+from app.routers import currency, inventory, sales, reports
 
 # Import all models
 from app.models import user, product, price_history, product_source
@@ -35,7 +36,7 @@ async def lifespan(app: FastAPI):
         minutes=15,
         id="check_alerts",
         replace_existing=True,
-        next_run_time=None,
+        next_run_time=datetime.now(),
     )
     scheduler.start()
     print("[Scheduler] Started - check_alerts runs every 15 minutes.")
@@ -92,6 +93,7 @@ app.include_router(import_export.router)
 app.include_router(currency.router)
 app.include_router(inventory.router)
 app.include_router(sales.router)
+app.include_router(reports.router)
 
 
 @app.get("/")

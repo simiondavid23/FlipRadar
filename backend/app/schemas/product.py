@@ -13,6 +13,7 @@ class ProductCreate(BaseModel):
     source: Optional[str] = None
     source_url: Optional[str] = None
     current_price: Optional[float] = None
+    resale_price: Optional[float] = None
     currency: str = "EUR"
 
 
@@ -26,6 +27,7 @@ class ProductUpdate(BaseModel):
     source: Optional[str] = None
     source_url: Optional[str] = None
     current_price: Optional[float] = None
+    resale_price: Optional[float] = None
     currency: Optional[str] = None
 
 
@@ -52,6 +54,7 @@ class ProductResponse(BaseModel):
     source: Optional[str] = None
     source_url: Optional[str] = None
     current_price: Optional[float] = None
+    resale_price: Optional[float] = None
     currency: str
     created_at: datetime
     sources: List[ProductSourceResponse] = []

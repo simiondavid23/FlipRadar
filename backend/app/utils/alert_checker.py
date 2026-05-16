@@ -118,7 +118,10 @@ def check_alerts() -> int:
 
     Returns the number of alerts that were triggered in this run.
     """
+    print(f"[AlertChecker] Pornit la {datetime.now().strftime('%H:%M:%S')}")
     db: Session = SessionLocal()
+    triggered_count = 0
+    emails_sent = 0
     try:
         # Pas 1: refresh pret pentru toate produsele scrapeable, nu doar cele
         # cu alerte. Pasul 2 (evaluarea alertelor) vede deja preturile fresh.
@@ -130,8 +133,6 @@ def check_alerts() -> int:
             .all()
         )
 
-        triggered_count = 0
-        emails_sent = 0
         smtp_on = email_is_configured()
 
         # Pas 2: verifica fiecare alerta. Query-ul pe Product re-citeste
@@ -193,11 +194,17 @@ def check_alerts() -> int:
         else:
             print(f"[AlertChecker] Verificat {len(active_alerts)} alerte - nicio declansare.")
 
+        print(f"[AlertChecker] Finalizat. Alerte declansate: {triggered_count}, emailuri trimise: {emails_sent}")
         return triggered_count
 
     except Exception as e:
-        print(f"[AlertChecker] Eroare: {e}")
-        db.rollback()
+        print(f"[AlertChecker] EROARE NEASTEPTATA: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return 0
     finally:
         db.close()

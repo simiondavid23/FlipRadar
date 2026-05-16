@@ -56,7 +56,7 @@ export default function AlertsPage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "white", margin: 0 }}>Alerte de Pret</h1>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Alerte de Pret</h1>
           <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
             Gestioneaza alertele tale de pret ({alerts.length} alerte)
           </p>
@@ -79,7 +79,7 @@ export default function AlertsPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
-                    <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", margin: 0 }}>
+                    <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                       {alert.product?.name || `Produs #${alert.product_id}`}
                     </h3>
                     {alert.is_triggered && (
@@ -94,7 +94,7 @@ export default function AlertsPage() {
                     {!alert.is_active && !alert.is_triggered && (
                       <span style={{
                         padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
-                        backgroundColor: "rgba(148,163,184,0.15)", color: "#94a3b8",
+                        backgroundColor: "rgba(148,163,184,0.15)", color: "var(--text-secondary)",
                       }}>
                         Inactiva
                       </span>
@@ -127,13 +127,13 @@ export default function AlertsPage() {
                     {alert.is_active ? (
                       <ToggleRight style={{ width: "22px", height: "22px", color: "#4ade80" }} />
                     ) : (
-                      <ToggleLeft style={{ width: "22px", height: "22px", color: "#64748b" }} />
+                      <ToggleLeft style={{ width: "22px", height: "22px", color: "var(--text-muted)" }} />
                     )}
                   </button>
                   <button
                     onClick={() => handleDelete(alert.id)}
                     title="Sterge alerta"
-                    style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", transition: "all 0.15s ease" }}
+                    style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease" }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)"; e.currentTarget.style.color = "#f87171"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#94a3b8"; }}
                   >
@@ -153,7 +153,7 @@ export default function AlertsPage() {
           textAlign: "center",
         }}>
           <BellOff style={{ width: "2.5rem", height: "2.5rem", margin: "0 auto 0.75rem", color: "var(--text-secondary)" }} />
-          <p style={{ fontSize: "1rem", color: "white", marginBottom: "0.375rem" }}>Nu ai alerte configurate</p>
+          <p style={{ fontSize: "1rem", color: "var(--text-primary)", marginBottom: "0.375rem" }}>Nu ai alerte configurate</p>
           <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
             Alertele pot fi create din pagina de detalii a unui produs.
           </p>

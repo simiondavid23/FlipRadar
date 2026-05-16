@@ -124,7 +124,7 @@ export default function ProductDetailPage() {
     return (
       <div style={{ maxWidth: "960px", margin: "0 auto", textAlign: "center", paddingTop: "4rem" }}>
         <Package style={{ width: "3rem", height: "3rem", margin: "0 auto 1rem", color: "var(--text-secondary)" }} />
-        <p style={{ color: "white", fontSize: "1rem", marginBottom: "0.5rem" }}>Produsul nu a fost gasit</p>
+        <p style={{ color: "var(--text-primary)", fontSize: "1rem", marginBottom: "0.5rem" }}>Produsul nu a fost gasit</p>
         <Link href="/dashboard/products" style={{ color: "#60a5fa", fontSize: "0.875rem" }}>← Inapoi la produse</Link>
       </div>
     );
@@ -151,7 +151,7 @@ export default function ProductDetailPage() {
   const trendConfig = {
     up: { icon: TrendingUp, color: "#f87171", label: "In crestere" },
     down: { icon: TrendingDown, color: "#4ade80", label: "In scadere" },
-    stable: { icon: Minus, color: "#94a3b8", label: "Stabil" },
+    stable: { icon: Minus, color: "var(--text-secondary)", label: "Stabil" },
   };
   const TrendIcon = trendConfig[trend].icon;
 
@@ -160,7 +160,7 @@ export default function ProductDetailPage() {
       {/* Back link */}
       <Link
         href="/dashboard/products"
-        style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", color: "#94a3b8", fontSize: "0.8125rem", textDecoration: "none", marginBottom: "1.25rem" }}
+        style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", color: "var(--text-secondary)", fontSize: "0.8125rem", textDecoration: "none", marginBottom: "1.25rem" }}
         onMouseEnter={(e) => { e.currentTarget.style.color = "white"; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = "#94a3b8"; }}
       >
@@ -175,7 +175,7 @@ export default function ProductDetailPage() {
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.5rem" }}>
-              <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "white", margin: 0 }}>{product.name}</h1>
+              <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{product.name}</h1>
               {product.sku && (
                 <button
                   type="button"
@@ -312,7 +312,7 @@ export default function ProductDetailPage() {
             backgroundColor: "rgba(15,23,42,0.6)", border: "1px solid var(--border-color)",
             display: "flex", flexDirection: "column", gap: "0.375rem",
           }}>
-            <div style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 500, marginBottom: "0.25rem" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 500, marginBottom: "0.25rem" }}>
               Rezultat refresh per sursa
             </div>
             {refreshResults.map((r, i) => (
@@ -325,7 +325,7 @@ export default function ProductDetailPage() {
                   r.changed ? (
                     <span style={{ color: "#86efac" }}>{r.old_price ?? "?"} -&gt; <strong>{r.new_price}</strong> {r.currency}</span>
                   ) : (
-                    <span style={{ color: "#94a3b8" }}>neschimbat: {r.new_price} {r.currency}</span>
+                    <span style={{ color: "var(--text-secondary)" }}>neschimbat: {r.new_price} {r.currency}</span>
                   )
                 ) : (
                   <span style={{ color: "#fca5a5" }}>{r.error || "esec"}</span>
@@ -347,7 +347,7 @@ export default function ProductDetailPage() {
               onChange={(e) => setAlertForm({ ...alertForm, alert_type: e.target.value })}
               style={{
                 backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "white",
+                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                 fontSize: "0.8125rem", outline: "none", cursor: "pointer",
               }}
             >
@@ -364,7 +364,7 @@ export default function ProductDetailPage() {
               placeholder="ex: 25.00"
               style={{
                 backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "white",
+                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                 fontSize: "0.8125rem", width: "120px", outline: "none",
               }}
             />
@@ -373,7 +373,7 @@ export default function ProductDetailPage() {
               onChange={(e) => setAlertForm({ ...alertForm, currency: e.target.value })}
               style={{
                 backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "white",
+                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                 fontSize: "0.8125rem", outline: "none", cursor: "pointer",
               }}
             >
@@ -383,7 +383,7 @@ export default function ProductDetailPage() {
             </select>
             <button type="submit" style={{
               padding: "0.375rem 0.875rem", borderRadius: "0.375rem", backgroundColor: "#2563eb",
-              color: "white", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+              color: "var(--text-primary)", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
             }}>
               Creeaza alerta
             </button>
@@ -401,7 +401,7 @@ export default function ProductDetailPage() {
           backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
           borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
         }}>
-          <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", marginBottom: "0.75rem" }}>
+          <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.75rem" }}>
             Surse stocate ({product.sources.length})
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -434,7 +434,7 @@ export default function ProductDetailPage() {
                   )}
                   <span style={{ flex: 1 }} />
                   {s.last_checked_at && (
-                    <span style={{ fontSize: "0.6875rem", color: "#64748b" }}>
+                    <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
                       Verificat: {new Date(s.last_checked_at).toLocaleString("ro-RO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </span>
                   )}
@@ -462,7 +462,7 @@ export default function ProductDetailPage() {
         </div>
         <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret mediu</p>
-          <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "white", margin: 0 }}>{average_price ?? "—"} {product.currency}</p>
+          <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{average_price ?? "—"} {product.currency}</p>
         </div>
         <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret maxim</p>
@@ -475,7 +475,7 @@ export default function ProductDetailPage() {
         backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
         borderRadius: "0.75rem", padding: "1.5rem",
       }}>
-        <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", marginBottom: "1.25rem" }}>
+        <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1.25rem" }}>
           Evolutia pretului
         </h2>
         {chartData.length > 1 ? (
@@ -503,12 +503,12 @@ export default function ProductDetailPage() {
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#1e293b",
-                    border: "1px solid #334155",
+                    backgroundColor: "var(--bg-card)",
+                    border: "1px solid var(--border-color)",
                     borderRadius: "0.5rem",
                     fontSize: "0.8125rem",
                   }}
-                  labelStyle={{ color: "#94a3b8" }}
+                  labelStyle={{ color: "var(--text-secondary)" }}
                   itemStyle={{ color: "#3b82f6" }}
                   formatter={(value) => [`${value} ${product.currency}`, "Pret"]}
                   labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
@@ -527,7 +527,7 @@ export default function ProductDetailPage() {
           </div>
         ) : chartData.length === 1 ? (
           <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-            <p>Un singur punct de pret inregistrat: <strong style={{ color: "white" }}>{chartData[0].price} {product.currency}</strong> la {chartData[0].fullDate}</p>
+            <p>Un singur punct de pret inregistrat: <strong style={{ color: "var(--text-primary)" }}>{chartData[0].price} {product.currency}</strong> la {chartData[0].fullDate}</p>
             <p style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}>Graficul va fi disponibil dupa mai multe inregistrari.</p>
           </div>
         ) : (
@@ -543,7 +543,7 @@ export default function ProductDetailPage() {
           backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
           borderRadius: "0.75rem", padding: "1.5rem", marginTop: "1rem",
         }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "white", marginBottom: "0.5rem" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>
             Istoric preturi detaliat
           </h2>
           <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
@@ -572,13 +572,13 @@ export default function ProductDetailPage() {
                   const sourceStyle = SOURCE_COLORS[ph.source] || { bg: "rgba(148,163,184,0.15)", fg: "#cbd5e1" };
                   return (
                     <tr key={ph.id} style={{ borderBottom: "1px solid rgba(51,65,85,0.4)" }}>
-                      <td style={{ padding: "0.625rem 0.75rem", color: "white" }}>
+                      <td style={{ padding: "0.625rem 0.75rem", color: "var(--text-primary)" }}>
                         {new Date(ph.recorded_at).toLocaleString("ro-RO", {
                           day: "2-digit", month: "short", year: "numeric",
                           hour: "2-digit", minute: "2-digit",
                         })}
                       </td>
-                      <td style={{ padding: "0.625rem 0.75rem", color: "white", fontWeight: 600 }}>
+                      <td style={{ padding: "0.625rem 0.75rem", color: "var(--text-primary)", fontWeight: 600 }}>
                         {ph.price.toFixed(2)}
                       </td>
                       <td style={{ padding: "0.625rem 0.75rem", color: "var(--text-secondary)" }}>
@@ -600,7 +600,7 @@ export default function ProductDetailPage() {
                         {diff === null ? (
                           <span style={{ color: "var(--text-secondary)" }}>—</span>
                         ) : diff === 0 ? (
-                          <span style={{ color: "#94a3b8" }}>fara schimbare</span>
+                          <span style={{ color: "var(--text-secondary)" }}>fara schimbare</span>
                         ) : (
                           <span style={{ color: diff < 0 ? "#4ade80" : "#f87171", fontWeight: 500 }}>
                             {diff > 0 ? "+" : ""}{diff.toFixed(2)} {ph.currency}
