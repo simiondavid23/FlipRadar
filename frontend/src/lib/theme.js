@@ -14,7 +14,7 @@ function readStoredTheme() {
       return "light";
     }
   } catch {
-    // ignore — falls through to default
+    // ignorăm — cade pe valoarea implicită
   }
   return "dark";
 }
@@ -36,7 +36,7 @@ export function ThemeProvider({ children }) {
       try {
         window.localStorage.setItem(STORAGE_KEY, next);
       } catch {
-        // localStorage may be unavailable (private mode, etc.) — ignore
+        // localStorage poate fi indisponibil (mod privat, etc.) — ignorăm
       }
       if (typeof document !== "undefined") {
         document.documentElement.setAttribute("data-theme", next);

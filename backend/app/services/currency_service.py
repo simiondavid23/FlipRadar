@@ -1,6 +1,6 @@
 """
-Currency conversion service using BNR (Banca Nationala a Romaniei) official rates.
-Fetches daily EUR -> RON rate from https://www.bnr.ro/nbrfxrates.xml and caches it in memory.
+Serviciu de conversie valutară folosind cursurile oficiale BNR (Banca Națională a României).
+Descarcă zilnic cursul EUR -> RON de la https://www.bnr.ro/nbrfxrates.xml și îl stochează în memorie.
 """
 import re
 import time
@@ -13,13 +13,13 @@ _CACHE: Dict[str, float] = {}
 _CACHE_TIMESTAMP: Dict[str, float] = {}
 _CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
 
-# Fallback rates used if BNR is unreachable (close to recent averages)
+# Rate de rezervă folosite dacă BNR este inaccesibil (aproape de mediile recente)
 _FALLBACK_EUR_RON = 4.97
 _FALLBACK_USD_RON = 4.60
 
 
 def _fetch_bnr_rates() -> Optional[Dict[str, float]]:
-    """Fetch BNR XML and parse EUR/USD -> RON rates."""
+    """Descarcă XML-ul BNR și parsează ratele EUR/USD -> RON."""
     url = "https://www.bnr.ro/nbrfxrates.xml"
     try:
         response = curl_requests.get(url, impersonate="chrome131", timeout=10)
@@ -41,13 +41,13 @@ def _fetch_bnr_rates() -> Optional[Dict[str, float]]:
             value = float(match.group(3))
         except ValueError:
             continue
-        # Rate is how many RON per `multiplier` units of currency
+        # Rata reprezintă câți RON echivalează `multiplier` unități din moneda respectivă
         rates[currency] = value / multiplier
     return rates or None
 
 
 def _get_rate(currency: str) -> float:
-    """Return currency -> RON rate (e.g. EUR -> 4.97 means 1 EUR = 4.97 RON)."""
+    """Returnează rata de conversie valută -> RON (ex: EUR -> 4.97 înseamnă 1 EUR = 4.97 RON)."""
     currency = (currency or "").upper()
     if currency == "RON":
         return 1.0
@@ -74,7 +74,7 @@ def _get_rate(currency: str) -> float:
 
 
 def convert(amount: float, from_currency: str, to_currency: str) -> float:
-    """Convert `amount` from one currency to another using BNR rates."""
+    """Converteste `amount` dintr-o moneda in alta folosind cursul valutar al BNR."""
     if amount is None:
         return 0.0
     from_currency = (from_currency or "RON").upper()
@@ -82,7 +82,7 @@ def convert(amount: float, from_currency: str, to_currency: str) -> float:
     if from_currency == to_currency:
         return round(amount, 2)
 
-    # Convert everything via RON as pivot
+    # Converteste totul folosind RON ca referinta
     amount_ron = amount * _get_rate(from_currency)
     if to_currency == "RON":
         return round(amount_ron, 2)
@@ -93,12 +93,12 @@ def convert(amount: float, from_currency: str, to_currency: str) -> float:
 
 
 def get_eur_ron_rate() -> float:
-    """Return the current EUR -> RON rate (e.g. 4.97)."""
+    """Returnează cursul EUR -> RON curent (ex: 4.97)."""
     return _get_rate("EUR")
 
 
 def get_all_rates() -> Dict[str, float]:
-    """Return the currently-cached EUR/USD -> RON rates, refreshing if needed."""
+    """Returnează ratele EUR/USD -> RON din cache, actualizând dacă e necesar."""
     _get_rate("EUR")  # trigger fetch
     return {
         "EUR_RON": _CACHE.get("EUR", _FALLBACK_EUR_RON),

@@ -87,10 +87,10 @@ def _altex_sku_from_url(source_url: Optional[str]) -> Optional[str]:
 
 
 def _sync_scrape_altex(query: str, max_results: int) -> list:
-    """Call Altex's internal Fenrir API (used by their own React frontend).
+    """Apelează API-ul intern Fenrir al Altex (folosit de propriul frontend React).
 
-    The API accepts `size` up to ~100 in a single call, so no pagination loop
-    is needed: we request min(max_results, 100) in one shot.
+    API-ul acceptă `size` până la ~100 într-un singur apel, deci nu e nevoie de
+    buclă de paginare: cerem min(max_results, 100) dintr-o singură lovitură.
     """
     safe_query = _sanitize_altex_query(query)
     if not safe_query:
@@ -129,12 +129,12 @@ def _sync_scrape_altex(query: str, max_results: int) -> list:
             in_stock = bool(item.get("stock_status")) and not item.get("is_eol")
             ean = item.get("ean_codes") or ""
 
-            # --- Discount detection ---
-            # Altex exposes:
-            #   price         -> current (possibly discounted) price
-            #   regular_price -> list price (equals `price` when not on sale)
-            #   discount_type -> "none" when there's no active discount,
-            #                    otherwise e.g. "percentage"
+            # --- Detectare reducere ---
+            # Altex expune:
+            #   price         -> prețul curent (posibil redus)
+            #   regular_price -> prețul de listă (egal cu `price` când nu e în promoție)
+            #   discount_type -> "none" când nu există reducere activă,
+            #                    altfel ex: "percentage"
             original_price: Optional[float] = None
             is_on_sale = False
             try:
@@ -198,11 +198,11 @@ def _sole_image_url(item: dict) -> str:
 
 
 def _sync_scrape_sole(query: str, max_results: int) -> list:
-    """POST to sole.ro/cauta/<query> which returns JSON consumed by their Vue frontend.
+    """POST la sole.ro/cauta/<query> care returnează JSON consumat de frontend-ul lor Vue.
 
-    Note: sole.ro caps `perpage` server-side — elevated values (60, 100, 200)
-    return 0 products. We therefore send the user-requested max but rely on
-    the single-page response; real matching is capped by what sole returns.
+    Notă: sole.ro limitează `perpage` pe server — valori mari (60, 100, 200) returnează
+    0 produse. Trimitem maxim-ul cerut de utilizator, dar ne bazăm pe răspunsul
+    unei singure pagini; potrivirea reală e limitată de ce returnează sole.
     """
     encoded = urllib.parse.quote(query.strip())
     url = f"https://sole.ro/cauta/{encoded}"
@@ -239,12 +239,12 @@ def _sync_scrape_sole(query: str, max_results: int) -> list:
 
             price = _parse_sole_price(item.get("price"))
 
-            # --- Discount detection ---
-            # sole.ro exposes on every product:
-            #   price        -> current (possibly discounted) price
-            #   oldprice     -> list price (equals 0 or == price when not on sale)
-            #   ispromo      -> 1 when the product is flagged as on promo
-            #   save_percent -> integer percent saved (0 when not on sale)
+            # --- Detectare reducere ---
+            # sole.ro expune pentru fiecare produs:
+            #   price        -> prețul curent (posibil redus)
+            #   oldprice     -> prețul de listă (0 sau == price când nu e promoție)
+            #   ispromo      -> 1 când produsul e marcat ca promoție
+            #   save_percent -> procent economisit ca întreg (0 când nu e promoție)
             original_price: Optional[float] = None
             is_on_sale = False
             old_price = _parse_sole_price(item.get("oldprice"))
@@ -285,7 +285,7 @@ def _sync_scrape_sole(query: str, max_results: int) -> list:
 
 
 def _parse_farmaciatei_price(price_text: str) -> float:
-    """Parse prices like '29,00 LEI' or '17,00 LEI' -> 29.00."""
+    """Parsează prețuri de forma '29,00 LEI' sau '17,00 LEI' -> 29.00."""
     if not price_text:
         return 0.0
     cleaned = re.sub(r"[^0-9,\.]", "", price_text).replace(",", ".")
@@ -296,7 +296,7 @@ def _parse_farmaciatei_price(price_text: str) -> float:
 
 
 def _farmaciatei_page_url(encoded_query: str, page: int) -> str:
-    """Farmacia Tei pagination uses a comma-separated path: `/cauti/q/p,2`."""
+    """Paginarea Farmacia Tei folosește un path cu virgulă: `/cauti/q/p,2`."""
     base = f"https://comenzi.farmaciatei.ro/cauti/{encoded_query}"
     if page <= 1:
         return base
@@ -304,7 +304,7 @@ def _farmaciatei_page_url(encoded_query: str, page: int) -> str:
 
 
 def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
-    """Extract product dicts from a Farmacia Tei search results page."""
+    """Extrage dictionarele de produse dintr-o pagină de rezultate Farmacia Tei."""
     products = []
     for item in soup.select("div.product-item.product-details"):
         try:
@@ -323,12 +323,12 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
             oos_span = item.select_one("span.product-block-out-of-stock")
             in_stock = oos_span is None and btn is not None
 
-            # --- Price extraction with discount detection ---
-            # On farmaciatei.ro listing:
-            #   span.old-price      -> original price (only present when on sale)
-            #   span.regular-price  -> currently-displayed price (discounted if on sale)
-            #   button[data-price]  -> historically the original/catalog price,
-            #                          so we prefer regular-price when available.
+            # --- Extragere preț cu detectare reducere ---
+            # Pe pagina farmaciatei.ro:
+            #   span.old-price      -> prețul original (prezent doar când e în promoție)
+            #   span.regular-price  -> prețul afișat curent (redus dacă e promoție)
+            #   button[data-price]  -> istoric prețul de catalog/original,
+            #                          deci preferăm regular-price când e disponibil.
             price = 0.0
             original_price: Optional[float] = None
             is_on_sale = False
@@ -342,7 +342,7 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
                 original_price = _parse_farmaciatei_price(old_el.get_text())
 
             if price <= 0:
-                # Fallbacks when the new markup isn't present
+                # Fallback-uri când noul markup nu este prezent
                 if btn and btn.get("data-price"):
                     try:
                         price = float(btn.get("data-price"))
@@ -360,7 +360,7 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
             ):
                 is_on_sale = True
             else:
-                # No real discount -> don't expose an original_price that equals current
+                # Fără reducere reală -> nu expunem un original_price egal cu cel curent
                 original_price = None
 
             pid = btn.get("data-pid") if btn else None
@@ -383,7 +383,7 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
 
 
 def _sync_scrape_farmaciatei(query: str, max_results: int) -> list:
-    """Scrape farmaciatei.ro search results across multiple pages."""
+    """Scrapeaza rezultatele de căutare de pe farmaciatei.ro pe mai multe pagini."""
     encoded = urllib.parse.quote(query.strip())
     products: list = []
     seen_codes: set = set()
@@ -421,7 +421,7 @@ def _sync_scrape_farmaciatei(query: str, max_results: int) -> list:
 
         new_this_page = 0
         for p in page_products:
-            # Dedupe by sku; fall back to source_url when missing.
+            # Deduplicare după sku; fallback pe source_url când lipsește.
             key = p.get("sku") or p.get("source_url") or p.get("name")
             if key and key in seen_codes:
                 continue
@@ -435,7 +435,7 @@ def _sync_scrape_farmaciatei(query: str, max_results: int) -> list:
         if len(products) >= max_results:
             break
         if new_this_page == 0:
-            # Page returned only dupes -> we've reached the end of useful results.
+            # Pagina a returnat doar duplicate -> am ajuns la sfârșitul rezultatelor utile.
             break
 
     if not products:
@@ -444,11 +444,11 @@ def _sync_scrape_farmaciatei(query: str, max_results: int) -> list:
 
 
 def _parse_emag_price(text: str) -> float:
-    """Parse Romanian-formatted prices like '1.299,99 Lei' or '12999' -> float.
+    """Parsează prețuri în format românesc de tip '1.299,99 Lei' sau '12999' -> float.
 
-    Handles eMAG's thousands separator '.' and decimal separator ','.
-    Some price elements split the integer and decimal into separate spans;
-    this function works on the combined text after BeautifulSoup's get_text().
+    Gestionează separatorul de mii '.' și separatorul zecimal ',' de la eMAG.
+    Unele elemente de preț separă partea întreagă de cea zecimală în span-uri diferite;
+    funcția operează pe textul combinat după get_text() din BeautifulSoup.
     """
     if not text:
         return 0.0
@@ -456,13 +456,13 @@ def _parse_emag_price(text: str) -> float:
     if not cleaned:
         return 0.0
     if "," in cleaned:
-        # Romanian: "1.299,99" -> integer "1299", decimal "99"
+        # Format românesc: "1.299,99" -> parte întreagă "1299", zecimale "99"
         last_comma = cleaned.rfind(",")
         integer_part = cleaned[:last_comma].replace(".", "")
         decimal_part = cleaned[last_comma + 1:]
         normalized = f"{integer_part}.{decimal_part}" if decimal_part else integer_part
     else:
-        # No comma: dots are likely thousands separators ("1.299" -> "1299")
+        # Fără virgulă: punctele sunt probabil separatori de mii ("1.299" -> "1299")
         normalized = cleaned.replace(".", "")
     try:
         return float(normalized)
@@ -471,7 +471,7 @@ def _parse_emag_price(text: str) -> float:
 
 
 def _emag_page_url(encoded_query: str, page: int) -> str:
-    """eMAG pagination: /search/<q>/p2/, /search/<q>/p3/, etc."""
+    """Paginarea eMAG: /search/<q>/p2/, /search/<q>/p3/, etc."""
     base = f"https://www.emag.ro/search/{encoded_query}"
     if page <= 1:
         return base
@@ -479,10 +479,10 @@ def _emag_page_url(encoded_query: str, page: int) -> str:
 
 
 def _parse_emag_page(soup: BeautifulSoup) -> list:
-    """Extract product dicts from an eMAG search results page."""
+    """Extrage dictionarele de produse dintr-o pagină de rezultate eMAG."""
     products = []
-    # eMAG product card markup is fairly stable but uses generic class names;
-    # we try the most specific selectors first and fall back to broader ones.
+    # Markup-ul cardurilor eMAG este destul de stabil, dar folosește clase generice;
+    # încercăm cei mai specifici selectori mai întâi, cu fallback pe cei mai generali.
     cards = (
         soup.select("div.card-item.js-product-data")
         or soup.select("div.card-item")
@@ -514,9 +514,9 @@ def _parse_emag_page(soup: BeautifulSoup) -> list:
             if img:
                 image_url = img.get("src") or img.get("data-src") or img.get("data-original") or ""
 
-            # --- Price extraction ---
-            # eMAG renders new price as `.product-new-price` and the (struck-through)
-            # old price as `.product-old-price` when on sale.
+            # --- Extragere preț ---
+            # eMAG randează noul preț în `.product-new-price` și prețul vechi
+            # (tăiat) în `.product-old-price` când e în promoție.
             price = 0.0
             new_price_el = item.select_one(".product-new-price")
             if new_price_el:
@@ -536,7 +536,7 @@ def _parse_emag_page(soup: BeautifulSoup) -> list:
                     original_price = old_price
                     is_on_sale = True
 
-            # eMAG marks unavailable products with a stock badge on the card
+            # eMAG marchează produsele indisponibile cu un badge de stoc pe card
             in_stock = item.select_one(".badge-no-stock") is None and item.select_one(".product-stock-status-out") is None
 
             product_id = item.get("data-product-id") or item.get("data-offer-id") or None
@@ -560,7 +560,7 @@ def _parse_emag_page(soup: BeautifulSoup) -> list:
 
 
 def _sync_scrape_emag(query: str, max_results: int) -> list:
-    """Scrape eMAG.ro search results across multiple pages."""
+    """Scrapeaza rezultatele de căutare de pe eMAG.ro pe mai multe pagini."""
     encoded = urllib.parse.quote(query.strip())
     products: list = []
     seen_codes: set = set()
@@ -619,7 +619,7 @@ def _sync_scrape_emag(query: str, max_results: int) -> list:
 
 
 def _pcgarage_page_url(encoded_query: str, page: int) -> str:
-    """PCGarage pagination: /cauta/<q>/p2/, /cauta/<q>/p3/, etc."""
+    """Paginarea PCGarage: /cauta/<q>/p2/, /cauta/<q>/p3/, etc."""
     base = f"https://www.pcgarage.ro/cauta/{encoded_query}"
     if page <= 1:
         return base
@@ -627,15 +627,15 @@ def _pcgarage_page_url(encoded_query: str, page: int) -> str:
 
 
 def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
-    """Extract product dicts from a PCGarage search results page."""
+    """Extrage dictionarele de produse dintr-o pagină de rezultate PCGarage."""
     products = []
     for card in soup.select("div.product_box"):
         try:
             name_a = card.select_one(".product_box_name a") or card.select_one("h2 a")
             if not name_a:
                 continue
-            # Card title text contains <b> highlights for the search term;
-            # the title attribute has the clean product name.
+            # Textul titlului cardului conține evidențieri <b> pentru termenul căutat;
+            # atributul title conține numele curat al produsului.
             name = (name_a.get("title") or name_a.get_text(" ", strip=True)).strip()
             if not name:
                 continue
@@ -643,7 +643,7 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
             if source_url and not source_url.startswith("http"):
                 source_url = f"https://www.pcgarage.ro{source_url}"
 
-            # Image: prefer <picture><source srcset> when present, fall back to <img>.
+            # Imagine: preferăm <picture><source srcset> când e prezent, fallback pe <img>.
             image_url = ""
             src_el = card.select_one(".product_box_image picture source")
             if src_el:
@@ -654,14 +654,14 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
                 if img:
                     image_url = img.get("src") or img.get("data-src") or ""
 
-            # Price: ".pb-price p.price" -> "7.799,98 RON" (Romanian format).
+            # Preț: ".pb-price p.price" -> "7.799,98 RON" (format românesc).
             price = 0.0
             price_el = card.select_one(".pb-price p.price") or card.select_one(".pb-price")
             if price_el:
                 price = _parse_emag_price(price_el.get_text(strip=True))
 
-            # Old price (when on sale) — defensively check several selectors
-            # since PCGarage sometimes ships promo markup with a struck-through price.
+            # Prețul vechi (când e promoție) — verificăm mai mulți selectori ca măsură
+            # de precauție, deoarece PCGarage uneori livrează markup promo cu preț tăiat.
             original_price: Optional[float] = None
             is_on_sale = False
             old_el = (
@@ -676,7 +676,7 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
                     original_price = old_price
                     is_on_sale = True
 
-            # Availability: "instock" / "insupplierstock" -> available; "outofstock" -> not.
+            # Disponibilitate: "instock" / "insupplierstock" -> disponibil; "outofstock" -> indisponibil.
             in_stock = True
             avail_el = card.select_one(".product_box_availability")
             if avail_el and "outofstock" in " ".join(avail_el.get("class", [])):
@@ -708,7 +708,7 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
 
 
 def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
-    """Scrape PCGarage.ro search results across multiple pages."""
+    """Scrapeaza rezultatele de căutare de pe PCGarage.ro pe mai multe pagini."""
     encoded = urllib.parse.quote(query.strip())
     products: list = []
     seen_codes: set = set()
@@ -767,11 +767,11 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
 
 
 def fetch_ean_from_url(source_url: str) -> Optional[str]:
-    """Attempt to fetch the EAN/GTIN from a product detail page.
+    """Încearcă să preia EAN-ul/GTIN-ul din pagina de detalii a unui produs.
 
-    Supports: farmaciatei.ro (JSON-LD gtin13 / sku),
-    sole.ro (plain text "Cod EAN:"), altex.ro (JSON-LD gtin13).
-    Returns None if not found or on error.
+    Suportă: farmaciatei.ro (JSON-LD gtin13 / sku),
+    sole.ro (text simplu "Cod EAN:"), altex.ro (JSON-LD gtin13).
+    Returnează None dacă nu se găsește sau în caz de eroare.
     """
     if not source_url:
         return None
@@ -790,7 +790,7 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
             return None
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Try JSON-LD structured data
+        # Încearcă date structurate JSON-LD
         for script in soup.select('script[type="application/ld+json"]'):
             try:
                 ld = json.loads(script.string or "")
@@ -806,7 +806,7 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
             except Exception:
                 continue
 
-        # Fallback: look for EAN in plain text (covers sole.ro and farmaciatei.ro)
+        # Fallback: caută EAN în text simplu (acoperă sole.ro și farmaciatei.ro)
         text = soup.get_text()
         for pattern in (
             r"[Cc]od\s*EAN[:\s]+(\d{8,14})",      # sole.ro: "Cod EAN: 880973..."
@@ -824,32 +824,32 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
 
 
 async def fetch_ean_from_url_async(source_url: str) -> Optional[str]:
-    """Async wrapper for fetch_ean_from_url."""
+    """Wrapper async pentru fetch_ean_from_url."""
     return await asyncio.to_thread(fetch_ean_from_url, source_url)
 
 
 async def scrape_altex(query: str, max_results: int = 100) -> list:
-    """Async wrapper - curl_cffi is synchronous, run in a thread."""
+    """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
     return await asyncio.to_thread(_sync_scrape_altex, query, max_results)
 
 
 async def scrape_sole(query: str, max_results: int = 100) -> list:
-    """Async wrapper - curl_cffi is synchronous, run in a thread."""
+    """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
     return await asyncio.to_thread(_sync_scrape_sole, query, max_results)
 
 
 async def scrape_farmaciatei(query: str, max_results: int = 100) -> list:
-    """Async wrapper - curl_cffi is synchronous, run in a thread."""
+    """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
     return await asyncio.to_thread(_sync_scrape_farmaciatei, query, max_results)
 
 
 async def scrape_emag(query: str, max_results: int = 100) -> list:
-    """Async wrapper - curl_cffi is synchronous, run in a thread."""
+    """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
     return await asyncio.to_thread(_sync_scrape_emag, query, max_results)
 
 
 async def scrape_pcgarage(query: str, max_results: int = 100) -> list:
-    """Async wrapper - curl_cffi is synchronous, run in a thread."""
+    """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
     return await asyncio.to_thread(_sync_scrape_pcgarage, query, max_results)
 
 
@@ -892,8 +892,8 @@ def refresh_price_from_source(
         return None
     if not results:
         return None
-    # Strategie 1: match exact pe source_url (cel mai precis cand URL-urile
-    # raman stabile pe site).
+    # Strategia 1: potrivire exactă pe source_url (cea mai precisă când URL-urile
+    # rămân stabile pe site).
     norm_url = source_url.rstrip("/")
     for r in results:
         if not isinstance(r, dict):
@@ -906,10 +906,10 @@ def refresh_price_from_source(
                 return price if price > 0 else None
             except (TypeError, ValueError):
                 continue
-    # Strategie 2 (fallback): match dupa primele 40 caractere din nume,
-    # case-insensitive. Acopera cazurile in care site-ul si-a schimbat
-    # structura URL-urilor sau cand source-ul si source_url-ul stocate au
-    # mici inconsistente (ex: salvare manuala cu URL trunchiat).
+    # Strategia 2 (fallback): potrivire după primele 40 de caractere din nume,
+    # case-insensitive. Acoperă cazurile în care site-ul și-a schimbat
+    # structura URL-urilor sau când source-ul și source_url-ul stocate au
+    # mici inconsistențe (ex: salvare manuală cu URL trunchiat).
     if product_name:
         prefix = product_name.strip()[:40].lower()
         if prefix:
@@ -929,27 +929,27 @@ def refresh_price_from_source(
 
 
 def _tokenize_query(query: str) -> list:
-    """Extract significant tokens (lowercased, length >= 3) from a user query.
+    """Extrage tokenii semnificativi (minuscule, lungime >= 3) dintr-un query utilizator.
 
-    Short tokens ("de", "la", "it") are dropped so filler words don't break
-    the relevance match.
+    Tokenii scurți ("de", "la", "it") sunt eliminați pentru ca cuvintele de umplutură
+    să nu strice potrivirea de relevanță.
     """
     return [t for t in re.findall(r"\w+", (query or "").lower()) if len(t) >= 3]
 
 
 def filter_by_relevance(products: list, query: str) -> list:
-    """Drop products whose name doesn't contain every significant query token.
+    """Elimină produsele al căror nume nu conține toți tokenii semnificativi din query.
 
-    Many Romanian shop search engines silently fall back to fuzzy "related"
-    results when the exact query has zero matches (e.g. searching "purito
-    sleeping pack" on eMAG returns unrelated Vichy creams). This filter keeps
-    only products whose name contains ALL significant query tokens as
-    substrings (case-insensitive), which matches user intent for specific
-    brand+product queries without over-pruning single-word queries.
+    Multe motoare de căutare din magazine românești cad silențios pe rezultate
+    "înrudite" fuzzy când query-ul exact nu are potriviri (ex: căutând "purito
+    sleeping pack" pe eMAG returnează creme Vichy fără legătură). Acest filtru
+    păstrează doar produsele al căror nume conține TOȚI tokenii semnificativi ca
+    substring (case-insensitive), potrivind intenția utilizatorului pentru query-uri
+    specifice brand+produs fără a tăia prea mult query-urile cu un singur cuvânt.
 
-    Error/message sentinel entries pass through unchanged. If every real
-    product is filtered out, we emit a synthetic "no relevant results"
-    message so the UI still has something to render.
+    Intrările sentinel de eroare/mesaj trec nefiltrate. Dacă toate produsele reale
+    sunt filtrate, emitem un mesaj sintetic "fără rezultate relevante" pentru ca UI-ul
+    să aibă totuși ceva de randat.
     """
     tokens = _tokenize_query(query)
     if not tokens:
@@ -968,7 +968,7 @@ def filter_by_relevance(products: list, query: str) -> list:
     if sentinels:
         return sentinels
     if real:
-        # We had real results but none matched all tokens → be explicit.
+        # Am avut rezultate reale dar niciuna nu a potrivit toți tokenii → fim expliciți.
         return [{"message": "Nu s-au gasit rezultate relevante pentru aceasta cautare."}]
     return []
 
@@ -977,16 +977,16 @@ _FUZZY_FALLBACK_THRESHOLD = 5
 
 
 def filter_by_code(products: list, code: str, field: str) -> list:
-    """Keep products whose `field` (ean or sku) matches `code`.
+    """Păstrează produsele al căror `field` (ean sau sku) se potrivește cu `code`.
 
-    Three buckets per result:
-      - field populated and matches  -> trusted exact match
-      - field populated but differs  -> drop (fuzzy fallback signature, e.g.
-        eMAG returning unrelated SKUs for an unrecognized SKU query)
-      - field is None                -> trust the scraper, BUT only when there
-        are few such results. Many None-field hits in a row indicate the
-        store fell back to keyword-fuzzy matching on a numeric query (eMAG
-        returns ~50 random products when an EAN isn't in its catalog).
+    Trei categorii per rezultat:
+      - câmpul populat și se potrivește  -> potrivire exactă de încredere
+      - câmpul populat dar diferit        -> eliminat (semn de fallback fuzzy, ex:
+        eMAG returnând SKU-uri fără legătură pentru un SKU necunoscut)
+      - câmpul este None                  -> avem încredere în scraper, DAR doar când
+        sunt puține astfel de rezultate. Multe rezultate cu câmpul None la rând indică
+        că magazinul a căzut pe potrivire keyword-fuzzy pentru un query numeric (eMAG
+        returnează ~50 produse aleatorii când un EAN nu e în catalogul său).
     """
     code_norm = (code or "").strip().lstrip("0")
     if not code_norm:

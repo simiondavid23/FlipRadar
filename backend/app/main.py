@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import auth, products, watchlist, alerts, dashboard, ai_chat, ai_analysis, admin, support
 from app.routers import favorites, notifications, scraping, import_export
-from app.routers import currency, inventory, sales, reports
+from app.routers import currency, inventory, sales, reports, radar
 
 # Import all models
 from app.models import user, product, price_history, product_source
@@ -15,6 +15,9 @@ from app.models import alert, chat_message, support_ticket
 from app.models import favorite, notification
 from app.models import inventory as inventory_model
 from app.models import sale as sale_model
+from app.models import radar_keyword, radar_listing, radar_seen_id
+from app.models import radar_blocked_seller, radar_preset, radar_settings
+from app.models import radar_message_template, push_subscription
 
 # Create all database tables
 Base.metadata.create_all(bind=engine)
@@ -24,6 +27,7 @@ from app.utils.db_migrate import run_migrations
 run_migrations()
 
 from app.utils.alert_checker import check_alerts
+from app.utils.radar_scanner import run_radar_scan
 
 scheduler = BackgroundScheduler(timezone="Europe/Bucharest")
 
@@ -38,8 +42,16 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
         next_run_time=datetime.now(),
     )
+    scheduler.add_job(
+        run_radar_scan,
+        "interval",
+        minutes=5,
+        id="radar_scan",
+        replace_existing=True,
+        next_run_time=datetime.now(),
+    )
     scheduler.start()
-    print("[Scheduler] Started - check_alerts runs every 15 minutes.")
+    print("[Scheduler] Started - check_alerts (15m) + radar_scan (5m).")
 
     # Diagnostic SMTP la fiecare pornire — ca sa fie clar daca alertele
     # vor putea trimite email atunci cand se declanseaza.
@@ -94,6 +106,7 @@ app.include_router(currency.router)
 app.include_router(inventory.router)
 app.include_router(sales.router)
 app.include_router(reports.router)
+app.include_router(radar.router)
 
 
 @app.get("/")

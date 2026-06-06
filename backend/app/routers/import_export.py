@@ -13,7 +13,7 @@ from app.utils.auth import require_feature
 
 router = APIRouter(prefix="/api/import-export", tags=["Import/Export"])
 
-# All import/export endpoints share one feature flag: bulk ingest/egress.
+# Toate endpoint-urile de import/export împart un singur feature flag: ingest/egress în masă.
 _import_export_user = require_feature("can_use_import_export")
 
 
@@ -23,7 +23,7 @@ async def import_csv(
     db: Session = Depends(get_db),
     current_user: User = Depends(_import_export_user),
 ):
-    """Import products from a CSV file."""
+    """Importă produse dintr-un fișier CSV."""
     if not file.filename.endswith((".csv", ".txt")):
         raise HTTPException(status_code=400, detail="Fisierul trebuie sa fie CSV")
 
@@ -31,7 +31,7 @@ async def import_csv(
     decoded = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(decoded), delimiter=None)
 
-    # Auto-detect delimiter
+    # Detectare automată delimiter
     sample = decoded[:2000]
     if "\t" in sample:
         reader = csv.DictReader(io.StringIO(decoded), delimiter="\t")
@@ -108,7 +108,7 @@ async def import_excel(
     db: Session = Depends(get_db),
     current_user: User = Depends(_import_export_user),
 ):
-    """Import products from an Excel file."""
+    """Importă produse dintr-un fișier Excel."""
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Fisierul trebuie sa fie Excel (.xlsx)")
 
@@ -195,7 +195,7 @@ async def export_products_excel(
     db: Session = Depends(get_db),
     current_user: User = Depends(_import_export_user),
 ):
-    """Export the current user's products to Excel."""
+    """Exportă produsele utilizatorului curent în Excel."""
     products = (
         db.query(Product)
         .filter(Product.user_id == current_user.id)
@@ -227,7 +227,7 @@ async def export_watchlist_excel(
     db: Session = Depends(get_db),
     current_user: User = Depends(_import_export_user),
 ):
-    """Export user watchlist to Excel."""
+    """Exportă watchlist-ul utilizatorului în Excel."""
     items = (
         db.query(WatchlistItem)
         .filter(WatchlistItem.user_id == current_user.id)
@@ -267,7 +267,7 @@ async def export_watchlist_excel(
 async def download_template(
     current_user: User = Depends(_import_export_user),
 ):
-    """Download an import template Excel file."""
+    """Descarcă un fișier Excel șablon pentru import."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Products"

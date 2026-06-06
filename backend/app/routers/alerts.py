@@ -10,8 +10,8 @@ from app.utils.auth import get_current_user, require_feature
 
 router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
 
-# Only NEW alert creation is feature-gated. Listing / toggling / deleting stay
-# open even after revocation so the user can still clean up existing alerts.
+# Doar CREAREA de alerte noi este protejată prin feature flag. Listarea / comutarea / ștergerea
+# rămân accesibile chiar și după revocare, pentru ca utilizatorul să poată curăța alertele existente.
 _alerts_user = require_feature("can_use_alerts")
 
 
@@ -20,7 +20,7 @@ def get_alerts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all alerts for the current user."""
+    """Returnează toate alertele utilizatorului curent."""
 
     alerts = (
         db.query(Alert)
@@ -38,7 +38,7 @@ def create_alert(
     db: Session = Depends(get_db),
     current_user: User = Depends(_alerts_user),
 ):
-    """Create a new price alert for a product."""
+    """Creaza o alerta de pret noua pentru un produs."""
 
     product = (
         db.query(Product)
@@ -72,7 +72,7 @@ def toggle_alert(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Activate or deactivate an alert."""
+    """Activează sau dezactivează o alertă."""
 
     alert = (
         db.query(Alert)
@@ -98,7 +98,7 @@ def delete_alert(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete an alert."""
+    """Șterge o alertă."""
 
     alert = (
         db.query(Alert)

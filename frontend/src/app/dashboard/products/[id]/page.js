@@ -132,14 +132,14 @@ export default function ProductDetailPage() {
 
   const { product, price_history, lowest_price, highest_price, average_price } = data;
 
-  // Prepare chart data (oldest first)
+  // Pregătim datele graficului (cele mai vechi primele)
   const chartData = [...(price_history || [])].reverse().map((ph) => ({
     date: new Date(ph.recorded_at).toLocaleDateString("ro-RO", { day: "2-digit", month: "short" }),
     fullDate: new Date(ph.recorded_at).toLocaleDateString("ro-RO"),
     price: ph.price,
   }));
 
-  // Determine trend
+  // Determinăm trendul prețului
   let trend = "stable";
   if (chartData.length >= 2) {
     const first = chartData[0].price;
@@ -562,8 +562,8 @@ export default function ProductDetailPage() {
               </thead>
               <tbody>
                 {price_history.map((ph, idx) => {
-                  // price_history is already ordered desc (newest first) from backend.
-                  // "next" in the array is the older record.
+                  // price_history vine deja ordonat desc (cele mai noi primele) din backend.
+                  // "next" în array este înregistrarea mai veche.
                   const older = price_history[idx + 1];
                   let diff = null;
                   if (older && older.price) {

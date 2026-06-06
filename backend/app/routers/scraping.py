@@ -19,20 +19,20 @@ def _apply_filter(items: list, query: str, search_type: Optional[str]) -> list:
         return filter_by_code(items, query, "sku")
     return filter_by_relevance(items, query)
 
-# Whole scraping surface sits behind the `can_use_scraping` flag — it's the
-# heaviest outbound workload and the most abuse-prone, so admins get a single
-# toggle to shut it off per user.
+# Toată suprafața de scraping stă în spatele flag-ului `can_use_scraping` — este
+# cel mai intens workload de ieșire și cel mai predispus la abuz, deci adminii au un
+# singur comutator pentru a-l dezactiva per utilizator.
 _scraping_user = require_feature("can_use_scraping")
 
-# --- Result-cap tuning -------------------------------------------------------
-# Earlier this router limited each source to 30 products and the aggregate
-# search to 20/site. Users reported missing relevant matches — e.g. a search
-# for "rtx 5070" returned only 15 products because search-all capped each
-# source at a tiny number. The scraper layer now paginates across multiple
-# HTML pages, so we raise the caps to reflect real catalog sizes (eMAG
-# ~78/page, PCGarage ~20/page, Farmacia Tei ~60/page, Altex up to 100 in one
-# API call). Defaults are generous so the UI shows "all matching products"
-# without the user having to tweak query params.
+# --- Ajustare limite rezultate -----------------------------------------------
+# Inițial, router-ul limita fiecare sursă la 30 de produse și căutarea agregată
+# la 20/site. Utilizatorii au raportat că ratează rezultate relevante — de ex.,
+# o căutare pentru "rtx 5070" returna doar 15 produse fiindcă search-all limita
+# fiecare sursă la un număr mic. Stratul de scraper paginează acum pe mai multe
+# pagini HTML, deci ridicăm limitele să reflecte dimensiunile reale ale cataloagelor
+# (eMAG ~78/pagină, PCGarage ~20/pagină, Farmacia Tei ~60/pagină, Altex până la 100
+# într-un singur apel API). Valorile implicite sunt generoase pentru ca UI-ul să
+# afișeze „toate produsele potrivite" fără ca utilizatorul să modifice parametrii.
 _PER_SITE_DEFAULT = 100
 _PER_SITE_MAX = 300
 _ALL_DEFAULT = 50
@@ -46,7 +46,7 @@ async def search_altex(
     search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
-    """Search products on Altex.ro"""
+    """Caută produse pe Altex.ro"""
     results = _apply_filter(await scrape_altex(q, max_results), q, search_type)
     return {"source": "altex.ro", "query": q, "results": results, "count": len(results)}
 
@@ -58,7 +58,7 @@ async def search_sole(
     search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
-    """Search products on Sole.ro"""
+    """Caută produse pe Sole.ro"""
     results = _apply_filter(await scrape_sole(q, max_results), q, search_type)
     return {"source": "sole.ro", "query": q, "results": results, "count": len(results)}
 
@@ -70,7 +70,7 @@ async def search_farmaciatei(
     search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
-    """Search products on comenzi.farmaciatei.ro"""
+    """Caută produse pe comenzi.farmaciatei.ro"""
     results = _apply_filter(await scrape_farmaciatei(q, max_results), q, search_type)
     return {"source": "farmaciatei.ro", "query": q, "results": results, "count": len(results)}
 
@@ -82,7 +82,7 @@ async def search_emag(
     search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
-    """Search products on eMAG.ro"""
+    """Caută produse pe eMAG.ro"""
     results = _apply_filter(await scrape_emag(q, max_results), q, search_type)
     return {"source": "emag.ro", "query": q, "results": results, "count": len(results)}
 
@@ -94,7 +94,7 @@ async def search_pcgarage(
     search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
-    """Search products on PCGarage.ro"""
+    """Caută produse pe PCGarage.ro"""
     results = _apply_filter(await scrape_pcgarage(q, max_results), q, search_type)
     return {"source": "pcgarage.ro", "query": q, "results": results, "count": len(results)}
 
@@ -106,7 +106,7 @@ async def search_all_sources(
     search_type: Optional[str] = Query(None, description="name | ean | sku"),
     current_user: User = Depends(_scraping_user),
 ):
-    """Search products across all sources in parallel."""
+    """Caută produse în paralel pe toate sursele."""
     altex_results, sole_results, farmaciatei_results, emag_results, pcgarage_results = await asyncio.gather(
         scrape_altex(q, max_results),
         scrape_sole(q, max_results),

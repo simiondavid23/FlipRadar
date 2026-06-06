@@ -27,8 +27,8 @@ _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
 
 def _recompute_primary_snapshot(product: Product) -> None:
-    """Set product.current_price/currency/source/source_url to the cheapest
-    source (with currency-converted comparison)."""
+    """Setează product.current_price/currency/source/source_url pe baza sursei
+    cu prețul cel mai mic (cu comparație după conversie valutară)."""
     sources_with_price = [s for s in product.sources if s.current_price is not None]
     if not sources_with_price:
         return
@@ -70,7 +70,7 @@ def get_products(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List products owned by the current user with optional filters and sorting."""
+    """Listează produsele utilizatorului curent cu filtre și sortare opționale."""
     query = _user_products_query(db, current_user.id)
 
     if search:
@@ -86,7 +86,7 @@ def get_products(
     if category:
         query = query.filter(Product.category.ilike(f"%{category.strip()}%"))
     if brand:
-        # No dedicated brand column — match against name (most product names lead with the brand)
+        # Nu există o coloană dedicată pentru brand — se caută în nume (majoritatea numelor de produs încep cu brandul)
         query = query.filter(Product.name.ilike(f"%{brand.strip()}%"))
 
     effective_min = price_min if price_min is not None else min_price
@@ -99,7 +99,7 @@ def get_products(
         query = query.filter(Product.source == source)
 
     if roi_min is not None:
-        # ROI = ((resale - current) / current) * 100, only when both are present and current > 0
+        # ROI = ((revanzare - curent) / curent) * 100, doar când ambele sunt prezente și curent > 0
         query = query.filter(
             Product.resale_price.isnot(None),
             Product.current_price.isnot(None),
@@ -117,7 +117,7 @@ def get_products(
     elif sort_key == "newest":
         query = query.order_by(Product.created_at.desc())
     elif sort_key == "roi_desc":
-        # Sort by resale_price - current_price descending (proxy for ROI)
+        # Sortează după resale_price - current_price descrescător (aproximare ROI)
         query = query.order_by(
             (Product.resale_price - Product.current_price).desc().nullslast()
         )
@@ -130,10 +130,10 @@ def get_filter_options(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return distinct brands and categories from the user's product catalog.
+    """Returnează brandurile și categoriile distincte din catalogul utilizatorului.
 
-    Brands are derived from the first token of the product name (cheap heuristic
-    since there's no dedicated brand column in the schema).
+    Brandurile sunt deduse din primul token al numelui produsului (euristică simplă,
+    deoarece nu există o coloană dedicată pentru brand în schemă).
     """
     rows = (
         db.query(Product.name, Product.category)
@@ -161,7 +161,7 @@ def get_products_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Profitability stats over the user's catalog (uses resale_price)."""
+    """Statistici de profitabilitate din catalogul utilizatorului (folosește resale_price)."""
     rows = (
         db.query(Product.current_price, Product.resale_price)
         .filter(Product.user_id == current_user.id)
@@ -260,7 +260,7 @@ def _build_save_response(product: Product, is_new: bool, previous_price: Optiona
 
 
 def _backfill_ean(product_id: int, source_url: str) -> None:
-    """Fetch EAN from the product detail page in the background and persist it."""
+    """Preia EAN-ul din pagina de detalii a produsului în background și îl persistă."""
     if not source_url:
         return
     db: Session = SessionLocal()
@@ -286,13 +286,13 @@ def create_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Save a product for the current user.
+    """Salvează un produs pentru utilizatorul curent.
 
-    Deduplication is scoped per user:
-    1. EAN/SKU match -> if same source: update existing ProductSource. If
-       different source: add a new ProductSource to the existing Product.
-    2. (name, source) match -> update existing ProductSource on that source.
-    3. Otherwise -> create new Product + first ProductSource.
+    Deduplicarea este per utilizator:
+    1. Potrivire EAN/SKU -> dacă aceeași sursă: actualizează ProductSource existent. Dacă
+       sursă diferită: adaugă un nou ProductSource la Produsul existent.
+    2. Potrivire (name, source) -> actualizează ProductSource existent pe acea sursă.
+    3. Altfel -> creează Product nou + primul ProductSource.
     """
 
     def _add_or_update_source(existing: Product) -> dict:
@@ -403,7 +403,7 @@ def update_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update editable fields on a user's own product. Only sent fields change."""
+    """Actualizează câmpurile editabile ale unui produs al utilizatorului. Doar câmpurile trimise se modifică."""
     product = (
         _user_products_query(db, current_user.id)
         .filter(Product.id == product_id)
@@ -447,8 +447,8 @@ def refresh_product_price(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Re-scrape the live price for every source of a product. Sequential with
-    randomized delay between requests to avoid IP blocking."""
+    """Re-scrapeaza prețul live pentru fiecare sursă a unui produs. Secvențial cu
+    delay aleatoriu între cereri pentru a evita blocarea IP-ului."""
     product = (
         _user_products_query(db, current_user.id)
         .filter(Product.id == product_id)

@@ -9,7 +9,8 @@ import {
   LayoutDashboard, Search, Eye, Bell, LogOut,
   MessageCircle, Sparkles, FileText, FileBarChart, Shield,
   Heart, BellDot, Globe, FileSpreadsheet, Boxes, Receipt,
-  ChevronDown, ChevronRight, Sun, Moon, BarChart2
+  ChevronDown, ChevronRight, Sun, Moon, BarChart2,
+  Radar, Target, ShieldOff, Settings, MessageSquare
 } from "lucide-react";
 
 // Sidebar-ul ramane mereu dark — pattern UX standard (GitHub, VS Code, Notion).
@@ -49,6 +50,17 @@ const categories = [
       { name: "Radar Preturi", href: "/dashboard/watchlist", icon: Eye },
       { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
       { name: "Centru Notificari", href: "/dashboard/notifications", icon: BellDot },
+    ],
+  },
+  {
+    id: "radar",
+    label: "Radar Piata",
+    items: [
+      { name: "Feed Anunturi", href: "/dashboard/radar", icon: Radar },
+      { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
+      { name: "Sabloane Mesaje", href: "/dashboard/radar/templates", icon: MessageSquare },
+      { name: "Vanzatori Blocati", href: "/dashboard/radar/blocked", icon: ShieldOff },
+      { name: "Setari Radar", href: "/dashboard/radar/settings", icon: Settings },
     ],
   },
   {
