@@ -115,6 +115,13 @@ export default function AIListingPage() {
                 onChange={(e) => setFormData({...formData, features: e.target.value})}
                 placeholder="ex: Bluetooth 5.3, ANC, 30h baterie, rezistent la apa IPX5"
                 rows={3} style={{ ...inputStyle, resize: "none" }} />
+              {/* FlipRadar — ITEM 13: indicator afisat doar in timpul requestului AI cand
+                  caracteristicile sunt scurte (backend-ul cauta specificatii online). */}
+              {loading && formData.features.trim().length < 40 && (
+                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginTop: "0.375rem" }}>
+                  Se cauta specificatii tehnice online...
+                </p>
+              )}
             </div>
             <div>
               <label style={labelStyle}>Pret (EUR)</label>

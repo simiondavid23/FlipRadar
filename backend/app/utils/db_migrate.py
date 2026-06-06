@@ -51,6 +51,16 @@ def run_migrations():
     ):
         migrations.append("ALTER TABLE products ADD COLUMN resale_price FLOAT")
 
+    # FlipRadar — brand dedicat + pret de lista original (pentru filtrare brand si on_sale)
+    if _table_exists(inspector, "products") and not _column_exists(inspector, "products", "brand"):
+        migrations.append("ALTER TABLE products ADD COLUMN IF NOT EXISTS brand VARCHAR(200)")
+    if _table_exists(inspector, "products") and not _column_exists(inspector, "products", "original_price"):
+        migrations.append("ALTER TABLE products ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2)")
+
+    # FlipRadar — prag personalizat pentru alertele Flash Deal (implicit 0.15 = 15%)
+    if _table_exists(inspector, "users") and not _column_exists(inspector, "users", "flash_deal_threshold"):
+        migrations.append("ALTER TABLE users ADD COLUMN IF NOT EXISTS flash_deal_threshold NUMERIC(5,2) DEFAULT 0.15")
+
     # Users: security question columns (for password reset flow)
     if _table_exists(inspector, "users") and not _column_exists(
         inspector, "users", "security_question"

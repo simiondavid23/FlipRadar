@@ -4,6 +4,28 @@ import { productsAPI, watchlistAPI, favoritesAPI } from "@/lib/api";
 import Link from "next/link";
 import { Search, Plus, Eye, ExternalLink, Package, X, ChevronRight, Trash2, Heart, Ban, Pencil, Tag, Save, Filter, RefreshCcw } from "lucide-react";
 
+// FlipRadar — ITEM 9: categorii principale per magazin (hardcodate frontend,
+// folosite pentru subcategorii viitoare). Pentru moment select-ul de categorie
+// din panoul de filtre este populat din API (/api/products/filter-options).
+const CATEGORIES_BY_SOURCE = {
+  altex: ["Telefoane & Accesorii", "Laptopuri & PC", "TV & Audio", "Electrocasnice", "Gaming", "Foto & Video"],
+  emag: ["Telefoane", "Laptopuri & Tablete", "TV, Audio-Video", "Electrocasnice", "Fashion", "Casa & Gradina"],
+  pcgarage: ["Procesoare", "Placi video", "Placi de baza", "Memorii RAM", "SSD & HDD", "Periferice"],
+  sole: ["Imbracaminte", "Incaltaminte", "Accesorii", "Genti", "Ceasuri", "Cosmetice"],
+  farmaciatei: ["Medicamente", "Suplimente", "Dermatocosmetice", "Mama & Copilul", "Igiena", "Aparate medicale"],
+};
+
+// FlipRadar — ITEM 9: optiuni fixe pentru selectorul de sursa. Valorile trebuie
+// sa coincida exact cu cele salvate de scrapere (domeniul magazinului).
+const STORE_SOURCES = [
+  { label: "Toate", value: "" },
+  { label: "Altex", value: "altex.ro" },
+  { label: "eMAG", value: "emag.ro" },
+  { label: "PCGarage", value: "pcgarage.ro" },
+  { label: "Sole", value: "sole.ro" },
+  { label: "FarmaciaTei", value: "farmaciatei.ro" },
+];
+
 function computeRoi(price, resale) {
   if (resale == null || price == null) return null;
   const p = Number(price), r = Number(resale);
@@ -38,10 +60,14 @@ export default function ProductsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  const [filterOptions, setFilterOptions] = useState({ brands: [], categories: [] });
+  const [filterOptions, setFilterOptions] = useState({ brands: [], categories: [], sources: [] });
   const [filters, setFilters] = useState({
-    brand: "", category: "", price_min: "", price_max: "", roi_min: "",
+    source: "", brand: "", category: "", price_min: "", price_max: "", on_sale: false,
   });
+  // FlipRadar — ITEM 9: input brand cu autocomplete (debounce 300ms)
+  const [brandInput, setBrandInput] = useState("");
+  const [brandSuggestions, setBrandSuggestions] = useState([]);
+  const [showBrandDropdown, setShowBrandDropdown] = useState(false);
 
   const [newProduct, setNewProduct] = useState({
     name: "", sku: "", ean: "", category: "", source: "", source_url: "",
@@ -78,24 +104,45 @@ export default function ProductsPage() {
   const loadFilterOptions = async () => {
     try {
       const res = await productsAPI.getFilterOptions();
-      setFilterOptions(res.data || { brands: [], categories: [] });
+      setFilterOptions(res.data || { brands: [], categories: [], sources: [] });
     } catch (e) {
       console.error("Eroare la incarcarea optiunilor de filtrare:", e);
     }
   };
 
-  const loadProducts = async (overrides = null) => {
+  // FlipRadar — ITEM 9: autocomplete brand cu debounce 300ms si filtrare locala
+  // (case-insensitive) pe brandurile primite din API. Max 8 sugestii.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      const q = brandInput.trim().toLowerCase();
+      if (!q) {
+        setBrandSuggestions([]);
+        return;
+      }
+      const matches = (filterOptions.brands || [])
+        .filter((b) => b.toLowerCase().includes(q))
+        .slice(0, 8);
+      setBrandSuggestions(matches);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [brandInput, filterOptions.brands]);
+
+  // FlipRadar — BUG 1: loadProducts accepta overrides ca sa evite race condition-ul
+  // dintre setState (asincron) si request (sortByOverride / filtersOverride).
+  const loadProducts = async (overrides = {}) => {
     setLoading(true);
     try {
-      const f = overrides ?? filters;
+      const f = overrides.filtersOverride ?? filters;
+      const effectiveSortBy = overrides.sortByOverride ?? sortBy;
       const params = {};
       if (search.trim()) params.search = search.trim();
+      if (f.source) params.source = f.source;
       if (f.brand) params.brand = f.brand;
       if (f.category) params.category = f.category;
       if (f.price_min !== "" && f.price_min != null) params.price_min = parseFloat(f.price_min);
       if (f.price_max !== "" && f.price_max != null) params.price_max = parseFloat(f.price_max);
-      if (f.roi_min !== "" && f.roi_min != null) params.roi_min = parseFloat(f.roi_min);
-      if (sortBy) params.sort_by = sortBy;
+      if (f.on_sale) params.on_sale = true;
+      if (effectiveSortBy) params.sort_by = effectiveSortBy;
       const response = await productsAPI.getProducts(params);
       setProducts(response.data);
     } catch (error) {
@@ -113,15 +160,19 @@ export default function ProductsPage() {
   const handleApplyFilters = () => loadProducts();
 
   const handleResetFilters = () => {
-    const cleared = { brand: "", category: "", price_min: "", price_max: "", roi_min: "" };
+    const cleared = { source: "", brand: "", category: "", price_min: "", price_max: "", on_sale: false };
     setFilters(cleared);
+    setBrandInput("");
+    setBrandSuggestions([]);
     setSearch("");
-    loadProducts(cleared);
+    loadProducts({ filtersOverride: cleared });
   };
 
+  // FlipRadar — BUG 1: schimbarea sortarii trimite valoarea direct in request,
+  // fara sa astepte re-render-ul state-ului sortBy.
   const handleSortChange = (value) => {
     setSortBy(value);
-    setTimeout(() => loadProducts(), 0);
+    loadProducts({ sortByOverride: value });
   };
 
   const handleAddProduct = async (e) => {
@@ -273,10 +324,14 @@ export default function ProductsPage() {
     outline: "none",
   };
 
+  const labelSmall = {
+    display: "block", fontSize: "0.75rem", fontWeight: 500,
+    marginBottom: "0.375rem", color: "var(--text-secondary)",
+  };
+
   const hasActiveFilters =
-    filters.brand || filters.category ||
-    filters.price_min !== "" || filters.price_max !== "" ||
-    filters.roi_min !== "";
+    filters.source || filters.brand || filters.category ||
+    filters.price_min !== "" || filters.price_max !== "" || filters.on_sale;
 
   return (
     <div style={{ maxWidth: "960px", margin: "0 auto" }}>
@@ -380,41 +435,87 @@ export default function ProductsPage() {
             marginBottom: "1.5rem",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "1rem", marginBottom: "1rem" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
-                Brand
-              </label>
-              <select
-                value={filters.brand}
-                onChange={(e) => setFilters({ ...filters, brand: e.target.value })}
-                style={inputBaseStyle}
-              >
-                <option value="">Toate brandurile</option>
-                {filterOptions.brands.map((b) => (
-                  <option key={b} value={b}>{b}</option>
+          {/* Rand 1: sursa magazin */}
+          <div style={{ marginBottom: "1rem" }}>
+            <label style={labelSmall}>Sursa (magazin)</label>
+            <select
+              value={filters.source}
+              onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+              style={inputBaseStyle}
+            >
+              {STORE_SOURCES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Rand 2: brand cu autocomplete (dropdown pozitionat absolut) */}
+          <div style={{ marginBottom: "1rem", position: "relative" }}>
+            <label style={labelSmall}>Brand</label>
+            <input
+              type="text"
+              value={brandInput}
+              onChange={(e) => {
+                setBrandInput(e.target.value);
+                setFilters({ ...filters, brand: e.target.value });
+                setShowBrandDropdown(true);
+              }}
+              onFocus={() => setShowBrandDropdown(true)}
+              onBlur={() => setTimeout(() => setShowBrandDropdown(false), 150)}
+              placeholder="ex: Samsung, Apple, Sony..."
+              style={inputBaseStyle}
+            />
+            {showBrandDropdown && brandSuggestions.length > 0 && (
+              <div style={{
+                position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
+                marginTop: "0.25rem", backgroundColor: "var(--bg-card)",
+                border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+                overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+              }}>
+                {brandSuggestions.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onMouseDown={() => {
+                      setFilters((prev) => ({ ...prev, brand: b }));
+                      setBrandInput(b);
+                      setShowBrandDropdown(false);
+                    }}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "0.5rem 0.75rem", backgroundColor: "transparent",
+                      border: "none", color: "var(--text-primary)", fontSize: "0.8125rem",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                  >
+                    {b}
+                  </button>
                 ))}
-              </select>
-            </div>
+              </div>
+            )}
+          </div>
+
+          {/* Rand 3: categorie (populata din API) */}
+          <div style={{ marginBottom: "1rem" }}>
+            <label style={labelSmall}>Categorie</label>
+            <select
+              value={filters.category}
+              onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+              style={inputBaseStyle}
+            >
+              <option value="">Toate categoriile</option>
+              {filterOptions.categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Rand 4: pret min / max */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
-                Categorie
-              </label>
-              <select
-                value={filters.category}
-                onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-                style={inputBaseStyle}
-              >
-                <option value="">Toate categoriile</option>
-                {filterOptions.categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
-                Pret minim (RON)
-              </label>
+              <label style={labelSmall}>Pret minim</label>
               <input
                 type="number" step="0.01" value={filters.price_min}
                 onChange={(e) => setFilters({ ...filters, price_min: e.target.value })}
@@ -423,9 +524,7 @@ export default function ProductsPage() {
               />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
-                Pret maxim (RON)
-              </label>
+              <label style={labelSmall}>Pret maxim</label>
               <input
                 type="number" step="0.01" value={filters.price_max}
                 onChange={(e) => setFilters({ ...filters, price_max: e.target.value })}
@@ -433,18 +532,21 @@ export default function ProductsPage() {
                 style={inputBaseStyle}
               />
             </div>
-            <div style={{ gridColumn: "1 / span 2" }}>
-              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.375rem", color: "var(--text-secondary)" }}>
-                ROI minim (%)
-              </label>
-              <input
-                type="number" step="0.1" value={filters.roi_min}
-                onChange={(e) => setFilters({ ...filters, roi_min: e.target.value })}
-                placeholder="ex: 20"
-                style={inputBaseStyle}
-              />
-            </div>
           </div>
+
+          {/* Rand 5: doar produse la reducere */}
+          <label style={{
+            display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem",
+            cursor: "pointer", fontSize: "0.8125rem", color: "var(--text-secondary)",
+          }}>
+            <input
+              type="checkbox"
+              checked={filters.on_sale}
+              onChange={(e) => setFilters({ ...filters, on_sale: e.target.checked })}
+              style={{ width: "16px", height: "16px", cursor: "pointer" }}
+            />
+            Doar produse la reducere
+          </label>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button onClick={handleApplyFilters} style={{
               padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)",

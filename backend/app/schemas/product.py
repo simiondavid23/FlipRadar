@@ -7,12 +7,14 @@ class ProductCreate(BaseModel):
     name: str
     ean: Optional[str] = None
     sku: Optional[str] = None
+    brand: Optional[str] = None
     category: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
     source_url: Optional[str] = None
     current_price: Optional[float] = None
+    original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str = "EUR"
 
@@ -21,12 +23,14 @@ class ProductUpdate(BaseModel):
     name: Optional[str] = None
     ean: Optional[str] = None
     sku: Optional[str] = None
+    brand: Optional[str] = None
     category: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
     source_url: Optional[str] = None
     current_price: Optional[float] = None
+    original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: Optional[str] = None
 
@@ -48,12 +52,14 @@ class ProductResponse(BaseModel):
     name: str
     ean: Optional[str] = None
     sku: Optional[str] = None
+    brand: Optional[str] = None
     category: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
     source_url: Optional[str] = None
     current_price: Optional[float] = None
+    original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str
     created_at: datetime

@@ -92,16 +92,27 @@ export default function NotificationsPage() {
           {notifications.map((notif) => {
             const typeInfo = typeIcons[notif.notification_type] || typeIcons.info;
             const Icon = typeInfo.icon;
+            // FlipRadar — ITEM 16: notificarile Flash Deal au accent portocaliu + eticheta.
+            const isFlashDeal = notif.notification_type === "flash_deal";
+            const accentColor = isFlashDeal ? "#fb923c" : typeInfo.color;
             return (
               <div key={notif.id} onClick={() => !notif.is_read && markAsRead(notif.id)}
                 style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1rem 1.25rem", cursor: notif.is_read ? "default" : "pointer",
-                  opacity: notif.is_read ? 0.6 : 1, borderLeft: `3px solid ${typeInfo.color}` }}>
+                  opacity: notif.is_read ? 0.6 : 1, borderLeft: `3px solid ${accentColor}`, position: "relative" }}>
+                {isFlashDeal && (
+                  <span style={{
+                    position: "absolute", top: "0.75rem", right: "1rem",
+                    fontWeight: 700, fontSize: "0.7rem", color: "#fb923c", letterSpacing: "0.04em",
+                  }}>
+                    FLASH DEAL
+                  </span>
+                )}
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-                  <Icon style={{ width: "1.25rem", height: "1.25rem", color: typeInfo.color, flexShrink: 0, marginTop: "0.125rem" }} />
+                  <Icon style={{ width: "1.25rem", height: "1.25rem", color: accentColor, flexShrink: 0, marginTop: "0.125rem" }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <h3 style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.9375rem" }}>{notif.title}</h3>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginRight: isFlashDeal ? "5.5rem" : 0 }}>
                         {new Date(notif.created_at).toLocaleDateString("ro-RO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>

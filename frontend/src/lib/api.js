@@ -101,12 +101,19 @@ export const adminAPI = {
   updateUserFeatures: (id, flags) => api.put(`/api/admin/users/${id}/features`, flags),
   getProducts: (params) => api.get("/api/admin/products", { params }),
   getProductsReport: (params) => api.get("/api/admin/products/report", { params }),
+  // FlipRadar — ITEM 17: export PDF al raportului de produse (acelasi filtru)
+  exportProductsReportPdf: (params) => api.get("/api/admin/products/report/pdf", { params, responseType: "blob" }),
   getWatchlist: (params) => api.get("/api/admin/watchlist", { params }),
   getAlerts: (params) => api.get("/api/admin/alerts", { params }),
   getInventory: (params) => api.get("/api/admin/inventory", { params }),
   getSales: (params) => api.get("/api/admin/sales", { params }),
   getFavorites: (params) => api.get("/api/admin/favorites", { params }),
   getChatMessages: (params) => api.get("/api/admin/chat-messages", { params }),
+};
+
+// Setari utilizator (FlipRadar — ITEM 16)
+export const usersAPI = {
+  updateSettings: (data) => api.patch("/api/users/settings", data),
 };
 
 // Tickete de suport

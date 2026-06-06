@@ -19,6 +19,7 @@ from app.models.product_source import ProductSource
 from app.models.user import User
 from app.models.notification import Notification
 from app.models.price_history import PriceHistory
+from app.models.watchlist import WatchlistItem
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
 from app.services.scraper_service import refresh_price_from_source
@@ -60,6 +61,50 @@ def _make_notification(alert: Alert, product: Product, price_in_alert_currency: 
         notification_type="alert",
         link=f"/dashboard/products/{product.id}",
     )
+
+
+# FlipRadar — ITEM 16: alerta Flash Deal. Cand un produs urmarit (din catalogul
+# propriu sau din Radar Preturi) scade brusc cu cel putin pragul setat de utilizator,
+# creeaza o notificare in-app, evitand duplicatele din ultimele 6 ore.
+def _check_flash_deal(db, product, old_price: float, new_price: float, source: str):
+    drop_pct = (old_price - new_price) / old_price
+
+    # Gaseste user_id-urile care au produsul in catalog sau watchlist
+    owner_ids = [r[0] for r in db.query(Product.user_id).filter(Product.id == product.id).all()]
+    watcher_ids = [r[0] for r in db.query(WatchlistItem.user_id).filter(WatchlistItem.product_id == product.id).all()]
+    user_ids = set(owner_ids + watcher_ids)
+
+    for user_id in user_ids:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            continue
+        threshold = float(user.flash_deal_threshold or 0.15)
+        if drop_pct < threshold:
+            continue
+
+        # Evita duplicate: nu crea daca exista deja in ultimele 6 ore
+        from datetime import timedelta
+        recent_cutoff = datetime.utcnow() - timedelta(hours=6)
+        exists = db.query(Notification).filter(
+            Notification.user_id == user_id,
+            Notification.notification_type == "flash_deal",
+            Notification.message.contains(str(product.id)),
+            Notification.created_at >= recent_cutoff
+        ).first()
+        if exists:
+            continue
+
+        db.add(Notification(
+            user_id=user_id,
+            title="Flash Deal detectat",
+            message=(
+                f"{product.name}: {old_price} {product.currency} -> "
+                f"{new_price} {product.currency} "
+                f"(-{round(drop_pct * 100, 1)}% pe {source}) [pid:{product.id}]"
+            ),
+            notification_type="flash_deal",
+            link=f"/dashboard/products/{product.id}",
+        ))
 
 
 def _refresh_all_scrapeable_products(db: Session) -> int:
@@ -104,6 +149,9 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
             refreshed += 1
             touched_products[product.id] = product
             print(f"[AlertChecker] Pret actualizat pentru \"{product.name[:50]}\" ({ps.source}): {old_price} -> {new_price} {ps.currency}")
+            # FlipRadar — ITEM 16: la o scadere de pret, verifica daca e Flash Deal.
+            if old_price and new_price and old_price != new_price and new_price < old_price:
+                _check_flash_deal(db, product, float(old_price), float(new_price), ps.source)
         else:
             print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
     for product in touched_products.values():

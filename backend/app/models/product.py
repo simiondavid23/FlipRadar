@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -12,12 +12,16 @@ class Product(Base):
     name = Column(String, nullable=False, index=True)
     ean = Column(String, nullable=True, index=True)
     sku = Column(String, nullable=True, index=True)
+    # FlipRadar — brand dedicat pentru filtrare precisa (separat de nume)
+    brand = Column(String(200), nullable=True)
     category = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     source = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
     current_price = Column(Float, nullable=True)
+    # FlipRadar — pret de lista original (pentru detectarea reducerilor / on_sale)
+    original_price = Column(Numeric(10, 2), nullable=True)
     resale_price = Column(Float, nullable=True)
     currency = Column(String, default="EUR")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

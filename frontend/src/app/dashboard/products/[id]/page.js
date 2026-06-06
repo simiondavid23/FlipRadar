@@ -27,6 +27,10 @@ export default function ProductDetailPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResults, setRefreshResults] = useState(null);
   const [copiedKey, setCopiedKey] = useState(null);
+  // FlipRadar — ITEM 10: editor inline pentru pretul de revanzare (din blocul de profitabilitate)
+  const [resaleEditing, setResaleEditing] = useState(false);
+  const [resaleValue, setResaleValue] = useState("");
+  const [resaleSaving, setResaleSaving] = useState(false);
 
   const copyToClipboard = async (value, key) => {
     if (!value) return;
@@ -95,6 +99,26 @@ export default function ProductDetailPage() {
       }]);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  // FlipRadar — ITEM 10: salveaza pretul de revanzare direct din pagina de detalii.
+  const saveResalePrice = async () => {
+    const parsed = parseFloat(resaleValue);
+    if (!isFinite(parsed) || parsed < 0) {
+      alert("Pretul de revanzare trebuie sa fie un numar pozitiv");
+      return;
+    }
+    setResaleSaving(true);
+    try {
+      await productsAPI.updateProduct(productId, { resale_price: parsed });
+      setResaleEditing(false);
+      setResaleValue("");
+      await loadProduct();
+    } catch (error) {
+      alert(error.response?.data?.detail || "Eroare la salvarea pretului de revanzare");
+    } finally {
+      setResaleSaving(false);
     }
   };
 
@@ -395,6 +419,188 @@ export default function ProductDetailPage() {
           </p>
         )}
       </div>
+
+      {/* FlipRadar — ITEM 10: bloc profitabilitate (in moneda produsului) */}
+      {product.current_price != null && (() => {
+        const money = product.currency || "EUR";
+        const fmt = (n) => Number(n).toFixed(2);
+
+        if (product.resale_price == null) {
+          return (
+            <div style={{
+              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+              borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+            }}>
+              {resaleEditing ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>Pret revanzare estimat:</span>
+                  <input
+                    type="number" step="0.01" min="0" autoFocus
+                    value={resaleValue} onChange={(e) => setResaleValue(e.target.value)}
+                    placeholder={`ex: 100 ${money}`}
+                    style={{
+                      backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
+                      borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
+                      fontSize: "0.8125rem", width: "140px", outline: "none",
+                    }}
+                  />
+                  <button type="button" disabled={resaleSaving} onClick={saveResalePrice}
+                    style={{
+                      padding: "0.375rem 0.875rem", borderRadius: "0.375rem", backgroundColor: "var(--green-primary)",
+                      color: "white", border: "none", cursor: resaleSaving ? "wait" : "pointer", fontSize: "0.8125rem", fontWeight: 500,
+                    }}>
+                    {resaleSaving ? "Se salveaza..." : "Salveaza"}
+                  </button>
+                  <button type="button" onClick={() => { setResaleEditing(false); setResaleValue(""); }}
+                    style={{
+                      padding: "0.375rem 0.75rem", borderRadius: "0.375rem", backgroundColor: "transparent",
+                      color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem",
+                    }}>
+                    Anuleaza
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+                    Adauga pretul de revanzare pentru a vedea profitabilitatea
+                  </span>
+                  <button type="button"
+                    onClick={() => { setResaleValue(product.resale_price ?? ""); setResaleEditing(true); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.375rem",
+                      padding: "0.5rem 0.875rem", borderRadius: "0.5rem",
+                      backgroundColor: "rgba(167,139,250,0.15)", color: "#a78bfa",
+                      border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+                    }}>
+                    Adauga pret revanzare
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        const curier = money === "RON" ? 25 : 5;
+        const profitBrut = product.resale_price - product.current_price;
+        const comision = product.resale_price * 0.08;
+        const profitNet = profitBrut - curier - comision;
+        const roiNet = (profitNet / product.current_price) * 100;
+
+        let vColor, vLabel;
+        if (roiNet >= 25) { vColor = "#16a34a"; vLabel = "RECOMANDAT"; }
+        else if (roiNet >= 10) { vColor = "#ca8a04"; vLabel = "CU REZERVE"; }
+        else if (roiNet >= 0) { vColor = "#ea580c"; vLabel = "MARJA MICA"; }
+        else { vColor = "#dc2626"; vLabel = "NEPROFITABIL"; }
+
+        const rowStyle = { display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "0.125rem 0" };
+        const sep = { height: "1px", backgroundColor: "var(--border-color)", margin: "0.625rem 0" };
+
+        return (
+          <div style={{
+            backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+            borderLeft: `3px solid ${vColor}`,
+            borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+              <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                Profitabilitate estimata
+              </h2>
+              <span style={{
+                padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 700,
+                backgroundColor: `${vColor}22`, color: vColor, letterSpacing: "0.03em",
+              }}>
+                {vLabel}
+              </span>
+            </div>
+
+            <div style={{ ...rowStyle, color: "var(--text-secondary)" }}>
+              <span>Pret achizitie</span><span style={{ color: "var(--text-primary)" }}>{fmt(product.current_price)} {money}</span>
+            </div>
+            <div style={{ ...rowStyle, color: "var(--text-secondary)" }}>
+              <span>Pret revanzare estimat</span><span style={{ color: "var(--text-primary)" }}>{fmt(product.resale_price)} {money}</span>
+            </div>
+
+            <div style={sep} />
+
+            <div style={{ ...rowStyle, color: "var(--text-secondary)" }}>
+              <span>Profit brut</span>
+              <span style={{ color: profitBrut >= 0 ? "#4ade80" : "#f87171" }}>{profitBrut >= 0 ? "+" : ""}{fmt(profitBrut)} {money}</span>
+            </div>
+            <div style={{ ...rowStyle, color: "var(--text-secondary)" }}>
+              <span>Curier estimat</span><span style={{ color: "#f87171" }}>-{curier} {money}</span>
+            </div>
+            <div style={{ ...rowStyle, color: "var(--text-secondary)" }}>
+              <span>Comision platforma (~8%)</span><span style={{ color: "#f87171" }}>-{fmt(comision)} {money}</span>
+            </div>
+
+            <div style={sep} />
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+              <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                Profit net estimat: <span style={{ color: profitNet >= 0 ? "#4ade80" : "#f87171" }}>{profitNet >= 0 ? "+" : ""}{fmt(profitNet)} {money}</span>
+                {" "}| ROI net: <span style={{ color: vColor }}>{roiNet.toFixed(1)}%</span>
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* FlipRadar — ITEM 11: comparatie preturi pe magazine */}
+      {(() => {
+        const priceData = (product.sources || [])
+          .filter((s) => s.current_price != null)
+          .map((s) => ({ name: s.source, price: s.current_price, currency: s.currency, url: s.source_url }))
+          .sort((a, b) => a.price - b.price);
+        if (priceData.length < 2) return null;
+
+        const cheapest = priceData[0];
+        const maxPrice = priceData[priceData.length - 1].price;
+        const maxDiff = maxPrice - cheapest.price;
+
+        return (
+          <div style={{
+            backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+            borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+          }}>
+            <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.875rem" }}>
+              Comparatie preturi pe magazine
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+              {priceData.map((s, i) => {
+                const isCheapest = i === 0;
+                const widthPct = maxPrice > 0 ? Math.max((s.price / maxPrice) * 100, 8) : 100;
+                return (
+                  <div key={`${s.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <span style={{ minWidth: "100px", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{s.name}</span>
+                    <div style={{ flex: 1, height: "22px", backgroundColor: "var(--bg-dark)", borderRadius: "0.375rem", overflow: "hidden" }}>
+                      <div style={{
+                        width: `${widthPct}%`, height: "100%",
+                        backgroundColor: isCheapest ? "var(--green-primary)" : "var(--blue-dim)",
+                        borderRadius: "0.375rem", transition: "width 0.2s ease",
+                      }} />
+                    </div>
+                    <span style={{ minWidth: "90px", textAlign: "right", fontSize: "0.8125rem", fontWeight: 600, color: isCheapest ? "#4ade80" : "var(--text-primary)" }}>
+                      {Number(s.price).toFixed(2)} {s.currency}
+                    </span>
+                    {s.url ? (
+                      <a href={s.url} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: "0.75rem", color: "#60a5fa", textDecoration: "none", whiteSpace: "nowrap" }}>
+                        deschide
+                      </a>
+                    ) : (
+                      <span style={{ minWidth: "52px" }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.875rem", marginBottom: 0 }}>
+              Diferenta maxima: <strong style={{ color: "var(--text-primary)" }}>{maxDiff.toFixed(2)} {cheapest.currency}</strong>
+              {" "}| Sursa optima: <strong style={{ color: "#4ade80" }}>{cheapest.name}</strong>
+            </p>
+          </div>
+        );
+      })()}
 
       {product.sources && product.sources.length > 0 && (
         <div style={{

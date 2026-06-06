@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { reportsAPI } from "@/lib/api";
 import {
-  BarChart2, TrendingUp, Euro, ShoppingCart, Target,
+  BarChart2, TrendingUp, Euro, ShoppingCart, Target, AlertTriangle,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -223,6 +223,32 @@ export default function ReportsPage() {
               valueColor="#facc15"
             />
           </div>
+
+          {/* FlipRadar — ITEM 12: Rezumat Profitabilitate. KPI-urile (mai sus),
+              tabelul "Top produse" si graficul pe categorii (mai jos) sunt deja
+              randate; aici adaugam alerta pentru produsele cu marja mica. */}
+          {(() => {
+            const lowMargin = (summary.top_produse || []).filter((p) => Number(p.roi) < 10);
+            if (lowMargin.length === 0) return null;
+            return (
+              <div style={{
+                backgroundColor: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.3)",
+                borderLeft: "3px solid #ea580c", borderRadius: "1rem",
+                padding: "1rem 1.25rem", marginBottom: "1.5rem",
+                display: "flex", alignItems: "center", gap: "0.75rem",
+              }}>
+                <AlertTriangle style={{ width: "20px", height: "20px", color: "#fb923c", flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#fb923c", margin: 0 }}>
+                    Atentie: verifica produsele cu marja mica
+                  </p>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>
+                    {lowMargin.length} {lowMargin.length === 1 ? "produs are" : "produse au"} ROI sub 10% in intervalul selectat.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Time series chart */}
           <div

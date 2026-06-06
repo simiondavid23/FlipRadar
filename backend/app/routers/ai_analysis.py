@@ -20,12 +20,45 @@ from app.services.ai_service import analyze_product_with_ai, generate_product_li
 router = APIRouter(prefix="/api/ai", tags=["AI Analysis"])
 
 
+# FlipRadar — ITEM 14: extrage statistici reale de piata din vanzarile similare
+# inregistrate in market_listings, pentru a ancora analiza AI in date concrete.
+def get_market_context(db, product_name: str, category: str) -> str:
+    from app.models.market_listing import MarketListing
+    from sqlalchemy import func
+    search_term = f"%{(product_name or '').split()[0]}%" if product_name else "%"
+    try:
+        stats = db.query(
+            func.count(MarketListing.id).label("count"),
+            func.avg(MarketListing.price).label("avg_price"),
+            func.min(MarketListing.price).label("min_price"),
+            func.max(MarketListing.price).label("max_price"),
+            func.avg(MarketListing.days_to_sell).label("avg_days")
+        ).filter(
+            MarketListing.title.ilike(search_term),
+            MarketListing.sold_at.isnot(None)
+        ).first()
+
+        if not stats or not stats.count or stats.count < 5:
+            return ""
+
+        return (
+            f"Date reale din piata romaneasca ({stats.count} vanzari similare): "
+            f"Pret mediu: {round(float(stats.avg_price), 2)} EUR, "
+            f"Interval: {round(float(stats.min_price), 2)}-{round(float(stats.max_price), 2)} EUR, "
+            f"Timp mediu vanzare: {round(float(stats.avg_days or 0), 0)} zile."
+        )
+    except Exception:
+        return ""
+
+
 @router.post("/analyze-product", response_model=AIResponse)
 async def analyze_product(
     request: ProductAnalysisRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(_ai_user),
 ):
     """Analyze a product for profitability using AI, personalized for the user."""
+    market_context = get_market_context(db, request.product_name, request.category or "")
     result = await analyze_product_with_ai(
         product_name=request.product_name,
         category=request.category,
@@ -34,6 +67,7 @@ async def analyze_product(
         currency=getattr(request, "currency", "EUR") or "EUR",
         user_name=current_user.full_name or current_user.username,
         resale_price=getattr(request, "resale_price", None),
+        market_context=market_context,
     )
     return AIResponse(result=result, success=True)
 
