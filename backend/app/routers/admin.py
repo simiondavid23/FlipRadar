@@ -321,6 +321,192 @@ def products_report(
     return {"products": rows, "summary": summary}
 
 
+@router.get("/products/report/pdf")
+def products_report_pdf(
+    price_min: Optional[float] = Query(None),
+    price_max: Optional[float] = Query(None),
+    date_from: Optional[str] = Query(None, description="ISO date (inclusive)"),
+    date_to: Optional[str] = Query(None, description="ISO date (inclusive)"),
+    category: Optional[str] = Query(None),
+    limit: int = Query(2000, ge=1, le=10000),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """FlipRadar — ITEM 17: acelasi raport de produse, exportat ca PDF (ReportLab)."""
+    from datetime import datetime as _dt
+    import io
+    from fastapi.responses import StreamingResponse
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.pdfgen import canvas as _canvas
+
+    # --- Acelasi filtru ca /products/report ---
+    q = db.query(Product).options(joinedload(Product.user))
+    if price_min is not None:
+        q = q.filter(Product.current_price >= price_min)
+    if price_max is not None:
+        q = q.filter(Product.current_price <= price_max)
+    if category:
+        q = q.filter(Product.category.ilike(f"%{category.strip()}%"))
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            return _dt.fromisoformat(value)
+        except Exception:
+            return None
+
+    df = _parse(date_from)
+    dt = _parse(date_to)
+    if df is not None:
+        q = q.filter(Product.created_at >= df)
+    if dt is not None:
+        q = q.filter(Product.created_at <= dt)
+
+    products = q.order_by(Product.created_at.desc()).limit(limit).all()
+
+    price_values = [float(p.current_price) for p in products if p.current_price is not None]
+    roi_values: list[float] = []
+    profit_estimat_total = 0.0
+    for p in products:
+        if p.current_price and p.resale_price and float(p.current_price) > 0:
+            diff = float(p.resale_price) - float(p.current_price)
+            roi_values.append((diff / float(p.current_price)) * 100.0)
+            if diff > 0:
+                profit_estimat_total += diff
+
+    pret_mediu = round(sum(price_values) / len(price_values), 2) if price_values else 0.0
+    roi_mediu = round(sum(roi_values) / len(roi_values), 2) if roi_values else 0.0
+
+    # --- Footer cu numerotare "pagina X din Y" ---
+    class _NumberedCanvas(_canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_states = []
+
+        def showPage(self):
+            self._saved_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._saved_states)
+            for state in self._saved_states:
+                self.__dict__.update(state)
+                self.setFont("Helvetica", 8)
+                self.setFillColor(colors.HexColor("#94a3b8"))
+                self.drawCentredString(
+                    A4[0] / 2.0, 1.0 * cm,
+                    f"FlipRadar Admin - pagina {self._pageNumber} din {total}",
+                )
+                super().showPage()
+            super().save()
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=1.5 * cm, rightMargin=1.5 * cm,
+        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("title", parent=styles["Title"], fontSize=18, spaceAfter=6, textColor=colors.HexColor("#1e40af"))
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"))
+
+    # Descrierea filtrelor active
+    active_filters = []
+    if price_min is not None:
+        active_filters.append(f"pret min: {price_min}")
+    if price_max is not None:
+        active_filters.append(f"pret max: {price_max}")
+    if date_from:
+        active_filters.append(f"de la: {date_from}")
+    if date_to:
+        active_filters.append(f"pana la: {date_to}")
+    if category:
+        active_filters.append(f"categorie: {category}")
+    filters_text = ", ".join(active_filters) if active_filters else "niciun filtru aplicat"
+
+    elements = []
+    elements.append(Paragraph("Raport Produse - FlipRadar Admin", title_style))
+    elements.append(Paragraph(
+        f"Data generare: {_dt.now().strftime('%d.%m.%Y %H:%M')}<br/>"
+        f"Filtre active: {filters_text}",
+        sub_style,
+    ))
+    elements.append(Spacer(1, 0.5 * cm))
+
+    # Tabel summary
+    summary_data = [
+        ["Total produse", f"{len(products)}"],
+        ["Pret mediu", f"{pret_mediu:.2f}"],
+        ["ROI mediu", f"{roi_mediu:.2f}%"],
+        ["Profit estimat total", f"{round(profit_estimat_total, 2):.2f}"],
+    ]
+    summary_tbl = Table(summary_data, colWidths=[6 * cm, 4 * cm])
+    summary_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(summary_tbl)
+    elements.append(Spacer(1, 0.6 * cm))
+
+    # Tabel produse (8 coloane, font 8pt)
+    header = ["Produs", "Categorie", "Pret", "Pret rev.", "ROI%", "Sursa", "Proprietar", "Adaugat"]
+    rows = [header]
+    for p in products:
+        roi = None
+        if p.current_price and p.resale_price and float(p.current_price) > 0:
+            roi = round(((float(p.resale_price) - float(p.current_price)) / float(p.current_price)) * 100.0, 2)
+        cur = p.currency or ""
+        rows.append([
+            (p.name or "-")[:35],
+            (p.category or "-")[:20],
+            f"{float(p.current_price):.2f} {cur}" if p.current_price is not None else "-",
+            f"{float(p.resale_price):.2f} {cur}" if p.resale_price is not None else "-",
+            f"{roi:.2f}%" if roi is not None else "-",
+            (p.source or "-")[:14],
+            (p.user.email if p.user else "-")[:24],
+            p.created_at.strftime("%d.%m.%Y") if p.created_at else "-",
+        ])
+
+    if len(rows) == 1:
+        elements.append(Paragraph("Niciun produs in intervalul/filtru selectat.", sub_style))
+    else:
+        tbl = Table(
+            rows,
+            colWidths=[4.4 * cm, 2.2 * cm, 1.9 * cm, 1.9 * cm, 1.2 * cm, 2.0 * cm, 3.0 * cm, 1.6 * cm],
+            repeatRows=1,
+        )
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ALIGN", (2, 1), (4, -1), "RIGHT"),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("PADDING", (0, 0), (-1, -1), 3),
+        ]))
+        elements.append(tbl)
+
+    doc.build(elements, canvasmaker=_NumberedCanvas)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=raport_admin_{_dt.now().strftime('%Y%m%d_%H%M')}.pdf"},
+    )
+
+
 @router.get("/watchlist", response_model=list[AdminWatchlistItem])
 def list_watchlist(
     user_id: Optional[int] = Query(None),

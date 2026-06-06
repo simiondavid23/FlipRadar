@@ -58,12 +58,11 @@ def get_products(
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
-    min_price: Optional[float] = Query(None),
-    max_price: Optional[float] = Query(None),
     price_min: Optional[float] = Query(None),
     price_max: Optional[float] = Query(None),
     roi_min: Optional[float] = Query(None),
     source: Optional[str] = Query(None),
+    on_sale: Optional[bool] = Query(None),
     sort_by: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -86,17 +85,29 @@ def get_products(
     if category:
         query = query.filter(Product.category.ilike(f"%{category.strip()}%"))
     if brand:
-        # Nu există o coloană dedicată pentru brand — se caută în nume (majoritatea numelor de produs încep cu brandul)
-        query = query.filter(Product.name.ilike(f"%{brand.strip()}%"))
+        # FlipRadar — BUG 3: filtreaza pe coloana dedicata brand, cu fallback pe
+        # nume ca sa acopere produsele vechi fara brand setat.
+        query = query.filter(
+            or_(
+                Product.brand.ilike(f"%{brand.strip()}%"),
+                Product.name.ilike(f"%{brand.strip()}%"),
+            )
+        )
 
-    effective_min = price_min if price_min is not None else min_price
-    effective_max = price_max if price_max is not None else max_price
-    if effective_min is not None:
-        query = query.filter(Product.current_price >= effective_min)
-    if effective_max is not None:
-        query = query.filter(Product.current_price <= effective_max)
+    # FlipRadar — BUG 6: un singur set de parametri pentru pret (price_min/price_max).
+    if price_min is not None:
+        query = query.filter(Product.current_price >= price_min)
+    if price_max is not None:
+        query = query.filter(Product.current_price <= price_max)
     if source:
         query = query.filter(Product.source == source)
+
+    # FlipRadar — ITEM 9: filtru "doar produse la reducere" (pret curent sub pretul de lista).
+    if on_sale:
+        query = query.filter(
+            Product.original_price.isnot(None),
+            Product.current_price < Product.original_price,
+        )
 
     if roi_min is not None:
         # ROI = ((revanzare - curent) / curent) * 100, doar când ambele sunt prezente și curent > 0
@@ -117,10 +128,14 @@ def get_products(
     elif sort_key == "newest":
         query = query.order_by(Product.created_at.desc())
     elif sort_key == "roi_desc":
-        # Sortează după resale_price - current_price descrescător (aproximare ROI)
-        query = query.order_by(
-            (Product.resale_price - Product.current_price).desc().nullslast()
+        # FlipRadar — BUG 4: sorteaza dupa ROI procentual real, nu dupa diferenta absoluta.
+        from sqlalchemy import case
+        roi_expr = case(
+            (Product.current_price > 0,
+             (Product.resale_price - Product.current_price) / Product.current_price * 100),
+            else_=None
         )
+        query = query.order_by(roi_expr.desc().nullslast())
 
     return query.offset(skip).limit(limit).all()
 
@@ -130,29 +145,51 @@ def get_filter_options(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returnează brandurile și categoriile distincte din catalogul utilizatorului.
+    """FlipRadar — ITEM 9: branduri, categorii și surse distincte din catalogul
+    utilizatorului. Brandurile combină coloana dedicată `brand` cu primul token al
+    numelui (fallback pentru produsele vechi care nu au brand setat)."""
+    uid = current_user.id
 
-    Brandurile sunt deduse din primul token al numelui produsului (euristică simplă,
-    deoarece nu există o coloană dedicată pentru brand în schemă).
-    """
-    rows = (
-        db.query(Product.name, Product.category)
-        .filter(Product.user_id == current_user.id)
+    brand_rows = (
+        db.query(Product.brand)
+        .filter(Product.user_id == uid, Product.brand.isnot(None))
+        .distinct()
         .all()
     )
-    categories: set[str] = set()
+    category_rows = (
+        db.query(Product.category)
+        .filter(Product.user_id == uid, Product.category.isnot(None))
+        .distinct()
+        .all()
+    )
+    source_rows = (
+        db.query(Product.source)
+        .filter(Product.user_id == uid, Product.source.isnot(None))
+        .distinct()
+        .all()
+    )
+    name_rows = (
+        db.query(Product.name)
+        .filter(Product.user_id == uid, Product.name.isnot(None))
+        .all()
+    )
+
     brands: set[str] = set()
-    for name, category in rows:
-        if category:
-            categories.add(category.strip())
-        if name:
-            first_token = name.strip().split()[0] if name.strip() else ""
-            if len(first_token) >= 2:
-                brands.add(first_token)
+    for (b,) in brand_rows:
+        if b and b.strip():
+            brands.add(b.strip())
+    for (n,) in name_rows:
+        token = (n or "").strip().split()[0] if (n or "").strip() else ""
+        if len(token) >= 2:
+            brands.add(token)
+
+    categories = {c.strip() for (c,) in category_rows if c and c.strip()}
+    sources = {s.strip() for (s,) in source_rows if s and s.strip()}
 
     return {
-        "brands": sorted(brands, key=lambda s: s.lower()),
-        "categories": sorted(categories, key=lambda s: s.lower()),
+        "brands": sorted(brands, key=lambda s: s.lower())[:100],
+        "categories": sorted(categories, key=lambda s: s.lower())[:100],
+        "sources": sorted(sources, key=lambda s: s.lower())[:50],
     }
 
 
@@ -244,12 +281,14 @@ def _build_save_response(product: Product, is_new: bool, previous_price: Optiona
         "name": product.name,
         "ean": product.ean,
         "sku": product.sku,
+        "brand": product.brand,
         "category": product.category,
         "image_url": product.image_url,
         "description": product.description,
         "source": product.source,
         "source_url": product.source_url,
         "current_price": product.current_price,
+        "original_price": product.original_price,
         "resale_price": product.resale_price,
         "currency": product.currency,
         "created_at": product.created_at,

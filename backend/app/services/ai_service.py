@@ -1,5 +1,6 @@
 import re
 import json
+import asyncio
 from groq import Groq
 from app.config import GROQ_API_KEY
 
@@ -9,45 +10,39 @@ MODEL = "llama-3.3-70b-versatile"
 
 
 def clean_json_response(text: str) -> str:
-    """Curăță răspunsul AI pentru a extrage JSON valid.
-    Elimină blocurile markdown, caracterele de control și alte formatări."""
-    # Elimină blocurile ```json ... ``` sau ``` ... ```
-    cleaned = re.sub(r'```(?:json)?\s*', '', text)
-    cleaned = cleaned.strip()
-    # Caută un obiect JSON în text
-    match = re.search(r'\{[\s\S]*\}', cleaned)
+    """FlipRadar — BUG 7: extrage JSON valid din raspunsul AI in 4 pasi ordonati,
+    de la cel mai strict la cel mai tolerant."""
+    import re, json
+
+    # Pas 1: încearcă direct
+    try:
+        return json.dumps(json.loads(text.strip()), ensure_ascii=False)
+    except Exception:
+        pass
+
+    # Pas 2: extrage blocul {...} și încearcă
+    match = re.search(r'\{[\s\S]*\}', text)
     if match:
-        raw_json = match.group(0)
-    else:
-        raw_json = cleaned
+        try:
+            return json.dumps(json.loads(match.group(0)), ensure_ascii=False)
+        except Exception:
+            pass
+        # Pas 3: strict=False
+        try:
+            return json.dumps(json.loads(match.group(0), strict=False), ensure_ascii=False)
+        except Exception:
+            pass
 
-    # Încearcă parsarea directă mai întâi
-    try:
-        parsed = json.loads(raw_json)
-        return json.dumps(parsed, ensure_ascii=False)
-    except json.JSONDecodeError:
-        pass
+    # Pas 4: curăță markdown și încearcă din nou
+    cleaned = re.sub(r'```(?:json)?\s*', '', text).strip()
+    match2 = re.search(r'\{[\s\S]*\}', cleaned)
+    if match2:
+        try:
+            return json.dumps(json.loads(match2.group(0), strict=False), ensure_ascii=False)
+        except Exception:
+            pass
 
-    # Corectează caracterele de control din valorile string (newline-uri, tab-uri în JSON)
-    # Înlocuiește newline-urile/tab-urile reale din valorile JSON cu versiunile escaped
-    fixed = re.sub(r'(?<=": ")(.*?)(?="[,\}])', lambda m: m.group(0).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t'), raw_json, flags=re.DOTALL)
-    try:
-        parsed = json.loads(fixed)
-        return json.dumps(parsed, ensure_ascii=False)
-    except json.JSONDecodeError:
-        pass
-
-    # Ultima soluție: elimină toate caracterele de control cu excepția \n dintre { }
-    fixed2 = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', raw_json)
-    # Înlocuiește newline-urile ne-escaped din valorile string
-    # Strategie: folosește strict=False în json.loads
-    try:
-        parsed = json.loads(fixed2, strict=False)
-        return json.dumps(parsed, ensure_ascii=False)
-    except json.JSONDecodeError:
-        pass
-
-    return raw_json
+    return text
 
 
 async def chat_with_groq(message: str, system_prompt: str = "", history: list = None) -> str:
@@ -62,8 +57,11 @@ async def chat_with_groq(message: str, system_prompt: str = "", history: list = 
                 messages.append({"role": msg["role"], "content": msg["content"]})
         
         messages.append({"role": "user", "content": message})
-        
-        response = client.chat.completions.create(
+
+        # FlipRadar — BUG 5: ruleaza apelul blocant Groq intr-un thread separat,
+        # ca sa nu blocheze event loop-ul async.
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model=MODEL,
             messages=messages,
             temperature=0.7,
@@ -82,6 +80,7 @@ async def analyze_product_with_ai(
     currency: str = "EUR",
     user_name: str = "",
     resale_price: float | None = None,
+    market_context: str = "",
 ) -> str:
     """Analizează un produs pentru revânzare pe piețele second-hand din România.
 
@@ -153,8 +152,14 @@ Returneaza STRICT JSON valid fara text in afara JSON-ului si fara markdown:
     "sfaturi": ["<sfat actionabil 1>", "<sfat actionabil 2>", "<sfat actionabil 3>"]
 }}"""
 
+    # FlipRadar — ITEM 14: ancoram analiza in date reale de piata cand sunt disponibile.
+    if market_context:
+        prompt += f"\n{market_context}"
+
     try:
-        response = client.chat.completions.create(
+        # FlipRadar — BUG 5: apel blocant Groq rulat in thread separat.
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5,
@@ -164,6 +169,24 @@ Returneaza STRICT JSON valid fara text in afara JSON-ului si fara markdown:
         return clean_json_response(raw)
     except Exception as e:
         return json.dumps({"error": f"Eroare la analiza: {str(e)}"})
+
+
+# FlipRadar — ITEM 13: cauta specificatii tehnice online cand utilizatorul nu le ofera.
+async def fetch_product_specs_online(product_name: str, category: str = "") -> str:
+    import httpx
+    from bs4 import BeautifulSoup
+    query = f"{product_name} {category} specificatii tehnice".strip()
+    encoded = query.replace(" ", "+")
+    url = f"https://html.duckduckgo.com/html/?q={encoded}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        soup = BeautifulSoup(resp.text, "html.parser")
+        snippets = soup.find_all("a", class_="result__snippet")
+        context = " | ".join(s.text.strip() for s in snippets[:3])
+        return context[:1500]
+    except Exception:
+        return ""
 
 
 async def generate_product_listing(
@@ -267,9 +290,18 @@ Raspunde STRICT in format JSON valid (fara markdown, fara ```), cu urmatoarea st
         "<sfat 2 pentru cresterea sanselor de vanzare>"
     ]
 }}"""
-    
+
+    # FlipRadar — ITEM 13: daca utilizatorul a oferit caracteristici prea scurte,
+    # cautam specificatii tehnice online si le adaugam ca context optional in prompt.
+    if len((features or "").strip()) < 40:
+        specs = await fetch_product_specs_online(product_name, category)
+        if specs:
+            prompt += f"\nInformatii tehnice gasite online (foloseste-le daca sunt relevante):\n{specs}"
+
     try:
-        response = client.chat.completions.create(
+        # FlipRadar — BUG 5: apel blocant Groq rulat in thread separat.
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
@@ -321,7 +353,9 @@ Genereaza un raport in format JSON valid (fara markdown, fara ```):
 }}"""
     
     try:
-        response = client.chat.completions.create(
+        # FlipRadar — BUG 5: apel blocant Groq rulat in thread separat.
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,

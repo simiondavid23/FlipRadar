@@ -37,6 +37,8 @@ class UserResponse(BaseModel):
     can_use_scraping: bool = True
     can_use_alerts: bool = True
     can_use_import_export: bool = True
+    # FlipRadar — ITEM 16: pragul Flash Deal, ca pagina de setari sa stie valoarea curenta
+    flash_deal_threshold: Optional[float] = 0.15
     created_at: Optional[datetime] = None
 
     class Config:

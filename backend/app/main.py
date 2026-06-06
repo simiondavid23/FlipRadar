@@ -7,6 +7,7 @@ from app.database import engine, Base
 from app.routers import auth, products, watchlist, alerts, dashboard, ai_chat, ai_analysis, admin, support
 from app.routers import favorites, notifications, scraping, import_export
 from app.routers import currency, inventory, sales, reports, radar
+from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
 
 # Import all models
 from app.models import user, product, price_history, product_source
@@ -18,6 +19,7 @@ from app.models import sale as sale_model
 from app.models import radar_keyword, radar_listing, radar_seen_id
 from app.models import radar_blocked_seller, radar_preset, radar_settings
 from app.models import radar_message_template, push_subscription
+from app.models import market_listing  # FlipRadar — date reale de piata pentru Consilier AI
 
 # Create all database tables
 Base.metadata.create_all(bind=engine)
@@ -107,6 +109,7 @@ app.include_router(inventory.router)
 app.include_router(sales.router)
 app.include_router(reports.router)
 app.include_router(radar.router)
+app.include_router(user_settings.router)
 
 
 @app.get("/")

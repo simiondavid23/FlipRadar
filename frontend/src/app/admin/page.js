@@ -81,19 +81,47 @@ export default function AdminDashboard() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState("");
   const [reportPage, setReportPage] = useState(1);
+  const [exportLoading, setExportLoading] = useState(false); // FlipRadar — ITEM 17
   const PAGE_SIZE = 25;
+
+  // FlipRadar — ITEM 17: construieste parametrii de filtrare activi (comuni cu raportul).
+  const buildReportParams = () => {
+    const params = {};
+    if (reportFilters.price_min !== "") params.price_min = parseFloat(reportFilters.price_min);
+    if (reportFilters.price_max !== "") params.price_max = parseFloat(reportFilters.price_max);
+    if (reportFilters.date_from) params.date_from = reportFilters.date_from;
+    if (reportFilters.date_to) params.date_to = reportFilters.date_to;
+    if (reportFilters.category) params.category = reportFilters.category;
+    return params;
+  };
+
+  // FlipRadar — ITEM 17: descarca raportul ca PDF cu aceiasi parametri de filtrare.
+  const exportReportPdf = async () => {
+    setExportLoading(true);
+    setReportError("");
+    try {
+      const res = await adminAPI.exportProductsReportPdf(buildReportParams());
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `raport_admin_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      setReportError("Nu am putut exporta PDF-ul. Incearca din nou.");
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const generateReport = async () => {
     setReportLoading(true);
     setReportError("");
     try {
-      const params = {};
-      if (reportFilters.price_min !== "") params.price_min = parseFloat(reportFilters.price_min);
-      if (reportFilters.price_max !== "") params.price_max = parseFloat(reportFilters.price_max);
-      if (reportFilters.date_from) params.date_from = reportFilters.date_from;
-      if (reportFilters.date_to) params.date_to = reportFilters.date_to;
-      if (reportFilters.category) params.category = reportFilters.category;
-      const res = await adminAPI.getProductsReport(params);
+      const res = await adminAPI.getProductsReport(buildReportParams());
       setReportData(res.data);
       setReportPage(1);
     } catch (e) {
@@ -376,15 +404,29 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <button onClick={generateReport} disabled={reportLoading}
-          style={{
-            padding: "0.5rem 1rem", borderRadius: "0.5rem",
-            backgroundColor: reportLoading ? "var(--bg-elevated)" : "var(--blue-primary)",
-            color: "var(--text-primary)", border: "none", cursor: reportLoading ? "wait" : "pointer",
-            fontSize: "0.8125rem", fontWeight: 500, marginBottom: "1rem",
-          }}>
-          {reportLoading ? "Se genereaza..." : "Genereaza raport"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+          <button onClick={generateReport} disabled={reportLoading}
+            style={{
+              padding: "0.5rem 1rem", borderRadius: "0.5rem",
+              backgroundColor: reportLoading ? "var(--bg-elevated)" : "var(--blue-primary)",
+              color: "var(--text-primary)", border: "none", cursor: reportLoading ? "wait" : "pointer",
+              fontSize: "0.8125rem", fontWeight: 500,
+            }}>
+            {reportLoading ? "Se genereaza..." : "Genereaza raport"}
+          </button>
+          {/* FlipRadar — ITEM 17: export PDF cu aceiasi parametri de filtrare */}
+          <button onClick={exportReportPdf} disabled={exportLoading}
+            style={{
+              display: "flex", alignItems: "center", gap: "0.375rem",
+              padding: "0.5rem 1rem", borderRadius: "0.5rem",
+              backgroundColor: "transparent", color: "#a78bfa",
+              border: "1px solid var(--border-color)", cursor: exportLoading ? "wait" : "pointer",
+              fontSize: "0.8125rem", fontWeight: 500,
+            }}>
+            <FileBarChart style={{ width: "14px", height: "14px" }} />
+            {exportLoading ? "Se exporta..." : "Export PDF"}
+          </button>
+        </div>
 
         {reportError && (
           <p style={{ color: "#f87171", fontSize: "0.75rem", marginBottom: "1rem" }}>{reportError}</p>

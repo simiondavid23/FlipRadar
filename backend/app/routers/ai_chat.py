@@ -18,21 +18,32 @@ from app.services.ai_service import chat_with_groq
 router = APIRouter(prefix="/api/ai", tags=["AI Chat"])
 
 
+# FlipRadar — BUG 8: harta de navigare decuplata de prompt.
+# Actualizeaza aceasta constanta cand se redenumesc pagini din sidebar.
+FLIPRADAR_NAVIGATION_MAP = """
+Navigare exacta in aplicatie:
+- Catalog → Descopera Oportunitati: catalogul de produse cu filtre si sortare
+- Catalog → Scanare Magazine: scraping pe Altex, eMAG, PCGarage, Sole, FarmaciaTei
+- Catalog → Oportunitati Salvate: produsele marcate ca favorite
+- Business → Inventar: produse detinute cu calculator profit rapid per articol
+- Business → Registru Vanzari: inregistrarea vanzarilor si calculul profitului
+- Business → Statistici & Profit: rapoarte cu venituri, profit si ROI pe intervale de timp
+- Monitorizare → Radar Preturi: watchlist cu evolutia preturilor
+- Monitorizare → Alerte Pret: alerte automate cand pretul depaseste un prag
+- Monitorizare → Centru Notificari: feed cu toate alertele declansate
+- AI → Asistent AI: chat support cu ticketing
+- AI → Consilier AI: analiza profitabilitate produs cu AI
+- AI → Creator Anunturi: generare anunt pentru OLX, Vinted sau Facebook Marketplace
+- AI → Raport Piata: raport AI personalizat pe inventarul si vanzarile tale
+- Date → Gestionare Date: import CSV/Excel si export Excel/PDF
+"""
+
+
 BASE_SYSTEM_PROMPT = """Esti FlipRadar AI Assistant, asistent virtual pentru platforma FlipRadar.
 FlipRadar este o aplicatie web care ajuta utilizatorii sa gaseasca produse profitabile pentru revanzare online, urmarind preturi pe Altex, eMAG, Sole, FarmaciaTei si PCGarage.
 
 Functionalitati FlipRadar (acestea sunt singurele despre care raspunzi):
-- Cauta Produse: catalogul utilizatorului cu produse adaugate (manual sau prin scraping). De aici se pot adauga produse la favorite sau la blacklist.
-- Web Scraping: cauta produse pe magazinele integrate (Altex, eMAG, Sole, FarmaciaTei, PCGarage) si le salveaza in catalog.
-- Watchlist: produse urmarite pentru evolutia pretului.
-- Alerte de pret: setezi un prag, primesti notificare in aplicatie + email cand pretul scade/creste sub/peste prag.
-- Notificari: feed in-app cu alertele declansate.
-- Favorite & Blacklist: marcheaza produse de interes (favorite) sau evita-le (blacklist).
-- Inventar: produsele pe care le ai pe stoc, cu pret achizitie, cantitate, sursa, note. Per articol exista un calculator rapid de profit (introduci pret vanzare + costuri extra, primesti profit / ROI / marja).
-- Vanzari: inregistrarea vanzarilor, calcul profit pe baza pretului de vanzare si a costului de achizitie, conversie automata RON-EUR la cursul BNR. Produsele se pot prelua direct din inventar.
-- AI: Analiza produs (verifica profitabilitatea unui produs), Listing Generator (genereaza descriere + bullet points), Raport AI (insight-uri pe inventarul utilizatorului), si acest chat support.
-- Import / Export: import CSV/Excel pentru produse si inventar, export Excel pentru produse, watchlist, inventar; export PDF pentru vanzari.
-
+""" + FLIPRADAR_NAVIGATION_MAP + """
 Rolul tau:
 1. Ajuti utilizatorul sa foloseasca eficient functionalitatile listate mai sus.
 2. Oferi sfaturi personalizate bazate pe DATELE UTILIZATORULUI de mai jos - foloseste numele lui, produsele lui concrete din watchlist/inventar, alertele lui.
@@ -154,14 +165,16 @@ async def get_chat_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get chat history for current user."""
-    messages = (
+    """FlipRadar — ITEM 15: ultimele 20 de mesaje ale utilizatorului, ordonate
+    crescator dupa created_at (cele mai recente 20, in ordine cronologica)."""
+    recent = (
         db.query(ChatMessage)
         .filter(ChatMessage.user_id == current_user.id)
-        .order_by(ChatMessage.created_at.asc())
-        .limit(50)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(20)
         .all()
     )
+    messages = list(reversed(recent))
     return [
         {
             "role": msg.role,

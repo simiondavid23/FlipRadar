@@ -229,6 +229,19 @@ export default function Sidebar() {
             </p>
           </div>
         )}
+        {/* FlipRadar — ITEM 16: link catre pagina de setari (alerte Flash Deal) */}
+        <Link href="/dashboard/settings"
+          style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
+            fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none",
+            backgroundColor: pathname === "/dashboard/settings" ? ACTIVE_BG : "transparent",
+            color: pathname === "/dashboard/settings" ? "white" : TEXT_SECONDARY,
+            width: "100%", marginBottom: "0.25rem", transition: "all 0.15s ease" }}
+          onMouseEnter={(e) => { if (pathname !== "/dashboard/settings") { e.currentTarget.style.backgroundColor = HOVER_BG; e.currentTarget.style.color = TEXT_PRIMARY; } }}
+          onMouseLeave={(e) => { if (pathname !== "/dashboard/settings") { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = TEXT_SECONDARY; } }}
+        >
+          <Settings style={{ width: "16px", height: "16px", flexShrink: 0 }} />
+          <span>Setari</span>
+        </Link>
         <button onClick={toggleTheme}
           title={isLight ? "Comuta la tema intunecata" : "Comuta la tema luminoasa"}
           style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",

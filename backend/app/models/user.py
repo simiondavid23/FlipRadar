@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -24,6 +24,8 @@ class User(Base):
     can_use_scraping = Column(Boolean, default=True, nullable=False, server_default="true")
     can_use_alerts = Column(Boolean, default=True, nullable=False, server_default="true")
     can_use_import_export = Column(Boolean, default=True, nullable=False, server_default="true")
+    # FlipRadar — pragul minim de scadere (fractie 0-1) pentru alertele Flash Deal
+    flash_deal_threshold = Column(Numeric(5, 2), default=0.15)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
