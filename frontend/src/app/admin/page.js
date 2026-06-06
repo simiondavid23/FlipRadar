@@ -211,7 +211,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Stats Grid (row 1) — every tile links into the matching list page */}
+      {/* Grilă statistici (rândul 1) — fiecare tile face link la pagina de listă corespunzătoare */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
         <StatCard title="Utilizatori totali" value={stats?.total_users || 0} icon={Users} color="#2563eb" subtitle="Conturi inregistrate" href="/admin/users" />
         <StatCard title="Utilizatori activi" value={stats?.active_users || 0} icon={Users} color="#16a34a" subtitle="Conturi active" href="/admin/users" />
@@ -219,7 +219,7 @@ export default function AdminDashboard() {
         <StatCard title="Tickete deschise" value={stats?.open_tickets || 0} icon={MessageSquare} color="#dc2626" subtitle={`${stats?.total_tickets || 0} total`} href="/admin/tickets?status=open" />
       </div>
 
-      {/* Stats Grid (row 2) */}
+      {/* Grilă statistici (rândul 2) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
         <StatCard title="Watchlist total" value={stats?.total_watchlist || 0} icon={Eye} color="#ca8a04" href="/admin/watchlist" />
         <StatCard title="Alerte totale" value={stats?.total_alerts || 0} icon={Bell} color="#0891b2" href="/admin/alerts" />
@@ -227,9 +227,9 @@ export default function AdminDashboard() {
         <StatCard title="Tickete in progres" value={stats?.in_progress_tickets || 0} icon={Clock} color="#f97316" href="/admin/tickets?status=in_progress" />
       </div>
 
-      {/* Two columns: Tickets + Users */}
+      {/* Două coloane: Tickete + Utilizatori */}
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "1rem" }}>
-        {/* Support Tickets — open + in_progress only, with user search */}
+        {/* Tickete Suport — doar deschise + în progres, cu căutare utilizator */}
         <div style={cardStyle}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", gap: "0.75rem", flexWrap: "wrap" }}>
             <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -294,7 +294,7 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* Recent Users */}
+        {/* Utilizatori recenți */}
         <div style={cardStyle}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
             <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -442,7 +442,7 @@ export default function AdminDashboard() {
                   </table>
                 </div>
 
-                {/* Pagination */}
+                {/* Paginare */}
                 {reportData.products.length > PAGE_SIZE && (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.75rem" }}>
                     <button

@@ -110,6 +110,32 @@ def run_migrations():
             pass
         migrations.append("ALTER TABLE products DROP COLUMN IF EXISTS asin")
 
+    # Radar Marketplace: extensii ulterioare (min_price + categorie + canale notificare + listed_at)
+    if _table_exists(inspector, "radar_keywords"):
+        if not _column_exists(inspector, "radar_keywords", "min_price"):
+            migrations.append("ALTER TABLE radar_keywords ADD COLUMN min_price FLOAT")
+        if not _column_exists(inspector, "radar_keywords", "category"):
+            migrations.append("ALTER TABLE radar_keywords ADD COLUMN category VARCHAR")
+        if not _column_exists(inspector, "radar_keywords", "notify_email"):
+            migrations.append("ALTER TABLE radar_keywords ADD COLUMN notify_email BOOLEAN NOT NULL DEFAULT TRUE")
+        if not _column_exists(inspector, "radar_keywords", "notify_discord"):
+            migrations.append("ALTER TABLE radar_keywords ADD COLUMN notify_discord BOOLEAN NOT NULL DEFAULT TRUE")
+    if _table_exists(inspector, "radar_listings"):
+        if not _column_exists(inspector, "radar_listings", "listed_at"):
+            migrations.append("ALTER TABLE radar_listings ADD COLUMN listed_at TIMESTAMP")
+
+    # Radar keywords: car_filters (JSON serializat) + extensii pentru scrapere auto
+    if _table_exists(inspector, "radar_keywords"):
+        if not _column_exists(inspector, "radar_keywords", "car_filters"):
+            migrations.append("ALTER TABLE radar_keywords ADD COLUMN car_filters TEXT")
+
+    # Radar settings: noi toggle-uri pentru platforme
+    if _table_exists(inspector, "radar_settings"):
+        for col in ("platform_lajumate_enabled", "platform_publi24_enabled",
+                    "platform_autovit_enabled", "platform_mobilede_enabled"):
+            if not _column_exists(inspector, "radar_settings", col):
+                migrations.append(f"ALTER TABLE radar_settings ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT TRUE")
+
     if migrations:
         with engine.begin() as conn:
             for stmt in migrations:

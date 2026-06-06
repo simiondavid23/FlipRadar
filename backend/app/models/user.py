@@ -16,10 +16,10 @@ class User(Base):
     security_answer_hash = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
-    # --- Per-feature flags (admin-controllable) ---
-    # Default True so existing users aren't locked out of features they already
-    # use. Admins can flip any of these to False to restrict abuse/cost, e.g.
-    # disabling AI for free-tier users. The HTTP guards return 403 when False.
+    # --- Flag-uri per funcționalitate (controlabile de admin) ---
+    # Implicit True ca utilizatorii existenți să nu fie blocați din funcțiile pe care
+    # le foloseau deja. Adminii pot seta orice flag pe False pentru a restricționa
+    # abuzuri/costuri (ex: dezactivarea AI pentru utilizatorii free). Garda HTTP returnează 403 când e False.
     can_use_ai = Column(Boolean, default=True, nullable=False, server_default="true")
     can_use_scraping = Column(Boolean, default=True, nullable=False, server_default="true")
     can_use_alerts = Column(Boolean, default=True, nullable=False, server_default="true")

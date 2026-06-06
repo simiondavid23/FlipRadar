@@ -39,7 +39,7 @@ function DashboardContent({ children }) {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg-dark)" }}>
-      {/* Mobile header */}
+      {/* Header mobil */}
       <div
         style={{
           display: "none",
@@ -65,7 +65,7 @@ function DashboardContent({ children }) {
         </button>
       </div>
 
-      {/* Mobile overlay */}
+      {/* Overlay mobil */}
       {mobileMenuOpen && (
         <div
           onClick={() => setMobileMenuOpen(false)}
@@ -82,7 +82,7 @@ function DashboardContent({ children }) {
         <Sidebar />
       </div>
 
-      {/* Main content */}
+      {/* Conținut principal */}
       <main className="dashboard-main" style={{ padding: "2rem 2.5rem" }}>
         {children}
       </main>

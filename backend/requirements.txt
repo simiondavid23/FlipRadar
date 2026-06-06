@@ -45,3 +45,7 @@ reportlab==4.4.10
 # Scheduler (verificare alerte)
 APScheduler==3.11.2
 tzlocal==5.3.1
+
+# Web Push notifications (Radar)
+pywebpush==2.0.0
+py-vapid==1.9.1

@@ -3,33 +3,33 @@ import json
 from groq import Groq
 from app.config import GROQ_API_KEY
 
-# Configure Groq client
+# Configurare client Groq
 client = Groq(api_key=GROQ_API_KEY)
 MODEL = "llama-3.3-70b-versatile"
 
 
 def clean_json_response(text: str) -> str:
-    """Clean AI response to extract valid JSON.
-    Removes markdown code blocks, control characters, and other formatting."""
-    # Remove ```json ... ``` or ``` ... ``` blocks
+    """Curăță răspunsul AI pentru a extrage JSON valid.
+    Elimină blocurile markdown, caracterele de control și alte formatări."""
+    # Elimină blocurile ```json ... ``` sau ``` ... ```
     cleaned = re.sub(r'```(?:json)?\s*', '', text)
     cleaned = cleaned.strip()
-    # Try to find JSON object in the text
+    # Caută un obiect JSON în text
     match = re.search(r'\{[\s\S]*\}', cleaned)
     if match:
         raw_json = match.group(0)
     else:
         raw_json = cleaned
 
-    # Try parsing directly first
+    # Încearcă parsarea directă mai întâi
     try:
         parsed = json.loads(raw_json)
         return json.dumps(parsed, ensure_ascii=False)
     except json.JSONDecodeError:
         pass
 
-    # Fix control characters inside string values (newlines, tabs in JSON strings)
-    # Replace actual newlines/tabs inside JSON string values with escaped versions
+    # Corectează caracterele de control din valorile string (newline-uri, tab-uri în JSON)
+    # Înlocuiește newline-urile/tab-urile reale din valorile JSON cu versiunile escaped
     fixed = re.sub(r'(?<=": ")(.*?)(?="[,\}])', lambda m: m.group(0).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t'), raw_json, flags=re.DOTALL)
     try:
         parsed = json.loads(fixed)
@@ -37,10 +37,10 @@ def clean_json_response(text: str) -> str:
     except json.JSONDecodeError:
         pass
 
-    # Last resort: remove all control characters except \n between { }
+    # Ultima soluție: elimină toate caracterele de control cu excepția \n dintre { }
     fixed2 = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', raw_json)
-    # Replace unescaped newlines inside string values
-    # Strategy: use strict=False in json.loads
+    # Înlocuiește newline-urile ne-escaped din valorile string
+    # Strategie: folosește strict=False în json.loads
     try:
         parsed = json.loads(fixed2, strict=False)
         return json.dumps(parsed, ensure_ascii=False)
@@ -51,7 +51,7 @@ def clean_json_response(text: str) -> str:
 
 
 async def chat_with_groq(message: str, system_prompt: str = "", history: list = None) -> str:
-    """Send a message to Groq and get a response."""
+    """Trimite un mesaj la Groq și returnează răspunsul."""
     try:
         messages = []
         if system_prompt:
@@ -83,10 +83,10 @@ async def analyze_product_with_ai(
     user_name: str = "",
     resale_price: float | None = None,
 ) -> str:
-    """Analyze a product for resale on Romanian second-hand marketplaces.
+    """Analizează un produs pentru revânzare pe piețele second-hand din România.
 
-    Tailored for OLX / Vinted / Facebook Marketplace — does NOT mention Amazon
-    or other marketplaces outside the supported scope.
+    Adaptat pentru OLX / Vinted / Facebook Marketplace — nu menționează Amazon
+    sau alte marketplace-uri în afara scopului suportat.
     """
     greeting = f"Analizezi acest produs pentru {user_name}." if user_name else ""
 
@@ -176,7 +176,7 @@ async def generate_product_listing(
     product_condition: str = "Nou",
     target_platform: str = "OLX",
 ) -> str:
-    """Generate an optimized product listing for second-hand marketplaces."""
+    """Generează un anunț optimizat de produs pentru piețele second-hand."""
     byline = (
         f"Pregatesti anuntul pentru {user_name}, un vanzator care foloseste FlipRadar "
         f"pentru a gasi produse de revanzare pe piata second-hand din Romania."
@@ -282,7 +282,7 @@ Raspunde STRICT in format JSON valid (fara markdown, fara ```), cu urmatoarea st
 
 
 async def generate_ai_report(user_data: dict) -> str:
-    """Generate an AI-powered activity report tailored to the current user."""
+    """Generează un raport de activitate cu AI, personalizat pentru utilizatorul curent."""
     prompt = f"""Esti un analist de business specializat in comertul online si revanzarea produselor pe marketplace-uri din Romania si UE.
 Raportul este destinat utilizatorului {user_data.get("username", "Utilizator")}. Foloseste-i numele si da recomandari CONCRETE bazate pe activitatea lui reala (produsele lui, inventarul lui, vanzarile lui), nu sfaturi generice.
 

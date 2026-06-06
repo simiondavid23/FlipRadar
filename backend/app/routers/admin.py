@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
 
 def require_admin(current_user: User = Depends(get_current_user)):
-    """Dependency that ensures the current user is an admin."""
+    """Dependință care verifică că utilizatorul curent este administrator."""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acces interzis. Doar administratorii pot accesa aceasta resursa.")
     return current_user
@@ -39,7 +39,7 @@ def get_admin_stats(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Get admin dashboard statistics."""
+    """Returnează statisticile panoului de administrare."""
     total_users = db.query(func.count(User.id)).scalar()
     active_users = db.query(func.count(User.id)).filter(User.is_active == True).scalar()
     total_products = db.query(func.count(Product.id)).scalar()
@@ -79,8 +79,8 @@ def get_all_tickets(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Get all support tickets. Optional filters let the admin narrow down
-    to a specific user (for past-history lookups) or to a specific status."""
+    """Returnează toate ticketele de suport. Filtrele opționale permit adminului să restrângă
+    rezultatele la un anumit utilizator (pentru istoric) sau la un anumit status."""
     q = db.query(SupportTicket)
     if user_id is not None:
         q = q.filter(SupportTicket.user_id == user_id)
@@ -108,7 +108,7 @@ def get_ticket_detail(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Get ticket details with messages."""
+    """Returnează detaliile unui ticket împreună cu mesajele asociate."""
     ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticketul nu a fost gasit")
@@ -151,7 +151,7 @@ def admin_reply_ticket(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Admin reply to a support ticket."""
+    """Răspunsul adminului la un ticket de suport."""
     ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticketul nu a fost gasit")
@@ -171,7 +171,7 @@ def admin_reply_ticket(
 
 @router.post("/run-alert-check", response_model=AlertCheckResult)
 def run_alert_check(admin: User = Depends(require_admin)):
-    """Manually trigger the price alert checker (useful for demos)."""
+    """Declanșează manual verificatorul de alerte de preț (util pentru demo-uri)."""
     triggered = check_alerts()
     return AlertCheckResult(triggered=triggered)
 
@@ -182,7 +182,7 @@ def close_ticket(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Close a support ticket."""
+    """Închide un ticket de suport."""
     ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticketul nu a fost gasit")
@@ -196,14 +196,14 @@ def close_ticket(
 
 
 # =========================================================================
-# Global activity listings (optionally scoped to one user)
+# Listinguri de activitate globală (opțional filtrate pe un singur user)
 # =========================================================================
-# These feed the clickable stat cards on the admin dashboard and the
-# clickable stat tiles on a specific user's detail page. Every endpoint
-# accepts an optional `user_id` query param — when present, results are
-# filtered to that user so the admin drills down without a separate view.
+# Alimentează cardurile de statistici clicabile din panoul de admin și
+# tile-urile clicabile din pagina de detalii a unui utilizator specific.
+# Fiecare endpoint acceptă un query param opțional `user_id` — când e prezent,
+# rezultatele sunt filtrate pe acel user astfel încât adminul poate analiza fără o pagină separată.
 
-_DEFAULT_LIMIT = 500  # Hard cap so a pathological account can't DoS the UI.
+_DEFAULT_LIMIT = 500  # Limită maximă pentru ca un cont abuziv să nu blocheze UI-ul.
 
 
 def _mini_user(u: Optional[User]) -> Optional[AdminMiniUser]:
@@ -231,9 +231,9 @@ def list_products(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """All products registered on the platform, most recent first.
+    """Toate produsele înregistrate pe platformă, cele mai recente primele.
 
-    Pass `user_id=<N>` to scope the list to a single user's products.
+    Trimite `user_id=<N>` pentru a restricționa lista la produsele unui singur utilizator.
     """
     q = db.query(Product).options(joinedload(Product.user))
     if user_id is not None:
@@ -253,7 +253,7 @@ def products_report(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Cross-user product report with filters + aggregate summary."""
+    """Raport de produse cross-user cu filtre și sumar agregat."""
     from datetime import datetime as _dt
 
     q = db.query(Product).options(joinedload(Product.user))
@@ -328,7 +328,7 @@ def list_watchlist(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Every watchlist entry across the platform (or for one user)."""
+    """Toate intrările din watchlist de pe platformă (sau pentru un singur utilizator)."""
     q = (
         db.query(WatchlistItem)
         .options(joinedload(WatchlistItem.user), joinedload(WatchlistItem.product))
@@ -357,7 +357,7 @@ def list_alerts(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """All price alerts (optionally filtered by user and/or status)."""
+    """Toate alertele de preț (opțional filtrate după utilizator și/sau status)."""
     q = db.query(Alert).options(joinedload(Alert.user), joinedload(Alert.product))
     if user_id is not None:
         q = q.filter(Alert.user_id == user_id)
@@ -367,7 +367,7 @@ def list_alerts(
         q = q.filter(Alert.is_triggered == True)
     elif status == "inactive":
         q = q.filter(Alert.is_active == False)
-    # "all" or None: no status filter.
+    # "all" sau None: fără filtru pe status.
     alerts = q.order_by(Alert.created_at.desc()).limit(limit).all()
 
     return [
@@ -394,7 +394,7 @@ def list_inventory(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Inventory items across all users (or scoped to one)."""
+    """Articolele din inventar de pe toată platforma (sau pentru un singur utilizator)."""
     q = db.query(InventoryItem).options(joinedload(InventoryItem.user))
     if user_id is not None:
         q = q.filter(InventoryItem.user_id == user_id)
@@ -418,7 +418,7 @@ def list_sales(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Recorded sales across all users (or scoped to one)."""
+    """Vânzările înregistrate pe toată platforma (sau pentru un singur utilizator)."""
     q = db.query(Sale).options(joinedload(Sale.user))
     if user_id is not None:
         q = q.filter(Sale.user_id == user_id)
@@ -443,7 +443,7 @@ def list_favorites(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Favorite + blacklist entries (same table, different flag)."""
+    """Intrările de favorite + blacklist (același tabel, flag diferit)."""
     q = (
         db.query(FavoriteItem)
         .options(joinedload(FavoriteItem.user), joinedload(FavoriteItem.product))
@@ -454,7 +454,7 @@ def list_favorites(
         q = q.filter(FavoriteItem.is_blacklisted == False)
     elif kind == "blacklist":
         q = q.filter(FavoriteItem.is_blacklisted == True)
-    # "all" or None: no filter.
+    # "all" sau None: fără filtru.
     items = q.order_by(FavoriteItem.added_at.desc()).limit(limit).all()
     return [
         AdminFavoriteItem(
@@ -477,7 +477,7 @@ def list_chat_messages(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """AI chat messages — optionally scoped to a single user or role."""
+    """Mesajele AI chat — opțional filtrate pe un singur utilizator sau rol."""
     q = db.query(ChatMessage).options(joinedload(ChatMessage.user))
     if user_id is not None:
         q = q.filter(ChatMessage.user_id == user_id)
@@ -500,11 +500,11 @@ def list_chat_messages(
 
 
 # =========================================================================
-# Per-user administration
+# Administrare per utilizator
 # =========================================================================
 
 def _count(db: Session, model, **filters) -> int:
-    """Short alias for a COUNT(*) query with equality filters."""
+    """Alias scurt pentru un query COUNT(*) cu filtre de egalitate."""
     q = db.query(func.count(model.id))
     for col, value in filters.items():
         q = q.filter(getattr(model, col) == value)
@@ -512,7 +512,7 @@ def _count(db: Session, model, **filters) -> int:
 
 
 def _user_summary_counts(db: Session, user_id: int) -> dict:
-    """Small preview used for every row in the users table."""
+    """Sumar compact folosit pentru fiecare rând din tabelul de utilizatori."""
     return {
         "products_count": _count(db, Product, user_id=user_id),
         "watchlist_count": _count(db, WatchlistItem, user_id=user_id),
@@ -526,11 +526,10 @@ def list_users(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Return every user with quick-preview activity counts.
+    """Returnează toți utilizatorii cu contorizări rapide de activitate.
 
-    Counts are done with one SQL per model per user. At normal fleet sizes
-    (tens of users) this is cheap; if it ever becomes slow we can replace it
-    with a GROUP BY + LEFT JOIN aggregate.
+    Numărătorile se fac cu câte un SQL per model per utilizator. La dimensiuni normale
+    (zeci de utilizatori) e ieftin; dacă devine lent, se poate înlocui cu un agregat GROUP BY + LEFT JOIN.
     """
     users = db.query(User).order_by(User.created_at.desc()).all()
 
@@ -562,13 +561,13 @@ def get_user_detail(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Full activity snapshot for one user — drives the admin detail panel."""
+    """Snapshot complet de activitate pentru un utilizator — alimentează panoul de detalii al adminului."""
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost gasit")
 
-    # Aggregate sales revenue and profit. `cost_price` may be NULL so we
-    # coalesce to 0 before multiplying — otherwise SUM yields NULL.
+    # Agregăm veniturile și profitul din vânzări. `cost_price` poate fi NULL, deci
+    # facem coalesce la 0 înainte de înmulțire — altfel SUM returnează NULL.
     sales_agg = (
         db.query(
             func.count(Sale.id),
@@ -584,7 +583,7 @@ def get_user_detail(
     )
     sales_count, sales_revenue, sales_profit, last_sale_at = sales_agg
 
-    # Inventory value — same NULL guard.
+    # Valoarea inventarului — același guard pentru NULL.
     inventory_agg = (
         db.query(
             func.count(InventoryItem.id),
@@ -647,7 +646,7 @@ def get_user_detail(
 
 
 def _guard_self(admin: User, user_id: int):
-    """An admin cannot lock themselves out by flipping their own flags/active."""
+    """Un admin nu se poate bloca singur prin modificarea propriilor flag-uri/status activ."""
     if admin.id == user_id:
         raise HTTPException(
             status_code=400,
@@ -662,10 +661,10 @@ def set_user_active(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Activate or deactivate a user account.
+    """Activează sau dezactivează un cont de utilizator.
 
-    Deactivation causes `get_current_user` to return 403 on the next request,
-    even if the user still holds a valid JWT — so access is revoked immediately.
+    Dezactivarea face ca `get_current_user` să returneze 403 la următoarea cerere,
+    chiar dacă utilizatorul mai deține un JWT valid — accesul este revocat imediat.
     """
     _guard_self(admin, user_id)
     u = db.query(User).filter(User.id == user_id).first()
@@ -694,10 +693,10 @@ def update_user_features(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Patch one or more feature flags on a user.
+    """Actualizează unul sau mai multe flag-uri de funcționalitate ale unui utilizator.
 
-    Only the fields the caller provides get written — the others keep their
-    current values. Makes the UI a per-checkbox PUT with no round-tripping.
+    Doar câmpurile trimise de apelant sunt scrise — celelalte rămân cu valorile curente.
+    Permite UI-ului să trimită câte un PUT per checkbox fără round-trip complet.
     """
     _guard_self(admin, user_id)
     u = db.query(User).filter(User.id == user_id).first()
