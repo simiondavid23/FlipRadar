@@ -56,10 +56,68 @@ def run_migrations():
         migrations.append("ALTER TABLE products ADD COLUMN IF NOT EXISTS brand VARCHAR(200)")
     if _table_exists(inspector, "products") and not _column_exists(inspector, "products", "original_price"):
         migrations.append("ALTER TABLE products ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2)")
+    # FlipRadar — subcategorie inferata per magazin (taxonomie SOURCE_CATEGORIES)
+    if _table_exists(inspector, "products") and not _column_exists(inspector, "products", "subcategory"):
+        migrations.append("ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(200)")
 
     # FlipRadar — prag personalizat pentru alertele Flash Deal (implicit 0.15 = 15%)
     if _table_exists(inspector, "users") and not _column_exists(inspector, "users", "flash_deal_threshold"):
         migrations.append("ALTER TABLE users ADD COLUMN IF NOT EXISTS flash_deal_threshold NUMERIC(5,2) DEFAULT 0.15")
+
+    # FlipRadar — Imobiliare: coloana `saved` pe real_estate_listing (tabela exista deja).
+    if _table_exists(inspector, "real_estate_listing") and not _column_exists(inspector, "real_estate_listing", "saved"):
+        migrations.append("ALTER TABLE real_estate_listing ADD COLUMN IF NOT EXISTS saved BOOLEAN DEFAULT FALSE")
+
+    # FlipRadar — Grupuri Facebook: config-uri + postari (idempotent IF NOT EXISTS).
+    migrations.append("""
+        CREATE TABLE IF NOT EXISTS facebook_group_configs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            group_name VARCHAR(200) NOT NULL,
+            group_url TEXT NOT NULL,
+            keywords JSON DEFAULT '[]',
+            negative_keywords JSON DEFAULT '[]',
+            check_interval_hours INTEGER DEFAULT 2,
+            is_active BOOLEAN DEFAULT TRUE,
+            cookies_encrypted TEXT,
+            cookies_saved_at TIMESTAMP,
+            last_run_at TIMESTAMP,
+            last_run_status VARCHAR(50),
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    migrations.append("""
+        CREATE TABLE IF NOT EXISTS facebook_group_posts (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            config_id INTEGER NOT NULL,
+            post_id VARCHAR(200),
+            group_url TEXT,
+            text TEXT,
+            pret NUMERIC(10,2),
+            moneda VARCHAR(10),
+            tip_anunt VARCHAR(20),
+            tip_proprietate VARCHAR(50),
+            suprafata_mp INTEGER,
+            etaj VARCHAR(30),
+            zona VARCHAR(100),
+            termen VARCHAR(20),
+            facilitati VARCHAR(200),
+            posted_at TIMESTAMP,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # FlipRadar — index ML pe market_listings (category, brand, sold_at).
+    # create_all() nu adauga indexuri pe tabele deja existente, deci il cream aici.
+    if _table_exists(inspector, "market_listings"):
+        existing_idx = {i["name"] for i in inspector.get_indexes("market_listings")}
+        if "ix_market_listings_category_brand_sold" not in existing_idx:
+            migrations.append(
+                "CREATE INDEX IF NOT EXISTS ix_market_listings_category_brand_sold "
+                "ON market_listings (category, brand, sold_at)"
+            )
 
     # Users: security question columns (for password reset flow)
     if _table_exists(inspector, "users") and not _column_exists(
@@ -130,6 +188,11 @@ def run_migrations():
             migrations.append("ALTER TABLE radar_keywords ADD COLUMN notify_email BOOLEAN NOT NULL DEFAULT TRUE")
         if not _column_exists(inspector, "radar_keywords", "notify_discord"):
             migrations.append("ALTER TABLE radar_keywords ADD COLUMN notify_discord BOOLEAN NOT NULL DEFAULT TRUE")
+        # FIX 3 — bug notificari email: randurile vechi cu notify_email NULL ar
+        # trimite email implicit. Le fortam pe FALSE (opt-in explicit din UI).
+        migrations.append(
+            "UPDATE radar_keywords SET notify_email = FALSE WHERE notify_email IS NULL"
+        )
     if _table_exists(inspector, "radar_listings"):
         if not _column_exists(inspector, "radar_listings", "listed_at"):
             migrations.append("ALTER TABLE radar_listings ADD COLUMN listed_at TIMESTAMP")
@@ -138,6 +201,9 @@ def run_migrations():
     if _table_exists(inspector, "radar_keywords"):
         if not _column_exists(inspector, "radar_keywords", "car_filters"):
             migrations.append("ALTER TABLE radar_keywords ADD COLUMN car_filters TEXT")
+        # FlipRadar — config wizard marketplace (platform/categorie/subcategorie/filtre) JSON
+        if not _column_exists(inspector, "radar_keywords", "marketplace_config"):
+            migrations.append("ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS marketplace_config TEXT")
 
     # Radar settings: noi toggle-uri pentru platforme
     if _table_exists(inspector, "radar_settings"):
@@ -145,6 +211,20 @@ def run_migrations():
                     "platform_autovit_enabled", "platform_mobilede_enabled"):
             if not _column_exists(inspector, "radar_settings", col):
                 migrations.append(f"ALTER TABLE radar_settings ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT TRUE")
+
+    # FlipRadar — populeaza coloana `brand` din primul cuvant al numelui pentru
+    # produsele vechi care nu au brand setat inca. Idempotent: poate rula de mai
+    # multe ori fara efecte negative (actualizeaza doar randurile cu brand NULL).
+    if _table_exists(inspector, "products"):
+        migrations.append(
+            """
+            UPDATE products
+            SET brand = split_part(name, ' ', 1)
+            WHERE brand IS NULL
+              AND name IS NOT NULL
+              AND length(trim(name)) > 2
+            """
+        )
 
     if migrations:
         with engine.begin() as conn:

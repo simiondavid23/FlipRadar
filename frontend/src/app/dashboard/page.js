@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
-import { dashboardAPI, productsAPI } from "@/lib/api";
+import { dashboardAPI, productsAPI, reportsAPI } from "@/lib/api";
 import Link from "next/link";
 import {
   Package, Eye, Bell, TrendingUp, AlertTriangle, Database,
@@ -161,6 +161,7 @@ export default function DashboardPage() {
   const [productsStats, setProductsStats] = useState(null);
   const [timeseries, setTimeseries] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
+  const [bestCategory, setBestCategory] = useState(null); // FlipRadar — C.2
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -169,11 +170,18 @@ export default function DashboardPage() {
 
   const loadAll = async () => {
     try {
-      const [statsRes, tsRes, topRes, productsStatsRes] = await Promise.all([
+      // Interval ultimele 30 de zile pentru rezumatul de rapoarte (cea mai profitabila categorie)
+      const to = new Date();
+      const from = new Date();
+      from.setDate(to.getDate() - 29);
+      const isoDate = (d) => d.toISOString().slice(0, 10);
+
+      const [statsRes, tsRes, topRes, productsStatsRes, reportsRes] = await Promise.all([
         dashboardAPI.getStats(),
         dashboardAPI.getSalesTimeseries(30),
         dashboardAPI.getTopProducts(5),
         productsAPI.getStats().catch(() => ({ data: null })),
+        reportsAPI.getSummary({ date_from: isoDate(from), date_to: isoDate(to) }).catch(() => ({ data: null })),
       ]);
       setStats(statsRes.data);
       setTimeseries((tsRes.data?.data || []).map((d) => ({
@@ -182,6 +190,14 @@ export default function DashboardPage() {
       })));
       setTopProducts(topRes.data || []);
       setProductsStats(productsStatsRes.data);
+
+      // C.2 — cea mai profitabila categorie (ROI mediu cel mai mare), daca exista date
+      const cats = reportsRes.data?.top_categorii || [];
+      const best = cats.reduce(
+        (acc, c) => (acc == null || Number(c.roi) > Number(acc.roi) ? c : acc),
+        null
+      );
+      setBestCategory(best);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     } finally {
@@ -257,64 +273,17 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Main Stats - 3 columns */}
+      {/* FlipRadar — C.1: cardurile financiare (Valoare vanzari + profit) sunt primele,
+          inaintea cardurilor de produse/watchlist (mutate mai jos). */}
+      {/* Purchase Summary Row — Valoare vanzari prima, + Cea mai profitabila categorie */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: bestCategory ? "1fr 1fr 1fr" : "1fr 1fr",
           gap: "1rem",
           marginBottom: "1.5rem",
         }}
       >
-        <StatCard
-          title="Produse monitorizate"
-          value={stats?.total_products || 0}
-          icon={Package}
-          color="#2563eb"
-          bgGlow="radial-gradient(circle, rgba(37,99,235,0.5), transparent)"
-          subtitle="Total produse in baza de date"
-          href="/dashboard/products"
-        />
-        <StatCard
-          title="Produse in Watchlist"
-          value={stats?.watchlist_count || 0}
-          icon={Eye}
-          color="#9333ea"
-          bgGlow="radial-gradient(circle, rgba(147,51,234,0.5), transparent)"
-          subtitle="Produse urmarite de tine"
-          href="/dashboard/watchlist"
-        />
-        <StatCard
-          title="Alerte active"
-          value={stats?.active_alerts || 0}
-          icon={Bell}
-          color="#16a34a"
-          bgGlow="radial-gradient(circle, rgba(22,163,74,0.5), transparent)"
-          subtitle="Alerte de pret configurate"
-          href="/dashboard/alerts"
-        />
-      </div>
-
-      {/* Purchase Summary Row */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "1rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <StatCard
-          title="Volum total produse"
-          value={`${(stats?.inventory_total_eur || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
-          icon={ShoppingCart}
-          color="#16a34a"
-          bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
-          subtitle={`${stats?.inventory_items_count || 0} articole in inventar`}
-          href="/dashboard/inventory"
-          valueColor="#4ade80"
-          valueSize="2rem"
-        />
         <StatCard
           title="Valoare vanzari"
           value={`${(stats?.sales_total_eur || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
@@ -326,6 +295,31 @@ export default function DashboardPage() {
           valueColor="#a78bfa"
           valueSize="2rem"
         />
+        <StatCard
+          title="Volum total produse"
+          value={`${(stats?.inventory_total_eur || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
+          icon={ShoppingCart}
+          color="#16a34a"
+          bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
+          subtitle={`${stats?.inventory_items_count || 0} articole in inventar`}
+          href="/dashboard/inventory"
+          valueColor="#4ade80"
+          valueSize="2rem"
+        />
+        {/* C.2 — afisat doar daca exista date din rapoarte */}
+        {bestCategory && (
+          <StatCard
+            title="Cea mai profitabila categorie"
+            value={bestCategory.categorie}
+            icon={Target}
+            color="#16a34a"
+            bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
+            subtitle={`ROI mediu ${Number(bestCategory.roi).toFixed(0)}% — ultimele 30 zile`}
+            href="/dashboard/reports"
+            valueColor="#4ade80"
+            valueSize="1.25rem"
+          />
+        )}
       </div>
 
       {/* Profitability Summary Row */}
@@ -414,6 +408,44 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Main Stats - 3 columns (mutate sub cardurile financiare) */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: "1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <StatCard
+          title="Produse monitorizate"
+          value={stats?.total_products || 0}
+          icon={Package}
+          color="#2563eb"
+          bgGlow="radial-gradient(circle, rgba(37,99,235,0.5), transparent)"
+          subtitle="Total produse in baza de date"
+          href="/dashboard/products"
+        />
+        <StatCard
+          title="Produse in Watchlist"
+          value={stats?.watchlist_count || 0}
+          icon={Eye}
+          color="#9333ea"
+          bgGlow="radial-gradient(circle, rgba(147,51,234,0.5), transparent)"
+          subtitle="Produse urmarite de tine"
+          href="/dashboard/watchlist"
+        />
+        <StatCard
+          title="Alerte active"
+          value={stats?.active_alerts || 0}
+          icon={Bell}
+          color="#16a34a"
+          bgGlow="radial-gradient(circle, rgba(22,163,74,0.5), transparent)"
+          subtitle="Alerte de pret configurate"
+          href="/dashboard/alerts"
+        />
       </div>
 
       {/* Sales chart (last 30 days) */}

@@ -62,7 +62,6 @@ def get_products(
     price_max: Optional[float] = Query(None),
     roi_min: Optional[float] = Query(None),
     source: Optional[str] = Query(None),
-    on_sale: Optional[bool] = Query(None),
     sort_by: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -85,12 +84,13 @@ def get_products(
     if category:
         query = query.filter(Product.category.ilike(f"%{category.strip()}%"))
     if brand:
-        # FlipRadar — BUG 3: filtreaza pe coloana dedicata brand, cu fallback pe
-        # nume ca sa acopere produsele vechi fara brand setat.
+        # FlipRadar — cautarea de brand acopera nume, brand si categorie (match larg).
+        b = brand.strip()
         query = query.filter(
             or_(
-                Product.brand.ilike(f"%{brand.strip()}%"),
-                Product.name.ilike(f"%{brand.strip()}%"),
+                Product.name.ilike(f"%{b}%"),
+                Product.brand.ilike(f"%{b}%"),
+                Product.category.ilike(f"%{b}%"),
             )
         )
 
@@ -101,13 +101,6 @@ def get_products(
         query = query.filter(Product.current_price <= price_max)
     if source:
         query = query.filter(Product.source == source)
-
-    # FlipRadar — ITEM 9: filtru "doar produse la reducere" (pret curent sub pretul de lista).
-    if on_sale:
-        query = query.filter(
-            Product.original_price.isnot(None),
-            Product.current_price < Product.original_price,
-        )
 
     if roi_min is not None:
         # ROI = ((revanzare - curent) / curent) * 100, doar când ambele sunt prezente și curent > 0
@@ -142,55 +135,115 @@ def get_products(
 
 @router.get("/filter-options")
 def get_filter_options(
+    source: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """FlipRadar — ITEM 9: branduri, categorii și surse distincte din catalogul
-    utilizatorului. Brandurile combină coloana dedicată `brand` cu primul token al
-    numelui (fallback pentru produsele vechi care nu au brand setat)."""
-    uid = current_user.id
+    """FlipRadar — branduri si categorii distincte din catalogul utilizatorului,
+    direct din baza de date. Optional filtrate dupa sursa (magazin) selectata."""
+    base = db.query(Product).filter(
+        Product.user_id == current_user.id
+    )
+    if source:
+        base = base.filter(Product.source == source)
 
-    brand_rows = (
-        db.query(Product.brand)
-        .filter(Product.user_id == uid, Product.brand.isnot(None))
+    brands_q = (
+        base.filter(Product.brand.isnot(None))
+        .with_entities(Product.brand)
         .distinct()
+        .order_by(Product.brand)
+        .limit(100)
         .all()
     )
-    category_rows = (
-        db.query(Product.category)
-        .filter(Product.user_id == uid, Product.category.isnot(None))
+    categories_q = (
+        base.filter(Product.category.isnot(None))
+        .with_entities(Product.category)
         .distinct()
+        .order_by(Product.category)
+        .limit(100)
         .all()
     )
-    source_rows = (
-        db.query(Product.source)
-        .filter(Product.user_id == uid, Product.source.isnot(None))
-        .distinct()
-        .all()
-    )
-    name_rows = (
-        db.query(Product.name)
-        .filter(Product.user_id == uid, Product.name.isnot(None))
-        .all()
-    )
-
-    brands: set[str] = set()
-    for (b,) in brand_rows:
-        if b and b.strip():
-            brands.add(b.strip())
-    for (n,) in name_rows:
-        token = (n or "").strip().split()[0] if (n or "").strip() else ""
-        if len(token) >= 2:
-            brands.add(token)
-
-    categories = {c.strip() for (c,) in category_rows if c and c.strip()}
-    sources = {s.strip() for (s,) in source_rows if s and s.strip()}
 
     return {
-        "brands": sorted(brands, key=lambda s: s.lower())[:100],
-        "categories": sorted(categories, key=lambda s: s.lower())[:100],
-        "sources": sorted(sources, key=lambda s: s.lower())[:50],
+        "brands": [r[0] for r in brands_q if r[0]],
+        "categories": [r[0] for r in categories_q if r[0]],
     }
+
+
+@router.get("/brands")
+def get_brands(
+    source: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """FlipRadar — autocomplete brand: branduri distincte din catalogul
+    utilizatorului, filtrate optional dupa sursa si dupa prefixul `q`."""
+    query = (
+        db.query(Product.brand)
+        .filter(Product.user_id == current_user.id, Product.brand.isnot(None))
+    )
+    if source:
+        query = query.filter(Product.source == source)
+    if q:
+        query = query.filter(Product.brand.ilike(f"{q.strip()}%"))
+    rows = query.distinct().order_by(Product.brand).limit(20).all()
+    return [r[0] for r in rows if r[0]]
+
+
+# FlipRadar — taxonomie fixa de categorii per magazin (nu vine din DB).
+# Cheile sunt forma scurta a sursei; endpoint-ul accepta si domeniul ("altex.ro").
+CATEGORIES_BY_SOURCE = {
+    "altex": [
+        {"name": "Telefoane", "sub": ["Smartphone", "Accesorii telefoane"]},
+        {"name": "Laptopuri", "sub": ["Gaming", "Ultrabook", "Business"]},
+        {"name": "TV & Audio", "sub": ["Televizoare", "Sisteme audio", "Casti"]},
+        {"name": "Electrocasnice mari", "sub": ["Frigidere", "Masini de spalat", "Aragazuri"]},
+        {"name": "Electrocasnice mici", "sub": ["Aspiratoare", "Cafetiere", "Fiare de calcat"]},
+    ],
+    "emag": [
+        {"name": "Telefoane & Tablete", "sub": ["Smartphone", "Tablete", "Accesorii"]},
+        {"name": "Laptopuri & PC", "sub": ["Laptopuri", "Desktop PC", "Componente"]},
+        {"name": "TV, Audio-Video", "sub": ["Televizoare", "Boxe", "Casti"]},
+        {"name": "Electrocasnice", "sub": ["Frigidere", "Masini de spalat", "Aspiratoare"]},
+        {"name": "Fashion", "sub": ["Imbracaminte", "Incaltaminte", "Accesorii"]},
+    ],
+    "pcgarage": [
+        {"name": "Componente PC", "sub": ["Procesoare", "Placi video", "RAM", "SSD"]},
+        {"name": "Periferice", "sub": ["Mouse", "Tastatura", "Monitor", "Casti gaming"]},
+    ],
+    "sole": [
+        {"name": "Cosmetice", "sub": ["Ingrijire ten", "Machiaj", "Parfumuri"]},
+        {"name": "Sanatate", "sub": ["Vitamine", "Suplimente", "Dispozitive medicale"]},
+    ],
+    "farmaciatei": [
+        {"name": "Medicamente OTC", "sub": ["Durere", "Raceala si gripa", "Digestive"]},
+        {"name": "Cosmetice", "sub": ["Dermatocosmetice", "Ingrijire corp"]},
+    ],
+}
+
+
+@router.get("/categories-by-source")
+def get_categories_by_source(
+    source: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    """FlipRadar — categorii fixe per magazin (taxonomie hardcodata, fara DB).
+    Accepta atat forma scurta ('altex') cat si domeniul ('altex.ro')."""
+    key = (source or "").lower().replace(".ro", "").strip()
+    return CATEGORIES_BY_SOURCE.get(key, [])
+
+
+@router.get("/source-categories")
+def get_source_categories(
+    source: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    from app.constants.source_categories import SOURCE_CATEGORIES
+    if source and source in SOURCE_CATEGORIES:
+        return {"source": source, "categories": SOURCE_CATEGORIES[source]}
+    return {"sources": list(SOURCE_CATEGORIES.keys()),
+            "all": SOURCE_CATEGORIES}
 
 
 @router.get("/stats")
@@ -283,6 +336,7 @@ def _build_save_response(product: Product, is_new: bool, previous_price: Optiona
         "sku": product.sku,
         "brand": product.brand,
         "category": product.category,
+        "subcategory": product.subcategory,
         "image_url": product.image_url,
         "description": product.description,
         "source": product.source,

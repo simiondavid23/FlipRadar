@@ -325,6 +325,35 @@ def _create_inapp_notification(db: Session, user_id: int, listing_db: RadarListi
     ))
 
 
+def _notify_vinted_cookie_expired(db: Session, user_id: int) -> None:
+    """Creeaza o notificare in-app cand cookie-ul Vinted a expirat (401/403).
+
+    Dedup pe 24h: daca exista deja o notificare cu acelasi titlu creata in
+    ultimele 24 de ore pentru acest user, nu mai inseram una noua.
+    """
+    recent = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == user_id,
+            Notification.title == "Cookie Vinted expirat",
+            Notification.created_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+        )
+        .first()
+    )
+    if recent:
+        return
+    db.add(Notification(
+        user_id=user_id,
+        title="Cookie Vinted expirat",
+        message=(
+            "Vinted nu a returnat rezultate — cookie-ul de sesiune a expirat. "
+            "Mergi la Radar Piață → Setări Radar pentru a-l reînnoi."
+        ),
+        notification_type="warning",
+        link="/dashboard/radar/settings",
+    ))
+
+
 def _scan_user(db: Session, user: User) -> dict:
     """Scaneaza toate keyword-urile active ale unui user. Returneaza statistici."""
     stats = {"new_listings": 0, "alerts_sent": 0}
@@ -358,6 +387,19 @@ def _scan_user(db: Session, user: User) -> dict:
                 time.sleep(random.uniform(*_PLATFORM_DELAY_RANGE))
 
             listings = _run_scraper(platform, kw, settings, exclude_words)
+            # Vinted semnaleaza cookie expirat printr-un dict-santinela; il
+            # detectam, il filtram din rezultatele reale si avertizam userul.
+            if platform == "vinted":
+                vinted_results = listings
+                vinted_auth_error = any(
+                    isinstance(r, dict) and r.get("__vinted_auth_error") for r in vinted_results
+                )
+                listings = [
+                    r for r in vinted_results
+                    if not (isinstance(r, dict) and r.get("__vinted_auth_error"))
+                ]
+                if vinted_auth_error:
+                    _notify_vinted_cookie_expired(db, user.id)
             for listing in listings:
                 if _is_keyword_cancelled(kw.id):
                     print(f"[RadarScanner] Keyword {kw.id} dezactivat/șters — opresc procesarea.")
@@ -413,7 +455,7 @@ def _scan_user(db: Session, user: User) -> dict:
 
                     if not score_data["filtered"]:
                         # Discord doar daca keyword-ul are notify_discord activ
-                        if getattr(kw, "notify_discord", True):
+                        if getattr(kw, "notify_discord", False):
                             sent = route_discord_alerts(
                                 settings=settings,
                                 listing=listing,
@@ -428,7 +470,7 @@ def _scan_user(db: Session, user: User) -> dict:
                         # In-app intotdeauna (independent de setari)
                         _create_inapp_notification(db, user.id, listing_db, kw)
                         # Email doar daca scor A/B SI keyword-ul are notify_email activ
-                        if score_data["score"] in ("A", "B") and getattr(kw, "notify_email", True):
+                        if score_data["score"] in ("A", "B") and getattr(kw, "notify_email", False):
                             _send_email_alert(
                                 user, listing, kw,
                                 score_data["score"], score_data["margin_pct"],

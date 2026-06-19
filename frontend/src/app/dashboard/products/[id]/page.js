@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, Cell, LabelList,
 } from "recharts";
 
 const SOURCE_COLORS = {
@@ -503,7 +504,7 @@ export default function ProductDetailPage() {
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
               <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-                Profitabilitate estimata
+                Analiza Profitabilitate
               </h2>
               <span style={{
                 padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 700,
@@ -541,63 +542,6 @@ export default function ProductDetailPage() {
                 {" "}| ROI net: <span style={{ color: vColor }}>{roiNet.toFixed(1)}%</span>
               </span>
             </div>
-          </div>
-        );
-      })()}
-
-      {/* FlipRadar — ITEM 11: comparatie preturi pe magazine */}
-      {(() => {
-        const priceData = (product.sources || [])
-          .filter((s) => s.current_price != null)
-          .map((s) => ({ name: s.source, price: s.current_price, currency: s.currency, url: s.source_url }))
-          .sort((a, b) => a.price - b.price);
-        if (priceData.length < 2) return null;
-
-        const cheapest = priceData[0];
-        const maxPrice = priceData[priceData.length - 1].price;
-        const maxDiff = maxPrice - cheapest.price;
-
-        return (
-          <div style={{
-            backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-            borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
-          }}>
-            <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.875rem" }}>
-              Comparatie preturi pe magazine
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-              {priceData.map((s, i) => {
-                const isCheapest = i === 0;
-                const widthPct = maxPrice > 0 ? Math.max((s.price / maxPrice) * 100, 8) : 100;
-                return (
-                  <div key={`${s.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <span style={{ minWidth: "100px", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{s.name}</span>
-                    <div style={{ flex: 1, height: "22px", backgroundColor: "var(--bg-dark)", borderRadius: "0.375rem", overflow: "hidden" }}>
-                      <div style={{
-                        width: `${widthPct}%`, height: "100%",
-                        backgroundColor: isCheapest ? "var(--green-primary)" : "var(--blue-dim)",
-                        borderRadius: "0.375rem", transition: "width 0.2s ease",
-                      }} />
-                    </div>
-                    <span style={{ minWidth: "90px", textAlign: "right", fontSize: "0.8125rem", fontWeight: 600, color: isCheapest ? "#4ade80" : "var(--text-primary)" }}>
-                      {Number(s.price).toFixed(2)} {s.currency}
-                    </span>
-                    {s.url ? (
-                      <a href={s.url} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: "0.75rem", color: "#60a5fa", textDecoration: "none", whiteSpace: "nowrap" }}>
-                        deschide
-                      </a>
-                    ) : (
-                      <span style={{ minWidth: "52px" }} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.875rem", marginBottom: 0 }}>
-              Diferenta maxima: <strong style={{ color: "var(--text-primary)" }}>{maxDiff.toFixed(2)} {cheapest.currency}</strong>
-              {" "}| Sursa optima: <strong style={{ color: "#4ade80" }}>{cheapest.name}</strong>
-            </p>
           </div>
         );
       })()}
@@ -659,6 +603,77 @@ export default function ProductDetailPage() {
           </div>
         </div>
       )}
+
+      {/* FlipRadar — A: comparatie preturi pe magazine (BarChart orizontal Recharts) */}
+      {(() => {
+        const priceData = (product.sources || [])
+          .filter((s) => s.current_price != null)
+          .map((s) => ({ name: s.source, price: Number(s.current_price), currency: s.currency, url: s.source_url }))
+          .sort((a, b) => a.price - b.price);
+        if (priceData.length < 2) return null;
+
+        const cheapest = priceData[0];
+        const maxDiff = priceData[priceData.length - 1].price - cheapest.price;
+        const chartHeight = Math.max(priceData.length * 46, 120);
+
+        return (
+          <div style={{
+            backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+            borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+          }}>
+            <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.875rem" }}>
+              Comparatie preturi pe magazine
+            </h2>
+            <div style={{ width: "100%", height: chartHeight }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={priceData} layout="vertical" margin={{ top: 4, right: 90, left: 8, bottom: 4 }}>
+                  <CartesianGrid stroke="var(--border-color)" horizontal={false} />
+                  <XAxis type="number" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} width={110} />
+                  <Tooltip
+                    cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                    contentStyle={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                    labelStyle={{ color: "var(--text-secondary)" }}
+                    itemStyle={{ color: "var(--text-primary)" }}
+                    formatter={(v, n, item) => [`${Number(v).toFixed(2)} ${item?.payload?.currency || ""}`, "Pret"]}
+                  />
+                  <Bar dataKey="price" radius={[0, 4, 4, 0]} barSize={22}>
+                    {priceData.map((s, i) => (
+                      <Cell key={`${s.name}-${i}`} fill={i === 0 ? "#22c55e" : "#3b82f6"} />
+                    ))}
+                    <LabelList
+                      dataKey="price"
+                      content={(props) => {
+                        const { x, y, width, height, value, index } = props;
+                        return (
+                          <text x={x + width + 8} y={y + height / 2} fill="var(--text-secondary)" fontSize={11} textAnchor="start" dominantBaseline="central">
+                            {Number(value).toFixed(2)} {priceData[index]?.currency}
+                          </text>
+                        );
+                      }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Linkuri "deschide" per magazin (sub chart) */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.875rem", marginTop: "0.5rem" }}>
+              {priceData.map((s, i) => (
+                <span key={`lnk-${s.name}-${i}`} style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+                  <span style={{ color: i === 0 ? "#4ade80" : "var(--text-secondary)", fontWeight: i === 0 ? 600 : 400 }}>{s.name}</span>
+                  {s.url && (
+                    <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa", textDecoration: "none" }}>deschide</a>
+                  )}
+                </span>
+              ))}
+            </div>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.75rem", marginBottom: 0 }}>
+              Diferenta maxima: <strong style={{ color: "var(--text-primary)" }}>{maxDiff.toFixed(2)} {cheapest.currency}</strong>
+              {" "}| Sursa optima: <strong style={{ color: "#4ade80" }}>{cheapest.name}</strong>
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Price stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1rem" }}>

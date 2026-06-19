@@ -6,11 +6,12 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import {
-  LayoutDashboard, Search, Eye, Bell, LogOut,
+  LayoutDashboard, Search, Bell, LogOut,
   MessageCircle, Sparkles, FileText, FileBarChart, Shield,
   Heart, BellDot, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
-  Radar, Target, ShieldOff, Settings, MessageSquare
+  Radar, Target, ShieldOff, Settings, MessageSquare,
+  Calculator, Car, Home, Users
 } from "lucide-react";
 
 // Sidebar-ul ramane mereu dark — pattern UX standard (GitHub, VS Code, Notion).
@@ -31,12 +32,48 @@ const categories = [
     items: [
       { name: "Descopera Oportunitati", href: "/dashboard/products", icon: Search },
       { name: "Scanare Magazine", href: "/dashboard/scraping", icon: Globe, flag: "can_use_scraping" },
-      { name: "Oportunitati Salvate", href: "/dashboard/favorites", icon: Heart },
+      { name: "Produse Urmarite", href: "/dashboard/tracked-products", icon: Heart },
     ],
   },
   {
-    id: "business",
-    label: "Business",
+    id: "marketplace",
+    label: "Marketplace",
+    items: [
+      { name: "Cauta Anunturi", href: "/dashboard/marketplace/search", icon: Search },
+      { name: "Anunturi Salvate", href: "/dashboard/marketplace/saved", icon: Heart },
+      { name: "Alerte Keyword", href: "/dashboard/marketplace/alerts", icon: Bell },
+    ],
+  },
+  {
+    id: "auto_lots",
+    label: "Loturi Automobile",
+    items: [
+      { name: "Cauta Loturi", href: "/dashboard/auto/lots/search", icon: Search },
+      { name: "Loturi Salvate", href: "/dashboard/auto/lots/saved", icon: Heart },
+      { name: "Calculator Import", href: "/dashboard/auto/lots/calculator", icon: Calculator },
+    ],
+  },
+  {
+    id: "auto_listings",
+    label: "Anunturi automobile",
+    items: [
+      { name: "Piata Auto", href: "/dashboard/auto/listings/search", icon: Car },
+      { name: "Anunturi Auto Salvate", href: "/dashboard/auto/listings/saved", icon: Heart },
+    ],
+  },
+  {
+    id: "real_estate",
+    label: "Imobiliare",
+    items: [
+      { name: "Cauta Anunturi", href: "/dashboard/real-estate/search", icon: Home },
+      { name: "Anunturi Salvate", href: "/dashboard/real-estate/saved", icon: Heart },
+      { name: "Alerte Imobiliare", href: "/dashboard/real-estate/alerts", icon: Bell },
+      { name: "Grupuri Facebook", href: "/dashboard/real-estate/facebook-groups", icon: Users },
+    ],
+  },
+  {
+    id: "gestiune",
+    label: "Gestiune",
     items: [
       { name: "Inventar", href: "/dashboard/inventory", icon: Boxes },
       { name: "Registru Vanzari", href: "/dashboard/sales", icon: Receipt },
@@ -47,7 +84,6 @@ const categories = [
     id: "monitorizare",
     label: "Monitorizare",
     items: [
-      { name: "Radar Preturi", href: "/dashboard/watchlist", icon: Eye },
       { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
       { name: "Centru Notificari", href: "/dashboard/notifications", icon: BellDot },
     ],

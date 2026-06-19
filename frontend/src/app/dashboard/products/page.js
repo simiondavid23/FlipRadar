@@ -4,17 +4,6 @@ import { productsAPI, watchlistAPI, favoritesAPI } from "@/lib/api";
 import Link from "next/link";
 import { Search, Plus, Eye, ExternalLink, Package, X, ChevronRight, Trash2, Heart, Ban, Pencil, Tag, Save, Filter, RefreshCcw } from "lucide-react";
 
-// FlipRadar — ITEM 9: categorii principale per magazin (hardcodate frontend,
-// folosite pentru subcategorii viitoare). Pentru moment select-ul de categorie
-// din panoul de filtre este populat din API (/api/products/filter-options).
-const CATEGORIES_BY_SOURCE = {
-  altex: ["Telefoane & Accesorii", "Laptopuri & PC", "TV & Audio", "Electrocasnice", "Gaming", "Foto & Video"],
-  emag: ["Telefoane", "Laptopuri & Tablete", "TV, Audio-Video", "Electrocasnice", "Fashion", "Casa & Gradina"],
-  pcgarage: ["Procesoare", "Placi video", "Placi de baza", "Memorii RAM", "SSD & HDD", "Periferice"],
-  sole: ["Imbracaminte", "Incaltaminte", "Accesorii", "Genti", "Ceasuri", "Cosmetice"],
-  farmaciatei: ["Medicamente", "Suplimente", "Dermatocosmetice", "Mama & Copilul", "Igiena", "Aparate medicale"],
-};
-
 // FlipRadar — ITEM 9: optiuni fixe pentru selectorul de sursa. Valorile trebuie
 // sa coincida exact cu cele salvate de scrapere (domeniul magazinului).
 const STORE_SOURCES = [
@@ -60,14 +49,15 @@ export default function ProductsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  const [filterOptions, setFilterOptions] = useState({ brands: [], categories: [], sources: [] });
   const [filters, setFilters] = useState({
-    source: "", brand: "", category: "", price_min: "", price_max: "", on_sale: false,
+    source: "", brand: "", category: "", price_min: "", price_max: "",
   });
-  // FlipRadar — ITEM 9: input brand cu autocomplete (debounce 300ms)
+  // FlipRadar — input brand cu autocomplete (sugestii filtrate din filterOptions.brands)
   const [brandInput, setBrandInput] = useState("");
-  const [brandSuggestions, setBrandSuggestions] = useState([]);
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  // FlipRadar — branduri + categorii reale din DB (GET /api/products/filter-options),
+  // optional filtrate dupa sursa selectata.
+  const [filterOptions, setFilterOptions] = useState({ brands: [], categories: [] });
 
   const [newProduct, setNewProduct] = useState({
     name: "", sku: "", ean: "", category: "", source: "", source_url: "",
@@ -98,42 +88,32 @@ export default function ProductsPage() {
 
   useEffect(() => {
     loadProducts();
-    loadFilterOptions();
+    loadFilterOptions(filters.source);
   }, []);
 
-  const loadFilterOptions = async () => {
+  // FlipRadar — incarca brandurile si categoriile reale din DB pentru sursa
+  // selectata; la schimbarea magazinului lista se actualizeaza corespunzator.
+  const loadFilterOptions = async (selectedSource = null) => {
     try {
-      const res = await productsAPI.getFilterOptions();
-      setFilterOptions(res.data || { brands: [], categories: [], sources: [] });
-    } catch (e) {
-      console.error("Eroare la incarcarea optiunilor de filtrare:", e);
+      const params = {};
+      if (selectedSource) params.source = selectedSource;
+      const res = await productsAPI.getFilterOptions(params);
+      setFilterOptions({
+        brands: res.data.brands || [],
+        categories: res.data.categories || [],
+      });
+    } catch (err) {
+      console.error("Filter options error:", err);
     }
   };
 
-  // FlipRadar — ITEM 9: autocomplete brand cu debounce 300ms si filtrare locala
-  // (case-insensitive) pe brandurile primite din API. Max 8 sugestii.
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      const q = brandInput.trim().toLowerCase();
-      if (!q) {
-        setBrandSuggestions([]);
-        return;
-      }
-      const matches = (filterOptions.brands || [])
-        .filter((b) => b.toLowerCase().includes(q))
-        .slice(0, 8);
-      setBrandSuggestions(matches);
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [brandInput, filterOptions.brands]);
-
   // FlipRadar — BUG 1: loadProducts accepta overrides ca sa evite race condition-ul
-  // dintre setState (asincron) si request (sortByOverride / filtersOverride).
+  // dintre setState (asincron) si request (overrides.sortBy / overrides.filtersOverride).
   const loadProducts = async (overrides = {}) => {
     setLoading(true);
     try {
       const f = overrides.filtersOverride ?? filters;
-      const effectiveSortBy = overrides.sortByOverride ?? sortBy;
+      const effectiveSortBy = overrides.sortBy ?? sortBy;
       const params = {};
       if (search.trim()) params.search = search.trim();
       if (f.source) params.source = f.source;
@@ -141,7 +121,6 @@ export default function ProductsPage() {
       if (f.category) params.category = f.category;
       if (f.price_min !== "" && f.price_min != null) params.price_min = parseFloat(f.price_min);
       if (f.price_max !== "" && f.price_max != null) params.price_max = parseFloat(f.price_max);
-      if (f.on_sale) params.on_sale = true;
       if (effectiveSortBy) params.sort_by = effectiveSortBy;
       const response = await productsAPI.getProducts(params);
       setProducts(response.data);
@@ -160,19 +139,29 @@ export default function ProductsPage() {
   const handleApplyFilters = () => loadProducts();
 
   const handleResetFilters = () => {
-    const cleared = { source: "", brand: "", category: "", price_min: "", price_max: "", on_sale: false };
+    const cleared = { source: "", brand: "", category: "", price_min: "", price_max: "" };
     setFilters(cleared);
     setBrandInput("");
-    setBrandSuggestions([]);
+    setShowBrandDropdown(false);
     setSearch("");
+    loadFilterOptions("");
     loadProducts({ filtersOverride: cleared });
+  };
+
+  // FlipRadar — schimbarea sursei reseteaza brand + categorie si reincarca
+  // brandurile/categoriile reale din DB pentru magazinul selectat.
+  const handleSourceChange = (value) => {
+    setFilters((prev) => ({ ...prev, source: value, brand: "", category: "" }));
+    setBrandInput("");
+    setShowBrandDropdown(false);
+    loadFilterOptions(value);
   };
 
   // FlipRadar — BUG 1: schimbarea sortarii trimite valoarea direct in request,
   // fara sa astepte re-render-ul state-ului sortBy.
   const handleSortChange = (value) => {
     setSortBy(value);
-    loadProducts({ sortByOverride: value });
+    loadProducts({ sortBy: value });
   };
 
   const handleAddProduct = async (e) => {
@@ -187,7 +176,6 @@ export default function ProductsPage() {
       setShowAddForm(false);
       setNewProduct({ name: "", sku: "", ean: "", category: "", source: "", source_url: "", current_price: "", resale_price: "", currency: "EUR", image_url: "", description: "" });
       loadProducts();
-      loadFilterOptions();
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare la adaugare produs");
     }
@@ -331,7 +319,12 @@ export default function ProductsPage() {
 
   const hasActiveFilters =
     filters.source || filters.brand || filters.category ||
-    filters.price_min !== "" || filters.price_max !== "" || filters.on_sale;
+    filters.price_min !== "" || filters.price_max !== "";
+
+  // FlipRadar — sugestii brand din filterOptions.brands (filtrate dupa textul tastat).
+  const brandSuggestions = (filterOptions.brands || [])
+    .filter((b) => b.toLowerCase().includes(brandInput.trim().toLowerCase()))
+    .slice(0, 8);
 
   return (
     <div style={{ maxWidth: "960px", margin: "0 auto" }}>
@@ -435,12 +428,12 @@ export default function ProductsPage() {
             marginBottom: "1.5rem",
           }}
         >
-          {/* Rand 1: sursa magazin */}
+          {/* Rand 1: sursa magazin — reseteaza brand+categorie si reincarca optiunile din DB */}
           <div style={{ marginBottom: "1rem" }}>
             <label style={labelSmall}>Sursa (magazin)</label>
             <select
               value={filters.source}
-              onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+              onChange={(e) => handleSourceChange(e.target.value)}
               style={inputBaseStyle}
             >
               {STORE_SOURCES.map((s) => (
@@ -497,17 +490,17 @@ export default function ProductsPage() {
             )}
           </div>
 
-          {/* Rand 3: categorie (populata din API) */}
+          {/* Rand 3: categorie — valori reale din DB (GET /api/products/filter-options) */}
           <div style={{ marginBottom: "1rem" }}>
             <label style={labelSmall}>Categorie</label>
             <select
-              value={filters.category}
+              value={filters.category || ""}
               onChange={(e) => setFilters({ ...filters, category: e.target.value })}
               style={inputBaseStyle}
             >
               <option value="">Toate categoriile</option>
-              {filterOptions.categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
+              {(filterOptions.categories || []).map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
           </div>
@@ -534,19 +527,6 @@ export default function ProductsPage() {
             </div>
           </div>
 
-          {/* Rand 5: doar produse la reducere */}
-          <label style={{
-            display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem",
-            cursor: "pointer", fontSize: "0.8125rem", color: "var(--text-secondary)",
-          }}>
-            <input
-              type="checkbox"
-              checked={filters.on_sale}
-              onChange={(e) => setFilters({ ...filters, on_sale: e.target.checked })}
-              style={{ width: "16px", height: "16px", cursor: "pointer" }}
-            />
-            Doar produse la reducere
-          </label>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button onClick={handleApplyFilters} style={{
               padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)",

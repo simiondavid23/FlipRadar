@@ -192,7 +192,7 @@ export default function SupportPage() {
                 color: "var(--text-secondary)", cursor: "pointer", fontSize: "0.8125rem",
               }}
             >
-              <Trash2 style={{ width: "14px", height: "14px" }} /> Sterge istoric
+              <Trash2 style={{ width: "14px", height: "14px" }} /> Sterge conversatia
             </button>
           )}
         </div>

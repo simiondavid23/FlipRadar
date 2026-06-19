@@ -15,6 +15,8 @@ class Product(Base):
     # FlipRadar — brand dedicat pentru filtrare precisa (separat de nume)
     brand = Column(String(200), nullable=True)
     category = Column(String, nullable=True)
+    # FlipRadar — subcategorie inferata per magazin (taxonomie SOURCE_CATEGORIES)
+    subcategory = Column(String(200), nullable=True)
     image_url = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     source = Column(String, nullable=True)

@@ -42,10 +42,10 @@ def get_market_context(db, product_name: str, category: str) -> str:
             return ""
 
         return (
-            f"Date reale din piata romaneasca ({stats.count} vanzari similare): "
-            f"Pret mediu: {round(float(stats.avg_price), 2)} EUR, "
-            f"Interval: {round(float(stats.min_price), 2)}-{round(float(stats.max_price), 2)} EUR, "
-            f"Timp mediu vanzare: {round(float(stats.avg_days or 0), 0)} zile."
+            f"Date reale din piata (ultimele vanzari similare, N={stats.count}): "
+            f"Pret mediu vanzare: {round(float(stats.avg_price), 2)} EUR, "
+            f"Interval pret: {round(float(stats.min_price), 2)}-{round(float(stats.max_price), 2)} EUR, "
+            f"Timp mediu pana la vanzare: {round(float(stats.avg_days or 0), 0)} zile."
         )
     except Exception:
         return ""

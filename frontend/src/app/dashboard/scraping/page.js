@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { scrapingAPI, productsAPI, favoritesAPI } from "@/lib/api";
 import { Globe, Search, Plus, Heart, ExternalLink, ShoppingBag } from "lucide-react";
 
@@ -23,6 +23,7 @@ export default function ScrapingPage() {
   const [source, setSource] = useState("all");
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [sortOrder, setSortOrder] = useState("default");
 
   const eanHint = (() => {
     if (searchType !== "ean" || !query.trim()) return "";
@@ -37,6 +38,7 @@ export default function ScrapingPage() {
     if (!query.trim()) return;
     setLoading(true);
     setResults(null);
+    setSortOrder("default");
     try {
       let res;
       if (source === "altex") res = await scrapingAPI.searchAltex(query, undefined, searchType);
@@ -76,6 +78,8 @@ export default function ScrapingPage() {
         image_url: product.image_url,
         ean: product.ean || null,
         sku: product.sku || null,
+        category: product.category || null,
+        subcategory: product.subcategory || null,
       });
       alert(buildSaveMessage(res.data, product.name));
     } catch (e) {
@@ -89,6 +93,7 @@ export default function ScrapingPage() {
         name: product.name, current_price: product.price, currency: product.currency || "RON",
         source: product.source, source_url: product.source_url, image_url: product.image_url,
         ean: product.ean || null, sku: product.sku || null,
+        category: product.category || null, subcategory: product.subcategory || null,
       });
       await favoritesAPI.addFavorite({ product_id: saved.data.id, is_blacklisted: false });
       const status = saved.data.is_new
@@ -112,6 +117,13 @@ export default function ScrapingPage() {
   };
 
   const allResults = getAllResults().filter(r => !r.error && !r.message);
+  const sortedResults = useMemo(() => {
+    if (sortOrder === "price_asc")
+      return [...allResults].sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+    if (sortOrder === "price_desc")
+      return [...allResults].sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+    return allResults;
+  }, [allResults, sortOrder]);
   const inputStyle = { backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)" };
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)" };
 
@@ -178,13 +190,26 @@ export default function ScrapingPage() {
 
       {results && !loading && (
         <div>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "1rem", fontSize: "0.875rem" }}>
-            {allResults.length} produse gasite {results.query ? `pentru "${results.query}"` : ""}
-          </p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>
+              {allResults.length} produse gasite {results.query ? `pentru "${results.query}"` : ""}
+            </p>
+            {allResults.length > 0 && (
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                style={{ ...inputStyle, padding: "0.5rem 0.75rem", borderRadius: "0.5rem", color: "var(--text-primary)", fontSize: "0.8125rem", cursor: "pointer" }}
+              >
+                <option value="default">Sorteaza: Implicit</option>
+                <option value="price_asc">Pret: crescator</option>
+                <option value="price_desc">Pret: descrescator</option>
+              </select>
+            )}
+          </div>
 
           {allResults.length > 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {allResults.map((product, i) => {
+              {sortedResults.map((product, i) => {
                 const style = SOURCE_STYLES[product.source] || { bg: "rgba(148,163,184,0.2)", fg: "#cbd5e1" };
                 const cur = product.currency || "RON";
                 return (

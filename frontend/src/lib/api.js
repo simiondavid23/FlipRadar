@@ -43,7 +43,12 @@ export const authAPI = {
 export const productsAPI = {
   getProducts: (params) => api.get("/api/products/", { params }),
   getProduct: (id) => api.get(`/api/products/${id}`),
-  getFilterOptions: () => api.get("/api/products/filter-options"),
+  getFilterOptions: (params) => api.get("/api/products/filter-options", { params }),
+  // FlipRadar — autocomplete brand server-side + taxonomie categorii per sursa
+  getBrands: (params) => api.get("/api/products/brands", { params }),
+  getCategoriesBySource: (source) => api.get("/api/products/categories-by-source", { params: { source } }),
+  getSourceCategories: (source) =>
+    api.get("/api/products/source-categories", { params: source ? { source } : {} }),
   getStats: () => api.get("/api/products/stats"),
   createProduct: (data) => api.post("/api/products/", data),
   updateProduct: (id, data) => api.put(`/api/products/${id}`, data),
@@ -116,6 +121,75 @@ export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),
 };
 
+// Modulul 1 Marketplace — cautare live pe platforme (OLX, Vinted, etc.).
+// `filters` se trimite ca JSON encodat in query string.
+const _mpFilters = (filters) => (filters ? JSON.stringify(filters) : undefined);
+export const marketplaceAPI = {
+  olxGeneral: (q, category = "", filters) =>
+    api.get("/api/marketplace/olx-general", { params: { q, category, filters: _mpFilters(filters) } }),
+  vinted: (q, filters) =>
+    api.get("/api/marketplace/vinted", { params: { q, filters: _mpFilters(filters) } }),
+  lajumate: (q, filters) => api.get("/api/marketplace/lajumate", { params: { q, filters: _mpFilters(filters) } }),
+  publi24: (q, filters) => api.get("/api/marketplace/publi24", { params: { q, filters: _mpFilters(filters) } }),
+  okazii: (q, filters) => api.get("/api/marketplace/okazii", { params: { q, filters: _mpFilters(filters) } }),
+  kleinanzeigen: (q, categoryId = "", filters) =>
+    api.get("/api/marketplace/kleinanzeigen", { params: { q, category_id: categoryId, filters: _mpFilters(filters) } }),
+  searchAll: (q, platforms = "olx,vinted,okazii", filters) =>
+    api.get("/api/marketplace/search-all", { params: { q, platforms, filters: _mpFilters(filters) } }),
+  // Anunturi salvate
+  getSaved: () => api.get("/api/marketplace/saved"),
+  saveListing: (data) => api.post("/api/marketplace/saved", data),
+  deleteSaved: (id) => api.delete(`/api/marketplace/saved/${id}`),
+  // Alerte keyword
+  getKeywordAlerts: () => api.get("/api/marketplace/keyword-alerts"),
+  createKeywordAlert: (data) => api.post("/api/marketplace/keyword-alerts", data),
+  updateKeywordAlert: (id, data) => api.put(`/api/marketplace/keyword-alerts/${id}`, data),
+  deleteKeywordAlert: (id) => api.delete(`/api/marketplace/keyword-alerts/${id}`),
+};
+
+// Auto — Loturi & Licitatii (Copart/IAAI/SCA/OpenLane) + calculator import
+export const autoAPI = {
+  calculateImport: (data) => api.post("/api/auto/calculate-import", data),
+  searchLots: (q, platforms = "copart,iaai", filters) =>
+    api.get("/api/auto/lots/search", { params: { q, platforms, filters: filters ? JSON.stringify(filters) : undefined } }),
+  saveLot: (data) => api.post("/api/auto/lots/save", data),
+  getSavedLots: () => api.get("/api/auto/lots/saved"),
+  deleteSavedLot: (id) => api.delete(`/api/auto/lots/saved/${id}`),
+  // Anunturi auto (OLX Auto / Autovit / Mobile.de / AutoScout24 / Kleinanzeigen)
+  searchListings: (q, platforms = "autovit,olx_auto", filters) =>
+    api.get("/api/auto/listings/search", { params: { q, platforms, filters: filters ? JSON.stringify(filters) : undefined } }),
+  saveListing: (data) => api.post("/api/auto/listings/save", data),
+  getSavedListings: () => api.get("/api/auto/listings/saved"),
+  deleteSavedListing: (id) => api.delete(`/api/auto/listings/saved/${id}`),
+  extractDescription: (data) => api.post("/api/auto/listings/extract-description", data),
+};
+
+// Imobiliare (OLX / Storia / Imobiliare.ro / Facebook)
+export const realEstateAPI = {
+  search: (params) => api.get("/api/real-estate/search", { params }),
+  saveListing: (data) => api.post("/api/real-estate/listings/save", data),
+  getSavedListings: () => api.get("/api/real-estate/listings/saved"),
+  deleteSavedListing: (id) => api.delete(`/api/real-estate/listings/saved/${id}`),
+  getAlerts: () => api.get("/api/real-estate/alerts"),
+  createAlert: (data) => api.post("/api/real-estate/alerts", data),
+  updateAlert: (id, data) => api.put(`/api/real-estate/alerts/${id}`, data),
+  deleteAlert: (id) => api.delete(`/api/real-estate/alerts/${id}`),
+};
+
+// Grupuri Facebook (monitorizare imobiliare)
+export const facebookGroupsAPI = {
+  getConfigs: () => api.get("/api/facebook-groups"),
+  createConfig: (data) => api.post("/api/facebook-groups", data),
+  updateConfig: (id, data) => api.put(`/api/facebook-groups/${id}`, data),
+  deleteConfig: (id) => api.delete(`/api/facebook-groups/${id}`),
+  saveCookies: (id, cookiesJson) =>
+    api.post(`/api/facebook-groups/${id}/cookies`, { cookies_json: cookiesJson }),
+  deleteCookies: (id) => api.delete(`/api/facebook-groups/${id}/cookies`),
+  getPosts: (id, params) => api.get(`/api/facebook-groups/${id}/posts`, { params }),
+  getAllPosts: (params) => api.get("/api/facebook-groups/posts/all", { params }),
+  testRun: (id) => api.post(`/api/facebook-groups/${id}/test-run`),
+};
+
 // Tickete de suport
 export const ticketsAPI = {
   getMyTickets: () => api.get("/api/support/tickets"),
@@ -130,6 +204,14 @@ export const favoritesAPI = {
   getBlacklist: () => api.get("/api/favorites/blacklist"),
   addFavorite: (data) => api.post("/api/favorites/", data),
   removeFavorite: (id) => api.delete(`/api/favorites/${id}`),
+};
+
+// FlipRadar — Produse Urmarite (fuziune favorite + watchlist)
+export const trackedProductsAPI = {
+  getAll: () => api.get("/api/tracked-products/"),
+  toggleMonitoring: (id, active, alert_threshold) =>
+    api.patch(`/api/tracked-products/${id}/monitoring`, { active, alert_threshold }),
+  remove: (id) => api.delete(`/api/tracked-products/${id}`),
 };
 
 // Notificări
@@ -211,6 +293,7 @@ export const radarAPI = {
   deleteKeyword: (id) => api.delete(`/api/radar/keywords/${id}`),
   toggleKeyword: (id) => api.patch(`/api/radar/keywords/${id}/toggle`),
   getListings: (params) => api.get("/api/radar/listings", { params }),
+  searchManual: (data) => api.post("/api/radar/search-manual", data),
   getListing: (id) => api.get(`/api/radar/listings/${id}`),
   generateListingAIReview: (id) => api.get(`/api/radar/listings/${id}/ai-review`),
   updateListingStatus: (id, status) =>
@@ -218,10 +301,6 @@ export const radarAPI = {
   blockSeller: (id) => api.post(`/api/radar/listings/${id}/block-seller`),
   getBlockedSellers: () => api.get("/api/radar/blocked-sellers"),
   unblockSeller: (id) => api.delete(`/api/radar/blocked-sellers/${id}`),
-  getPresets: () => api.get("/api/radar/presets"),
-  savePreset: (data) => api.post("/api/radar/presets", data),
-  deletePreset: (id) => api.delete(`/api/radar/presets/${id}`),
-  loadPreset: (id) => api.post(`/api/radar/presets/${id}/load`),
   getSettings: () => api.get("/api/radar/settings"),
   updateSettings: (data) => api.put("/api/radar/settings", data),
   testDiscord: (webhook_url) =>

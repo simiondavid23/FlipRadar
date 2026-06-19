@@ -1,12 +1,18 @@
 # FlipRadar — model pentru anunturi reale de piata (date istorice de vanzari),
 # folosit la injectarea contextului de piata in analiza AB a Consilierului AI.
-from sqlalchemy import Column, Integer, String, Text, DateTime, Numeric, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, Numeric, JSON, Index
 from datetime import datetime
 from app.database import Base
 
 
 class MarketListing(Base):
     __tablename__ = "market_listings"
+
+    # FlipRadar — index compus pentru queries ML (agregari pe categorie/brand,
+    # filtrate dupa starea de vanzare).
+    __table_args__ = (
+        Index("ix_market_listings_category_brand_sold", "category", "brand", "sold_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     category = Column(String(100))

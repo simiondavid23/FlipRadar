@@ -25,5 +25,7 @@ class RadarKeyword(Base):
     notify_email = Column(Boolean, default=True, nullable=False)
     notify_discord = Column(Boolean, default=True, nullable=False)
     car_filters = Column(Text, nullable=True)
+    # FlipRadar — config wizard marketplace (platform, categorie, subcategorie, filtre) serializat JSON
+    marketplace_config = Column(Text, nullable=True)
     last_scan_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)

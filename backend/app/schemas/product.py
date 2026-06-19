@@ -9,6 +9,7 @@ class ProductCreate(BaseModel):
     sku: Optional[str] = None
     brand: Optional[str] = None
     category: Optional[str] = None
+    subcategory: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
@@ -25,6 +26,7 @@ class ProductUpdate(BaseModel):
     sku: Optional[str] = None
     brand: Optional[str] = None
     category: Optional[str] = None
+    subcategory: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
@@ -54,6 +56,7 @@ class ProductResponse(BaseModel):
     sku: Optional[str] = None
     brand: Optional[str] = None
     category: Optional[str] = None
+    subcategory: Optional[str] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None

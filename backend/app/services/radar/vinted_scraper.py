@@ -101,7 +101,9 @@ def search_vinted(
             resp = curl_requests.get(_API_URL, **request_kwargs)
             if resp.status_code in (401, 403):
                 print(f"[VintedScraper] Cookie expirat ({resp.status_code}) — necesita reconectare.")
-                return []
+                # Santinela: semnaleaza caller-ului ca eroarea e de autentificare
+                # (cookie expirat), spre deosebire de un simplu rezultat gol.
+                return [{"__vinted_auth_error": True}]
             if resp.status_code == 200:
                 data = resp.json()
                 break

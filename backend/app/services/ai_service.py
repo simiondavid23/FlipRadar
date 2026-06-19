@@ -10,39 +10,43 @@ MODEL = "llama-3.3-70b-versatile"
 
 
 def clean_json_response(text: str) -> str:
-    """FlipRadar — BUG 7: extrage JSON valid din raspunsul AI in 4 pasi ordonati,
-    de la cel mai strict la cel mai tolerant."""
+    """FlipRadar — BUG 7: extrage JSON valid din raspunsul AI in 4 fallback-uri
+    ordonate. Primul pas care reuseste returneaza rezultatul; ultima solutie este
+    regex-ul original care escapeaza caracterele de control din valorile string."""
     import re, json
 
-    # Pas 1: încearcă direct
+    # Pas 1: parsare directa
     try:
         return json.dumps(json.loads(text.strip()), ensure_ascii=False)
     except Exception:
         pass
 
-    # Pas 2: extrage blocul {...} și încearcă
+    # Pas 2: extrage blocul {...} si parseaza
     match = re.search(r'\{[\s\S]*\}', text)
-    if match:
-        try:
-            return json.dumps(json.loads(match.group(0)), ensure_ascii=False)
-        except Exception:
-            pass
-        # Pas 3: strict=False
-        try:
-            return json.dumps(json.loads(match.group(0), strict=False), ensure_ascii=False)
-        except Exception:
-            pass
+    extracted = match.group(0) if match else text.strip()
+    try:
+        return json.dumps(json.loads(extracted), ensure_ascii=False)
+    except Exception:
+        pass
 
-    # Pas 4: curăță markdown și încearcă din nou
-    cleaned = re.sub(r'```(?:json)?\s*', '', text).strip()
-    match2 = re.search(r'\{[\s\S]*\}', cleaned)
-    if match2:
-        try:
-            return json.dumps(json.loads(match2.group(0), strict=False), ensure_ascii=False)
-        except Exception:
-            pass
+    # Pas 3: parsare toleranta (strict=False) pe blocul extras
+    try:
+        return json.dumps(json.loads(extracted, strict=False), ensure_ascii=False)
+    except Exception:
+        pass
 
-    return text
+    # Pas 4: ultima solutie — regex-ul original aplicat pe blocul extras, care
+    # escapeaza newline/tab/CR din interiorul valorilor string inainte de parsare.
+    fixed = re.sub(
+        r'(?<=": ")(.*?)(?="[,\}])',
+        lambda m: m.group(0).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t'),
+        extracted,
+        flags=re.DOTALL,
+    )
+    try:
+        return json.dumps(json.loads(fixed, strict=False), ensure_ascii=False)
+    except Exception:
+        return extracted
 
 
 async def chat_with_groq(message: str, system_prompt: str = "", history: list = None) -> str:
@@ -296,7 +300,7 @@ Raspunde STRICT in format JSON valid (fara markdown, fara ```), cu urmatoarea st
     if len((features or "").strip()) < 40:
         specs = await fetch_product_specs_online(product_name, category)
         if specs:
-            prompt += f"\nInformatii tehnice gasite online (foloseste-le daca sunt relevante):\n{specs}"
+            prompt += f"\nInformatii tehnice gasite online (foloseste-le daca sunt relevante si corecte):\n{specs}"
 
     try:
         # FlipRadar — BUG 5: apel blocant Groq rulat in thread separat.
@@ -365,3 +369,63 @@ Genereaza un raport in format JSON valid (fara markdown, fara ```):
         return clean_json_response(raw)
     except Exception as e:
         return json.dumps({"error": f"Eroare la generare raport: {str(e)}"})
+
+
+async def extract_auto_features_from_description(description: str, existing_data: dict = {}) -> dict:
+    """Extrage informatii structurate din descrierea unui anunt auto."""
+    if not description or len(description) < 50:
+        return {}
+
+    prompt = f"""Extrage urmatoarele informatii DIN TEXTUL DE MAI JOS.
+REGULA CRITICA: Daca o informatie NU este mentionata explicit in text, scrie null.
+Nu face presupuneri. Nu inventa informatii.
+
+TEXT (max 2500 caractere):
+{description[:2500]}
+
+Returneaza STRICT JSON valid:
+{{
+    "itp_valid_until": null,
+    "timing_belt_changed_at_km": null,
+    "oil_change_at_km": null,
+    "brake_pads_changed": null,
+    "tires_info": null,
+    "num_owners": null,
+    "service_history": null,
+    "accidents_denied": null,
+    "defects_mentioned": null,
+    "recent_works": null,
+    "import_from": null,
+    "urgent_sale": null,
+    "warranty_months": null,
+    "aftermarket_modifications": null,
+    "reason_for_sale": null,
+    "allows_test_drive": null
+}}"""
+
+    try:
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=500,
+        )
+        raw = clean_json_response(response.choices[0].message.content)
+        extracted = json.loads(raw)
+
+        # Cross-validare: km_curea > km_actuali = warning
+        warnings = []
+        actual_km = existing_data.get("km")
+        if extracted.get("timing_belt_changed_at_km") and actual_km:
+            try:
+                if int(extracted["timing_belt_changed_at_km"]) > int(actual_km):
+                    warnings.append("km_curea_distributie > km_actuali - posibil typo")
+            except (TypeError, ValueError):
+                pass
+
+        if warnings:
+            extracted["_warnings"] = warnings
+        return extracted
+    except Exception:
+        return {}

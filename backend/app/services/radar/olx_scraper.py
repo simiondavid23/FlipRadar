@@ -153,8 +153,17 @@ def fetch_olx_listing_details(url: str) -> dict:
     imgs = []
     seen = set()
     for img in soup.select("img"):
-        src = img.get("data-src") or img.get("src") or ""
-        if "apollo.olxcdn.com" not in src:
+        src = (
+            img.get("data-src")
+            or img.get("data-lazy-src")
+            or img.get("data-original")
+            or img.get("srcset", "").split(" ")[0]
+            or img.get("src")
+            or ""
+        )
+        if not src or src.startswith("data:"):
+            continue
+        if "olxcdn.com" not in src and "olx-cdn.com" not in src:
             continue
         upgraded = _upgrade_image_url(src)
         if upgraded in seen:
@@ -308,7 +317,18 @@ def search_olx(
                     listed_at = _parse_olx_date(location_raw)
 
             img_tag = card.find("img")
-            image_url = img_tag.get("src") if img_tag else None
+            image_url = None
+            if img_tag:
+                image_url = (
+                    img_tag.get("data-src")
+                    or img_tag.get("data-lazy-src")
+                    or img_tag.get("data-original")
+                    or img_tag.get("srcset", "").split(" ")[0]
+                    or img_tag.get("src")
+                    or None
+                )
+                if image_url and image_url.startswith("data:"):
+                    image_url = None
             images = [image_url] if image_url else []
 
             cond_tag = card.find(attrs={"data-testid": "ad-state"})

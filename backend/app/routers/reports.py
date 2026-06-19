@@ -83,8 +83,9 @@ def get_reports_summary(
             roi_values.append((profit / cost) * 100.0)
 
         category = name_to_category.get(s.product_name, "Necunoscut")
-        cb = cat_buckets.setdefault(category, {"categorie": category, "profit": 0.0, "count": 0})
+        cb = cat_buckets.setdefault(category, {"categorie": category, "profit": 0.0, "cost": 0.0, "count": 0})
         cb["profit"] += profit
+        cb["cost"] += cost
         cb["count"] += qty
 
         pb = prod_buckets.setdefault(s.product_name or "Necunoscut", {"name": s.product_name or "Necunoscut", "profit": 0.0, "revenue": 0.0, "cost": 0.0})
@@ -101,8 +102,18 @@ def get_reports_summary(
     profit_total = venit_total - cost_total
     roi_mediu = round(sum(roi_values) / len(roi_values), 2) if roi_values else 0.0
 
+    # FlipRadar — adaugam `roi` per categorie (profit/cost*100) pe langa profit,
+    # pentru graficul "Categorii dupa ROI mediu" si cardul de pe dashboard.
     top_categorii = sorted(
-        ({"categorie": c["categorie"], "profit": round(c["profit"], 2), "count": c["count"]} for c in cat_buckets.values()),
+        (
+            {
+                "categorie": c["categorie"],
+                "profit": round(c["profit"], 2),
+                "count": c["count"],
+                "roi": round((c["profit"] / c["cost"] * 100.0), 2) if c["cost"] > 0 else 0.0,
+            }
+            for c in cat_buckets.values()
+        ),
         key=lambda x: x["profit"], reverse=True
     )[:5]
 

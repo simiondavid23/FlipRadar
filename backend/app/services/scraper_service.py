@@ -7,6 +7,8 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
+from app.utils.category_mapper import infer_category_from_name
+
 
 _ALTEX_HEADERS = {
     "Origin": "https://altex.ro",
@@ -151,6 +153,17 @@ def _sync_scrape_altex(query: str, max_results: int) -> list:
                 is_on_sale = True
                 original_price = regular_price
 
+            # FlipRadar — categorie: preferam categoria din raspunsul Fenrir,
+            # cu inferenta din nume (KEYWORD_MAP) ca fallback.
+            main_cat, sub_cat = infer_category_from_name(name, "altex")
+            fenrir_cat = item.get("category_name")
+            if not fenrir_cat:
+                raw_cats = item.get("categories")
+                if isinstance(raw_cats, str):
+                    fenrir_cat = raw_cats
+                elif isinstance(raw_cats, list) and raw_cats:
+                    c0 = raw_cats[0]
+                    fenrir_cat = c0.get("name") if isinstance(c0, dict) else (c0 if isinstance(c0, str) else None)
             products.append({
                 "name": name,
                 "price": price,
@@ -163,6 +176,8 @@ def _sync_scrape_altex(query: str, max_results: int) -> list:
                 "in_stock": in_stock,
                 "ean": ean if ean else None,
                 "sku": sku or None,
+                "category": fenrir_cat or main_cat,
+                "subcategory": sub_cat,
             })
         except Exception:
             continue
@@ -263,6 +278,7 @@ def _sync_scrape_sole(query: str, max_results: int) -> list:
                 is_on_sale = True
                 original_price = old_price
 
+            main_cat, sub_cat = infer_category_from_name(name, "sole")
             products.append({
                 "name": name,
                 "price": price,
@@ -275,6 +291,8 @@ def _sync_scrape_sole(query: str, max_results: int) -> list:
                 "in_stock": in_stock,
                 "ean": None,
                 "sku": sole_code,
+                "category": main_cat,
+                "subcategory": sub_cat,
             })
         except Exception:
             continue
@@ -364,6 +382,7 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
                 original_price = None
 
             pid = btn.get("data-pid") if btn else None
+            main_cat, sub_cat = infer_category_from_name(name, "farmaciatei")
             products.append({
                 "name": name,
                 "price": price,
@@ -376,6 +395,8 @@ def _parse_farmaciatei_page(soup: BeautifulSoup) -> list:
                 "in_stock": in_stock,
                 "ean": None,
                 "sku": pid,
+                "category": main_cat,
+                "subcategory": sub_cat,
             })
         except Exception:
             continue
@@ -541,6 +562,7 @@ def _parse_emag_page(soup: BeautifulSoup) -> list:
 
             product_id = item.get("data-product-id") or item.get("data-offer-id") or None
 
+            main_cat, sub_cat = infer_category_from_name(name, "emag")
             products.append({
                 "name": name,
                 "price": price,
@@ -553,6 +575,8 @@ def _parse_emag_page(soup: BeautifulSoup) -> list:
                 "in_stock": in_stock,
                 "ean": None,
                 "sku": product_id,
+                "category": main_cat,
+                "subcategory": sub_cat,
             })
         except Exception:
             continue
@@ -689,6 +713,7 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
                 if m:
                     sku = m.group(1)
 
+            main_cat, sub_cat = infer_category_from_name(name, "pcgarage")
             products.append({
                 "name": name,
                 "price": price,
@@ -701,6 +726,8 @@ def _parse_pcgarage_page(soup: BeautifulSoup) -> list:
                 "in_stock": in_stock,
                 "ean": None,
                 "sku": sku,
+                "category": main_cat,
+                "subcategory": sub_cat,
             })
         except Exception:
             continue

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { reportsAPI } from "@/lib/api";
+import Link from "next/link";
+import { reportsAPI, productsAPI } from "@/lib/api";
 import {
   BarChart2, TrendingUp, Euro, ShoppingCart, Target, AlertTriangle,
 } from "lucide-react";
@@ -63,10 +64,28 @@ export default function ReportsPage() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lowRoiCount, setLowRoiCount] = useState(0);
 
   useEffect(() => {
     load();
   }, []); // initial load with 30-day preset
+
+  // FlipRadar — B: numara produsele din catalog cu ROI estimat sub 10% (pentru callout).
+  useEffect(() => {
+    let active = true;
+    productsAPI.getProducts({ limit: 500 })
+      .then((res) => {
+        if (!active) return;
+        const count = (res.data || []).filter((p) => {
+          const cp = Number(p.current_price), rp = Number(p.resale_price);
+          if (p.resale_price == null || !isFinite(cp) || cp <= 0) return false;
+          return ((rp - cp) / cp) * 100 < 10;
+        }).length;
+        setLowRoiCount(count);
+      })
+      .catch(() => { if (active) setLowRoiCount(0); });
+    return () => { active = false; };
+  }, []);
 
   const load = async (params = null) => {
     setLoading(true);
@@ -121,6 +140,12 @@ export default function ReportsPage() {
     borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
     fontSize: "0.8125rem", outline: "none",
   };
+
+  // Stiluri pentru tabelul "Top 3 produse dupa profit"
+  const thLeft = { textAlign: "left", padding: "0.5rem 0.375rem", color: "var(--text-secondary)", fontWeight: 600, borderBottom: "1px solid var(--border-color)" };
+  const thRight = { ...thLeft, textAlign: "right" };
+  const tdLeft = { padding: "0.625rem 0.375rem", color: "var(--text-primary)", borderBottom: "1px solid var(--border-color)" };
+  const tdRight = { ...tdLeft, textAlign: "right" };
 
   return (
     <div style={{ maxWidth: "960px", margin: "0 auto" }}>
@@ -188,7 +213,12 @@ export default function ReportsPage() {
         </div>
       ) : summary ? (
         <>
-          {/* Stat cards 2x2 */}
+          {/* FlipRadar — B: sectiunea "Rezumat Profitabilitate" (deasupra graficului pe zile) */}
+          <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)", margin: "0 0 1rem" }}>
+            Rezumat Profitabilitate
+          </h2>
+
+          {/* 4 KPI cards 2x2 */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
             <StatCard
               title="Venituri totale"
@@ -224,31 +254,116 @@ export default function ReportsPage() {
             />
           </div>
 
-          {/* FlipRadar — ITEM 12: Rezumat Profitabilitate. KPI-urile (mai sus),
-              tabelul "Top produse" si graficul pe categorii (mai jos) sunt deja
-              randate; aici adaugam alerta pentru produsele cu marja mica. */}
-          {(() => {
-            const lowMargin = (summary.top_produse || []).filter((p) => Number(p.roi) < 10);
-            if (lowMargin.length === 0) return null;
-            return (
-              <div style={{
+          {/* FlipRadar — B: callout produse cu profit estimat sub 10% (link spre catalog filtrat) */}
+          {lowRoiCount > 0 && (
+            <Link
+              href="/dashboard/products?roi_max=10"
+              style={{
+                display: "flex", alignItems: "center", gap: "0.75rem", textDecoration: "none",
                 backgroundColor: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.3)",
                 borderLeft: "3px solid #ea580c", borderRadius: "1rem",
                 padding: "1rem 1.25rem", marginBottom: "1.5rem",
-                display: "flex", alignItems: "center", gap: "0.75rem",
-              }}>
-                <AlertTriangle style={{ width: "20px", height: "20px", color: "#fb923c", flexShrink: 0 }} />
-                <div>
-                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#fb923c", margin: 0 }}>
-                    Atentie: verifica produsele cu marja mica
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>
-                    {lowMargin.length} {lowMargin.length === 1 ? "produs are" : "produse au"} ROI sub 10% in intervalul selectat.
-                  </p>
-                </div>
+              }}
+            >
+              <AlertTriangle style={{ width: "20px", height: "20px", color: "#fb923c", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#fb923c", margin: 0 }}>
+                  {lowRoiCount} {lowRoiCount === 1 ? "produs din inventar are" : "produse din inventar au"} profit estimat sub 10%
+                </p>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>
+                  Vezi produsele cu marja mica si ajusteaza preturile de revanzare →
+                </p>
               </div>
-            );
-          })()}
+            </Link>
+          )}
+
+          {/* FlipRadar — B: Top 3 produse dupa profit + Categorii dupa ROI mediu */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
+            {/* Top 3 produse dupa profit */}
+            <div style={{
+              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+              borderRadius: "1rem", padding: "1.5rem",
+            }}>
+              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>
+                Top 3 produse dupa profit
+              </h2>
+              {(() => {
+                const top3 = (summary.top_produse || []).slice(0, 3);
+                if (top3.length === 0) {
+                  return (
+                    <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.8125rem", paddingTop: "1rem" }}>
+                      Nicio vanzare inregistrata in interval.
+                    </p>
+                  );
+                }
+                const hasDays = top3.some((p) => p.days_to_sell != null);
+                return (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                    <thead>
+                      <tr>
+                        <th style={thLeft}>Produs</th>
+                        <th style={thRight}>Profit net</th>
+                        <th style={thRight}>ROI%</th>
+                        {hasDays && <th style={thRight}>Zile</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {top3.map((p, i) => (
+                        <tr key={i}>
+                          <td style={tdLeft}>{p.name}</td>
+                          <td style={{ ...tdRight, color: p.profit >= 0 ? "#4ade80" : "#f87171", fontWeight: 600 }}>
+                            {Number(p.profit).toFixed(2)} EUR
+                          </td>
+                          <td style={tdRight}>{Number(p.roi).toFixed(2)}%</td>
+                          {hasDays && <td style={tdRight}>{p.days_to_sell != null ? p.days_to_sell : "—"}</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+
+            {/* Categorii dupa ROI mediu */}
+            <div style={{
+              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+              borderRadius: "1rem", padding: "1.5rem",
+            }}>
+              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>
+                Categorii dupa ROI mediu
+              </h2>
+              {(() => {
+                const cats = [...(summary.top_categorii || [])]
+                  .map((c) => ({ categorie: c.categorie, roi: Number(c.roi || 0) }))
+                  .sort((a, b) => b.roi - a.roi);
+                if (cats.length === 0) {
+                  return (
+                    <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.8125rem", paddingTop: "1rem" }}>
+                      Nu exista vanzari in intervalul selectat.
+                    </p>
+                  );
+                }
+                return (
+                  <div style={{ width: "100%", height: 240 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={cats} layout="vertical" margin={{ top: 5, right: 28, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="var(--border-color)" horizontal={false} />
+                        <XAxis type="number" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} unit="%" />
+                        <YAxis type="category" dataKey="categorie" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} width={110} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                          labelStyle={{ color: "var(--text-secondary)" }}
+                          itemStyle={{ color: "var(--text-primary)" }}
+                          formatter={(v) => [`${Number(v).toFixed(2)}%`, "ROI mediu"]}
+                        />
+                        <Bar dataKey="roi" fill="#16a34a" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
 
           {/* Time series chart */}
           <div
@@ -287,81 +402,6 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Top categories bar chart + Top products table */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-            <div
-              style={{
-                backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-                borderRadius: "1rem", padding: "1.5rem",
-              }}
-            >
-              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>
-                Top 5 categorii dupa profit
-              </h2>
-              <div style={{ width: "100%", height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={summary.top_categorii || []} layout="vertical" margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid stroke="var(--border-color)" horizontal={false} />
-                    <XAxis type="number" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="categorie" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} width={110} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
-                      labelStyle={{ color: "var(--text-secondary)" }}
-                      itemStyle={{ color: "var(--text-primary)" }}
-                      formatter={(v) => [`${Number(v).toFixed(2)} EUR`, "Profit"]}
-                    />
-                    <Bar dataKey="profit" fill="#9333ea" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              {(!summary.top_categorii || summary.top_categorii.length === 0) && (
-                <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.8125rem", marginTop: "0.75rem" }}>
-                  Nu exista vanzari in intervalul selectat.
-                </p>
-              )}
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-                borderRadius: "1rem", padding: "1.5rem",
-              }}
-            >
-              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>
-                Top 5 produse cele mai profitabile
-              </h2>
-              {(summary.top_produse || []).length === 0 ? (
-                <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.8125rem", paddingTop: "1rem" }}>
-                  Nicio vanzare inregistrata in interval.
-                </p>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: "left", padding: "0.5rem 0.375rem", color: "var(--text-secondary)", fontWeight: 600, borderBottom: "1px solid var(--border-color)" }}>Produs</th>
-                      <th style={{ textAlign: "right", padding: "0.5rem 0.375rem", color: "var(--text-secondary)", fontWeight: 600, borderBottom: "1px solid var(--border-color)" }}>Profit</th>
-                      <th style={{ textAlign: "right", padding: "0.5rem 0.375rem", color: "var(--text-secondary)", fontWeight: 600, borderBottom: "1px solid var(--border-color)" }}>ROI</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.top_produse.map((p, i) => (
-                      <tr key={i}>
-                        <td style={{ padding: "0.625rem 0.375rem", color: "var(--text-primary)", borderBottom: "1px solid var(--border-color)" }}>
-                          {p.name}
-                        </td>
-                        <td style={{ padding: "0.625rem 0.375rem", color: p.profit >= 0 ? "#4ade80" : "#f87171", fontWeight: 600, textAlign: "right", borderBottom: "1px solid var(--border-color)" }}>
-                          {Number(p.profit).toFixed(2)} EUR
-                        </td>
-                        <td style={{ padding: "0.625rem 0.375rem", color: "var(--text-primary)", textAlign: "right", borderBottom: "1px solid var(--border-color)" }}>
-                          {Number(p.roi).toFixed(2)}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
         </>
       ) : null}
 

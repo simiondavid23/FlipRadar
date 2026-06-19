@@ -45,6 +45,50 @@ const PLATFORM_COLORS = {
   mobilede: { bg: "rgba(30,64,175,0.20)", border: "#1e40af", text: "#93c5fd" },
 };
 
+// FIX 7 — eticheta dinamica pentru butonul "Deschide" in functie de platforma.
+const PLATFORM_LABELS = {
+  olx: "Deschide pe OLX",
+  vinted: "Deschide pe Vinted",
+  okazii: "Deschide pe Okazii",
+  facebook: "Deschide pe Facebook",
+  lajumate: "Deschide pe LaJumate",
+  publi24: "Deschide pe Publi24",
+  autovit: "Deschide pe Autovit",
+  mobilede: "Deschide pe Mobile.de",
+};
+
+// FIX 2 — tab-uri pill (Feed Automat / Căutare Manuală).
+function tabPillStyle(active) {
+  return {
+    padding: "0.5rem 1.25rem",
+    borderRadius: "999px",
+    fontSize: "0.875rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    border: "1px solid var(--border-color)",
+    backgroundColor: active ? "var(--blue-primary)" : "transparent",
+    color: active ? "white" : "var(--text-secondary)",
+    transition: "all 0.15s ease",
+  };
+}
+
+// FIX 2 — platforme disponibile in cautarea manuala (checkbox-uri).
+const MANUAL_PLATFORMS = [
+  { value: "olx", label: "OLX" },
+  { value: "vinted", label: "Vinted" },
+  { value: "okazii", label: "Okazii" },
+  { value: "facebook", label: "Facebook" },
+  { value: "lajumate", label: "Lajumate" },
+  { value: "publi24", label: "Publi24" },
+];
+
+// Aceleasi categorii ca in modalul de keyword (fallback daca API-ul nu raspunde).
+const MANUAL_FALLBACK_CATEGORIES = [
+  "Telefoane", "Tablete", "Laptopuri", "Electronice",
+  "Îmbrăcăminte", "Încălțăminte", "Jocuri", "Cărți",
+  "Sport", "Casă și grădină", "Auto", "Altele",
+];
+
 const SCORE_COLORS = {
   A: { bg: "rgba(22,163,74,0.18)", border: "#16a34a", text: "#4ade80" },
   B: { bg: "rgba(59,130,246,0.18)", border: "#3b82f6", text: "#60a5fa" },
@@ -105,6 +149,9 @@ export default function RadarFeedPage() {
   const [selectedBulk, setSelectedBulk] = useState([]);
   const [showCompare, setShowCompare] = useState(false);
   const [toast, setToast] = useState(null);
+  const [activeTab, setActiveTab] = useState("auto");
+  const [vintedAuthError, setVintedAuthError] = useState(false);
+  const [vintedWarnDismissed, setVintedWarnDismissed] = useState(false);
 
   const [filters, setFilters] = useState({
     platform: "",
@@ -147,6 +194,7 @@ export default function RadarFeedPage() {
       if (filters.status) params.status = filters.status;
       const r = await radarAPI.getListings(params);
       setListings(r.data?.items || []);
+      setVintedAuthError(!!r.data?.vinted_auth_error);
     } catch (e) {
       console.error("[Radar] listings:", e);
     } finally {
@@ -265,16 +313,22 @@ export default function RadarFeedPage() {
     minWidth: "160px",
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-        <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-      </div>
-    );
-  }
-
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
+      {/* FIX 2 — Tab-uri: Feed Automat / Căutare Manuală */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+        <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
+        <button onClick={() => setActiveTab("manual")} style={tabPillStyle(activeTab === "manual")}>Căutare Manuală</button>
+      </div>
+
+      {activeTab === "manual" && <ManualSearchTab />}
+
+      {activeTab === "auto" && (loading ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        </div>
+      ) : (
+      <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -389,6 +443,36 @@ export default function RadarFeedPage() {
         </button>
       </div>
 
+      {/* FIX 6 — avertisment cookie Vinted expirat (dismiss pe sesiune) */}
+      {vintedAuthError && !vintedWarnDismissed && (
+        <div style={{
+          backgroundColor: "rgba(234,179,8,0.12)",
+          border: "1px solid rgba(234,179,8,0.3)",
+          color: "#fbbf24",
+          borderRadius: "0.5rem",
+          padding: "0.75rem 1rem",
+          marginBottom: "1.25rem",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "0.75rem",
+        }}>
+          <span>
+            ⚠️ Cookie-ul Vinted a expirat — rezultatele Vinted lipsesc. Reînnoiește cookie-ul în{" "}
+            <a href="/dashboard/radar/settings" style={{ color: "#fbbf24", fontWeight: 700, textDecoration: "underline" }}>
+              Setări Radar
+            </a>.
+          </span>
+          <button
+            onClick={() => setVintedWarnDismissed(true)}
+            aria-label="Închide avertismentul"
+            style={{ background: "transparent", border: "none", color: "#fbbf24", cursor: "pointer", padding: "0.25rem", display: "flex" }}
+          >
+            <X style={{ width: "16px", height: "16px" }} />
+          </button>
+        </div>
+      )}
+
       {/* Grilă listinguri */}
       {listings.length === 0 ? (
         <div style={{
@@ -424,6 +508,8 @@ export default function RadarFeedPage() {
           ))}
         </div>
       )}
+      </>
+      ))}
 
       {/* Fereastră detalii */}
       {selected && (
@@ -656,12 +742,287 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
             Ignoră
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onOpen(); }}
+            onClick={(e) => { e.stopPropagation(); window.open(listing.url, "_blank", "noopener,noreferrer"); }}
             style={{ flex: 1, padding: "0.4rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
-            title="Deschide"
+            title={PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           >
             <ExternalLink style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
-            Deschide
+            {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// FIX 2 — tab-ul de căutare manuală (live, fără salvare în DB).
+function ManualSearchTab() {
+  const [keyword, setKeyword] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [minPrice, setMinPrice] = useState("");
+  const [platforms, setPlatforms] = useState(["olx", "vinted", "okazii"]);
+  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState(MANUAL_FALLBACK_CATEGORIES);
+  const [results, setResults] = useState(null); // null = încă nu s-a căutat
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    radarAPI.getCategories()
+      .then((r) => { if (r.data?.categories?.length) setCategories(r.data.categories); })
+      .catch(() => {});
+  }, []);
+
+  const togglePlatform = (p) => {
+    setPlatforms((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]);
+  };
+
+  const runSearch = async () => {
+    if (!keyword.trim()) { alert("Introdu un keyword pentru căutare."); return; }
+    if (!maxPrice || parseFloat(maxPrice) <= 0) { alert("Introdu un preț maxim valid."); return; }
+    if (platforms.length === 0) { alert("Selectează cel puțin o platformă."); return; }
+    setLoading(true);
+    try {
+      const r = await radarAPI.searchManual({
+        keyword: keyword.trim(),
+        max_price: parseFloat(maxPrice),
+        min_price: minPrice ? parseFloat(minPrice) : null,
+        platforms,
+        category: category || null,
+        exclude_words: [],
+      });
+      setResults(Array.isArray(r.data) ? r.data : []);
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la căutare.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputStyle = {
+    width: "100%",
+    backgroundColor: "var(--bg-dark)",
+    border: "1px solid var(--border-color)",
+    borderRadius: "0.5rem",
+    padding: "0.5rem 0.75rem",
+    color: "var(--text-primary)",
+    fontSize: "0.875rem",
+    outline: "none",
+  };
+  const labelStyle = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
+
+  return (
+    <div>
+      {/* Formular căutare */}
+      <div style={{
+        backgroundColor: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: "0.75rem",
+        padding: "1.25rem",
+        marginBottom: "1.25rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.875rem",
+      }}>
+        <div>
+          <label style={labelStyle}>Keyword *</label>
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
+            placeholder="ex: iPhone 13 Pro"
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+          <div>
+            <label style={labelStyle}>Preț maxim (RON)</label>
+            <input type="number" min="0" step="any" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="ex: 2000" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Preț minim (RON) — opțional</label>
+            <input type="number" min="0" step="any" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="ex: 100" style={inputStyle} />
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Platforme</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {MANUAL_PLATFORMS.map((p) => {
+              const on = platforms.includes(p.value);
+              return (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => togglePlatform(p.value)}
+                  style={{
+                    padding: "0.375rem 0.75rem",
+                    backgroundColor: on ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
+                    color: on ? "#60a5fa" : "var(--text-secondary)",
+                    border: `1px solid ${on ? "rgba(37,99,235,0.3)" : "var(--border-color)"}`,
+                    borderRadius: "0.5rem",
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {on ? "✓ " : ""}{p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Categorie</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>
+            <option value="">Toate categoriile</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <button
+            onClick={runSearch}
+            disabled={loading}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.5rem 1.25rem",
+              backgroundColor: "var(--blue-primary)",
+              color: "white",
+              border: "none",
+              borderRadius: "0.5rem",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              cursor: loading ? "wait" : "pointer",
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            <Radar style={{ width: "16px", height: "16px" }} />
+            {loading ? "Se caută..." : "Caută"}
+          </button>
+        </div>
+      </div>
+
+      {/* Rezultate */}
+      {loading ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "12rem" }}>
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        </div>
+      ) : results === null ? null : results.length === 0 ? (
+        <div style={{
+          textAlign: "center",
+          padding: "3rem",
+          backgroundColor: "var(--bg-card)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem",
+          color: "var(--text-secondary)",
+        }}>
+          Niciun rezultat găsit pentru această căutare.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1rem" }}>
+          {results.map((listing, idx) => (
+            <ManualResultCard key={`${listing.url || "r"}-${idx}`} listing={listing} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// FIX 2 — card pentru rezultatele căutării manuale (stil identic cu feed-ul).
+function ManualResultCard({ listing }) {
+  const platformCfg = PLATFORM_COLORS[listing.platform?.toLowerCase()] || PLATFORM_COLORS.olx;
+  const image = listing.images?.[0];
+  const margin = listing.margin_pct;
+
+  return (
+    <div
+      style={{
+        backgroundColor: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: "0.75rem",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* Imagine */}
+      <div style={{ position: "relative", height: "180px", backgroundColor: "var(--bg-dark)" }}>
+        {image ? (
+          <img
+            src={image}
+            alt={listing.title}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}>
+            <ImageOff style={{ width: "36px", height: "36px" }} />
+          </div>
+        )}
+
+        {/* Insignă platformă */}
+        <div style={{
+          position: "absolute", top: "0.5rem", right: "0.5rem",
+          padding: "0.25rem 0.625rem",
+          backgroundColor: platformCfg.bg,
+          border: `1px solid ${platformCfg.border}`,
+          borderRadius: "0.375rem",
+          color: platformCfg.text,
+          fontSize: "0.6875rem",
+          fontWeight: 600,
+          textTransform: "uppercase",
+        }}>
+          {listing.platform}
+        </div>
+      </div>
+
+      {/* Conținut card */}
+      <div style={{ padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1 }}>
+        <h3 style={{
+          fontSize: "0.875rem",
+          fontWeight: 600,
+          color: "var(--text-primary)",
+          margin: 0,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          minHeight: "2.6em",
+          lineHeight: "1.3",
+        }}>
+          {listing.title}
+        </h3>
+
+        <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>
+          {Math.round(listing.price)} {listing.currency}
+        </div>
+
+        {margin !== null && margin !== undefined && (
+          <div style={{ fontSize: "0.75rem", color: marginColor(margin) }}>
+            Marjă estimată: <strong>{Math.round(margin)}%</strong>
+          </div>
+        )}
+
+        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "0.125rem" }}>
+          {listing.location && <span>{listing.location}</span>}
+          {listing.condition && <span>Condiție: {listing.condition}</span>}
+        </div>
+
+        <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem" }}>
+          <button
+            onClick={() => window.open(listing.url, "_blank", "noopener,noreferrer")}
+            style={{ flex: 1, padding: "0.4rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
+            title={PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
+          >
+            <ExternalLink style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
+            {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           </button>
         </div>
       </div>
@@ -910,7 +1271,7 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
             style={{ ...btn("white", "var(--blue-primary)", "var(--blue-primary)"), textDecoration: "none", marginLeft: "auto" }}
           >
             <ExternalLink style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            Deschide pe {listing.platform}
+            {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           </a>
         </div>
       </div>

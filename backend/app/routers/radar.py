@@ -1,7 +1,7 @@
 """Router HTTP pentru modulul Radar Marketplace.
 
 Endpoint-urile sunt grupate logic: keywords, listings, blocked sellers,
-presets, settings, facebook auth, stats. Toate cer un user autentificat
+settings, facebook auth, stats. Toate cer un user autentificat
 si filtreaza pe user_id-ul curent (un user nu poate vedea/edita datele altuia).
 
 Mesajele de eroare sunt in romana, in ton cu restul aplicatiei.
@@ -28,7 +28,6 @@ from app.models.radar_blocked_seller import RadarBlockedSeller
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing
 from app.models.radar_message_template import RadarMessageTemplate
-from app.models.radar_preset import RadarPreset
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.radar.ai_reviewer import generate_ai_review
@@ -72,6 +71,7 @@ class KeywordCreate(BaseModel):
     notify_email: bool = True
     notify_discord: bool = True
     car_filters: Optional[dict] = None
+    marketplace_config: Optional[dict] = None
 
 
 class KeywordUpdate(BaseModel):
@@ -92,6 +92,7 @@ class KeywordUpdate(BaseModel):
     notify_email: Optional[bool] = None
     notify_discord: Optional[bool] = None
     car_filters: Optional[dict] = None
+    marketplace_config: Optional[dict] = None
 
 
 class ListingStatusUpdate(BaseModel):
@@ -113,8 +114,13 @@ class SettingsUpdate(BaseModel):
     vinted_cookie: Optional[str] = None
 
 
-class PresetCreate(BaseModel):
-    name: str
+class ManualSearchRequest(BaseModel):
+    keyword: str
+    max_price: float
+    min_price: Optional[float] = None
+    platforms: list[str] = []
+    category: Optional[str] = None
+    exclude_words: list[str] = []
 
 
 class DiscordTestRequest(BaseModel):
@@ -185,6 +191,7 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "notify_email": bool(getattr(kw, "notify_email", True)),
         "notify_discord": bool(getattr(kw, "notify_discord", True)),
         "car_filters": (json.loads(kw.car_filters) if getattr(kw, "car_filters", None) else None),
+        "marketplace_config": (json.loads(kw.marketplace_config) if getattr(kw, "marketplace_config", None) else None),
         "last_scan_at": kw.last_scan_at.isoformat() if kw.last_scan_at else None,
         "created_at": kw.created_at.isoformat() if kw.created_at else None,
     }
@@ -337,6 +344,7 @@ def create_keyword(
         notify_email=bool(data.notify_email),
         notify_discord=bool(data.notify_discord),
         car_filters=(json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None),
+        marketplace_config=(json.dumps(data.marketplace_config, ensure_ascii=False) if data.marketplace_config else None),
     )
     db.add(kw)
     db.commit()
@@ -392,6 +400,8 @@ def update_keyword(
         kw.notify_discord = bool(data.notify_discord)
     if data.car_filters is not None:
         kw.car_filters = json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None
+    if data.marketplace_config is not None:
+        kw.marketplace_config = json.dumps(data.marketplace_config, ensure_ascii=False) if data.marketplace_config else None
     # Validare combinata pret min/max dupa update
     if kw.min_price is not None and kw.min_price > kw.max_price:
         raise HTTPException(status_code=400, detail="Prețul minim nu poate fi mai mare decât prețul maxim.")
@@ -505,11 +515,26 @@ def list_listings(
     keywords = {
         k.id: k for k in db.query(RadarKeyword).filter(RadarKeyword.id.in_(keyword_ids)).all()
     } if keyword_ids else {}
+
+    # FIX 6 — semnaleaza frontend-ului daca cookie-ul Vinted a expirat recent.
+    # Reflecta orice notificare "Cookie Vinted expirat" creata in ultimele 2 ore.
+    vinted_auth_error = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == current_user.id,
+            Notification.title == "Cookie Vinted expirat",
+            Notification.created_at >= datetime.now(timezone.utc) - timedelta(hours=2),
+        )
+        .first()
+        is not None
+    )
+
     return {
         "total": total,
         "page": page,
         "per_page": per_page,
         "items": [_listing_to_dict(it, keywords.get(it.keyword_id)) for it in items],
+        "vinted_auth_error": vinted_auth_error,
     }
 
 
@@ -621,6 +646,116 @@ def block_listing_seller(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# MANUAL SEARCH (cautare live, fara salvare in DB)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/search-manual")
+def search_manual(
+    data: ManualSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cautare live pe platformele alese, fara a salva nimic in baza de date.
+
+    Apeleaza scraperele direct, in paralel, si calculeaza margin_pct cu aceeasi
+    logica de scor (calculate_score) folosita de radar_scanner. Pretul maxim tine
+    loc de pret de revanzare pentru estimarea marjei.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from app.services.radar.autovit_scraper import search_autovit
+    from app.services.radar.facebook_scraper import search_facebook
+    from app.services.radar.lajumate_scraper import search_lajumate
+    from app.services.radar.mobilede_scraper import search_mobilede
+    from app.services.radar.okazii_scraper import search_okazii
+    from app.services.radar.olx_scraper import search_olx
+    from app.services.radar.publi24_scraper import search_publi24
+    from app.services.radar.vinted_scraper import search_vinted
+
+    keyword = (data.keyword or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="Keyword-ul este obligatoriu.")
+    if data.max_price is None or data.max_price <= 0:
+        raise HTTPException(status_code=400, detail="Prețul maxim trebuie să fie pozitiv.")
+    platforms = [(p or "").lower() for p in (data.platforms or []) if p]
+    if not platforms:
+        raise HTTPException(status_code=400, detail="Selectează cel puțin o platformă.")
+
+    settings = _get_or_create_settings(db, current_user.id)
+    exclude_words = data.exclude_words or []
+    max_price = float(data.max_price)
+    min_price = data.min_price
+
+    def _run(platform: str) -> list[dict]:
+        try:
+            if platform == "olx":
+                return search_olx(keyword=keyword, max_price=max_price, condition="all",
+                                  exclude_words=exclude_words, min_price=min_price, category=data.category)
+            if platform == "vinted":
+                return search_vinted(keyword=keyword, max_price=max_price, condition="all",
+                                     exclude_words=exclude_words, cookie_str=settings.vinted_cookie,
+                                     min_price=min_price, category=data.category)
+            if platform == "okazii":
+                return search_okazii(keyword=keyword, max_price=max_price, condition="all",
+                                     exclude_words=exclude_words, min_price=min_price, category=data.category)
+            if platform == "facebook":
+                return search_facebook(keyword=keyword, max_price=max_price, judet=None, oras=None,
+                                       exclude_words=exclude_words, session_path=settings.facebook_session_path,
+                                       min_price=min_price, category=data.category)
+            if platform == "lajumate":
+                return search_lajumate(keyword=keyword, max_price=max_price, min_price=min_price,
+                                       condition="all", exclude_words=exclude_words, judet=None, oras=None)
+            if platform == "publi24":
+                return search_publi24(keyword=keyword, max_price=max_price, min_price=min_price,
+                                      condition="all", exclude_words=exclude_words, judet=None, oras=None)
+            if platform == "autovit":
+                return search_autovit(keyword=keyword, max_price=max_price, min_price=min_price,
+                                      exclude_words=exclude_words, car_filters=None)
+            if platform == "mobilede":
+                return search_mobilede(keyword=keyword, max_price=max_price, min_price=min_price,
+                                       exclude_words=exclude_words, car_filters=None)
+        except Exception as exc:
+            print(f"[RadarManualSearch] Scraperul {platform} a crapat: {exc}")
+        return []
+
+    combined: list[dict] = []
+    with ThreadPoolExecutor(max_workers=min(len(platforms), 6)) as executor:
+        future_map = {executor.submit(_run, p): p for p in platforms}
+        for future in as_completed(future_map):
+            platform = future_map[future]
+            try:
+                rows = future.result() or []
+            except Exception as exc:
+                print(f"[RadarManualSearch] {platform} a esuat: {exc}")
+                rows = []
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                if r.get("__vinted_auth_error"):
+                    continue  # santinela cookie expirat — nu e un rezultat real
+                price = float(r.get("price") or 0)
+                score_data = calculate_score(
+                    listing_price=price,
+                    resale_price=max_price,
+                    min_margin_pct=0,
+                )
+                combined.append({
+                    "title": r.get("title"),
+                    "price": price,
+                    "currency": r.get("currency") or "RON",
+                    "platform": r.get("platform") or platform,
+                    "url": r.get("url"),
+                    "images": r.get("images") or [],
+                    "location": r.get("location"),
+                    "condition": r.get("condition"),
+                    "margin_pct": round(score_data.get("margin_pct") or 0, 1),
+                })
+
+    return combined
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # BLOCKED SELLERS
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -664,127 +799,6 @@ def unblock_seller(
     db.delete(row)
     db.commit()
     return {"message": "Vânzător deblocat."}
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# PRESETS
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@router.get("/presets")
-def list_presets(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    rows = (
-        db.query(RadarPreset)
-        .filter(RadarPreset.user_id == current_user.id)
-        .order_by(RadarPreset.created_at.desc())
-        .all()
-    )
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "keywords_config": _parse_json_list(r.keywords_config),
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in rows
-    ]
-
-
-@router.post("/presets")
-def save_preset(
-    data: PresetCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    if not data.name or not data.name.strip():
-        raise HTTPException(status_code=400, detail="Numele presetului este obligatoriu.")
-    keywords = (
-        db.query(RadarKeyword)
-        .filter(RadarKeyword.user_id == current_user.id)
-        .all()
-    )
-    cfg = [_kw_to_dict(k) for k in keywords]
-    preset = RadarPreset(
-        user_id=current_user.id,
-        name=data.name.strip(),
-        keywords_config=json.dumps(cfg, ensure_ascii=False),
-    )
-    db.add(preset)
-    db.commit()
-    db.refresh(preset)
-    return {
-        "id": preset.id,
-        "name": preset.name,
-        "keywords_config": cfg,
-        "created_at": preset.created_at.isoformat() if preset.created_at else None,
-    }
-
-
-@router.delete("/presets/{preset_id}")
-def delete_preset(
-    preset_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    preset = (
-        db.query(RadarPreset)
-        .filter(RadarPreset.id == preset_id, RadarPreset.user_id == current_user.id)
-        .first()
-    )
-    if not preset:
-        raise HTTPException(status_code=404, detail="Presetul nu a fost găsit.")
-    db.delete(preset)
-    db.commit()
-    return {"message": "Preset șters."}
-
-
-@router.post("/presets/{preset_id}/load")
-def load_preset(
-    preset_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    preset = (
-        db.query(RadarPreset)
-        .filter(RadarPreset.id == preset_id, RadarPreset.user_id == current_user.id)
-        .first()
-    )
-    if not preset:
-        raise HTTPException(status_code=404, detail="Presetul nu a fost găsit.")
-    cfg = _parse_json_list(preset.keywords_config)
-    created_ids = []
-    for item in cfg:
-        try:
-            kw = RadarKeyword(
-                user_id=current_user.id,
-                name=item.get("name", "")[:200] or "Keyword",
-                max_price=float(item.get("max_price") or 0),
-                min_price=item.get("min_price"),
-                resale_price=float(item.get("resale_price") or 0),
-                category=item.get("category"),
-                exclude_words=json.dumps(item.get("exclude_words") or [], ensure_ascii=False),
-                platforms=json.dumps(item.get("platforms") or ["olx"], ensure_ascii=False),
-                poll_interval_minutes=int(item.get("poll_interval_minutes") or 5),
-                judet=item.get("judet"),
-                oras=item.get("oras"),
-                condition=item.get("condition") or "all",
-                is_active=bool(item.get("is_active", True)),
-                preset_group=preset.name,
-                min_margin_pct=float(item.get("min_margin_pct") or 10.0),
-                notify_email=bool(item.get("notify_email", True)),
-                notify_discord=bool(item.get("notify_discord", True)),
-            )
-            db.add(kw)
-            db.flush()
-            created_ids.append(kw.id)
-        except Exception as exc:
-            print(f"[RadarPresets] Skipped: {exc}")
-            continue
-    db.commit()
-    return {"message": f"Preset încărcat — {len(created_ids)} keyword(uri) create.", "created_ids": created_ids}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

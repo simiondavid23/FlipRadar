@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { radarAPI } from "@/lib/api";
 import {
-  Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, Bookmark, TrendingUp
+  Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -95,16 +95,105 @@ function feeCeiling(resale, platform) {
   return Math.max(0, r - ship);
 }
 
+// ── Wizard marketplace (alerte keyword) — NU pentru auto sau imobiliare ──────────
+const WIZARD_PLATFORMS = [
+  { value: "olx", label: "OLX.ro" },
+  { value: "vinted", label: "Vinted.ro" },
+  { value: "facebook", label: "Facebook Marketplace" },
+  { value: "lajumate", label: "LaJumate.ro" },
+  { value: "publi24", label: "Publi24.ro" },
+  { value: "okazii", label: "Okazii.ro" },
+  { value: "kleinanzeigen", label: "eBay Kleinanzeigen" },
+];
+
+const MARKETPLACE_CATEGORIES = {
+  olx: [
+    { name: "Electronice si electrocasnice", sub: ["Telefoane mobile", "Laptopuri si PC", "Tablete", "Casti si audio", "TV si video", "Aparate foto"] },
+    { name: "Imbracaminte si accesorii", sub: ["Haine barbati", "Haine femei", "Pantofi", "Genti si portofele"] },
+    { name: "Casa si gradina", sub: ["Mobila", "Electrocasnice", "Decoratiuni"] },
+    { name: "Sport, timp liber, arta", sub: ["Biciclete", "Fitness", "Gaming", "Muzica"] },
+    { name: "Copii si bebelusi", sub: ["Jucarii", "Imbracaminte copii", "Carucioare"] },
+  ],
+  vinted: [
+    { name: "Femei", sub: ["Bluze si topuri", "Pantaloni", "Rochii", "Geci", "Pantofi", "Genti"] },
+    { name: "Barbati", sub: ["Tricouri", "Pantaloni", "Hanorace", "Incaltaminte"] },
+    { name: "Copii", sub: ["Haine fete", "Haine baieti", "Jucarii", "Carti"] },
+    { name: "Electrocasnice si electronice", sub: ["Telefoane", "Laptopuri", "Tablete", "Accesorii"] },
+  ],
+  facebook: [
+    { name: "Electronica", sub: ["Telefoane", "Computere si laptopuri", "Tablete", "TV si video"] },
+    { name: "Mobilier si articole de interior", sub: ["Canapele", "Paturi", "Birouri"] },
+    { name: "Articole sportive", sub: ["Biciclete", "Echipament fitness"] },
+    { name: "Haine si accesorii", sub: ["Femei", "Barbati", "Copii"] },
+  ],
+  lajumate: [
+    { name: "Electronice", sub: ["Telefoane", "Laptopuri", "Tablete", "Audio-video"] },
+    { name: "Casa si gospodarie", sub: ["Mobila", "Electrocasnice", "Decoratiuni"] },
+    { name: "Moda", sub: ["Haine", "Incaltaminte", "Accesorii"] },
+  ],
+  publi24: [
+    { name: "Electronice si IT", sub: ["Telefoane", "Laptopuri", "Componente PC"] },
+    { name: "Casa si gradina", sub: ["Mobila", "Electrocasnice"] },
+    { name: "Moda", sub: ["Haine", "Incaltaminte"] },
+  ],
+  okazii: [
+    { name: "Electronice", sub: ["Telefoane", "Laptopuri", "Tablete", "Smartwatch"] },
+    { name: "Casa si gradina", sub: ["Mobila", "Electrocasnice mari", "Electrocasnice mici"] },
+    { name: "Moda", sub: ["Imbracaminte", "Incaltaminte", "Genti"] },
+    { name: "Jocuri si console", sub: ["Console", "Jocuri PC", "Accesorii gaming"] },
+  ],
+  kleinanzeigen: [
+    { name: "Elektronik (161)", sub: ["Smartphones (163)", "Laptops (228)", "Tablets (164)", "Kopfhörer (218)"] },
+    { name: "Kleidung (11)", sub: ["Damen (12)", "Herren (13)", "Kinder (55)"] },
+    { name: "Haus und Garten (80)", sub: ["Möbel (83)", "Haushaltsgeräte (227)"] },
+  ],
+};
+
+// Optiuni de stare (condition) per platforma — afisate ca checkboxuri in Pasul 3.
+const CONDITION_BY_PLATFORM = {
+  olx: ["Nou", "Folosit"],
+  vinted: ["Nou cu eticheta", "Nou fara eticheta", "Foarte bun", "Bun", "Satisfacator"],
+  facebook: ["Nou", "Ca nou", "Bun", "Acceptabil", "Defect"],
+  lajumate: ["Nou", "Folosit"],
+  publi24: ["Nou", "Folosit"],
+  okazii: ["Nou", "Folosit"],
+  kleinanzeigen: ["Neu", "Gebraucht"],
+};
+
+const FACEBOOK_DISTANCES = [10, 20, 40, 80];
+const KLEIN_RADIUS = [10, 25, 50, 100, 200];
+const KLEIN_OFFER_TYPES = ["Verkaufen", "Verschenken"];
+
+const JUDETE = [
+  "Alba", "Arad", "Arges", "Bacau", "Bihor", "Bistrita-Nasaud", "Botosani", "Braila",
+  "Brasov", "Bucuresti", "Buzau", "Calarasi", "Caras-Severin", "Cluj", "Constanta",
+  "Covasna", "Dambovita", "Dolj", "Galati", "Giurgiu", "Gorj", "Harghita", "Hunedoara",
+  "Ialomita", "Iasi", "Ilfov", "Maramures", "Mehedinti", "Mures", "Neamt", "Olt",
+  "Prahova", "Salaj", "Satu Mare", "Sibiu", "Suceava", "Teleorman", "Timis", "Tulcea",
+  "Valcea", "Vaslui", "Vrancea",
+];
+
+const EMPTY_WIZARD = {
+  platform: "",
+  keyword: "",
+  category: "",
+  subcategory: "",
+  filters: {},
+};
+
 export default function RadarKeywordsPage() {
   const [keywords, setKeywords] = useState([]);
-  const [presets, setPresets] = useState([]);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [excludeInput, setExcludeInput] = useState("");
-  const [presetName, setPresetName] = useState("");
+  // Wizard marketplace (3 pasi) pentru adaugare keyword
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardData, setWizardData] = useState(EMPTY_WIZARD);
+  const [wizardSaving, setWizardSaving] = useState(false);
   const [trendKw, setTrendKw] = useState(null);
   const [trendData, setTrendData] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
@@ -112,13 +201,11 @@ export default function RadarKeywordsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [kw, ps, cat] = await Promise.all([
+      const [kw, cat] = await Promise.all([
         radarAPI.getKeywords(),
-        radarAPI.getPresets(),
         radarAPI.getCategories().catch(() => null),
       ]);
       setKeywords(kw.data || []);
-      setPresets(ps.data || []);
       if (cat?.data?.categories?.length) setCategories(cat.data.categories);
     } catch (e) {
       console.error("[RadarKeywords]", e);
@@ -134,6 +221,92 @@ export default function RadarKeywordsPage() {
     setForm(EMPTY_FORM);
     setExcludeInput("");
     setShowForm(true);
+  };
+
+  // ── Wizard marketplace ────────────────────────────────────────────────────────
+  const openWizard = () => {
+    setWizardData(EMPTY_WIZARD);
+    setWizardStep(1);
+    setShowWizard(true);
+  };
+
+  const closeWizard = () => {
+    setShowWizard(false);
+    setWizardStep(1);
+    setWizardData(EMPTY_WIZARD);
+  };
+
+  const setWizardFilter = (key, value) => {
+    setWizardData((prev) => ({ ...prev, filters: { ...prev.filters, [key]: value } }));
+  };
+
+  const toggleWizardCondition = (value) => {
+    setWizardData((prev) => {
+      const cur = Array.isArray(prev.filters.condition) ? prev.filters.condition : [];
+      const next = cur.includes(value) ? cur.filter((c) => c !== value) : [...cur, value];
+      return { ...prev, filters: { ...prev.filters, condition: next } };
+    });
+  };
+
+  const wizardCanNext = () => {
+    if (wizardStep === 1) return !!wizardData.platform;
+    if (wizardStep === 2) return !!wizardData.keyword.trim();
+    return true;
+  };
+
+  const wizardSubmit = async () => {
+    const f = wizardData.filters || {};
+    const priceMin = f.price_min !== "" && f.price_min != null ? parseFloat(f.price_min) : null;
+    const priceMax = f.price_max !== "" && f.price_max != null ? parseFloat(f.price_max) : null;
+
+    // Curata filtrele goale pentru config-ul stocat in JSON
+    const cleanFilters = {};
+    for (const [k, v] of Object.entries(f)) {
+      if (v == null || v === "") continue;
+      if (Array.isArray(v) && v.length === 0) continue;
+      if ((k === "price_min" || k === "price_max") && Number.isFinite(parseFloat(v))) {
+        cleanFilters[k] = parseFloat(v);
+      } else {
+        cleanFilters[k] = v;
+      }
+    }
+
+    const payload = {
+      name: wizardData.keyword.trim(),
+      // Backend cere max_price si resale_price > 0; pentru o alerta simpla folosim
+      // pretul maxim ca referinta (resale = max) si marja tinta 0.
+      max_price: priceMax && priceMax > 0 ? priceMax : 1000000,
+      min_price: priceMin && priceMin > 0 ? priceMin : null,
+      resale_price: priceMax && priceMax > 0 ? priceMax : 1000000,
+      category: wizardData.category || null,
+      platforms: [wizardData.platform],
+      condition: "all",
+      judet: f.location_county || null,
+      oras: f.location_city || null,
+      min_margin_pct: 0,
+      marketplace_config: {
+        platform: wizardData.platform,
+        keyword: wizardData.keyword.trim(),
+        category: wizardData.category || null,
+        subcategory: wizardData.subcategory || null,
+        filters: cleanFilters,
+      },
+    };
+
+    if (!payload.name) {
+      alert("Introdu un keyword pentru monitorizare.");
+      return;
+    }
+    setWizardSaving(true);
+    try {
+      await radarAPI.createKeyword(payload);
+      closeWizard();
+      load();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la salvarea keyword-ului.");
+    } finally {
+      setWizardSaving(false);
+    }
   };
 
   const openEdit = (kw) => {
@@ -274,41 +447,6 @@ export default function RadarKeywordsPage() {
     }
   };
 
-  const savePreset = async () => {
-    const n = presetName.trim();
-    if (!n) {
-      alert("Introdu un nume pentru preset.");
-      return;
-    }
-    try {
-      await radarAPI.savePreset({ name: n });
-      setPresetName("");
-      load();
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la salvare preset.");
-    }
-  };
-
-  const loadPreset = async (id) => {
-    if (!confirm("Încărcarea presetului va adăuga noi keyword-uri. Continui?")) return;
-    try {
-      await radarAPI.loadPreset(id);
-      load();
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la încărcare preset.");
-    }
-  };
-
-  const removePreset = async (id) => {
-    if (!confirm("Ștergi presetul?")) return;
-    try {
-      await radarAPI.deletePreset(id);
-      load();
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la ștergere preset.");
-    }
-  };
-
   const openTrend = async (kw, days = 30) => {
     setTrendKw(kw);
     setTrendDays(days);
@@ -371,7 +509,7 @@ export default function RadarKeywordsPage() {
           </p>
         </div>
         <button
-          onClick={openCreate}
+          onClick={openWizard}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -419,7 +557,7 @@ export default function RadarKeywordsPage() {
           borderRadius: "0.75rem",
           color: "var(--text-secondary)",
         }}>
-          Nu ai keyword-uri configurate. Apasă „Adaugă keyword" ca să începi.
+          Nu ai keyword-uri configurate. Apasă „Adaugă keyword” ca să începi.
         </div>
       ) : (
         <div style={{
@@ -448,9 +586,47 @@ export default function RadarKeywordsPage() {
               <tbody>
                 {keywords.map((k) => {
                   const m = k.resale_price > 0 ? ((k.resale_price - k.max_price) / k.resale_price) * 100 : 0;
+                  const excludeWords = (() => {
+                    const raw = k.exclude_words;
+                    if (Array.isArray(raw)) return raw;
+                    try { return JSON.parse(raw || "[]"); }
+                    catch { return []; }
+                  })();
                   return (
                     <tr key={k.id} style={{ borderTop: "1px solid var(--border-color)" }}>
-                      <td style={td}>{k.name}</td>
+                      <td style={td}>
+                        <div>{k.name}</div>
+                        {k.marketplace_config && (() => {
+                          const mc = k.marketplace_config;
+                          const plat = WIZARD_PLATFORMS.find((p) => p.value === mc.platform)?.label || mc.platform;
+                          const cat = [mc.category, mc.subcategory].filter(Boolean).join(" › ");
+                          const ff = mc.filters || {};
+                          const parts = [];
+                          if (Array.isArray(ff.condition) && ff.condition.length) parts.push(ff.condition.join("/"));
+                          if (ff.price_min != null || ff.price_max != null) parts.push(`${ff.price_min ?? "?"}-${ff.price_max ?? "?"} RON`);
+                          if (ff.location_county) parts.push(ff.location_county);
+                          if (ff.plz) parts.push(`PLZ ${ff.plz}`);
+                          return (
+                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: "2px", maxWidth: "260px" }}>
+                              <span style={{ color: "var(--blue-light)", fontWeight: 600 }}>{plat}</span>
+                              {cat ? ` · ${cat}` : ""}{parts.length ? ` · ${parts.join(" · ")}` : ""}
+                            </div>
+                          );
+                        })()}
+                        {excludeWords.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginTop: "0.25rem" }}>
+                            {excludeWords.map((word) => (
+                              <span key={word} style={{
+                                fontSize: "0.6875rem", padding: "0.125rem 0.4rem",
+                                backgroundColor: "rgba(239,68,68,0.12)", color: "#fca5a5",
+                                borderRadius: "0.25rem", display: "inline-block"
+                              }}>
+                                {word}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td style={td}>{k.min_price ? `${Math.round(k.min_price)} RON` : "—"}</td>
                       <td style={td}>{Math.round(k.max_price)} RON</td>
                       <td style={td}>{Math.round(k.resale_price)} RON</td>
@@ -493,68 +669,251 @@ export default function RadarKeywordsPage() {
         </div>
       )}
 
-      {/* Preseturi */}
-      <div style={{
-        marginTop: "1.5rem",
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        padding: "1rem",
-      }}>
-        <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "0.75rem" }}>Preseturi Salvate</h2>
-        {presets.length === 0 ? (
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginBottom: "0.75rem" }}>Nu ai preseturi salvate.</p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.75rem" }}>
-            {presets.map((p) => (
-              <div key={p.id} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)",
-                border: "1px solid var(--border-color)", borderRadius: "0.5rem",
-              }}>
-                <div style={{ fontSize: "0.875rem", color: "var(--text-primary)" }}>
-                  <strong>{p.name}</strong>{" "}
-                  <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
-                    ({(p.keywords_config || []).length} keyword-uri)
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: "0.375rem" }}>
-                  <button onClick={() => loadPreset(p.id)} style={smallBtn("#60a5fa")}>Încarcă</button>
-                  <button onClick={() => removePreset(p.id)} style={smallBtn("#f87171")}>Șterge</button>
-                </div>
-              </div>
-            ))}
+      {/* Wizard marketplace (3 pasi) */}
+      {showWizard && (() => {
+        const wlabel = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
+        const primaryBtn = { padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600 };
+        const secondaryBtn = { padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 };
+        const f = wizardData.filters || {};
+        const plat = wizardData.platform;
+        const platLabel = WIZARD_PLATFORMS.find((p) => p.value === plat)?.label || "";
+
+        const renderCondition = () => (
+          <div>
+            <label style={wlabel}>Stare</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              {(CONDITION_BY_PLATFORM[plat] || []).map((c) => {
+                const checked = Array.isArray(f.condition) && f.condition.includes(c);
+                return (
+                  <label key={c} style={{
+                    display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem",
+                    color: checked ? "var(--blue-light)" : "var(--text-secondary)", cursor: "pointer",
+                    padding: "0.3rem 0.6rem", border: `1px solid ${checked ? "var(--blue-primary)" : "var(--border-color)"}`,
+                    borderRadius: "0.5rem", backgroundColor: checked ? "var(--blue-dim)" : "transparent",
+                  }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleWizardCondition(c)} />
+                    {c}
+                  </label>
+                );
+              })}
+            </div>
           </div>
-        )}
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <input
-            type="text"
-            placeholder="Nume preset nou..."
-            value={presetName}
-            onChange={(e) => setPresetName(e.target.value)}
-            style={{ ...inputStyle, flex: 1 }}
-          />
-          <button
-            onClick={savePreset}
-            style={{
-              padding: "0.5rem 0.875rem",
-              backgroundColor: "rgba(22,163,74,0.15)",
-              color: "#4ade80",
-              border: "1px solid rgba(22,163,74,0.3)",
-              borderRadius: "0.5rem",
-              fontSize: "0.8125rem",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.375rem",
-            }}
-          >
-            <Bookmark style={{ width: "14px", height: "14px" }} />
-            Salvează configurația curentă
-          </button>
-        </div>
-      </div>
+        );
+
+        const renderPrice = () => (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <div>
+              <label style={wlabel}>Pret min (RON)</label>
+              <input type="number" value={f.price_min ?? ""} onChange={(e) => setWizardFilter("price_min", e.target.value)} placeholder="ex: 500" style={inputStyle} />
+            </div>
+            <div>
+              <label style={wlabel}>Pret max (RON)</label>
+              <input type="number" value={f.price_max ?? ""} onChange={(e) => setWizardFilter("price_max", e.target.value)} placeholder="ex: 2000" style={inputStyle} />
+            </div>
+          </div>
+        );
+
+        const renderJudet = () => (
+          <div>
+            <label style={wlabel}>Judet</label>
+            <select value={f.location_county || ""} onChange={(e) => setWizardFilter("location_county", e.target.value)} style={inputStyle}>
+              <option value="">Toate judetele</option>
+              {JUDETE.map((j) => <option key={j} value={j}>{j}</option>)}
+            </select>
+          </div>
+        );
+
+        return (
+          <div onClick={closeWizard} style={{
+            position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 100,
+            display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "3rem 1rem", overflowY: "auto",
+          }}>
+            <div onClick={(e) => e.stopPropagation()} style={{
+              width: "100%", maxWidth: "640px", backgroundColor: "var(--bg-card)",
+              border: "1px solid var(--border-color)", borderRadius: "0.875rem", padding: "1.5rem",
+            }}>
+              {/* Header + pasi */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+                  Adauga keyword — Pasul {wizardStep} din 3
+                </h2>
+                <button onClick={closeWizard} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}>
+                  <X style={{ width: "20px", height: "20px" }} />
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+                {[1, 2, 3].map((s) => (
+                  <div key={s} style={{ flex: 1, height: "4px", borderRadius: "2px", backgroundColor: s <= wizardStep ? "var(--blue-primary)" : "var(--border-color)" }} />
+                ))}
+              </div>
+
+              {/* PAS 1 — platforma */}
+              {wizardStep === 1 && (
+                <div>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: 0, marginBottom: "0.875rem" }}>
+                    Alege platforma pe care vrei sa monitorizezi anunturile.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "0.625rem" }}>
+                    {WIZARD_PLATFORMS.map((p) => {
+                      const active = wizardData.platform === p.value;
+                      return (
+                        <button key={p.value} type="button"
+                          onClick={() => setWizardData({ ...EMPTY_WIZARD, platform: p.value })}
+                          style={{
+                            padding: "0.875rem", borderRadius: "0.625rem", cursor: "pointer", textAlign: "left",
+                            fontSize: "0.8125rem", fontWeight: 600,
+                            backgroundColor: active ? "var(--blue-dim)" : "var(--bg-dark)",
+                            color: active ? "var(--blue-light)" : "var(--text-primary)",
+                            border: `1px solid ${active ? "var(--blue-primary)" : "var(--border-color)"}`,
+                          }}>
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* PAS 2 — keyword + categorii */}
+              {wizardStep === 2 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+                  <div>
+                    <label style={wlabel}>Keyword *</label>
+                    <input value={wizardData.keyword} onChange={(e) => setWizardData({ ...wizardData, keyword: e.target.value })}
+                      placeholder="ex: iPhone 14 Pro" style={inputStyle} autoFocus />
+                  </div>
+                  <div>
+                    <label style={wlabel}>Categorie principala</label>
+                    <select value={wizardData.category}
+                      onChange={(e) => setWizardData({ ...wizardData, category: e.target.value, subcategory: "" })}
+                      style={inputStyle}>
+                      <option value="">Alege categoria</option>
+                      {(MARKETPLACE_CATEGORIES[plat] || []).map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {wizardData.category && (
+                    <div>
+                      <label style={wlabel}>Sub-categorie</label>
+                      <select value={wizardData.subcategory}
+                        onChange={(e) => setWizardData({ ...wizardData, subcategory: e.target.value })}
+                        style={inputStyle}>
+                        <option value="">Toate sub-categoriile</option>
+                        {((MARKETPLACE_CATEGORIES[plat] || []).find((c) => c.name === wizardData.category)?.sub || []).map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* PAS 3 — filtre specifice platformei */}
+              {wizardStep === 3 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
+                    Filtre pentru <strong style={{ color: "var(--text-primary)" }}>{platLabel}</strong>
+                  </p>
+
+                  {plat === "olx" && (<>
+                    {renderCondition()}
+                    {renderPrice()}
+                    {renderJudet()}
+                    <div>
+                      <label style={wlabel}>Oras</label>
+                      <input value={f.location_city || ""} onChange={(e) => setWizardFilter("location_city", e.target.value)} placeholder="ex: Cluj-Napoca" style={inputStyle} />
+                    </div>
+                  </>)}
+
+                  {plat === "vinted" && (<>
+                    {renderCondition()}
+                    <div>
+                      <label style={wlabel}>Marime</label>
+                      <input value={f.size || ""} onChange={(e) => setWizardFilter("size", e.target.value)} placeholder="ex: M, 42, 9.5" style={inputStyle} />
+                    </div>
+                    {renderPrice()}
+                  </>)}
+
+                  {plat === "facebook" && (<>
+                    {renderCondition()}
+                    {renderPrice()}
+                    <div>
+                      <label style={wlabel}>Locatie (oras)</label>
+                      <input value={f.location_city || ""} onChange={(e) => setWizardFilter("location_city", e.target.value)} placeholder="ex: Bucuresti" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={wlabel}>Distanta</label>
+                      <select value={f.distance_km || ""} onChange={(e) => setWizardFilter("distance_km", e.target.value)} style={inputStyle}>
+                        <option value="">Oricare</option>
+                        {FACEBOOK_DISTANCES.map((d) => <option key={d} value={d}>{d} km</option>)}
+                      </select>
+                    </div>
+                  </>)}
+
+                  {(plat === "lajumate" || plat === "publi24" || plat === "okazii") && (<>
+                    {renderCondition()}
+                    {renderPrice()}
+                    {renderJudet()}
+                  </>)}
+
+                  {plat === "kleinanzeigen" && (<>
+                    <div>
+                      <label style={wlabel}>Tip oferta</label>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        {KLEIN_OFFER_TYPES.map((t) => {
+                          const active = f.offer_type === t;
+                          return (
+                            <button key={t} type="button" onClick={() => setWizardFilter("offer_type", t)}
+                              style={{ flex: 1, padding: "0.5rem", borderRadius: "0.5rem", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+                                backgroundColor: active ? "var(--blue-dim)" : "var(--bg-dark)", color: active ? "var(--blue-light)" : "var(--text-primary)",
+                                border: `1px solid ${active ? "var(--blue-primary)" : "var(--border-color)"}` }}>
+                              {t}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {renderCondition()}
+                    <div>
+                      <label style={wlabel}>PLZ (cod postal, 5 cifre)</label>
+                      <input value={f.plz || ""} maxLength={5}
+                        onChange={(e) => setWizardFilter("plz", e.target.value.replace(/\D/g, "").slice(0, 5))}
+                        placeholder="ex: 10115" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={wlabel}>Raza</label>
+                      <select value={f.radius_km || ""} onChange={(e) => setWizardFilter("radius_km", e.target.value)} style={inputStyle}>
+                        <option value="">Oricare</option>
+                        {KLEIN_RADIUS.map((r) => <option key={r} value={r}>{r} km</option>)}
+                      </select>
+                    </div>
+                  </>)}
+                </div>
+              )}
+
+              {/* Footer navigare */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "1.5rem" }}>
+                <button type="button" onClick={() => (wizardStep > 1 ? setWizardStep(wizardStep - 1) : closeWizard())} style={secondaryBtn}>
+                  {wizardStep > 1 ? "Inapoi" : "Anuleaza"}
+                </button>
+                {wizardStep < 3 ? (
+                  <button type="button" disabled={!wizardCanNext()}
+                    onClick={() => wizardCanNext() && setWizardStep(wizardStep + 1)}
+                    style={{ ...primaryBtn, opacity: wizardCanNext() ? 1 : 0.5, cursor: wizardCanNext() ? "pointer" : "not-allowed" }}>
+                    Continua
+                  </button>
+                ) : (
+                  <button type="button" onClick={wizardSubmit} disabled={wizardSaving}
+                    style={{ ...primaryBtn, opacity: wizardSaving ? 0.7 : 1 }}>
+                    {wizardSaving ? "Se salveaza..." : "Salveaza keyword"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Formular modal */}
       {showForm && (
@@ -1013,20 +1372,6 @@ const bulkBtn = {
   fontWeight: 500,
   cursor: "pointer",
 };
-
-function smallBtn(color) {
-  return {
-    padding: "0.3rem 0.625rem",
-    backgroundColor: "var(--bg-card)",
-    color: color,
-    border: `1px solid ${color}55`,
-    borderRadius: "0.375rem",
-    fontSize: "0.75rem",
-    fontWeight: 500,
-    cursor: "pointer",
-  };
-}
-
 
 function CarFiltersSection({ value, onChange, inputStyle }) {
   const set = (k, v) => onChange({ ...value, [k]: v });

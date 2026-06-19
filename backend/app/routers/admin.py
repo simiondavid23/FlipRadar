@@ -400,7 +400,7 @@ def products_report_pdf(
                 self.setFillColor(colors.HexColor("#94a3b8"))
                 self.drawCentredString(
                     A4[0] / 2.0, 1.0 * cm,
-                    f"FlipRadar Admin - pagina {self._pageNumber} din {total}",
+                    f"FlipRadar — pagina {self._pageNumber} din {total}",
                 )
                 super().showPage()
             super().save()
@@ -416,42 +416,39 @@ def products_report_pdf(
     title_style = ParagraphStyle("title", parent=styles["Title"], fontSize=18, spaceAfter=6, textColor=colors.HexColor("#1e40af"))
     sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"))
 
-    # Descrierea filtrelor active
-    active_filters = []
-    if price_min is not None:
-        active_filters.append(f"pret min: {price_min}")
-    if price_max is not None:
-        active_filters.append(f"pret max: {price_max}")
-    if date_from:
-        active_filters.append(f"de la: {date_from}")
-    if date_to:
-        active_filters.append(f"pana la: {date_to}")
-    if category:
-        active_filters.append(f"categorie: {category}")
-    filters_text = ", ".join(active_filters) if active_filters else "niciun filtru aplicat"
+    # Sub-titlu cu toate filtrele aplicate, format compact pe o singura linie.
+    pret_txt = f"{price_min if price_min is not None else '—'}-{price_max if price_max is not None else '—'}"
+    interval_txt = f"{date_from or '—'}-{date_to or '—'}"
+    cat_txt = category or "toate"
 
     elements = []
-    elements.append(Paragraph("Raport Produse - FlipRadar Admin", title_style))
+    elements.append(Paragraph("Raport Produse — FlipRadar Admin", title_style))
     elements.append(Paragraph(
-        f"Data generare: {_dt.now().strftime('%d.%m.%Y %H:%M')}<br/>"
-        f"Filtre active: {filters_text}",
+        f"Generat: {_dt.now().strftime('%d.%m.%Y %H:%M')} | "
+        f"Filtru pret: {pret_txt} | "
+        f"Interval: {interval_txt} | "
+        f"Categorie: {cat_txt}",
         sub_style,
     ))
     elements.append(Spacer(1, 0.5 * cm))
 
-    # Tabel summary
+    # Tabel summary pe 4 coloane: header bold + un rand cu valorile.
     summary_data = [
-        ["Total produse", f"{len(products)}"],
-        ["Pret mediu", f"{pret_mediu:.2f}"],
-        ["ROI mediu", f"{roi_mediu:.2f}%"],
-        ["Profit estimat total", f"{round(profit_estimat_total, 2):.2f}"],
+        ["Total produse", "Pret mediu", "ROI mediu", "Profit estimat total"],
+        [
+            f"{len(products)}",
+            f"{pret_mediu:.2f}",
+            f"{roi_mediu:.2f}%",
+            f"{round(profit_estimat_total, 2):.2f}",
+        ],
     ]
-    summary_tbl = Table(summary_data, colWidths=[6 * cm, 4 * cm])
+    summary_tbl = Table(summary_data, colWidths=[4.5 * cm, 4.5 * cm, 4.5 * cm, 4.5 * cm])
     summary_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
         ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ("PADDING", (0, 0), (-1, -1), 6),
     ]))
@@ -503,7 +500,7 @@ def products_report_pdf(
     return StreamingResponse(
         buf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=raport_admin_{_dt.now().strftime('%Y%m%d_%H%M')}.pdf"},
+        headers={"Content-Disposition": f"attachment; filename=raport_admin_{_dt.now().strftime('%Y%m%d')}.pdf"},
     )
 
 

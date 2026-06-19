@@ -19,15 +19,15 @@ router = APIRouter(prefix="/api/ai", tags=["AI Chat"])
 
 
 # FlipRadar — BUG 8: harta de navigare decuplata de prompt.
-# Actualizeaza aceasta constanta cand se redenumesc pagini din sidebar.
+# Actualizează FLIPRADAR_NAVIGATION_MAP când se redenumesc pagini din sidebar.
 FLIPRADAR_NAVIGATION_MAP = """
 Navigare exacta in aplicatie:
 - Catalog → Descopera Oportunitati: catalogul de produse cu filtre si sortare
 - Catalog → Scanare Magazine: scraping pe Altex, eMAG, PCGarage, Sole, FarmaciaTei
 - Catalog → Oportunitati Salvate: produsele marcate ca favorite
-- Business → Inventar: produse detinute cu calculator profit rapid per articol
-- Business → Registru Vanzari: inregistrarea vanzarilor si calculul profitului
-- Business → Statistici & Profit: rapoarte cu venituri, profit si ROI pe intervale de timp
+- Gestiune → Inventar: produse detinute cu calculator profit rapid per articol
+- Gestiune → Registru Vanzari: inregistrarea vanzarilor si calculul profitului
+- Gestiune → Statistici & Profit: rapoarte cu venituri, profit si ROI pe intervale de timp
 - Monitorizare → Radar Preturi: watchlist cu evolutia preturilor
 - Monitorizare → Alerte Pret: alerte automate cand pretul depaseste un prag
 - Monitorizare → Centru Notificari: feed cu toate alertele declansate
