@@ -11,7 +11,7 @@ import {
   Heart, BellDot, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
   Radar, Target, ShieldOff, Settings, MessageSquare,
-  Calculator, Car, Home, Users
+  Calculator, Car, Home, Users, Activity, Brain, TrendingUp, Rss, Tag
 } from "lucide-react";
 
 // Sidebar-ul ramane mereu dark — pattern UX standard (GitHub, VS Code, Notion).
@@ -36,12 +36,13 @@ const categories = [
     ],
   },
   {
-    id: "marketplace",
-    label: "Marketplace",
+    id: "radar",
+    label: "Radar Piata",
     items: [
-      { name: "Cauta Anunturi", href: "/dashboard/marketplace/search", icon: Search },
-      { name: "Anunturi Salvate", href: "/dashboard/marketplace/saved", icon: Heart },
-      { name: "Alerte Keyword", href: "/dashboard/marketplace/alerts", icon: Bell },
+      { name: "Feed Anunturi", href: "/dashboard/radar", icon: Radar },
+      { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
+      { name: "Sabloane Mesaje", href: "/dashboard/radar/templates", icon: MessageSquare },
+      { name: "Vanzatori Blocati", href: "/dashboard/radar/blocked", icon: ShieldOff },
     ],
   },
   {
@@ -55,8 +56,11 @@ const categories = [
   },
   {
     id: "auto_listings",
-    label: "Anunturi automobile",
+    label: "Auto Anunțuri",
+    icon: Car,
     items: [
+      { name: "Feed Anunțuri", href: "/dashboard/auto-listings/feed", icon: Rss },
+      { name: "Keyword-uri", href: "/dashboard/auto-listings/keywords", icon: Tag },
       { name: "Piata Auto", href: "/dashboard/auto/listings/search", icon: Car },
       { name: "Anunturi Auto Salvate", href: "/dashboard/auto/listings/saved", icon: Heart },
     ],
@@ -64,7 +68,11 @@ const categories = [
   {
     id: "real_estate",
     label: "Imobiliare",
+    icon: Home,
     items: [
+      { name: "Feed Anunțuri", href: "/dashboard/real-estate-monitor/feed", icon: Rss },
+      { name: "Keyword-uri", href: "/dashboard/real-estate-monitor/keywords", icon: Tag },
+      { name: "Grupuri FB — Chirii", href: "/dashboard/real-estate-monitor/groups", icon: Users },
       { name: "Cauta Anunturi", href: "/dashboard/real-estate/search", icon: Home },
       { name: "Anunturi Salvate", href: "/dashboard/real-estate/saved", icon: Heart },
       { name: "Alerte Imobiliare", href: "/dashboard/real-estate/alerts", icon: Bell },
@@ -84,19 +92,9 @@ const categories = [
     id: "monitorizare",
     label: "Monitorizare",
     items: [
+      { name: "Jurnale Live", href: "/dashboard/logs", icon: Activity },
       { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
       { name: "Centru Notificari", href: "/dashboard/notifications", icon: BellDot },
-    ],
-  },
-  {
-    id: "radar",
-    label: "Radar Piata",
-    items: [
-      { name: "Feed Anunturi", href: "/dashboard/radar", icon: Radar },
-      { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
-      { name: "Sabloane Mesaje", href: "/dashboard/radar/templates", icon: MessageSquare },
-      { name: "Vanzatori Blocati", href: "/dashboard/radar/blocked", icon: ShieldOff },
-      { name: "Setari Radar", href: "/dashboard/radar/settings", icon: Settings },
     ],
   },
   {
@@ -107,6 +105,14 @@ const categories = [
       { name: "Consilier AI", href: "/dashboard/ai-analyze", icon: Sparkles, flag: "can_use_ai" },
       { name: "Creator Anunturi", href: "/dashboard/ai-listing", icon: FileText, flag: "can_use_ai" },
       { name: "Raport Piata", href: "/dashboard/ai-report", icon: FileBarChart, flag: "can_use_ai" },
+    ],
+  },
+  {
+    id: "ml",
+    label: "ML Predictor",
+    icon: Brain,
+    items: [
+      { name: "Predictor Preturi", href: "/dashboard/ml-predictor", icon: TrendingUp },
     ],
   },
   {

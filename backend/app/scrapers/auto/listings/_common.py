@@ -1,6 +1,7 @@
 """Comune pentru scraperele de anunturi auto (OLX Auto, Autovit, Mobile.de,
 AutoScout24, Facebook, Kleinanzeigen). curl_cffi (impersonate="chrome131") + BS4.
 """
+import json
 import random
 import re
 from typing import Optional
@@ -28,16 +29,108 @@ def build_headers(extra: Optional[dict] = None) -> dict:
     return headers
 
 
-def parse_price(raw) -> Optional[float]:
-    if raw is None:
+# Limite realiste de pret pentru masini. Un singur prag superior generos acopera
+# ambele monede: EUR (~300k max pe piata RO) si RON (~1.5M ≈ 300k EUR × ~5 RON/EUR).
+# Sub minim = nu e pret; peste maxim = garbage (ex: tot textul cardului concatenat).
+_PRICE_MIN = 200
+_PRICE_MAX = 1_500_000
+
+
+def parse_price(text) -> Optional[float]:
+    """Extrage un pret numeric dintr-un text.
+
+    Interval valid: 200 – 1.500.000 (acopera atat EUR cat si RON).
+    Accepta: "1.500 EUR", "15.000,00 lei", "3500", "€ 8.900".
+    Returneaza None pentru valori lipsa, zero sau in afara intervalului realist
+    — nu mai produce niciodata numere uriase (overflow) din text concatenat.
+    """
+    if not text:
         return None
-    if isinstance(raw, (int, float)):
-        return float(raw)
-    cleaned = re.sub(r"[^\d.,]", "", str(raw)).replace(".", "").replace(",", ".")
+
+    text = str(text).strip()
+
+    # Format romanesc: punct = separator de mii, virgula = separator zecimal.
+    if "," in text and "." in text:
+        # ex: "15.000,00" -> "15000.00"
+        text = text.replace(".", "").replace(",", ".")
+    elif "," in text and "." not in text:
+        # virgula zecimala ("1500,00") vs mii ("1,500"): >2 cifre dupa virgula = mii
+        comma_pos = text.rfind(",")
+        digits_after = len(re.sub(r"[^\d]", "", text[comma_pos + 1:]))
+        text = text.replace(",", ".") if digits_after <= 2 else text.replace(",", "")
+    elif "." in text:
+        # punct ca separator de mii ("1.500" -> "1500") doar cand sunt 3 cifre dupa
+        dot_pos = text.rfind(".")
+        digits_after = len(re.sub(r"[^\d]", "", text[dot_pos + 1:]))
+        if digits_after == 3:
+            text = text.replace(".", "")
+
+    # Primul numar din textul curatat.
+    numeric_match = re.search(r"\d[\d\s]*(?:\.\d+)?", text)
+    if not numeric_match:
+        return None
     try:
-        return float(cleaned) if cleaned else None
+        value = float(numeric_match.group().replace(" ", ""))
     except ValueError:
         return None
+
+    # Garda de plauzibilitate — respinge garbage-ul concatenat.
+    if value <= _PRICE_MIN or value > _PRICE_MAX:
+        return None
+    return value
+
+
+def extract_ld_offers(soup) -> list:
+    """Oferte ordonate {name, price, currency} din JSON-LD (schema.org).
+
+    Acopera structurile uzuale de liste de produse de pe site-urile auto:
+      itemListElement[].item.offers.price / .priceCurrency   (AutoScout24)
+      itemListElement[].offers.price
+      itemListElement[].item.priceSpecification.price
+    Intoarce prima lista care contine cel putin un pret; [] daca nu gaseste.
+    Permite scraperelor sa ia pretul curat din JSON-LD in loc sa-l parseze din
+    textul cardului (sursa overflow-urilor).
+    """
+    def _offer_of(entry):
+        if not isinstance(entry, dict):
+            return {"name": "", "price": None, "currency": "EUR"}
+        item = entry.get("item") if isinstance(entry.get("item"), dict) else entry
+        offers = item.get("offers") or entry.get("offers") or {}
+        if isinstance(offers, list):
+            offers = offers[0] if offers else {}
+        if not isinstance(offers, dict):
+            offers = {}
+        spec = item.get("priceSpecification") or offers.get("priceSpecification") or {}
+        return {
+            "name": str(item.get("name") or entry.get("name") or ""),
+            "price": offers.get("price") or spec.get("price") or item.get("price"),
+            "currency": (offers.get("priceCurrency") or spec.get("priceCurrency")
+                         or item.get("priceCurrency") or "EUR"),
+        }
+
+    def _iter_lists(node):
+        if isinstance(node, dict):
+            il = node.get("itemListElement")
+            if isinstance(il, list) and il:
+                yield il
+            for value in node.values():
+                yield from _iter_lists(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from _iter_lists(value)
+
+    for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        if not script.string:
+            continue
+        try:
+            data = json.loads(script.string)
+        except (ValueError, TypeError):
+            continue
+        for item_list in _iter_lists(data):
+            offers = [_offer_of(entry) for entry in item_list]
+            if any(o["price"] for o in offers):
+                return offers
+    return []
 
 
 def parse_int(raw) -> Optional[int]:
@@ -135,6 +228,10 @@ def make_listing(
         "locatie": locatie,
         "titlu": titlu,
         "descriere": descriere,
+        # Cheie EN pentru extractoarele ML (BMWCollector._features citeste
+        # r.get("description")). Anunturile de tip list-view nu au descriere,
+        # deci ramane "" — downstream-ul nu se rupe.
+        "description": descriere or "",
         "source_url": source_url,
         "thumbnail_url": thumbnail_url,
     }

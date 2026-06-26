@@ -13,6 +13,7 @@ from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price,
     extract_rooms, extract_surface, make_re_listing,
 )
+from app.services.log_manager import log_manager
 
 _BASE = "https://www.storia.ro"
 
@@ -103,16 +104,19 @@ async def search_storia(filters: dict = {}) -> list:
         params["roomsNumber"] = "[ONE,TWO,THREE,FOUR]"
 
     headers = build_headers({"Referer": _BASE + "/"})
+    log_manager.emit("real_estate", "SCAN", f"Storia: {tip_proprietate} {tip_anunt}")
     results = []
     try:
         async with AsyncSession() as session:
             resp = await session.get(url, params=params or None, headers=headers, impersonate=IMPERSONATE, timeout=20)
             if resp.status_code != 200:
                 print(f"[storia] HTTP {resp.status_code}")
+                log_manager.emit("real_estate", "ERR", f"Storia: HTTP {resp.status_code}")
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as exc:
         print(f"[storia] error: {exc}")
+        log_manager.emit("real_estate", "ERR", f"Storia eroare: {str(exc)[:80]}")
         return []
 
     # __NEXT_DATA__ JSON embed
@@ -159,4 +163,5 @@ async def search_storia(filters: dict = {}) -> list:
                 continue
 
     print(f"[storia] {len(results)} anunturi ({tip_proprietate} {tip_anunt})")
+    log_manager.emit("real_estate", "OK", f"Storia: {len(results)} anunturi gasite")
     return results[:MAX_RESULTS]

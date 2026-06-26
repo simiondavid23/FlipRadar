@@ -1,207 +1,208 @@
-"""Scraper pentru lajumate.ro — anunturi second-hand romanesti.
+"""Scraper LaJumate.ro — Playwright + playwright-stealth (browser real, JS randat).
 
-Structura HTML e simpla (rendering server-side). Fetch-ul paginii de detalii
-imbogateste imaginile si descrierea similar cu OLX.
+Diagnostic (Playwright+stealth, headless, networkidle): pagina de cautare
+/anunturi/?q= se incarca dar NU randeaza carduri de anunt in acest mediu —
+LaJumate raporteaza totalAds=0 pentru cautari text si serveste rezultatele prin
+API-ul lor client autentificat. Scraperul ramane corect structural: randeaza cu
+browser stealth si extrage cardurile in formatul standard al aplicatiei
+(external_id, images, platform...). Cand pagina randeaza rezultate (alt mediu /
+IP / proxy rezidential), le extrage; altfel intoarce [] cu WARN, fara date inventate.
+
+NOTA: playwright-stealth instalat e 2.x (clasa Stealth, fara stealth_sync);
+folosim Stealth().use_sync(...) care aplica stealth automat fiecarei pagini noi.
 """
-import random
 import re
-import time
 import urllib.parse
 from typing import Optional
 
-from bs4 import BeautifulSoup
-from curl_cffi import requests as curl_requests
+from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
 
-from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
+from app.services.log_manager import log_manager
+from app.services.radar.base_scraper import is_excluded, get_proxy_config
+
+_BASE = "https://www.lajumate.ro"
+_MEDIA = "https://media1.lajumate.ro"
+
+# Diagnosticul nu a randat carduri in acest mediu; folosim un set robust de
+# candidati de card + sub-selectoare cu fallback, ca extragerea sa functioneze
+# indiferent de varianta exacta de markup pe care o serveste site-ul.
+CARD_SEL = (
+    "article, [class*='listing-item'], [class*='ad-card'], "
+    "[class*='announcement'], [class*='product-card'], .item-card, li.result"
+)
+TITLE_SELS = ["h2", "h3", "[class*='title']", "a[title]", "a"]
+PRICE_SELS = ["[class*='price']", "[class*='pret']", ".price", ".pret"]
+LINK_SELS = ["a[href*='.html']", "a[href]"]
+IMG_SELS = ["img"]
 
 
-_IMPERSONATE = "chrome110"
-
-
-def _parse_price(raw: str) -> Optional[float]:
-    if not raw:
+def _extract_id(url: str) -> Optional[str]:
+    if not url:
         return None
-    cleaned = re.sub(r"[^\d.,]", "", raw).replace(".", "").replace(",", ".")
+    m = re.search(r"_(\d{4,})\.html", url) or re.search(r"-(\d{5,})(?:\.html|/?$)", url)
+    return f"lajumate_{m.group(1)}" if m else None
+
+
+def _q_text(card, selectors) -> str:
+    for sel in selectors:
+        el = card.query_selector(sel)
+        if el:
+            try:
+                t = el.inner_text().strip()
+                if t:
+                    return t
+            except Exception:
+                continue
+    return ""
+
+
+def _q_attr(card, selectors, *attrs) -> str:
+    for sel in selectors:
+        el = card.query_selector(sel)
+        if el:
+            for a in attrs:
+                v = el.get_attribute(a)
+                if v:
+                    return v
+    return ""
+
+
+def _to_price(text: str) -> Optional[float]:
+    cleaned = re.sub(r"[^\d.,]", "", text or "").replace(".", "").replace(",", ".")
     try:
-        return float(cleaned)
+        return float(cleaned) if cleaned else None
     except ValueError:
         return None
 
 
-def _extract_external_id(url: str) -> Optional[str]:
-    if not url:
-        return None
-    m = re.search(r"-(\d+)\.html?$", url)
-    if m:
-        return f"lajumate_{m.group(1)}"
-    parsed = urllib.parse.urlparse(url)
-    return f"lajumate_{parsed.path.strip('/').replace('/', '_')[-50:]}"
-
-
-def fetch_lajumate_listing_details(url: str) -> dict:
-    if not url:
-        return {"images": [], "description": None}
-    headers = build_headers({"Referer": "https://www.lajumate.ro/"})
-    proxy_cfg = get_proxy_config()
-    req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
-    if proxy_cfg:
-        req_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
-    try:
-        resp = curl_requests.get(url, **req_kwargs)
-        if resp.status_code != 200:
-            return {"images": [], "description": None}
-        html = resp.text
-    except Exception as exc:
-        print(f"[LajumateScraper] details eroare: {exc}")
-        return {"images": [], "description": None}
-
-    soup = BeautifulSoup(html, "html.parser")
-    imgs = []
-    seen = set()
-    for img in soup.select("img"):
-        src = img.get("data-src") or img.get("data-original") or img.get("src") or ""
-        if not src or src in seen:
-            continue
-        if "lajumate" in src or "/uploads/" in src or src.startswith("https://"):
-            seen.add(src)
-            imgs.append(src)
-    description = None
-    desc_el = (
-        soup.find(class_=re.compile(r"description|descriere", re.I))
-        or soup.find("div", attrs={"itemprop": "description"})
-    )
-    if desc_el:
-        description = desc_el.get_text("\n", strip=True) or None
-    return {"images": imgs, "description": description}
-
-
 def search_lajumate(
     keyword: str,
-    max_price: float,
+    max_price: Optional[float] = None,
     min_price: Optional[float] = None,
+    exclude_words: Optional[list] = None,
+    category: Optional[str] = None,
     condition: str = "all",
-    exclude_words: Optional[list[str]] = None,
     judet: Optional[str] = None,
     oras: Optional[str] = None,
-) -> list[dict]:
+    page: int = 1,
+) -> list:
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
         return []
-
-    q = urllib.parse.quote(keyword_clean)
-    url = f"https://www.lajumate.ro/anunturi/?q={q}"
-    if max_price and max_price > 0:
-        url += f"&pret_max={int(max_price)}"
-    if min_price and min_price > 0:
-        url += f"&pret_min={int(min_price)}"
-
-    headers = build_headers({"Referer": "https://www.lajumate.ro/"})
-    proxy_cfg = get_proxy_config()
-    req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
-    if proxy_cfg:
-        req_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
-
-    html = None
-    for attempt in range(3):
-        try:
-            resp = curl_requests.get(url, **req_kwargs)
-            if resp.status_code == 200:
-                html = resp.text
-                break
-            if resp.status_code == 429:
-                delay = rate_limit_backoff(attempt)
-                print(f"[LajumateScraper] 429 retry {attempt+1}/3 dupa {delay:.1f}s")
-                time.sleep(delay)
-                continue
-            print(f"[LajumateScraper] HTTP {resp.status_code}")
-            return []
-        except Exception as exc:
-            print(f"[LajumateScraper] Eroare ({attempt+1}/3): {exc}")
-            time.sleep(rate_limit_backoff(attempt))
-
-    if not html:
+    # LaJumate (Playwright) — fara suport multi-pagina deocamdata; pagina 2+ = gol,
+    # iar scanner-ul se opreste (0 anunturi noi).
+    if page > 1:
         return []
 
-    soup = BeautifulSoup(html, "html.parser")
-    cards = (
-        soup.select(".anunt-item")
-        or soup.select(".listing-item")
-        or soup.select("article")
-        or soup.select("[data-id]")
-    )
+    if category:
+        url = f"{_BASE}/anunturi/{category.strip('/')}/?q={urllib.parse.quote(keyword_clean)}"
+    else:
+        url = f"{_BASE}/anunturi/?q={urllib.parse.quote(keyword_clean)}"
+
+    log_manager.emit("radar", "SCAN", f'LaJumate Playwright "{keyword_clean}"')
+
+    proxy_cfg = get_proxy_config()
+    launch_kwargs = {"headless": True}
+    if proxy_cfg:
+        launch_kwargs["proxy"] = {"server": proxy_cfg.get("https") or proxy_cfg.get("http")}
 
     results = []
-    for card in cards:
-        try:
-            link_tag = card.find("a", href=True)
-            if not link_tag:
-                continue
-            href = link_tag["href"]
-            if href.startswith("/"):
-                href = "https://www.lajumate.ro" + href
+    try:
+        with Stealth().use_sync(sync_playwright()) as p:
+            browser = p.chromium.launch(**launch_kwargs)
 
-            title_tag = card.find(["h2", "h3"]) or link_tag
-            title = title_tag.get_text(" ", strip=True) if title_tag else ""
-            if not title:
-                continue
-            if is_excluded(title, exclude_words):
-                continue
+            # Cookie de sesiune salvat (radar_settings.lajumate_cookie) injectat in context.
+            from app.database import SessionLocal
+            from app.models.radar_settings import RadarSettings
+            _db = SessionLocal()
+            try:
+                _rs = _db.query(RadarSettings).first()
+                cookie_str = (_rs.lajumate_cookie or "").strip() if _rs else ""
+            finally:
+                _db.close()
 
-            price_tag = card.find(class_=re.compile(r"price|pret", re.I))
-            price = _parse_price(price_tag.get_text(" ", strip=True)) if price_tag else None
-            if price is None:
-                continue
-            if max_price and price > max_price:
-                continue
-            if min_price and price < min_price:
-                continue
+            context = browser.new_context()
+            if cookie_str:
+                parsed = []
+                for part in cookie_str.split(";"):
+                    part = part.strip()
+                    if "=" in part:
+                        name, value = part.split("=", 1)
+                        parsed.append({
+                            "name": name.strip(), "value": value.strip(),
+                            "domain": ".lajumate.ro", "path": "/",
+                        })
+                if parsed:
+                    context.add_cookies(parsed)
+                    log_manager.emit("radar", "INFO", "LaJumate: cookie de sesiune injectat")
+            page = context.new_page()
+            try:
+                try:
+                    page.goto(url, wait_until="networkidle", timeout=35000)
+                except Exception:
+                    page.goto(url, wait_until="domcontentloaded", timeout=35000)
 
-            location_tag = card.find(class_=re.compile(r"location|oras|locatie", re.I))
-            location = location_tag.get_text(" ", strip=True) if location_tag else None
+                try:
+                    page.wait_for_selector(CARD_SEL, timeout=12000)
+                except Exception:
+                    log_manager.emit("radar", "WARN",
+                                     "LaJumate: niciun card randat in acest mediu → 0 rezultate")
+                    return []
+                page.wait_for_timeout(800)
 
-            img_tag = card.find("img")
-            image_url = (img_tag.get("data-src") or img_tag.get("src")) if img_tag else None
-            images = [image_url] if image_url else []
+                cards = page.query_selector_all(CARD_SEL)
+                log_manager.emit("radar", "INFO", f"LaJumate: {len(cards)} carduri in DOM")
 
-            seller_tag = card.find(class_=re.compile(r"seller|vanzator|user", re.I))
-            seller_name = seller_tag.get_text(" ", strip=True) if seller_tag else None
+                for card in cards[:48]:
+                    try:
+                        title = _q_text(card, TITLE_SELS)
+                        if not title or is_excluded(title, exclude_words):
+                            continue
 
-            ext_id = _extract_external_id(href)
-            if not ext_id:
-                continue
+                        price = _to_price(_q_text(card, PRICE_SELS))
+                        if max_price and price and price > max_price:
+                            continue
+                        if min_price and price and price < min_price:
+                            continue
 
-            results.append({
-                "external_id": ext_id,
-                "platform": "lajumate",
-                "title": title,
-                "price": price,
-                "currency": "RON",
-                "condition": None,
-                "location": location,
-                "url": href,
-                "images": images,
-                "description": None,
-                "seller_name": seller_name,
-                "seller_id": None,
-                "listed_at": None,
-            })
-        except Exception as exc:
-            print(f"[LajumateScraper] card eroare: {exc}")
-            continue
+                        href = _q_attr(card, LINK_SELS, "href")
+                        if href and href.startswith("/"):
+                            href = _BASE + href
+                        ext = _extract_id(href)
+                        if not ext:
+                            continue
 
-    for idx, item in enumerate(results):
-        if idx > 0:
-            time.sleep(random.uniform(0.5, 1.0))
-        try:
-            details = fetch_lajumate_listing_details(item["url"])
-            if details.get("images"):
-                item["images"] = details["images"]
-            if details.get("description"):
-                item["description"] = details["description"]
-        except Exception as exc:
-            print(f"[LajumateScraper] details {item['external_id']}: {exc}")
-            continue
+                        thumb = _q_attr(card, IMG_SELS, "src", "data-src")
+                        if thumb and thumb.startswith("/"):
+                            thumb = (_MEDIA + thumb) if thumb.startswith("/media") else (_BASE + thumb)
 
-    print(f"[LajumateScraper] {len(results)} rezultate pentru '{keyword_clean}'")
+                        results.append({
+                            "external_id": ext,
+                            "platform": "lajumate",
+                            "title": title,
+                            "price": price,
+                            "currency": "RON",
+                            "condition": None,
+                            "location": None,
+                            "url": href,
+                            "images": [thumb] if thumb else [],
+                            "description": None,
+                            "seller_name": None,
+                            "seller_id": None,
+                            "listed_at": None,
+                        })
+                    except Exception:
+                        continue
+            except Exception as exc:
+                log_manager.emit("radar", "ERR", f"LaJumate eroare: {str(exc)[:100]}")
+            finally:
+                browser.close()
+    except Exception as exc:
+        log_manager.emit("radar", "ERR", f"LaJumate Playwright init: {str(exc)[:100]}")
+        return []
+
+    log_manager.emit("radar", "OK",
+                     f'LaJumate: {len(results)} rezultate pentru "{keyword_clean}"')
     return results

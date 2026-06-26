@@ -30,7 +30,9 @@ from app.services.email_service import is_configured as smtp_configured, send_em
 from app.services.push_service import is_push_configured, notify_user_push
 from app.services.radar.ai_reviewer import generate_ai_review
 from app.services.radar.cleanup_service import cleanup_sold_listings
-from app.services.radar.discord_service import route_discord_alerts
+from app.services.discord_service import send_radar_notification
+from app.services.log_manager import log_manager
+from app.services.ml.feed_ml_bridge import try_save_to_ml
 from app.services.radar.autovit_scraper import search_autovit
 from app.services.radar.facebook_scraper import search_facebook
 from app.services.radar.lajumate_scraper import search_lajumate
@@ -47,6 +49,22 @@ _cycle_counter = {"n": 0}
 
 # Delay intre scraping-urile platformelor pentru a evita blocaje.
 _PLATFORM_DELAY_RANGE = (1.5, 3.5)
+
+# MODULE 2 — delay (secunde) intre paginile aceleiasi platforme la paginare.
+_PLATFORM_DELAYS = {
+    "olx": 0.5,
+    "vinted": 1.0,
+    "publi24": 0.5,
+    "okazii": 1.0,
+    "lajumate": 1.0,
+    "facebook": 2.0,
+    "autovit": 1.0,
+    "mobilede": 1.0,
+}
+
+
+def _get_platform_delay(platform: str) -> float:
+    return _PLATFORM_DELAYS.get((platform or "").lower(), 1.0)
 
 
 # Seturi globale partajate cu router-ul: cand userul dezactiveaza/sterge un
@@ -129,14 +147,19 @@ def _run_scraper(
     keyword: RadarKeyword,
     settings: RadarSettings,
     exclude_words: list[str],
+    page: int = 1,
 ) -> list[dict]:
     """Apel sincron la scraperul potrivit. Try/except per scraper ca un crash
     pe o platforma sa nu opreasca scanul pentru celelalte.
     """
     try:
+        # MODULE 1d — cuvinte excluse pe descriere (doar OLX & Vinted le primesc)
+        desc_raw = getattr(keyword, "exclude_description_words", None)
+        desc_exclude = desc_raw if isinstance(desc_raw, list) else _parse_json_list(desc_raw)
         if platform == "olx":
             return search_olx(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 judet=keyword.judet,
                 oras=keyword.oras,
@@ -144,20 +167,24 @@ def _run_scraper(
                 exclude_words=exclude_words,
                 min_price=keyword.min_price,
                 category=keyword.category,
+                exclude_description_words=desc_exclude,
             )
         if platform == "vinted":
             return search_vinted(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 condition=keyword.condition or "all",
                 exclude_words=exclude_words,
                 cookie_str=settings.vinted_cookie,
                 min_price=keyword.min_price,
                 category=keyword.category,
+                exclude_description_words=desc_exclude,
             )
         if platform == "okazii":
             return search_okazii(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 condition=keyword.condition or "all",
                 exclude_words=exclude_words,
@@ -167,6 +194,7 @@ def _run_scraper(
         if platform == "facebook":
             return search_facebook(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 judet=keyword.judet,
                 oras=keyword.oras,
@@ -178,22 +206,26 @@ def _run_scraper(
         if platform == "lajumate":
             return search_lajumate(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 min_price=keyword.min_price,
                 condition=keyword.condition or "all",
                 exclude_words=exclude_words,
                 judet=keyword.judet,
                 oras=keyword.oras,
+                category=keyword.category,
             )
         if platform == "publi24":
             return search_publi24(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 min_price=keyword.min_price,
                 condition=keyword.condition or "all",
                 exclude_words=exclude_words,
                 judet=keyword.judet,
                 oras=keyword.oras,
+                category=keyword.category,
             )
         if platform in ("autovit", "mobilede"):
             try:
@@ -203,6 +235,7 @@ def _run_scraper(
             if platform == "autovit":
                 return search_autovit(
                     keyword=keyword.name,
+                    page=page,
                     max_price=keyword.max_price,
                     min_price=keyword.min_price,
                     exclude_words=exclude_words,
@@ -210,6 +243,7 @@ def _run_scraper(
                 )
             return search_mobilede(
                 keyword=keyword.name,
+                page=page,
                 max_price=keyword.max_price,
                 min_price=keyword.min_price,
                 exclude_words=exclude_words,
@@ -354,6 +388,20 @@ def _notify_vinted_cookie_expired(db: Session, user_id: int) -> None:
     ))
 
 
+def _is_within_active_hours(kw) -> bool:
+    """Returns True if the keyword should be scanned at the current time.
+    Supports overnight ranges: e.g. start=22, end=6 → active 22:00–05:59.
+    """
+    if kw.active_hours_start is None or kw.active_hours_end is None:
+        return True
+    h = datetime.now().hour
+    s, e = kw.active_hours_start, kw.active_hours_end
+    if s <= e:
+        return s <= h < e
+    else:  # overnight
+        return h >= s or h < e
+
+
 def _scan_user(db: Session, user: User) -> dict:
     """Scaneaza toate keyword-urile active ale unui user. Returneaza statistici."""
     stats = {"new_listings": 0, "alerts_sent": 0}
@@ -371,7 +419,15 @@ def _scan_user(db: Session, user: User) -> dict:
         if not _should_scan_keyword(kw):
             continue
 
-        platforms = _parse_json_list(kw.platforms)
+        if not _is_within_active_hours(kw):
+            log_manager.emit("radar", "INFO",
+                f'Keyword "{kw.name}" — skip (interval orar {kw.active_hours_start:02d}:00–{kw.active_hours_end:02d}:00 inactiv)')
+            continue
+
+        if kw.platform:
+            platforms = [kw.platform]
+        else:
+            platforms = _parse_json_list(kw.platforms) or []
         exclude_words = _parse_json_list(kw.exclude_words)
 
         cancelled_mid_loop = False
@@ -386,20 +442,44 @@ def _scan_user(db: Session, user: User) -> dict:
             if idx > 0:
                 time.sleep(random.uniform(*_PLATFORM_DELAY_RANGE))
 
-            listings = _run_scraper(platform, kw, settings, exclude_words)
-            # Vinted semnaleaza cookie expirat printr-un dict-santinela; il
-            # detectam, il filtram din rezultatele reale si avertizam userul.
-            if platform == "vinted":
-                vinted_results = listings
-                vinted_auth_error = any(
-                    isinstance(r, dict) and r.get("__vinted_auth_error") for r in vinted_results
-                )
-                listings = [
-                    r for r in vinted_results
-                    if not (isinstance(r, dict) and r.get("__vinted_auth_error"))
-                ]
-                if vinted_auth_error:
-                    _notify_vinted_cookie_expired(db, user.id)
+            log_manager.emit("radar", "SCAN", f'Keyword "{kw.name}" · {platform} · ciclu #{_cycle_counter["n"]}')
+            # MODULE 2 — paginare: aduna pagini pana cand una nu mai aduce anunturi
+            # noi (necunoscute). Procesarea de mai jos ruleaza pe setul combinat.
+            listings = []
+            _seen_ext: set = set()
+            _page = 1
+            _page_delay = _get_platform_delay(platform)
+            while True:
+                page_listings = _run_scraper(platform, kw, settings, exclude_words, page=_page)
+                # Vinted semnaleaza cookie expirat printr-un dict-santinela; il
+                # detectam, il filtram din rezultatele reale si avertizam userul.
+                if platform == "vinted":
+                    if any(isinstance(r, dict) and r.get("__vinted_auth_error") for r in page_listings):
+                        _notify_vinted_cookie_expired(db, user.id)
+                    page_listings = [
+                        r for r in page_listings
+                        if not (isinstance(r, dict) and r.get("__vinted_auth_error"))
+                    ]
+                if not page_listings:
+                    break
+                fresh = [r for r in page_listings
+                         if r.get("external_id") and r.get("external_id") not in _seen_ext]
+                for r in fresh:
+                    _seen_ext.add(r.get("external_id"))
+                new_on_page = [r for r in fresh
+                               if not _already_seen(db, user.id, platform, r.get("external_id"))]
+                listings.extend(fresh)
+                log_manager.emit("radar", "INFO",
+                    f'{platform} pagina {_page}: {len(page_listings)} găsite · {len(new_on_page)} potențial noi')
+                # Facebook deruleaza intern (infinite scroll) si intoarce tot setul
+                # intr-un singur apel — nu mai paginam ca sa nu re-derulam degeaba.
+                if platform == "facebook":
+                    break
+                if not new_on_page:
+                    break
+                _page += 1
+                time.sleep(_page_delay)
+            _new_before = stats["new_listings"]
             for listing in listings:
                 if _is_keyword_cancelled(kw.id):
                     print(f"[RadarScanner] Keyword {kw.id} dezactivat/șters — opresc procesarea.")
@@ -453,20 +533,57 @@ def _scan_user(db: Session, user: User) -> dict:
                     db.flush()
                     stats["new_listings"] += 1
 
+                    # MODULE 5 — bridge ML: daca titlul matchuieste o categorie
+                    # (Apple/BMW), salveaza si in market_listings. Erorile ML nu
+                    # trebuie sa rupa niciodata scanul Radar.
+                    try:
+                        try_save_to_ml(
+                            db=db,
+                            title=listing.get("title") or "",
+                            price=float(listing.get("price") or 0),
+                            currency=listing.get("currency") or "RON",
+                            external_id=listing.get("external_id") or str(listing_db.id),
+                            platform=platform,
+                            source_url=listing.get("url") or "",
+                            thumbnail_url=(listing.get("images") or [None])[0] or "",
+                            description=listing.get("description") or "",
+                        )
+                    except Exception:
+                        pass
+
+                    if score_data["score"] == "A":
+                        log_manager.emit("radar", "OK",
+                            f'Deal: {listing.get("title","")[:60]} — {int(float(listing.get("price") or 0))} RON · '
+                            f'Marjă {int(score_data["margin_pct"] or 0)}% · Grad A')
+
                     if not score_data["filtered"]:
                         # Discord doar daca keyword-ul are notify_discord activ
                         if getattr(kw, "notify_discord", False):
-                            sent = route_discord_alerts(
-                                settings=settings,
-                                listing=listing,
+                            _price = float(listing.get("price") or 0)
+                            _resale = float(kw.resale_price or 0)
+                            listing_dict = {
+                                "title": listing.get("title", ""),
+                                "price": listing.get("price"),
+                                "currency": listing.get("currency") or "RON",
+                                "url": listing.get("url", ""),
+                                "image_url": (listing.get("images") or [None])[0] or "",
+                                "location": listing.get("location") or "",
+                                "platform": listing.get("platform") or platform,
+                                "resale_price": int(_resale) if _resale else None,
+                                "margin": int(_resale - _price) if (_resale and _price) else None,
+                            }
+                            queued = send_radar_notification(
+                                listing=listing_dict,
+                                grade=score_data["score"],
+                                score=int(round(score_data.get("margin_pct") or 0)),
                                 keyword_name=kw.name,
-                                score=score_data["score"],
-                                resale_price=kw.resale_price,
-                                margin_pct=score_data["margin_pct"],
-                                listed_at=listing.get("listed_at"),
-                                found_at=listing_db.found_at,
+                                settings=settings,
+                                listing_id=str(listing_db.id),
+                                db=db,
                             )
-                            stats["alerts_sent"] += sent
+                            stats["alerts_sent"] += queued or 0
+                            if queued:
+                                log_manager.emit("radar", "NOTIF", f"Discord în coadă → {queued} canal(e)")
                         # In-app intotdeauna (independent de setari)
                         _create_inapp_notification(db, user.id, listing_db, kw)
                         # Email doar daca scor A/B SI keyword-ul are notify_email activ
@@ -494,7 +611,10 @@ def _scan_user(db: Session, user: User) -> dict:
                                 print(f"[RadarScanner] Push esuat: {exc}")
                 except Exception as exc:
                     print(f"[RadarScanner] Eroare la procesare listing: {exc}")
+                    log_manager.emit("radar", "ERR", f"Eroare {platform}: {str(exc)[:100]}")
                     continue
+            _new_count = stats["new_listings"] - _new_before
+            log_manager.emit("radar", "OK", f"{platform}: {_new_count} anunțuri noi · {len(listings)} verificate")
             if cancelled_mid_loop:
                 break
 

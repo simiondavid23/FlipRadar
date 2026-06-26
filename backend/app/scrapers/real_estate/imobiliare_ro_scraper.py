@@ -8,6 +8,7 @@ from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price, parse_int,
     extract_rooms, extract_surface, detect_currency, make_re_listing,
 )
+from app.services.log_manager import log_manager
 
 _BASE = "https://www.imobiliare.ro"
 
@@ -45,16 +46,19 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
         params["suprafata_min"] = int(filters["suprafata_min"])
 
     headers = build_headers({"Referer": _BASE + "/"})
+    log_manager.emit("real_estate", "SCAN", f"Imobiliare.ro: {tip_proprietate} {tip_anunt}")
     results = []
     try:
         async with AsyncSession() as session:
             resp = await session.get(url, params=params or None, headers=headers, impersonate=IMPERSONATE, timeout=20)
             if resp.status_code != 200:
                 print(f"[imobiliare] HTTP {resp.status_code}")
+                log_manager.emit("real_estate", "ERR", f"Imobiliare.ro: HTTP {resp.status_code}")
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as exc:
         print(f"[imobiliare] error: {exc}")
+        log_manager.emit("real_estate", "ERR", f"Imobiliare.ro eroare: {str(exc)[:80]}")
         return []
 
     cards = (
@@ -110,4 +114,5 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
             continue
 
     print(f"[imobiliare] {len(results)} anunturi ({tip_proprietate} {tip_anunt})")
+    log_manager.emit("real_estate", "OK", f"Imobiliare.ro: {len(results)} anunturi gasite")
     return results[:MAX_RESULTS]

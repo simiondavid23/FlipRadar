@@ -1,9 +1,12 @@
 "use client";
 import { useState } from "react";
 import { aiAPI } from "@/lib/api";
-import { FileBarChart, RefreshCw, TrendingUp, AlertCircle, Lightbulb, Activity } from "lucide-react";
+import { FileBarChart, RefreshCw, TrendingUp, AlertCircle, Lightbulb, Activity, Lock } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 export default function AIReportPage() {
+  const { user } = useAuth();
+  const featureDisabled = user?.ai_features_config?.ai_report === false;
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -62,7 +65,7 @@ export default function AIReportPage() {
             Analiza de piata generata automat pentru categoria ta de produse
           </p>
         </div>
-        <button onClick={generateReport} disabled={loading}
+        <button onClick={featureDisabled ? undefined : generateReport} disabled={loading || featureDisabled}
           style={{
             display: "flex", alignItems: "center", gap: "0.5rem",
             padding: "0.625rem 1.25rem", borderRadius: "0.625rem",
@@ -82,6 +85,24 @@ export default function AIReportPage() {
         </button>
       </div>
 
+      {featureDisabled && (
+        <div style={{
+          backgroundColor: "rgba(100,116,139,0.1)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem",
+          padding: "1rem 1.25rem",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          marginBottom: "1.5rem",
+        }}>
+          <Lock style={{ width: "18px", height: "18px", color: "var(--text-secondary)", flexShrink: 0 }} />
+          <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+            Această funcționalitate este dezactivată.{" "}
+            <a href="/dashboard/settings" style={{ color: "#60a5fa", fontWeight: 600 }}>Activează din Setări →</a>
+          </span>
+        </div>
+      )}
+
+      <div style={{ opacity: featureDisabled ? 0.4 : 1, pointerEvents: featureDisabled ? "none" : "auto" }}>
       {error && (
         <div style={{
           display: "flex", alignItems: "center", gap: "0.75rem",
@@ -194,6 +215,7 @@ export default function AIReportPage() {
           </p>
         </div>
       )}
+      </div>
     </div>
   );
 }

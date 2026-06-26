@@ -1,4 +1,5 @@
 """Autovit.ro — anunturi auto. platform="autovit"."""
+import json
 import re
 import urllib.parse
 
@@ -9,6 +10,7 @@ from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
 )
+from app.services.log_manager import log_manager
 
 _BASE = "https://www.autovit.ro"
 
@@ -17,7 +19,53 @@ def _slug(text: str) -> str:
     return urllib.parse.quote((text or "").strip().lower().replace(" ", "-"))
 
 
-async def search_autovit(make: str = "", model: str = "", filters: dict = {}) -> list:
+def _extract_ld_prices(soup) -> list:
+    """Extrage preturile curate din JSON-LD (schema.org OfferCatalog).
+
+    Autovit NU pune pretul in markup-ul cardului (e randat separat / in alt
+    container), dar il expune curat in blocul JSON-LD ca lista de Offer-uri,
+    aliniata 1:1 si in aceeasi ordine cu cardurile <article data-id>.
+    Returneaza [{"name", "price", "currency"}, ...] sau [] daca lipseste.
+    """
+    def _find_catalog(node):
+        if isinstance(node, dict):
+            if node.get("@type") == "OfferCatalog" and isinstance(node.get("itemListElement"), list):
+                return node["itemListElement"]
+            for value in node.values():
+                found = _find_catalog(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for value in node:
+                found = _find_catalog(value)
+                if found is not None:
+                    return found
+        return None
+
+    for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        if not script.string:
+            continue
+        try:
+            data = json.loads(script.string)
+        except (ValueError, TypeError):
+            continue
+        catalog = _find_catalog(data)
+        if not catalog:
+            continue
+        offers = []
+        for entry in catalog:
+            spec = (entry.get("priceSpecification") if isinstance(entry, dict) else None) or {}
+            item = (entry.get("itemOffered") if isinstance(entry, dict) else None) or {}
+            offers.append({
+                "name": str(item.get("name") or ""),
+                "price": spec.get("price"),
+                "currency": spec.get("priceCurrency") or "EUR",
+            })
+        return offers
+    return []
+
+
+async def search_autovit(make: str = "", model: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     path = "/autoturisme/"
     if make:
@@ -27,6 +75,8 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}) ->
     url = _BASE + path
 
     params = {}
+    if page > 1:
+        params["page"] = page
     if make:
         params["search[filter_enum_make][0]"] = make
     if filters.get("price_min") is not None:
@@ -37,16 +87,19 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}) ->
         params["search[filter_float_year:from]"] = int(filters["year_min"])
 
     headers = build_headers({"Referer": _BASE + "/"})
+    log_manager.emit("auto_listings", "SCAN", f"Autovit: cautare {(make + ' ' + model).strip() or 'auto'}")
     results = []
     try:
         async with AsyncSession() as session:
             resp = await session.get(url, params=params, headers=headers, impersonate=IMPERSONATE, timeout=20)
             if resp.status_code != 200:
                 print(f"[autovit] HTTP {resp.status_code}")
+                log_manager.emit("auto_listings", "ERR", f"Autovit: HTTP {resp.status_code}")
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as exc:
         print(f"[autovit] error: {exc}")
+        log_manager.emit("auto_listings", "ERR", f"Autovit eroare: {str(exc)[:80]}")
         return []
 
     cards = (
@@ -54,7 +107,10 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}) ->
         or soup.select('[data-testid="listing-ad"]')
         or soup.select("article")
     )
-    for card in cards:
+    # Preturile curate vin din JSON-LD (aliniate 1:1 cu cardurile), pentru ca
+    # markup-ul cardului nu contine pretul.
+    ld_prices = _extract_ld_prices(soup)
+    for idx, card in enumerate(cards):
         try:
             link = card.find("a", href=True)
             if not link:
@@ -69,10 +125,14 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}) ->
                 continue
 
             card_text = card.get_text(" ", strip=True)
-            price_el = card.find(class_=re.compile(r"price", re.I)) or card.find(attrs={"data-testid": re.compile(r"price", re.I)})
-            price_raw = price_el.get_text(" ", strip=True) if price_el else card_text
-            pret = parse_price(price_raw)
-            moneda = "EUR" if ("€" in price_raw or "eur" in price_raw.lower()) else "RON"
+            # Pretul vine din JSON-LD, asociat pe pozitie si validat dupa titlu.
+            # NU mai cadem niciodata pe parse_price(card_text) — acolo aparea
+            # overflow-ul (tot textul cardului concatenat intr-un numar urias).
+            pret, moneda = None, "EUR"
+            offer = ld_prices[idx] if idx < len(ld_prices) else None
+            if offer and offer["name"].strip().lower() == titlu.strip().lower():
+                pret = parse_price(offer["price"])
+                moneda = offer["currency"] or "EUR"
 
             loc_el = card.find(class_=re.compile(r"location", re.I))
             locatie = loc_el.get_text(" ", strip=True) if loc_el else None
@@ -97,4 +157,5 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}) ->
             continue
 
     print(f"[autovit] {len(results)} anunturi (make='{make}')")
+    log_manager.emit("auto_listings", "OK", f"Autovit: {len(results)} anunturi gasite")
     return results[:MAX_LISTINGS]

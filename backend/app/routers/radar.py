@@ -31,7 +31,7 @@ from app.models.radar_message_template import RadarMessageTemplate
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.radar.ai_reviewer import generate_ai_review
-from app.services.radar.categories import CATEGORY_OPTIONS
+from app.services.radar.categories import PLATFORM_CATEGORIES
 from app.services.radar.discord_service import send_test_message
 from app.services.radar.excel_exporter import build_listings_xlsx
 from app.services.radar.facebook_auth import start_facebook_login_session
@@ -59,7 +59,11 @@ class KeywordCreate(BaseModel):
     min_price: Optional[float] = None
     resale_price: float
     category: Optional[str] = None
+    platform: Optional[str] = None
     exclude_words: list[str] = []
+    exclude_description_words: Optional[list] = None
+    active_hours_start: Optional[int] = None
+    active_hours_end: Optional[int] = None
     platforms: list[str] = ["olx", "vinted", "okazii"]
     poll_interval_minutes: int = 5
     judet: Optional[str] = None
@@ -80,7 +84,11 @@ class KeywordUpdate(BaseModel):
     min_price: Optional[float] = None
     resale_price: Optional[float] = None
     category: Optional[str] = None
+    platform: Optional[str] = None
     exclude_words: Optional[list[str]] = None
+    exclude_description_words: Optional[list] = None
+    active_hours_start: Optional[int] = None
+    active_hours_end: Optional[int] = None
     platforms: Optional[list[str]] = None
     poll_interval_minutes: Optional[int] = None
     judet: Optional[str] = None
@@ -103,6 +111,16 @@ class SettingsUpdate(BaseModel):
     discord_webhook_all: Optional[str] = None
     discord_webhook_buy_now: Optional[str] = None
     discord_webhook_maybe: Optional[str] = None
+    discord_webhook_auto: Optional[str] = None
+    discord_webhook_auto_all: Optional[str] = None
+    discord_webhook_auto_b: Optional[str] = None
+    discord_webhook_imob_all: Optional[str] = None
+    discord_webhook_imob_a: Optional[str] = None
+    discord_webhook_imob_b: Optional[str] = None
+    discord_here_radar: Optional[bool] = None
+    discord_here_auto: Optional[bool] = None
+    discord_here_imob: Optional[bool] = None
+    custom_zone_aliases: Optional[dict] = None
     platform_olx_enabled: Optional[bool] = None
     platform_vinted_enabled: Optional[bool] = None
     platform_okazii_enabled: Optional[bool] = None
@@ -112,12 +130,15 @@ class SettingsUpdate(BaseModel):
     platform_autovit_enabled: Optional[bool] = None
     platform_mobilede_enabled: Optional[bool] = None
     vinted_cookie: Optional[str] = None
+    lajumate_cookie: Optional[str] = None
+    okazii_cookie: Optional[str] = None
 
 
 class ManualSearchRequest(BaseModel):
     keyword: str
     max_price: float
     min_price: Optional[float] = None
+    platform: Optional[str] = None
     platforms: list[str] = []
     category: Optional[str] = None
     exclude_words: list[str] = []
@@ -179,7 +200,11 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "min_price": kw.min_price,
         "resale_price": kw.resale_price,
         "category": kw.category,
+        "platform": getattr(kw, "platform", None),
         "exclude_words": _parse_json_list(kw.exclude_words),
+        "exclude_description_words": (getattr(kw, "exclude_description_words", None) or []),
+        "active_hours_start": getattr(kw, "active_hours_start", None),
+        "active_hours_end": getattr(kw, "active_hours_end", None),
         "platforms": _parse_json_list(kw.platforms),
         "poll_interval_minutes": kw.poll_interval_minutes,
         "judet": kw.judet,
@@ -260,6 +285,16 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "discord_webhook_all": s.discord_webhook_all,
         "discord_webhook_buy_now": s.discord_webhook_buy_now,
         "discord_webhook_maybe": s.discord_webhook_maybe,
+        "discord_webhook_auto": getattr(s, "discord_webhook_auto", None),
+        "discord_webhook_auto_all": getattr(s, "discord_webhook_auto_all", None),
+        "discord_webhook_auto_b": getattr(s, "discord_webhook_auto_b", None),
+        "discord_webhook_imob_all": getattr(s, "discord_webhook_imob_all", None),
+        "discord_webhook_imob_a": getattr(s, "discord_webhook_imob_a", None),
+        "discord_webhook_imob_b": getattr(s, "discord_webhook_imob_b", None),
+        "discord_here_radar": bool(getattr(s, "discord_here_radar", False)),
+        "discord_here_auto": bool(getattr(s, "discord_here_auto", False)),
+        "discord_here_imob": bool(getattr(s, "discord_here_imob", False)),
+        "custom_zone_aliases": getattr(s, "custom_zone_aliases", None) or {},
         "platform_olx_enabled": s.platform_olx_enabled,
         "platform_vinted_enabled": s.platform_vinted_enabled,
         "platform_okazii_enabled": s.platform_okazii_enabled,
@@ -269,6 +304,8 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "platform_autovit_enabled": bool(getattr(s, "platform_autovit_enabled", True)),
         "platform_mobilede_enabled": bool(getattr(s, "platform_mobilede_enabled", True)),
         "vinted_cookie": s.vinted_cookie,
+        "lajumate_cookie": getattr(s, "lajumate_cookie", None),
+        "okazii_cookie": getattr(s, "okazii_cookie", None),
         "facebook_session_path": s.facebook_session_path,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
@@ -287,7 +324,7 @@ def _default_facebook_session_path(user_id: int) -> str:
 
 @router.get("/categories")
 def list_categories(current_user: User = Depends(get_current_user)):
-    return {"categories": CATEGORY_OPTIONS}
+    return PLATFORM_CATEGORIES
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -332,7 +369,11 @@ def create_keyword(
         min_price=data.min_price,
         resale_price=data.resale_price,
         category=data.category,
+        platform=data.platform,
         exclude_words=json.dumps(data.exclude_words or [], ensure_ascii=False),
+        exclude_description_words=(data.exclude_description_words or None),
+        active_hours_start=data.active_hours_start,
+        active_hours_end=data.active_hours_end,
         platforms=json.dumps(data.platforms or ["olx"], ensure_ascii=False),
         poll_interval_minutes=max(1, int(data.poll_interval_minutes or 5)),
         judet=data.judet,
@@ -376,8 +417,17 @@ def update_keyword(
         kw.resale_price = data.resale_price
     if data.category is not None:
         kw.category = data.category or None
+    if data.platform is not None:
+        kw.platform = data.platform or None
     if data.exclude_words is not None:
         kw.exclude_words = json.dumps(data.exclude_words, ensure_ascii=False)
+    if data.exclude_description_words is not None:
+        kw.exclude_description_words = data.exclude_description_words or None
+    # active_hours: setam doar daca au fost trimise explicit (inclusiv null pentru clear)
+    if "active_hours_start" in data.model_fields_set:
+        kw.active_hours_start = data.active_hours_start
+    if "active_hours_end" in data.model_fields_set:
+        kw.active_hours_end = data.active_hours_end
     if data.platforms is not None:
         kw.platforms = json.dumps(data.platforms, ensure_ascii=False)
     if data.poll_interval_minutes is not None:
@@ -490,8 +540,8 @@ def list_listings(
     elif status_filter == "all":
         pass
     else:
-        # default: active + saved
-        q = q.filter(RadarListing.status.in_(["active", "saved"]))
+        # default: doar active
+        q = q.filter(RadarListing.status == "active")
 
     if platform:
         q = q.filter(RadarListing.platform == platform)
@@ -536,6 +586,58 @@ def list_listings(
         "items": [_listing_to_dict(it, keywords.get(it.keyword_id)) for it in items],
         "vinted_auth_error": vinted_auth_error,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EXCEL EXPORT (definit inaintea /listings/{listing_id} ca "export" sa nu fie
+# interpretat ca listing_id:int — altfel FastAPI returneaza 422)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.get("/listings/export")
+def export_listings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    platform: Optional[str] = Query(None),
+    score: Optional[str] = Query(None),
+    keyword_id: Optional[int] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+):
+    q = db.query(RadarListing).filter(RadarListing.user_id == current_user.id)
+    if platform:
+        q = q.filter(RadarListing.platform == platform)
+    if score:
+        q = q.filter(RadarListing.score == score)
+    if keyword_id:
+        q = q.filter(RadarListing.keyword_id == keyword_id)
+    if status_filter and status_filter != "all":
+        q = q.filter(RadarListing.status == status_filter)
+    if date_from:
+        try:
+            q = q.filter(RadarListing.found_at >= datetime.fromisoformat(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(RadarListing.found_at <= datetime.fromisoformat(date_to))
+        except ValueError:
+            pass
+    items = q.order_by(RadarListing.found_at.desc()).limit(5000).all()
+    kw_ids = {it.keyword_id for it in items}
+    keywords = (
+        {k.id: k for k in db.query(RadarKeyword).filter(RadarKeyword.id.in_(kw_ids)).all()}
+        if kw_ids else {}
+    )
+    rows = [_listing_to_dict(it, keywords.get(it.keyword_id)) for it in items]
+    xlsx_bytes = build_listings_xlsx(rows)
+    filename = f"radar_dealuri_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/listings/{listing_id}")
@@ -605,6 +707,23 @@ def update_listing_status(
     listing.status = data.status
     db.commit()
     return {"id": listing.id, "status": listing.status}
+
+
+@router.delete("/listings/{listing_id}")
+def delete_listing(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    listing = db.query(RadarListing).filter(
+        RadarListing.id == listing_id,
+        RadarListing.user_id == current_user.id,
+    ).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    db.delete(listing)
+    db.commit()
+    return {"message": "Anunț șters.", "id": listing_id}
 
 
 @router.post("/listings/{listing_id}/block-seller")
@@ -678,7 +797,10 @@ def search_manual(
         raise HTTPException(status_code=400, detail="Keyword-ul este obligatoriu.")
     if data.max_price is None or data.max_price <= 0:
         raise HTTPException(status_code=400, detail="Prețul maxim trebuie să fie pozitiv.")
-    platforms = [(p or "").lower() for p in (data.platforms or []) if p]
+    if data.platform:
+        platforms = [data.platform.lower()]
+    else:
+        platforms = [(p or "").lower() for p in (data.platforms or []) if p]
     if not platforms:
         raise HTTPException(status_code=400, detail="Selectează cel puțin o platformă.")
 
@@ -828,6 +950,26 @@ def update_settings(
         s.discord_webhook_buy_now = data.discord_webhook_buy_now or None
     if data.discord_webhook_maybe is not None:
         s.discord_webhook_maybe = data.discord_webhook_maybe or None
+    if data.discord_webhook_auto is not None:
+        s.discord_webhook_auto = data.discord_webhook_auto or None
+    if data.discord_webhook_auto_all is not None:
+        s.discord_webhook_auto_all = data.discord_webhook_auto_all or None
+    if data.discord_webhook_auto_b is not None:
+        s.discord_webhook_auto_b = data.discord_webhook_auto_b or None
+    if data.discord_webhook_imob_all is not None:
+        s.discord_webhook_imob_all = data.discord_webhook_imob_all or None
+    if data.discord_webhook_imob_a is not None:
+        s.discord_webhook_imob_a = data.discord_webhook_imob_a or None
+    if data.discord_webhook_imob_b is not None:
+        s.discord_webhook_imob_b = data.discord_webhook_imob_b or None
+    if data.discord_here_radar is not None:
+        s.discord_here_radar = bool(data.discord_here_radar)
+    if data.discord_here_auto is not None:
+        s.discord_here_auto = bool(data.discord_here_auto)
+    if data.discord_here_imob is not None:
+        s.discord_here_imob = bool(data.discord_here_imob)
+    if data.custom_zone_aliases is not None:
+        s.custom_zone_aliases = data.custom_zone_aliases
     if data.platform_olx_enabled is not None:
         s.platform_olx_enabled = bool(data.platform_olx_enabled)
     if data.platform_vinted_enabled is not None:
@@ -846,6 +988,10 @@ def update_settings(
         s.platform_mobilede_enabled = bool(data.platform_mobilede_enabled)
     if data.vinted_cookie is not None:
         s.vinted_cookie = data.vinted_cookie or None
+    if data.lajumate_cookie is not None:
+        s.lajumate_cookie = data.lajumate_cookie or None
+    if data.okazii_cookie is not None:
+        s.okazii_cookie = data.okazii_cookie or None
     s.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(s)
@@ -863,6 +1009,132 @@ def test_discord_webhook(
     if not ok:
         raise HTTPException(status_code=502, detail="Nu am putut trimite mesajul de test. Verifică URL-ul.")
     return {"message": "Mesaj de test trimis cu succes."}
+
+
+@router.get("/vinted/test")
+async def test_vinted_token(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    import re as _re
+    settings = db.query(RadarSettings).filter(RadarSettings.user_id == current_user.id).first()
+    cookie = (settings.vinted_cookie or "").strip() if settings else ""
+    print(f"[VintedTest] Cookie length: {len(cookie)}")
+    print(f"[VintedTest] Has access_token_web: {'access_token_web' in cookie}")
+    print(f"[VintedTest] Cookie preview: {cookie[:30]}...")
+    if not cookie:
+        return {"valid": False, "message": "Niciun token salvat."}
+
+    # Vinted cere adesea si Cookie SI header Authorization: Bearer <access_token_web>
+    token_match = _re.search(r"access_token_web=([^;]+)", cookie)
+    token_value = token_match.group(1).strip() if token_match else None
+
+    headers = {
+        "Cookie": cookie,
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+    if token_value:
+        headers["Authorization"] = f"Bearer {token_value}"
+
+    endpoints = [
+        "https://www.vinted.ro/api/v2/catalog/items?search_text=iphone&per_page=1",
+        "https://www.vinted.ro/api/v2/users/current",
+    ]
+
+    last_status = None
+    last_detail = ""
+    try:
+        from curl_cffi.requests import AsyncSession
+        async with AsyncSession() as session:
+            for url in endpoints:
+                try:
+                    resp = await session.get(url, headers=headers, impersonate="chrome131", timeout=10)
+                except Exception as exc:
+                    last_detail = f"{type(exc).__name__}: {str(exc)[:120]}"
+                    print(f"[VintedTest] {url} -> exceptie: {last_detail}")
+                    continue
+                last_status = resp.status_code
+                print(f"[VintedTest] Status: {resp.status_code}")
+                print(f"[VintedTest] Response: {resp.text[:300]}")
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                    except Exception:
+                        data = {}
+                    # /catalog/items -> "items"; /users/current -> "user"/"id"
+                    if data.get("items") is not None or data.get("user") is not None or data.get("id") is not None:
+                        return {"valid": True, "message": "Token valid — Vinted funcționează corect."}
+                    last_detail = "răspuns 200 dar fără datele așteptate"
+                    continue
+                last_detail = (resp.text or "")[:160]
+                if resp.status_code in (401, 403):
+                    return {"valid": False, "message": f"HTTP {resp.status_code} — token expirat sau invalid."}
+        if last_status is not None:
+            return {"valid": False, "message": f"HTTP {last_status} — {last_detail}"}
+        return {"valid": False, "message": f"Eroare la testare: {last_detail or 'fără răspuns'}"}
+    except Exception as exc:
+        return {"valid": False, "message": f"Eroare la testare: {str(exc)[:120]}"}
+
+
+@router.get("/lajumate/test")
+async def test_lajumate_token(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    settings = db.query(RadarSettings).filter(
+        RadarSettings.user_id == current_user.id).first()
+    cookie = (settings.lajumate_cookie or "").strip() if settings else ""
+    if not cookie:
+        return {"valid": False, "message": "Niciun cookie salvat."}
+    try:
+        from curl_cffi.requests import Session as CSession
+        headers = {
+            "Cookie": cookie,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,*/*",
+        }
+        with CSession(impersonate="chrome124") as s:
+            resp = s.get("https://www.lajumate.ro/anunturi/?q=test",
+                         headers=headers, timeout=12)
+        if resp.status_code == 200 and "lajumate" in resp.text.lower():
+            return {"valid": True,
+                    "message": "Cookie valid — LaJumate accesibil."}
+        return {"valid": False,
+                "message": f"HTTP {resp.status_code} — cookie invalid sau expirat."}
+    except Exception as exc:
+        return {"valid": False, "message": f"Eroare: {str(exc)[:80]}"}
+
+
+@router.get("/okazii/test")
+async def test_okazii_token(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    settings = db.query(RadarSettings).filter(
+        RadarSettings.user_id == current_user.id).first()
+    cookie = (settings.okazii_cookie or "").strip() if settings else ""
+    if not cookie:
+        return {"valid": False, "message": "Niciun cookie salvat."}
+    try:
+        from curl_cffi.requests import Session as CSession
+        headers = {
+            "Cookie": cookie,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,*/*",
+        }
+        with CSession(impersonate="chrome124") as s:
+            resp = s.get("https://www.okazii.ro/cautare?q=test",
+                         headers=headers, timeout=12)
+        if resp.status_code == 200 and "okazii" in resp.text.lower():
+            return {"valid": True,
+                    "message": "Cookie valid — Okazii accesibil."}
+        return {"valid": False,
+                "message": f"HTTP {resp.status_code} — cookie invalid sau expirat."}
+    except Exception as exc:
+        return {"valid": False, "message": f"Eroare: {str(exc)[:80]}"}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1415,54 +1687,3 @@ def push_status(
         "subscriptions_count": int(total),
         "configured": bool(VAPID_PUBLIC_KEY),
     }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# EXCEL EXPORT
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@router.get("/listings/export")
-def export_listings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    platform: Optional[str] = Query(None),
-    score: Optional[str] = Query(None),
-    keyword_id: Optional[int] = Query(None),
-    status_filter: Optional[str] = Query(None, alias="status"),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-):
-    q = db.query(RadarListing).filter(RadarListing.user_id == current_user.id)
-    if platform:
-        q = q.filter(RadarListing.platform == platform)
-    if score:
-        q = q.filter(RadarListing.score == score)
-    if keyword_id:
-        q = q.filter(RadarListing.keyword_id == keyword_id)
-    if status_filter and status_filter != "all":
-        q = q.filter(RadarListing.status == status_filter)
-    if date_from:
-        try:
-            q = q.filter(RadarListing.found_at >= datetime.fromisoformat(date_from))
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            q = q.filter(RadarListing.found_at <= datetime.fromisoformat(date_to))
-        except ValueError:
-            pass
-    items = q.order_by(RadarListing.found_at.desc()).limit(5000).all()
-    kw_ids = {it.keyword_id for it in items}
-    keywords = (
-        {k.id: k for k in db.query(RadarKeyword).filter(RadarKeyword.id.in_(kw_ids)).all()}
-        if kw_ids else {}
-    )
-    rows = [_listing_to_dict(it, keywords.get(it.keyword_id)) for it in items]
-    xlsx_bytes = build_listings_xlsx(rows)
-    filename = f"radar_dealuri_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-    return StreamingResponse(
-        io.BytesIO(xlsx_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )

@@ -184,18 +184,6 @@ export default function TrackedProductsPage() {
               }}>
                 {/* Imagine + nume */}
                 <div style={{ display: "flex", gap: "0.75rem" }}>
-                  <div style={{
-                    width: "64px", height: "64px", borderRadius: "0.5rem", flexShrink: 0,
-                    backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                    display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
-                  }}>
-                    {product.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={product.image_url} alt={product.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                    ) : (
-                      <Package style={{ width: "1.5rem", height: "1.5rem", color: "var(--text-secondary)" }} />
-                    )}
-                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Link href={`/dashboard/products/${product.id}`} style={{
                       fontSize: "0.875rem", fontWeight: 600, color: "var(--text-primary)", textDecoration: "none",

@@ -8,6 +8,7 @@ from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price,
     extract_rooms, extract_surface, detect_currency, make_re_listing,
 )
+from app.services.log_manager import log_manager
 
 _BASE = "https://www.olx.ro"
 
@@ -51,16 +52,19 @@ async def search_olx_real_estate(filters: dict = {}) -> list:
         url += f"q-{filters['locatie']}/"
 
     headers = build_headers({"Referer": _BASE + "/"})
+    log_manager.emit("real_estate", "SCAN", f"OLX Imobiliare: {tip_proprietate} {tip_anunt}")
     results = []
     try:
         async with AsyncSession() as session:
             resp = await session.get(url, params=params, headers=headers, impersonate=IMPERSONATE, timeout=20)
             if resp.status_code != 200:
                 print(f"[olx_re] HTTP {resp.status_code}")
+                log_manager.emit("real_estate", "ERR", f"OLX Imobiliare: HTTP {resp.status_code}")
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as exc:
         print(f"[olx_re] error: {exc}")
+        log_manager.emit("real_estate", "ERR", f"OLX Imobiliare eroare: {str(exc)[:80]}")
         return []
 
     cards = soup.select('div[data-cy="l-card"]') or soup.select('[data-testid="l-card"]')
@@ -106,4 +110,5 @@ async def search_olx_real_estate(filters: dict = {}) -> list:
             continue
 
     print(f"[olx_re] {len(results)} anunturi ({tip_proprietate} {tip_anunt})")
+    log_manager.emit("real_estate", "OK", f"OLX Imobiliare: {len(results)} anunturi gasite")
     return results[:MAX_RESULTS]

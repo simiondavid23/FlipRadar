@@ -13,7 +13,7 @@ from typing import Optional
 from curl_cffi import requests as curl_requests
 
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
-from app.services.radar.categories import VINTED_CATEGORY_IDS
+from app.services.log_manager import log_manager
 
 
 _IMPERSONATE = "chrome110"
@@ -44,6 +44,94 @@ def _condition_label(api_label: Optional[str]) -> Optional[str]:
     return None
 
 
+def _search_vinted_library(
+    keyword: str,
+    max_price: Optional[float],
+    min_price: Optional[float],
+    category: Optional[str],
+    exclude_words: list,
+    exclude_description_words: list,
+    page: int = 1,
+) -> Optional[list]:
+    """Metoda primara — foloseste libraria vinted-scraper (gestioneaza DataDome
+    automat, fara cookie). Returneaza None la esec → declanseaza fallback-ul pe cookie.
+
+    Rezultatele sunt mapate in formatul standard al aplicatiei (external_id,
+    images list, platform...) ca scanner-ul si cautarea manuala sa le consume.
+    """
+    try:
+        from vinted_scraper import VintedScraper
+        scraper = VintedScraper("https://www.vinted.ro")
+        params = {"search_text": (keyword or "").strip(), "order": "newest_first", "per_page": 96}
+        if page > 1:
+            params["page"] = page
+        if max_price and max_price > 0:
+            params["price_to"] = int(max_price)
+        if min_price and min_price > 0:
+            params["price_from"] = int(min_price)
+        if category:
+            try:
+                params["catalog_ids"] = [int(category)]
+            except (ValueError, TypeError):
+                pass
+
+        raw_items = scraper.search(params)
+        results = []
+        for item in (raw_items or []):
+            title = (getattr(item, "title", None) or getattr(item, "name", None) or "").strip()
+            if not title:
+                continue
+            if is_excluded(title, exclude_words):
+                continue
+            desc = getattr(item, "description", None) or ""
+            if exclude_description_words and desc and is_excluded(desc, exclude_description_words):
+                continue
+            price_raw = getattr(item, "price", None)
+            try:
+                price = float(price_raw) if price_raw is not None else None
+            except (TypeError, ValueError):
+                price = None
+            if price is None or price <= 0:
+                continue
+            if max_price and price > max_price:
+                continue
+            if min_price and price < min_price:
+                continue
+
+            # `photo` poate fi dict (lib v3) sau obiect — extragem URL-ul defensiv.
+            photo = getattr(item, "photo", None)
+            thumb = None
+            if isinstance(photo, dict):
+                thumb = photo.get("url") or photo.get("full_size_url")
+            elif photo is not None:
+                thumb = getattr(photo, "url", None) or getattr(photo, "full_size_url", None)
+
+            item_id = getattr(item, "id", None)
+            url = getattr(item, "url", None) or (f"https://www.vinted.ro/items/{item_id}" if item_id else "")
+            currency = getattr(item, "currency", None) or "RON"
+
+            results.append({
+                "external_id": f"vinted_{item_id}" if item_id else None,
+                "platform": "vinted",
+                "title": title,
+                "price": price,
+                "currency": currency,
+                "condition": _condition_label(str(getattr(item, "status", None) or "")),
+                "location": None,
+                "url": url,
+                "images": [thumb] if thumb else [],
+                "description": desc or None,
+                "seller_name": None,
+                "seller_id": None,
+                "listed_at": None,
+            })
+        log_manager.emit("radar", "OK", f"Vinted library: {len(results)} rezultate pentru '{keyword}'")
+        return results
+    except Exception as exc:
+        log_manager.emit("radar", "WARN", f"Vinted library failed: {str(exc)[:80]} → fallback la cookie")
+        return None
+
+
 def search_vinted(
     keyword: str,
     max_price: float,
@@ -52,21 +140,35 @@ def search_vinted(
     cookie_str: Optional[str] = None,
     min_price: Optional[float] = None,
     category: Optional[str] = None,
+    exclude_description_words: Optional[list] = None,
+    page: int = 1,
 ) -> list[dict]:
     """Cauta pe Vinted prin API-ul intern si returneaza listinguri standard."""
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
         return []
+
+    # MODULE 3 — incearca intai libraria vinted-scraper (fara cookie). Daca
+    # esueaza (None), cade pe metoda existenta cu cookie.
+    library_results = _search_vinted_library(
+        keyword_clean, max_price, min_price, category,
+        exclude_words, exclude_description_words or [], page=page,
+    )
+    if library_results is not None:
+        return library_results
+
     if not cookie_str:
         print("[VintedScraper] Cookie Vinted lipseste — skip.")
         return []
 
     params = {
         "search_text": keyword_clean,
-        "per_page": 48,
+        "per_page": 96,
         "order": "newest_first",
     }
+    if page > 1:
+        params["page"] = page
     if max_price and max_price > 0:
         params["price_to"] = int(max_price)
         params["currency"] = "RON"
@@ -74,11 +176,11 @@ def search_vinted(
         params["price_from"] = int(min_price)
         params["currency"] = "RON"
     if category:
-        cat_id = VINTED_CATEGORY_IDS.get(category)
-        if cat_id:
-            # Vinted accepta repetate `catalog_ids[]=...` — curl_cffi gestioneaza
-            # automat listele transmise ca tuple/list.
-            params["catalog_ids[]"] = cat_id
+        try:
+            cat_id = int(category)
+            params["catalog_ids[]"] = [cat_id]
+        except (ValueError, TypeError):
+            pass  # invalid ID, skip category filter
 
     headers = build_headers({
         "Accept": "application/json, text/plain, */*",
@@ -130,6 +232,12 @@ def search_vinted(
                 continue
             if is_excluded(title, exclude_words):
                 continue
+
+            # MODULE 1c — exclude pe descriere
+            description = (it.get("description") or "")[:500]
+            if exclude_description_words and description:
+                if is_excluded(description, exclude_description_words):
+                    continue
 
             price_data = it.get("price") or {}
             if isinstance(price_data, dict):

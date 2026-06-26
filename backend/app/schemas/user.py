@@ -39,6 +39,8 @@ class UserResponse(BaseModel):
     can_use_import_export: bool = True
     # FlipRadar — ITEM 16: pragul Flash Deal, ca pagina de setari sa stie valoarea curenta
     flash_deal_threshold: Optional[float] = 0.15
+    # FlipRadar — config per-functionalitate AI (cheile False = dezactivate)
+    ai_features_config: Optional[dict] = None
     created_at: Optional[datetime] = None
 
     class Config:

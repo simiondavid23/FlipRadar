@@ -1,11 +1,38 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { radarAPI } from "@/lib/api";
+import { radarAPI, mlAPI } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   Radar, RefreshCw, ImageOff, ExternalLink, Bookmark, EyeOff,
   X, Sparkles, ShieldOff, Tag, MapPin, Calendar, FileSpreadsheet,
-  GitCompareArrows, MessageSquare, Copy, Check
+  GitCompareArrows, MessageSquare, Copy, Check, Trash2, Scale
 } from "lucide-react";
+
+// ── ML Predictor: detectie categorie + construire features din anunt ──
+function detectMLCategory(title = "") {
+  const t = title.toLowerCase();
+  if (/iphone|ipad|macbook|airpod/.test(t)) return "electronics_apple";
+  if (/\bbmw\b/.test(t)) return "auto_bmw";
+  return null;
+}
+
+function buildFeaturesFromListing(listing, category) {
+  const title = listing.title || "";
+  if (category === "electronics_apple") {
+    return {
+      product_line: /iphone/i.test(title) ? "iPhone"
+        : /ipad/i.test(title) ? "iPad"
+          : /macbook/i.test(title) ? "MacBook"
+            : "iPhone",
+      price: listing.price,
+      platform: listing.platform,
+    };
+  }
+  if (category === "auto_bmw") {
+    return { make: "BMW", price: listing.price, platform: listing.platform };
+  }
+  return {};
+}
 
 const PLATFORMS = [
   { value: "", label: "Toate platformele" },
@@ -28,10 +55,9 @@ const SCORES = [
 ];
 
 const STATUS_OPTIONS = [
-  { value: "", label: "Active + Salvate" },
-  { value: "active", label: "Doar active" },
-  { value: "saved", label: "Salvate" },
-  { value: "ignored", label: "Ignorate" },
+  { label: "Active", value: "active" },
+  { label: "Salvate", value: "saved" },
+  { label: "Ignorate", value: "ignored" },
 ];
 
 const PLATFORM_COLORS = {
@@ -72,21 +98,14 @@ function tabPillStyle(active) {
   };
 }
 
-// FIX 2 — platforme disponibile in cautarea manuala (checkbox-uri).
-const MANUAL_PLATFORMS = [
+// MODULE 4 — platforme pentru cautarea manuala (single-select, ca in modalul keyword).
+const SEARCH_PLATFORMS = [
   { value: "olx", label: "OLX" },
   { value: "vinted", label: "Vinted" },
   { value: "okazii", label: "Okazii" },
   { value: "facebook", label: "Facebook" },
-  { value: "lajumate", label: "Lajumate" },
+  { value: "lajumate", label: "LaJumate" },
   { value: "publi24", label: "Publi24" },
-];
-
-// Aceleasi categorii ca in modalul de keyword (fallback daca API-ul nu raspunde).
-const MANUAL_FALLBACK_CATEGORIES = [
-  "Telefoane", "Tablete", "Laptopuri", "Electronice",
-  "Îmbrăcăminte", "Încălțăminte", "Jocuri", "Cărți",
-  "Sport", "Casă și grădină", "Auto", "Altele",
 ];
 
 const SCORE_COLORS = {
@@ -146,18 +165,19 @@ export default function RadarFeedPage() {
   const [selected, setSelected] = useState(null);
   const [generatingAI, setGeneratingAI] = useState(false);
   const [selectedForComparison, setSelectedForComparison] = useState([]);
-  const [selectedBulk, setSelectedBulk] = useState([]);
+  const [selectedBulk, setSelectedBulk] = useState(new Set());
   const [showCompare, setShowCompare] = useState(false);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState("auto");
   const [vintedAuthError, setVintedAuthError] = useState(false);
   const [vintedWarnDismissed, setVintedWarnDismissed] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const [filters, setFilters] = useState({
     platform: "",
     score: "",
     keyword_id: "",
-    status: "",
+    status: "active",
     hide_filtered: true,
   });
 
@@ -215,10 +235,25 @@ export default function RadarFeedPage() {
   const updateStatus = async (listingId, newStatus) => {
     try {
       await radarAPI.updateListingStatus(listingId, newStatus);
-      setListings((prev) => prev.filter((l) => l.id !== listingId));
-      if (selected?.id === listingId) setSelected(null);
+      setListings((prev) =>
+        prev.map((l) => l.id === listingId ? { ...l, status: newStatus } : l)
+      );
+      if (selected?.id === listingId) {
+        setSelected((prev) => prev ? { ...prev, status: newStatus } : null);
+      }
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la actualizare.");
+    }
+  };
+
+  const deleteListing = async (listingId) => {
+    try {
+      await radarAPI.deleteListing(listingId);
+      setListings((prev) => prev.filter((l) => l.id !== listingId));
+      if (selected?.id === listingId) setSelected(null);
+      setConfirmDeleteId(null);
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la ștergere.");
     }
   };
 
@@ -257,23 +292,27 @@ export default function RadarFeedPage() {
   };
 
   const toggleBulk = (id) => {
-    setSelectedBulk((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    setSelectedBulk((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const toggleSelectAllBulk = (e) => {
     if (e.target.checked) {
-      setSelectedBulk(listings.map((l) => l.id));
+      setSelectedBulk(new Set(listings.map((l) => l.id)));
     } else {
-      setSelectedBulk([]);
+      setSelectedBulk(new Set());
     }
   };
 
   const applyBulkAction = async (action) => {
-    if (selectedBulk.length === 0) return;
+    if (selectedBulk.size === 0) return;
     try {
-      const r = await radarAPI.bulkAction(selectedBulk, action);
+      const r = await radarAPI.bulkAction(Array.from(selectedBulk), action);
       showToast(r.data?.message || `${r.data?.updated || 0} listinguri actualizate.`);
-      setSelectedBulk([]);
+      setSelectedBulk(new Set());
       loadListings();
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la acțiune în masă.");
@@ -390,13 +429,13 @@ export default function RadarFeedPage() {
 
         <SelectFiniteControl
           totalVisible={listings.length}
-          selectedCount={selectedBulk.length}
+          selectedCount={selectedBulk.size}
           onSelect={(count) => {
             if (count === 0) {
-              setSelectedBulk([]);
+              setSelectedBulk(new Set());
               return;
             }
-            setSelectedBulk(listings.slice(0, count).map((l) => l.id));
+            setSelectedBulk(new Set(listings.slice(0, count).map((l) => l.id)));
           }}
         />
 
@@ -441,6 +480,46 @@ export default function RadarFeedPage() {
           <FileSpreadsheet style={{ width: "14px", height: "14px" }} />
           Export Excel
         </button>
+      </div>
+
+      {/* MODULE 3b — bara de acțiuni sticky (sub controale, deasupra grilei) */}
+      <div style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 20,
+        marginBottom: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "0.75rem" : 0,
+      }}>
+        <div style={{
+          maxHeight: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "160px" : "0px",
+          overflow: "hidden",
+          opacity: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? 1 : 0,
+          transition: "max-height 0.2s ease, opacity 0.15s ease",
+        }}>
+          <ActionBanner
+            comparisonCount={selectedForComparison.length}
+            bulkCount={selectedBulk.size}
+            totalVisible={listings.length}
+            onCompareOpen={() => setShowCompare(true)}
+            onCompareClear={() => setSelectedForComparison([])}
+            onBulkSave={() => applyBulkAction("saved")}
+            onBulkIgnore={() => applyBulkAction("ignored")}
+            onBulkDelete={() => applyBulkAction("deleted")}
+            onBulkExport={async () => {
+              try {
+                const r = await radarAPI.exportListings({ ids: Array.from(selectedBulk).join(",") });
+                const url = URL.createObjectURL(new Blob([r.data]));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `radar_selectie_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                document.body.appendChild(a); a.click(); a.remove();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                alert(e.response?.data?.detail || "Eroare la export Excel.");
+              }
+            }}
+            onBulkClear={() => setSelectedBulk(new Set())}
+          />
+        </div>
       </div>
 
       {/* FIX 6 — avertisment cookie Vinted expirat (dismiss pe sesiune) */}
@@ -501,9 +580,15 @@ export default function RadarFeedPage() {
               onSave={() => updateStatus(l.id, "saved")}
               onIgnore={() => updateStatus(l.id, "ignored")}
               compareSelected={!!selectedForComparison.find((x) => x.id === l.id)}
-              bulkSelected={selectedBulk.includes(l.id)}
+              bulkSelected={selectedBulk.has(l.id)}
+              isSelected={selectedBulk.has(l.id)}
+              onToggleSelect={() => toggleBulk(l.id)}
               onToggleCompare={() => toggleCompare(l)}
               onToggleBulk={() => toggleBulk(l.id)}
+              onDelete={() => setConfirmDeleteId(l.id)}
+              confirmingDelete={confirmDeleteId === l.id}
+              onConfirmDelete={() => deleteListing(l.id)}
+              onCancelDelete={() => setConfirmDeleteId(null)}
             />
           ))}
         </div>
@@ -525,41 +610,13 @@ export default function RadarFeedPage() {
         />
       )}
 
-      {/* Banner fix jos — comparare + acțiuni în masă */}
-      {(selectedForComparison.length > 0 || selectedBulk.length > 0) && (
-        <ActionBanner
-          comparisonCount={selectedForComparison.length}
-          bulkCount={selectedBulk.length}
-          totalVisible={listings.length}
-          onCompareOpen={() => setShowCompare(true)}
-          onCompareClear={() => setSelectedForComparison([])}
-          onBulkSave={() => applyBulkAction("saved")}
-          onBulkIgnore={() => applyBulkAction("ignored")}
-          onBulkDelete={() => applyBulkAction("deleted")}
-          onBulkExport={async () => {
-            try {
-              const r = await radarAPI.exportListings({ ids: selectedBulk.join(",") });
-              const url = URL.createObjectURL(new Blob([r.data]));
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `radar_selectie_${new Date().toISOString().slice(0, 10)}.xlsx`;
-              document.body.appendChild(a); a.click(); a.remove();
-              URL.revokeObjectURL(url);
-            } catch (e) {
-              alert(e.response?.data?.detail || "Eroare la export Excel.");
-            }
-          }}
-          onBulkClear={() => setSelectedBulk([])}
-        />
-      )}
-
       {/* Fereastră comparare */}
       {showCompare && selectedForComparison.length >= 2 && (
         <CompareModal
           listings={selectedForComparison}
           onClose={() => setShowCompare(false)}
-          onSave={async (id) => { await updateStatus(id, "saved"); }}
-          onIgnore={async (id) => { await updateStatus(id, "ignored"); }}
+          onSave={async (id) => { await updateStatus(id, "saved"); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: "saved" } : l)); }}
+          onIgnore={async (id) => { await updateStatus(id, "ignored"); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: "ignored" } : l)); }}
         />
       )}
 
@@ -580,7 +637,7 @@ export default function RadarFeedPage() {
   );
 }
 
-function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkSelected, onToggleCompare, onToggleBulk }) {
+function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkSelected, isSelected, onToggleSelect, onToggleCompare, onToggleBulk, onDelete, confirmingDelete, onConfirmDelete, onCancelDelete }) {
   const scoreCfg = SCORE_COLORS[listing.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
   const platformCfg = PLATFORM_COLORS[listing.platform] || PLATFORM_COLORS.olx;
   const margin = listing.margin_pct;
@@ -601,6 +658,7 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
         transition: "all 0.15s ease",
         display: "flex",
         flexDirection: "column",
+        position: "relative",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.borderColor = scoreCfg.border;
@@ -611,21 +669,32 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      {/* Checkbox comparare stânga-sus (peste imagine) */}
+      {/* MODULE 2 — strip de selecție deasupra imaginii */}
       <div
-        onClick={(e) => { e.stopPropagation(); onToggleCompare(); }}
-        title="Selectează pentru comparare"
+        onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
         style={{
-          position: "absolute", top: "6px", left: "6px", zIndex: 5,
-          width: "20px", height: "20px",
-          backgroundColor: compareSelected ? "var(--blue-primary)" : "rgba(15,23,42,0.7)",
-          border: `1px solid ${compareSelected ? "var(--blue-primary)" : "rgba(255,255,255,0.5)"}`,
-          borderRadius: "0.25rem",
-          display: "flex", alignItems: "center", justifyContent: "center",
+          display: "flex", alignItems: "center", gap: "0.5rem",
+          padding: "0.3rem 0.625rem",
+          borderBottom: "0.5px solid var(--border-color)",
+          borderRadius: "0.75rem 0.75rem 0 0",
+          backgroundColor: isSelected ? "rgba(37,99,235,0.08)" : "transparent",
           cursor: "pointer",
+          transition: "background-color 0.12s",
+          flexShrink: 0,
         }}
       >
-        {compareSelected ? <Check style={{ width: "12px", height: "12px", color: "white" }} /> : null}
+        <div style={{
+          width: "14px", height: "14px", borderRadius: "3px", flexShrink: 0,
+          border: isSelected ? "2px solid #2563eb" : "1.5px solid rgba(100,116,139,0.45)",
+          backgroundColor: isSelected ? "#2563eb" : "transparent",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.1s",
+        }}>
+          {isSelected && <span style={{ color: "white", fontSize: "9px", fontWeight: 700 }}>✓</span>}
+        </div>
+        <span style={{ fontSize: "0.6875rem", color: isSelected ? "#60a5fa" : "var(--text-secondary)", userSelect: "none" }}>
+          {isSelected ? "Selectat" : "Selectează"}
+        </span>
       </div>
 
       {/* Imagine */}
@@ -724,22 +793,59 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem" }}>
+        {confirmingDelete ? (
+          <div onClick={(e) => e.stopPropagation()} style={{
+            display: "flex", alignItems: "center", gap: "0.5rem",
+            marginTop: "auto",
+            padding: "0.5rem 0.75rem",
+            borderTop: "1px solid rgba(239,68,68,0.3)",
+            backgroundColor: "rgba(239,68,68,0.05)",
+          }}>
+            <span style={{ fontSize: "0.75rem", color: "#fca5a5", flex: 1 }}>
+              Ștergi acest anunț definitiv?
+            </span>
+            <button onClick={onConfirmDelete} style={{ padding: "0.25rem 0.625rem", backgroundColor: "rgba(239,68,68,0.2)", color: "#f87171", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}>
+              Confirmă
+            </button>
+            <button onClick={onCancelDelete} style={{ padding: "0.25rem 0.625rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.75rem", cursor: "pointer" }}>
+              Anulează
+            </button>
+          </div>
+        ) : (
+        <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem", alignItems: "center" }}>
           <button
-            onClick={(e) => { e.stopPropagation(); onSave(); }}
-            style={{ flex: 1, padding: "0.4rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
-            title="Salvează"
+            onClick={(e) => { e.stopPropagation(); if (listing.status !== "saved") onSave(); }}
+            disabled={listing.status === "saved"}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "0.25rem",
+              padding: "0.375rem 0.75rem",
+              backgroundColor: listing.status === "saved" ? "rgba(22,163,74,0.2)" : "rgba(22,163,74,0.08)",
+              color: "#4ade80",
+              border: "1px solid rgba(22,163,74,0.35)",
+              borderRadius: "0.375rem",
+              fontSize: "0.75rem", fontWeight: 600,
+              cursor: listing.status === "saved" ? "default" : "pointer",
+            }}
           >
-            <Bookmark style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
-            Salvează
+            <Bookmark style={{ width: "12px", height: "12px" }} />
+            {listing.status === "saved" ? "✓ Salvat" : "Salvează"}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onIgnore(); }}
-            style={{ flex: 1, padding: "0.4rem", backgroundColor: "rgba(100,116,139,0.15)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
-            title="Ignoră"
+            onClick={(e) => { e.stopPropagation(); if (listing.status !== "ignored") onIgnore(); }}
+            disabled={listing.status === "ignored"}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "0.25rem",
+              padding: "0.375rem 0.75rem",
+              backgroundColor: listing.status === "ignored" ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.08)",
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "0.375rem",
+              fontSize: "0.75rem", fontWeight: 600,
+              cursor: listing.status === "ignored" ? "default" : "pointer",
+            }}
           >
-            <EyeOff style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
-            Ignoră
+            <EyeOff style={{ width: "12px", height: "12px" }} />
+            {listing.status === "ignored" ? "✓ Ignorat" : "Ignoră"}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); window.open(listing.url, "_blank", "noopener,noreferrer"); }}
@@ -749,7 +855,39 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
             <ExternalLink style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
             {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleCompare(); }}
+            title={compareSelected ? "Scoate din comparare" : "Adaugă la comparare"}
+            style={{
+              background: "transparent", border: "none", cursor: "pointer",
+              padding: "0.25rem", borderRadius: "0.375rem",
+              color: compareSelected ? "#60a5fa" : "var(--text-secondary)",
+              backgroundColor: compareSelected ? "rgba(37,99,235,0.12)" : "transparent",
+              display: "inline-flex", alignItems: "center",
+              transition: "all 0.12s",
+            }}
+          >
+            <Scale style={{ width: "14px", height: "14px" }} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            title="Șterge anunțul"
+            style={{
+              marginLeft: "auto",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "#f87171",
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "0.25rem",
+              borderRadius: "0.375rem",
+            }}
+          >
+            <Trash2 style={{ width: "14px", height: "14px" }} />
+          </button>
         </div>
+        )}
       </div>
     </div>
   );
@@ -760,34 +898,33 @@ function ManualSearchTab() {
   const [keyword, setKeyword] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [minPrice, setMinPrice] = useState("");
-  const [platforms, setPlatforms] = useState(["olx", "vinted", "okazii"]);
-  const [category, setCategory] = useState("");
-  const [categories, setCategories] = useState(MANUAL_FALLBACK_CATEGORIES);
+  const [searchPlatform, setSearchPlatform] = useState("");
+  const [searchMainCat, setSearchMainCat] = useState("");
+  const [searchSubCat, setSearchSubCat] = useState("");
+  const [allCategories, setAllCategories] = useState({});
   const [results, setResults] = useState(null); // null = încă nu s-a căutat
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     radarAPI.getCategories()
-      .then((r) => { if (r.data?.categories?.length) setCategories(r.data.categories); })
+      .then((r) => setAllCategories(r.data || {}))
       .catch(() => {});
   }, []);
-
-  const togglePlatform = (p) => {
-    setPlatforms((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]);
-  };
 
   const runSearch = async () => {
     if (!keyword.trim()) { alert("Introdu un keyword pentru căutare."); return; }
     if (!maxPrice || parseFloat(maxPrice) <= 0) { alert("Introdu un preț maxim valid."); return; }
-    if (platforms.length === 0) { alert("Selectează cel puțin o platformă."); return; }
+    if (!searchPlatform) { alert("Selectează o platformă."); return; }
+    const derivedCategory = searchSubCat || searchMainCat || "";
     setLoading(true);
     try {
       const r = await radarAPI.searchManual({
         keyword: keyword.trim(),
         max_price: parseFloat(maxPrice),
         min_price: minPrice ? parseFloat(minPrice) : null,
-        platforms,
-        category: category || null,
+        platform: searchPlatform,
+        platforms: [searchPlatform],
+        category: derivedCategory || null,
         exclude_words: [],
       });
       setResults(Array.isArray(r.data) ? r.data : []);
@@ -847,40 +984,54 @@ function ManualSearchTab() {
         </div>
 
         <div>
-          <label style={labelStyle}>Platforme</label>
+          <label style={labelStyle}>Platformă</label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-            {MANUAL_PLATFORMS.map((p) => {
-              const on = platforms.includes(p.value);
-              return (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => togglePlatform(p.value)}
-                  style={{
-                    padding: "0.375rem 0.75rem",
-                    backgroundColor: on ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
-                    color: on ? "#60a5fa" : "var(--text-secondary)",
-                    border: `1px solid ${on ? "rgba(37,99,235,0.3)" : "var(--border-color)"}`,
-                    borderRadius: "0.5rem",
-                    fontSize: "0.8125rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                  }}
-                >
-                  {on ? "✓ " : ""}{p.label}
-                </button>
-              );
-            })}
+            {SEARCH_PLATFORMS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => { setSearchPlatform(p.value); setSearchMainCat(""); setSearchSubCat(""); }}
+                style={{
+                  padding: "0.375rem 0.875rem", borderRadius: "0.5rem", fontSize: "0.8125rem",
+                  fontWeight: searchPlatform === p.value ? 600 : 400, cursor: "pointer",
+                  border: searchPlatform === p.value ? "2px solid #2563eb" : "1px solid var(--border-color)",
+                  backgroundColor: searchPlatform === p.value ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
+                  color: searchPlatform === p.value ? "#60a5fa" : "var(--text-secondary)",
+                }}
+              >{p.label}</button>
+            ))}
           </div>
         </div>
 
-        <div>
-          <label style={labelStyle}>Categorie</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>
-            <option value="">Toate categoriile</option>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        {searchPlatform && (() => {
+          const currentPlatformCats = allCategories[searchPlatform] || [];
+          const selectedMain = currentPlatformCats.find((c) => c.value === searchMainCat);
+          const hasSubs = (selectedMain?.subcategories?.length || 0) > 0;
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: hasSubs ? "1fr 1fr" : "1fr", gap: "0.75rem" }}>
+              <div>
+                <label style={labelStyle}>Categorie principală</label>
+                <select value={searchMainCat} onChange={(e) => { setSearchMainCat(e.target.value); setSearchSubCat(""); }} style={inputStyle}>
+                  <option value="">Toate categoriile</option>
+                  {currentPlatformCats.map((c) => (
+                    <option key={c.value ?? c.label} value={c.value ?? ""}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              {hasSubs && (
+                <div>
+                  <label style={labelStyle}>Subcategorie</label>
+                  <select value={searchSubCat} onChange={(e) => setSearchSubCat(e.target.value)} style={inputStyle}>
+                    <option value="">Toate</option>
+                    {selectedMain.subcategories.map((s) => (
+                      <option key={s.value ?? s.label} value={s.value ?? ""}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div>
           <button
@@ -1031,11 +1182,40 @@ function ManualResultCard({ listing }) {
 }
 
 function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBlockSeller, onGenerateAI, generatingAI }) {
+  const { user } = useAuth();
+  const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
   const scoreCfg = SCORE_COLORS[listing.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
   const platformCfg = PLATFORM_COLORS[listing.platform] || PLATFORM_COLORS.olx;
   const images = listing.images || [];
   const [mainImg, setMainImg] = useState(images[0] || null);
   useEffect(() => { setMainImg(images[0] || null); }, [listing.id]);
+
+  // ── Predictie ML (separata de pretul de revanzare manual) ──
+  const [mlPrediction, setMlPrediction] = useState(null);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [mlCategory, setMlCategory] = useState(null);
+
+  useEffect(() => {
+    if (!listing) { setMlPrediction(null); return; }
+    const cat = detectMLCategory(listing.title);
+    setMlCategory(cat);
+    if (!cat) { setMlPrediction(null); return; }
+    setMlLoading(true);
+    mlAPI.predict({
+      category: cat,
+      features: buildFeaturesFromListing(listing, cat),
+    })
+      .then((r) => setMlPrediction(r.data))
+      .catch((err) => {
+        const msg = err.response?.data?.detail;
+        setMlPrediction(
+          msg === "model_not_trained" ? { error: "model_not_trained" }
+            : msg === "features_incomplete" ? { error: "features_incomplete" }
+              : { error: "unavailable" }
+        );
+      })
+      .finally(() => setMlLoading(false));
+  }, [listing?.id]);
 
   return (
     <div
@@ -1217,6 +1397,61 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
           </div>
         )}
 
+        {/* Predictie ML — apare intre informatiile de pret si Review AI */}
+        {mlCategory && (
+          <div style={{ margin: "0 1.25rem 1rem" }}>
+            <div style={{
+              padding: "0.875rem 1rem",
+              backgroundColor: "rgba(124,58,237,0.07)",
+              border: "0.5px solid rgba(124,58,237,0.25)",
+              borderRadius: "0.625rem",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, letterSpacing: "0.04em" }}>
+                  PREDICȚIE ML
+                </span>
+              </div>
+
+              {mlLoading && (
+                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                  Se calculează...
+                </p>
+              )}
+
+              {!mlLoading && mlPrediction && !mlPrediction.error && (
+                <div>
+                  <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                    Estimat: {mlPrediction.price?.toLocaleString("ro-RO")} RON
+                    {mlPrediction.days && (
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>
+                        · vândut în ~{mlPrediction.days} zile
+                      </span>
+                    )}
+                  </p>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                    Predicție separată de prețul de revânzare introdus manual.
+                  </p>
+                </div>
+              )}
+
+              {!mlLoading && mlPrediction?.error === "model_not_trained" && (
+                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                  Model neantrenat — date insuficiente.{" "}
+                  <a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>
+                    Vezi progresul →
+                  </a>
+                </p>
+              )}
+
+              {!mlLoading && mlPrediction?.error === "features_incomplete" && (
+                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                  Features insuficiente pentru predicție (titlu prea vag).
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Review AI */}
         <div style={{ padding: "0 1.25rem 1.25rem" }}>
           <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
@@ -1228,8 +1463,9 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
               {listing.ai_review}
             </div>
           ) : (
+            <>
             <button
-              onClick={onGenerateAI}
+              onClick={reviewEnabled ? onGenerateAI : undefined}
               disabled={generatingAI}
               style={{
                 padding: "0.5rem 0.875rem",
@@ -1239,11 +1475,18 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
                 borderRadius: "0.5rem",
                 fontSize: "0.8125rem",
                 fontWeight: 600,
-                cursor: generatingAI ? "wait" : "pointer",
+                cursor: reviewEnabled ? (generatingAI ? "wait" : "pointer") : "default",
+                opacity: reviewEnabled ? 1 : 0.4,
               }}
             >
               {generatingAI ? "Se generează..." : "Generează review AI"}
             </button>
+            {!reviewEnabled && (
+              <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                Feature dezactivat · <a href="/dashboard/settings" style={{ color: "#60a5fa" }}>Activează din Setări</a>
+              </p>
+            )}
+            </>
           )}
         </div>
 
@@ -1252,13 +1495,29 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
 
         {/* Acțiuni */}
         <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <button onClick={onSave} style={btn("#4ade80", "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}>
+          <button
+            onClick={listing.status !== "saved" ? onSave : undefined}
+            disabled={listing.status === "saved"}
+            style={btn(
+              listing.status === "saved" ? "#4ade80" : "#4ade80",
+              listing.status === "saved" ? "rgba(22,163,74,0.25)" : "rgba(22,163,74,0.15)",
+              "rgba(22,163,74,0.3)"
+            )}
+          >
             <Bookmark style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            Salvează
+            {listing.status === "saved" ? "✓ Salvat" : "Salvează"}
           </button>
-          <button onClick={onIgnore} style={btn("var(--text-secondary)", "rgba(100,116,139,0.15)", "var(--border-color)")}>
+          <button
+            onClick={listing.status !== "ignored" ? onIgnore : undefined}
+            disabled={listing.status === "ignored"}
+            style={btn(
+              "var(--text-secondary)",
+              listing.status === "ignored" ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.15)",
+              "var(--border-color)"
+            )}
+          >
             <EyeOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            Ignoră
+            {listing.status === "ignored" ? "✓ Ignorat" : "Ignoră"}
           </button>
           <button onClick={onBlockSeller} style={btn("#fb923c", "rgba(249,115,22,0.15)", "rgba(249,115,22,0.3)")}>
             <ShieldOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
@@ -1375,14 +1634,13 @@ function ActionBanner({
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div style={{
-      position: "fixed", bottom: 0, left: "240px", right: 0,
-      backgroundColor: "var(--bg-card)",
-      borderTop: "2px solid var(--blue-primary)",
+      backgroundColor: "rgba(37,99,235,0.1)",
+      border: "0.5px solid rgba(37,99,235,0.3)",
+      borderRadius: "0.5rem",
       padding: "0.625rem 1rem",
       display: "flex", flexWrap: "wrap",
       alignItems: "center", gap: "0.75rem",
-      zIndex: 60,
-      boxShadow: "0 -4px 12px rgba(0,0,0,0.25)",
+      backdropFilter: "blur(8px)",
     }}>
       {comparisonCount >= 1 && (
         <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
@@ -1534,8 +1792,22 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
                   </div>
                 )}
                 <div style={{ display: "flex", gap: "0.25rem", marginTop: "auto" }}>
-                  <button onClick={() => onSave(l.id)} style={smallActionBtn("#4ade80", "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}>💾</button>
-                  <button onClick={() => onIgnore(l.id)} style={smallActionBtn("var(--text-secondary)", "var(--bg-card)", "var(--border-color)")}>👁</button>
+                  <button
+                    onClick={() => { if (l.status !== "saved") onSave(l.id); }}
+                    disabled={l.status === "saved"}
+                    title="Salvează"
+                    style={smallActionBtn("#4ade80", l.status === "saved" ? "rgba(22,163,74,0.3)" : "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}
+                  >
+                    {l.status === "saved" ? "✓ Salvat" : "💾"}
+                  </button>
+                  <button
+                    onClick={() => { if (l.status !== "ignored") onIgnore(l.id); }}
+                    disabled={l.status === "ignored"}
+                    title="Ignoră"
+                    style={smallActionBtn("var(--text-secondary)", l.status === "ignored" ? "rgba(100,116,139,0.3)" : "var(--bg-card)", "var(--border-color)")}
+                  >
+                    {l.status === "ignored" ? "✓ Ignorat" : "👁"}
+                  </button>
                   <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ ...smallActionBtn("white", "var(--blue-primary)", "var(--blue-primary)"), textDecoration: "none", marginLeft: "auto" }}>↗ Deschide</a>
                 </div>
               </div>
@@ -1678,7 +1950,7 @@ function MessageTemplateBlock({ listing, templates }) {
           fontSize: "0.75rem", fontWeight: 600,
           cursor: busy ? "wait" : "pointer", opacity: busy ? 0.7 : 1,
         }}>
-          {busy ? "..." : "Randează"}
+          {busy ? "..." : "Generează"}
         </button>
       </div>
       {rendered && (

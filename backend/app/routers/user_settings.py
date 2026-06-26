@@ -12,6 +12,15 @@ router = APIRouter(prefix="/api/users", tags=["User Settings"])
 
 class UserSettings(BaseModel):
     flash_deal_threshold: Optional[float] = None
+    ai_features_config: Optional[dict] = None
+
+
+@router.get("/settings")
+def get_user_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return {
+        "flash_deal_threshold": float(current_user.flash_deal_threshold or 0.15),
+        "ai_features_config": current_user.ai_features_config or {},
+    }
 
 
 @router.patch("/settings")
@@ -28,8 +37,12 @@ def update_user_settings(
             raise HTTPException(status_code=400, detail="Pragul trebuie sa fie intre 0.05 si 0.50.")
         current_user.flash_deal_threshold = threshold
 
+    if payload.ai_features_config is not None:
+        current_user.ai_features_config = payload.ai_features_config
+
     db.commit()
     db.refresh(current_user)
     return {
         "flash_deal_threshold": float(current_user.flash_deal_threshold or 0.15),
+        "ai_features_config": current_user.ai_features_config or {},
     }

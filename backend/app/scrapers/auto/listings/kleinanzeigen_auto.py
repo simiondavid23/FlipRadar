@@ -12,7 +12,7 @@ from app.scrapers.auto.listings._common import (
 _BASE = "https://www.kleinanzeigen.de"
 
 
-async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: dict = {}) -> list:
+async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     # Categoria auto = c216. Keyword-ul (query/make) se prefixeaza in slug.
     keyword = " ".join(x for x in [(make or "").strip(), (query or "").strip()] if x).strip()
@@ -20,6 +20,9 @@ async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: di
         url = f"{_BASE}/s-autos/{urllib.parse.quote(keyword)}/c216"
     else:
         url = f"{_BASE}/s-autos/c216"
+    if page > 1:
+        # Kleinanzeigen pagineaza in path: /s-autos/seite:N/.../c216
+        url = url.replace("/s-autos/", f"/s-autos/seite:{page}/", 1)
 
     params = {}
     if filters.get("price_min") is not None or filters.get("price_max") is not None:

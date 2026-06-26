@@ -1,9 +1,12 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { aiAPI, ticketsAPI } from "@/lib/api";
-import { MessageCircle, Send, Trash2, Headphones, Bot, User, Plus, Ticket, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { MessageCircle, Send, Trash2, Headphones, Bot, User, Plus, Ticket, Clock, CheckCircle2, AlertCircle, Lock } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 export default function SupportPage() {
+  const { user } = useAuth();
+  const featureDisabled = user?.ai_features_config?.ai_support === false;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -394,7 +397,26 @@ export default function SupportPage() {
         </div>
       )}
 
+      {/* Banner functie AI dezactivata */}
+      {featureDisabled && (
+        <div style={{
+          backgroundColor: "rgba(100,116,139,0.1)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem",
+          padding: "1rem 1.25rem",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          marginBottom: "1.5rem",
+        }}>
+          <Lock style={{ width: "18px", height: "18px", color: "var(--text-secondary)", flexShrink: 0 }} />
+          <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+            Această funcționalitate este dezactivată.{" "}
+            <a href="/dashboard/settings" style={{ color: "#60a5fa", fontWeight: 600 }}>Activează din Setări →</a>
+          </span>
+        </div>
+      )}
+
       {/* Chat area */}
+      <div style={{ opacity: featureDisabled ? 0.4 : 1, pointerEvents: featureDisabled ? "none" : "auto" }}>
       {!activeTicket && (
         <div style={{
           backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
@@ -520,6 +542,7 @@ export default function SupportPage() {
           </div>
         </div>
       )}
+      </div>
 
       <style>{`
         @keyframes bounce {

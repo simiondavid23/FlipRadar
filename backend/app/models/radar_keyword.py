@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, ForeignKey, Text, JSON
 from datetime import datetime, timezone
 from app.database import Base
 
@@ -14,6 +14,13 @@ class RadarKeyword(Base):
     resale_price = Column(Float, nullable=False)
     category = Column(String, nullable=True)
     exclude_words = Column(Text, nullable=True, default="[]")
+    # FlipRadar — cuvinte excluse aplicate pe DESCRIERE (doar OLX & Vinted)
+    exclude_description_words = Column(JSON, nullable=True)
+    # FlipRadar — interval orar activ (ora intreaga 0-23); null = scanare non-stop
+    active_hours_start = Column(Integer, nullable=True)
+    active_hours_end = Column(Integer, nullable=True)
+    # FlipRadar — platforma unica (noul model). `platforms` JSON ramane pentru compat.
+    platform = Column(String(50), nullable=True)
     platforms = Column(Text, nullable=False, default='["olx","vinted","okazii"]')
     poll_interval_minutes = Column(Integer, default=5, nullable=False)
     judet = Column(String, nullable=True)

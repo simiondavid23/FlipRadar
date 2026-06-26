@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
 from app.utils.category_mapper import infer_category_from_name
+from app.services.log_manager import log_manager
 
 
 _ALTEX_HEADERS = {
@@ -855,29 +856,47 @@ async def fetch_ean_from_url_async(source_url: str) -> Optional[str]:
     return await asyncio.to_thread(fetch_ean_from_url, source_url)
 
 
+def _emit_catalog(shop_name: str, query: str, products: list) -> None:
+    """Loghează în modulul `catalog` rezultatul unei scanări de magazin."""
+    n = sum(1 for p in (products or []) if not (isinstance(p, dict) and p.get("message")))
+    log_manager.emit("catalog", "SCAN", f"Scanare {shop_name} · {n} produse verificate pentru '{query}'")
+    if n:
+        log_manager.emit("catalog", "OK", f"{shop_name}: {n} produse găsite")
+
+
 async def scrape_altex(query: str, max_results: int = 100) -> list:
     """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
-    return await asyncio.to_thread(_sync_scrape_altex, query, max_results)
+    res = await asyncio.to_thread(_sync_scrape_altex, query, max_results)
+    _emit_catalog("Altex", query, res)
+    return res
 
 
 async def scrape_sole(query: str, max_results: int = 100) -> list:
     """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
-    return await asyncio.to_thread(_sync_scrape_sole, query, max_results)
+    res = await asyncio.to_thread(_sync_scrape_sole, query, max_results)
+    _emit_catalog("Sole", query, res)
+    return res
 
 
 async def scrape_farmaciatei(query: str, max_results: int = 100) -> list:
     """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
-    return await asyncio.to_thread(_sync_scrape_farmaciatei, query, max_results)
+    res = await asyncio.to_thread(_sync_scrape_farmaciatei, query, max_results)
+    _emit_catalog("FarmaciaTei", query, res)
+    return res
 
 
 async def scrape_emag(query: str, max_results: int = 100) -> list:
     """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
-    return await asyncio.to_thread(_sync_scrape_emag, query, max_results)
+    res = await asyncio.to_thread(_sync_scrape_emag, query, max_results)
+    _emit_catalog("eMAG", query, res)
+    return res
 
 
 async def scrape_pcgarage(query: str, max_results: int = 100) -> list:
     """Wrapper async — curl_cffi este sincron, rulează într-un thread."""
-    return await asyncio.to_thread(_sync_scrape_pcgarage, query, max_results)
+    res = await asyncio.to_thread(_sync_scrape_pcgarage, query, max_results)
+    _emit_catalog("PCGarage", query, res)
+    return res
 
 
 _SCRAPERS_BY_SOURCE = {

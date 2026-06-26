@@ -11,6 +11,7 @@ from app.scrapers.auto.lots._common import (
     IMPERSONATE, MAX_LOTS, REQUIRES_ACCOUNT,
     build_headers, parse_int, parse_epoch_ms, make_lot,
 )
+from app.services.log_manager import log_manager
 
 _JSON_URL = "https://www.copart.com/public/lots/search-results"
 _HTML_URL = "https://www.copart.com/vehicleFinderSearch"
@@ -109,6 +110,7 @@ async def search_copart_lots(query: str, filters: dict = {}) -> list:
         "Referer": "https://www.copart.com/",
     })
 
+    log_manager.emit("auto_lots", "SCAN", f"Copart: cautare loturi '{query or '-'}'")
     results = []
     try:
         async with AsyncSession() as session:
@@ -135,7 +137,9 @@ async def search_copart_lots(query: str, filters: dict = {}) -> list:
                 results = await _scrape_html(session, query)
     except Exception as exc:
         print(f"[copart] error: {exc}")
+        log_manager.emit("auto_lots", "ERR", f"Copart eroare: {str(exc)[:80]}")
         return []
 
     print(f"[copart] {len(results)} loturi pentru '{query}'")
+    log_manager.emit("auto_lots", "OK", f"Copart: {len(results)} loturi gasite")
     return results[:MAX_LOTS]

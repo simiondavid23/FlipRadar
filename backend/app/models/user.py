@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -26,6 +26,9 @@ class User(Base):
     can_use_import_export = Column(Boolean, default=True, nullable=False, server_default="true")
     # FlipRadar — pragul minim de scadere (fractie 0-1) pentru alertele Flash Deal
     flash_deal_threshold = Column(Numeric(5, 2), default=0.15)
+    # FlipRadar — config per-functionalitate AI. Absenta unei chei (sau coloana null)
+    # inseamna ca functia E activata; e dezactivata doar cand cheia e explicit False.
+    ai_features_config = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

@@ -1,9 +1,12 @@
 "use client";
 import { useState } from "react";
 import { aiAPI } from "@/lib/api";
-import { FileText, Copy, Check, Sparkles } from "lucide-react";
+import { FileText, Copy, Check, Sparkles, Lock } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 export default function AIListingPage() {
+  const { user } = useAuth();
+  const featureDisabled = user?.ai_features_config?.ai_listing_creator === false;
   const [formData, setFormData] = useState({
     product_name: "",
     category: "",
@@ -92,6 +95,24 @@ export default function AIListingPage() {
         </p>
       </div>
 
+      {featureDisabled && (
+        <div style={{
+          backgroundColor: "rgba(100,116,139,0.1)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem",
+          padding: "1rem 1.25rem",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          marginBottom: "1.5rem",
+        }}>
+          <Lock style={{ width: "18px", height: "18px", color: "var(--text-secondary)", flexShrink: 0 }} />
+          <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+            Această funcționalitate este dezactivată.{" "}
+            <a href="/dashboard/settings" style={{ color: "#60a5fa", fontWeight: 600 }}>Activează din Setări →</a>
+          </span>
+        </div>
+      )}
+
+      <div style={{ opacity: featureDisabled ? 0.4 : 1, pointerEvents: featureDisabled ? "none" : "auto" }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
         {/* Form */}
         <div style={cardStyle}>
@@ -316,6 +337,7 @@ export default function AIListingPage() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       <style>{`

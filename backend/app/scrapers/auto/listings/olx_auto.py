@@ -8,6 +8,7 @@ from curl_cffi.requests import AsyncSession
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
 )
+from app.services.log_manager import log_manager
 
 _BASE = "https://www.olx.ro"
 _PATH = "/auto-masini-moto-ambarcatiuni/autoturisme/"
@@ -18,13 +19,15 @@ def _olx_id(href: str):
     return m.group(1) if m else None
 
 
-async def search_olx_auto(query: str = "", filters: dict = {}) -> list:
+async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     base_url = _BASE + _PATH
     if (query or "").strip():
         base_url += f"q-{urllib.parse.quote(query.strip())}/"
 
     params = {"search[order]": "created_at:desc"}
+    if page > 1:
+        params["page"] = page
     if filters.get("price_min") is not None:
         params["search[filter_float_price:from]"] = int(float(filters["price_min"]))
     if filters.get("price_max") is not None:
@@ -37,16 +40,19 @@ async def search_olx_auto(query: str = "", filters: dict = {}) -> list:
         params["search[filter_float_enginesize_km:to]"] = int(filters["km_max"])
 
     headers = build_headers({"Referer": _BASE + "/"})
+    log_manager.emit("auto_listings", "SCAN", f"OLX Auto: cautare '{query or 'auto'}'")
     results = []
     try:
         async with AsyncSession() as session:
             resp = await session.get(base_url, params=params, headers=headers, impersonate=IMPERSONATE, timeout=20)
             if resp.status_code != 200:
                 print(f"[olx_auto] HTTP {resp.status_code}")
+                log_manager.emit("auto_listings", "ERR", f"OLX Auto: HTTP {resp.status_code}")
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as exc:
         print(f"[olx_auto] error: {exc}")
+        log_manager.emit("auto_listings", "ERR", f"OLX Auto eroare: {str(exc)[:80]}")
         return []
 
     cards = soup.select('div[data-cy="l-card"]') or soup.select('[data-testid="l-card"]')
@@ -91,4 +97,5 @@ async def search_olx_auto(query: str = "", filters: dict = {}) -> list:
             continue
 
     print(f"[olx_auto] {len(results)} anunturi pentru '{query}'")
+    log_manager.emit("auto_listings", "OK", f"OLX Auto: {len(results)} anunturi gasite")
     return results[:MAX_LISTINGS]

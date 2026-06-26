@@ -13,6 +13,7 @@ from app.scrapers.auto.lots._common import (
     IMPERSONATE, MAX_LOTS, REQUIRES_ACCOUNT,
     build_headers, parse_int, make_lot,
 )
+from app.services.log_manager import log_manager
 
 _BASE = "https://www.iaai.com"
 
@@ -22,6 +23,7 @@ async def search_iaai_lots(query: str, filters: dict = {}) -> list:
     filters = filters or {}
     url = f"{_BASE}/Search?Keyword={urllib.parse.quote(query)}"
     headers = build_headers({"Referer": _BASE + "/"})
+    log_manager.emit("auto_lots", "SCAN", f"IAAI: cautare loturi '{query or '-'}'")
     results = []
 
     try:
@@ -29,10 +31,12 @@ async def search_iaai_lots(query: str, filters: dict = {}) -> list:
             resp = await session.get(url, headers=headers, impersonate=IMPERSONATE, timeout=20)
             if resp.status_code != 200:
                 print(f"[iaai] HTTP {resp.status_code}")
+                log_manager.emit("auto_lots", "ERR", f"IAAI: HTTP {resp.status_code}")
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as exc:
         print(f"[iaai] error: {exc}")
+        log_manager.emit("auto_lots", "ERR", f"IAAI eroare: {str(exc)[:80]}")
         return []
 
     cards = (
@@ -81,4 +85,5 @@ async def search_iaai_lots(query: str, filters: dict = {}) -> list:
             continue
 
     print(f"[iaai] {len(results)} loturi pentru '{query}'")
+    log_manager.emit("auto_lots", "OK", f"IAAI: {len(results)} loturi gasite")
     return results[:MAX_LOTS]

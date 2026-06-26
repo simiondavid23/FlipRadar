@@ -6,19 +6,48 @@ from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
-    IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
+    IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_ld_offers,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
 )
 
 _BASE = "https://www.autoscout24.ro"
 
 
-async def search_autoscout24(make: str = "", filters: dict = {}) -> list:
+def _extract_price_autoscout24(card, ld_offers=None, card_idx=0) -> tuple:
+    """Returneaza (pret: float | None, moneda). Nu cade niciodata pe textul cardului.
+
+    AutoScout24 expune pretul curat in atributul data-price de pe fiecare
+    <article> (sursa primara, per-card — fara riscul de aliniere gresita) si in
+    JSON-LD (rezerva, asociata pe pozitie).
+    """
+    # Strategy C — atributul data-price de pe card (cel mai sigur).
+    raw = card.get("data-price")
+    if not raw:
+        el = card.select_one("[data-price]")
+        raw = el.get("data-price") if el else None
+    if raw:
+        p = parse_price(str(raw))
+        if p:
+            return p, "EUR"
+
+    # Strategy A — JSON-LD, asociat pe pozitie (rezerva).
+    if ld_offers and card_idx < len(ld_offers):
+        offer = ld_offers[card_idx]
+        p = parse_price(str(offer.get("price") or ""))
+        if p:
+            return p, offer.get("currency") or "EUR"
+
+    return None, "EUR"
+
+
+async def search_autoscout24(make: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     path = f"/lst/{urllib.parse.quote((make or '').strip().lower())}" if make else "/lst/"
     url = _BASE + path
 
     params = {"sort": "standard", "desc": "0", "ustate": "N,U", "atype": "C"}
+    if page > 1:
+        params["page"] = page
     if filters.get("price_min") is not None:
         params["pricefrom"] = int(float(filters["price_min"]))
     if filters.get("price_max") is not None:
@@ -44,7 +73,8 @@ async def search_autoscout24(make: str = "", filters: dict = {}) -> list:
         or soup.select('[data-testid="list-item"]')
         or soup.select("article")
     )
-    for card in cards:
+    ld_offers = extract_ld_offers(soup)  # rezerva pentru data-price
+    for idx, card in enumerate(cards):
         try:
             link = card.find("a", href=True)
             if not link:
@@ -59,9 +89,9 @@ async def search_autoscout24(make: str = "", filters: dict = {}) -> list:
                 continue
 
             card_text = card.get_text(" ", strip=True)
-            price_el = card.find(class_=re.compile(r"price", re.I)) or card.find(attrs={"data-testid": re.compile(r"price", re.I)})
-            pret = parse_price(price_el.get_text(" ", strip=True)) if price_el else parse_price(card_text)
-            moneda = "RON" if ("lei" in (price_el.get_text(" ", strip=True).lower() if price_el else card_text.lower())) else "EUR"
+            # Pret din data-price (per-card) cu rezerva JSON-LD; niciodata din
+            # textul cardului — acolo aparea overflow-ul (toate cifrele concatenate).
+            pret, moneda = _extract_price_autoscout24(card, ld_offers, idx)
 
             loc_el = card.find(class_=re.compile(r"location|seller", re.I))
             locatie = loc_el.get_text(" ", strip=True) if loc_el else None

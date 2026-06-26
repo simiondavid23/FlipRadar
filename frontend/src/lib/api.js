@@ -119,6 +119,50 @@ export const adminAPI = {
 // Setari utilizator (FlipRadar — ITEM 16)
 export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),
+  getSettings: () => api.get("/api/users/settings"),
+  updateAIFeatures: (config) => api.patch("/api/users/settings", { ai_features_config: config }),
+};
+
+// Jurnale Live — statistici per modul (stream-ul SSE se consuma direct cu EventSource)
+export const logsAPI = {
+  getLogs: (module) => api.get(`/api/logs/stats`),
+};
+
+// ML Predictor — statistici colectare date + predictie pret/timp + reantrenare
+export const mlAPI = {
+  getStats: () => api.get("/api/ml/stats"),
+  predict: (payload) => api.post("/api/ml/predict", payload),
+  retrain: () => api.post("/api/ml/retrain"),
+  runSoldDetection: () => api.post("/api/ml/sold-detection"),
+};
+
+// Auto Anunturi — keyword-uri + feed monitorizat (scoring + import cost)
+export const autoListingsAPI = {
+  // Keywords
+  getKeywords:    ()         => api.get("/api/auto-listings/keywords"),
+  createKeyword:  (data)     => api.post("/api/auto-listings/keywords", data),
+  updateKeyword:  (id, data) => api.put(`/api/auto-listings/keywords/${id}`, data),
+  deleteKeyword:  (id)       => api.delete(`/api/auto-listings/keywords/${id}`),
+  // Feed
+  getFeed:        (params)   => api.get("/api/auto-listings/feed", { params }),
+  updateStatus:   (id, st)   => api.patch(`/api/auto-listings/feed/${id}/status`, { status: st }),
+  deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
+  getStats:       ()         => api.get("/api/auto-listings/stats"),
+  scanNow:        ()         => api.post("/api/auto-listings/scan-now"),
+};
+
+// Imobiliare Monitor — keyword-uri + feed scorat (zone, duplicate, price history)
+export const realEstateMonitorAPI = {
+  getKeywords:   ()         => api.get("/api/real-estate-monitor/keywords"),
+  createKeyword: (data)     => api.post("/api/real-estate-monitor/keywords", data),
+  updateKeyword: (id, data) => api.put(`/api/real-estate-monitor/keywords/${id}`, data),
+  deleteKeyword: (id)       => api.delete(`/api/real-estate-monitor/keywords/${id}`),
+  getFeed:       (params)   => api.get("/api/real-estate-monitor/feed", { params }),
+  updateStatus:  (id, st)   => api.patch(`/api/real-estate-monitor/feed/${id}/status`, { status: st }),
+  deleteListing: (id)       => api.delete(`/api/real-estate-monitor/feed/${id}`),
+  flagDuplicate: (id, dupId) => api.post(`/api/real-estate-monitor/feed/${id}/flag-duplicate`, { duplicate_of_id: dupId }),
+  getStats:      ()         => api.get("/api/real-estate-monitor/stats"),
+  scanNow:       ()         => api.post("/api/real-estate-monitor/scan-now"),
 };
 
 // Modulul 1 Marketplace — cautare live pe platforme (OLX, Vinted, etc.).
@@ -298,6 +342,7 @@ export const radarAPI = {
   generateListingAIReview: (id) => api.get(`/api/radar/listings/${id}/ai-review`),
   updateListingStatus: (id, status) =>
     api.patch(`/api/radar/listings/${id}/status`, { status }),
+  deleteListing: (id) => api.delete(`/api/radar/listings/${id}`),
   blockSeller: (id) => api.post(`/api/radar/listings/${id}/block-seller`),
   getBlockedSellers: () => api.get("/api/radar/blocked-sellers"),
   unblockSeller: (id) => api.delete(`/api/radar/blocked-sellers/${id}`),
@@ -305,6 +350,9 @@ export const radarAPI = {
   updateSettings: (data) => api.put("/api/radar/settings", data),
   testDiscord: (webhook_url) =>
     api.post("/api/radar/settings/test-discord", { webhook_url }),
+  testVintedToken: () => api.get("/api/radar/vinted/test"),
+  testLaJumateCookie: () => api.get("/api/radar/lajumate/test"),
+  testOkaziiCookie: () => api.get("/api/radar/okazii/test"),
   getFacebookStatus: () => api.get("/api/radar/facebook/status"),
   connectFacebook: () => api.post("/api/radar/facebook/connect"),
   getStats: () => api.get("/api/radar/stats"),

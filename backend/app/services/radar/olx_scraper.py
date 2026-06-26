@@ -15,7 +15,6 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
-from app.services.radar.categories import OLX_CATEGORY_SLUGS
 
 
 _IMPERSONATE = "chrome110"
@@ -198,6 +197,37 @@ def _extract_external_id(url: str) -> Optional[str]:
     return f"olx_{parsed.path.strip('/').replace('/', '_')[-50:]}"
 
 
+def _fetch_detail_image(url: str) -> Optional[str]:
+    """Acceseaza pagina individuala a anuntului si extrage prima imagine."""
+    try:
+        resp = curl_requests.get(
+            url,
+            headers=build_headers({"Referer": "https://www.olx.ro/"}),
+            impersonate=_IMPERSONATE,
+            timeout=12,
+        )
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, "html.parser")
+        selectors = [
+            'img[data-cy="ad-photo"]',
+            '[data-testid="image-gallery-image"]',
+            '.swiper-slide img',
+            '[data-cy="adPhotos-swiperSlide"] img',
+            'img[class*="Photo"]',
+        ]
+        for sel in selectors:
+            img = soup.select_one(sel)
+            if img:
+                src = img.get("src") or img.get("data-src") or img.get("data-lazy") or ""
+                if src.startswith("http") and "olxcdn" in src:
+                    return src
+        return None
+    except Exception as exc:
+        print(f"[OlxScraper] _fetch_detail_image error: {exc}")
+        return None
+
+
 def search_olx(
     keyword: str,
     max_price: float,
@@ -207,8 +237,14 @@ def search_olx(
     exclude_words: Optional[list[str]] = None,
     min_price: Optional[float] = None,
     category: Optional[str] = None,
+    exclude_description_words: Optional[list] = None,
+    page: int = 1,
 ) -> list[dict]:
-    """Cauta pe OLX dupa keyword si returneaza listinguri in format standard."""
+    """Cauta pe OLX dupa keyword si returneaza listinguri in format standard.
+
+    `page` (>=1) adauga ?page=N la cererea OLX; scanner-ul pagineaza pana cand o
+    pagina nu mai aduce anunturi noi.
+    """
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
@@ -216,150 +252,175 @@ def search_olx(
 
     q = urllib.parse.quote(keyword_clean)
     judet_slug = _normalize_judet(judet)
-    category_slug = OLX_CATEGORY_SLUGS.get(category) if category else None
+    # Categoria e folosita direct ca slug/path (noul model), fara mapare.
+    category_path = category.strip("/") if category else None
 
-    # Path-ul OLX: /[judet]/[categorie]/oferte/q-<keyword>/
-    parts = []
-    if judet_slug:
-        parts.append(judet_slug)
-    if category_slug:
-        parts.append(category_slug)
-    parts.append("oferte")
-    parts.append(f"q-{q}")
-    base_url = "https://www.olx.ro/" + "/".join(parts) + "/"
+    def _fetch_and_parse(cat_path: Optional[str]) -> list[dict]:
+        # Path-ul OLX: /[judet]/[categorie]/oferte/q-<keyword>/
+        parts = []
+        if judet_slug:
+            parts.append(judet_slug)
+        if cat_path:
+            parts.append(cat_path)
+        parts.append("oferte")
+        parts.append(f"q-{q}")
+        base_url = "https://www.olx.ro/" + "/".join(parts) + "/"
 
-    params = {}
-    if max_price and max_price > 0:
-        params["search[filter_float_price:to]"] = int(max_price)
-    if min_price and min_price > 0:
-        params["search[filter_float_price:from]"] = int(min_price)
-    if condition and condition != "all":
-        # OLX foloseste filter_enum_state cu valoarea "new" sau "used"
-        params["search[filter_enum_state][0]"] = "new" if condition == "new" else "used"
+        params = {}
+        if max_price and max_price > 0:
+            params["search[filter_float_price:to]"] = int(max_price)
+        if min_price and min_price > 0:
+            params["search[filter_float_price:from]"] = int(min_price)
+        if condition and condition != "all":
+            # OLX foloseste filter_enum_state cu valoarea "new" sau "used"
+            params["search[filter_enum_state][0]"] = "new" if condition == "new" else "used"
+        if page > 1:
+            params["page"] = page
 
-    if params:
-        url = base_url + "?" + urllib.parse.urlencode(params)
-    else:
-        url = base_url
+        if params:
+            url = base_url + "?" + urllib.parse.urlencode(params)
+        else:
+            url = base_url
 
-    headers = build_headers({"Referer": "https://www.olx.ro/"})
-    proxy_cfg = get_proxy_config()
-    request_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
-    if proxy_cfg:
-        request_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
+        headers = build_headers({"Referer": "https://www.olx.ro/"})
+        proxy_cfg = get_proxy_config()
+        request_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
+        if proxy_cfg:
+            request_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
 
-    html = None
-    for attempt in range(3):
-        try:
-            resp = curl_requests.get(url, **request_kwargs)
-            if resp.status_code == 200:
-                html = resp.text
-                break
-            if resp.status_code == 429:
-                delay = rate_limit_backoff(attempt)
-                print(f"[OlxScraper] 429 rate limit, retry {attempt+1}/3 dupa {delay:.1f}s")
-                time.sleep(delay)
-                continue
-            print(f"[OlxScraper] HTTP {resp.status_code} pentru {url}")
+        html = None
+        for attempt in range(3):
+            try:
+                resp = curl_requests.get(url, **request_kwargs)
+                if resp.status_code == 200:
+                    html = resp.text
+                    break
+                if resp.status_code == 429:
+                    delay = rate_limit_backoff(attempt)
+                    print(f"[OlxScraper] 429 rate limit, retry {attempt+1}/3 dupa {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                print(f"[OlxScraper] HTTP {resp.status_code} pentru {url}")
+                return []
+            except Exception as exc:
+                print(f"[OlxScraper] Eroare la fetch ({attempt+1}/3): {exc}")
+                time.sleep(rate_limit_backoff(attempt))
+
+        if not html:
             return []
-        except Exception as exc:
-            print(f"[OlxScraper] Eroare la fetch ({attempt+1}/3): {exc}")
-            time.sleep(rate_limit_backoff(attempt))
 
-    if not html:
-        return []
+        soup = BeautifulSoup(html, "html.parser")
+        cards = soup.select('div[data-cy="l-card"]')
+        if not cards:
+            cards = soup.select('[data-testid="l-card"]')
+        if not cards:
+            cards = soup.select("div.css-1sw7q4x")
 
-    soup = BeautifulSoup(html, "html.parser")
-    cards = soup.select('div[data-cy="l-card"]')
-    if not cards:
-        cards = soup.select('[data-testid="l-card"]')
-    if not cards:
-        cards = soup.select("div.css-1sw7q4x")
+        parsed = []
+        for card in cards:
+            try:
+                link_tag = card.find("a", href=True)
+                if not link_tag:
+                    continue
+                href = link_tag["href"]
+                if href.startswith("/"):
+                    href = "https://www.olx.ro" + href
 
-    results = []
-    for card in cards:
-        try:
-            link_tag = card.find("a", href=True)
-            if not link_tag:
-                continue
-            href = link_tag["href"]
-            if href.startswith("/"):
-                href = "https://www.olx.ro" + href
+                title_tag = card.find("h4") or card.find("h6") or link_tag
+                title = title_tag.get_text(strip=True) if title_tag else ""
+                if not title:
+                    continue
+                if is_excluded(title, exclude_words):
+                    continue
 
-            title_tag = card.find("h4") or card.find("h6") or link_tag
-            title = title_tag.get_text(strip=True) if title_tag else ""
-            if not title:
-                continue
-            if is_excluded(title, exclude_words):
-                continue
-
-            price_tag = card.find(attrs={"data-testid": "ad-price"}) or card.select_one("p.css-13afqrm") or card.find("p")
-            price = _parse_price(price_tag.get_text(" ", strip=True)) if price_tag else None
-            if price is None:
-                continue
-            if max_price and price > max_price:
-                continue
-            if min_price and price < min_price:
-                continue
-
-            location_tag = card.find(attrs={"data-testid": "location-date"}) or card.select_one("p.css-1a4brun")
-            location_raw = location_tag.get_text(" ", strip=True) if location_tag else None
-            # OLX combina "Locatie - Data" intr-un singur element; separa-le
-            location = None
-            listed_at = None
-            if location_raw:
-                if "-" in location_raw:
-                    loc_part, _, date_part = location_raw.partition("-")
-                    location = loc_part.strip()
-                    listed_at = _parse_olx_date(date_part.strip())
-                else:
-                    location = location_raw.strip()
-                    listed_at = _parse_olx_date(location_raw)
-
-            img_tag = card.find("img")
-            image_url = None
-            if img_tag:
-                image_url = (
-                    img_tag.get("data-src")
-                    or img_tag.get("data-lazy-src")
-                    or img_tag.get("data-original")
-                    or img_tag.get("srcset", "").split(" ")[0]
-                    or img_tag.get("src")
-                    or None
+                # MODULE 1b — exclude pe descriere (din cardul de search, daca exista)
+                desc_tag = (
+                    card.find(attrs={"data-cy": "ad-description"})
+                    or card.find(class_=re.compile(r"description|descriere|css-qijjoas", re.I))
                 )
-                if image_url and image_url.startswith("data:"):
-                    image_url = None
-            images = [image_url] if image_url else []
+                description = desc_tag.get_text(" ", strip=True)[:500] if desc_tag else ""
+                if exclude_description_words and description:
+                    if is_excluded(description, exclude_description_words):
+                        continue
 
-            cond_tag = card.find(attrs={"data-testid": "ad-state"})
-            cond = _normalize_condition(cond_tag.get_text(" ", strip=True)) if cond_tag else None
-            if condition == "new" and cond != "nou":
-                continue
-            if condition == "used" and cond != "second hand":
-                continue
+                price_tag = card.find(attrs={"data-testid": "ad-price"}) or card.select_one("p.css-13afqrm") or card.find("p")
+                price = _parse_price(price_tag.get_text(" ", strip=True)) if price_tag else None
+                if price is None:
+                    continue
+                if max_price and price > max_price:
+                    continue
+                if min_price and price < min_price:
+                    continue
 
-            ext_id = _extract_external_id(href)
-            if not ext_id:
-                continue
+                location_tag = card.find(attrs={"data-testid": "location-date"}) or card.select_one("p.css-1a4brun")
+                location_raw = location_tag.get_text(" ", strip=True) if location_tag else None
+                # OLX combina "Locatie - Data" intr-un singur element; separa-le
+                location = None
+                listed_at = None
+                if location_raw:
+                    if "-" in location_raw:
+                        loc_part, _, date_part = location_raw.partition("-")
+                        location = loc_part.strip()
+                        listed_at = _parse_olx_date(date_part.strip())
+                    else:
+                        location = location_raw.strip()
+                        listed_at = _parse_olx_date(location_raw)
 
-            results.append({
-                "external_id": ext_id,
-                "platform": "olx",
-                "title": title,
-                "price": price,
-                "currency": "RON",
-                "condition": cond,
-                "location": location,
-                "url": href,
-                "images": images,
-                "description": None,
-                "seller_name": None,
-                "seller_id": None,
-                "listed_at": listed_at,
-            })
-        except Exception as exc:
-            print(f"[OlxScraper] Eroare la parsarea unui card: {exc}")
-            continue
+                img_tag = card.find("img")
+                image_url = None
+                if img_tag:
+                    image_url = (
+                        img_tag.get("data-src")
+                        or img_tag.get("data-lazy-src")
+                        or img_tag.get("data-original")
+                        or img_tag.get("srcset", "").split(" ")[0]
+                        or img_tag.get("src")
+                        or None
+                    )
+                    if image_url and image_url.startswith("data:"):
+                        image_url = None
+                # MODULE 3c — daca thumbnail-ul lipseste, ia prima imagine din pagina de detalii
+                if not image_url:
+                    time.sleep(random.uniform(0.3, 0.7))  # small delay to avoid hammering
+                    image_url = _fetch_detail_image(href)
+                images = [image_url] if image_url else []
+
+                cond_tag = card.find(attrs={"data-testid": "ad-state"})
+                cond = _normalize_condition(cond_tag.get_text(" ", strip=True)) if cond_tag else None
+                if condition == "new" and cond != "nou":
+                    continue
+                if condition == "used" and cond != "second hand":
+                    continue
+
+                ext_id = _extract_external_id(href)
+                if not ext_id:
+                    continue
+
+                parsed.append({
+                    "external_id": ext_id,
+                    "platform": "olx",
+                    "title": title,
+                    "price": price,
+                    "currency": "RON",
+                    "condition": cond,
+                    "location": location,
+                    "url": href,
+                    "images": images,
+                    "description": None,
+                    "seller_name": None,
+                    "seller_id": None,
+                    "listed_at": listed_at,
+                })
+            except Exception as exc:
+                print(f"[OlxScraper] Eroare la parsarea unui card: {exc}")
+                continue
+        return parsed
+
+    results = _fetch_and_parse(category_path)
+    # Fallback: daca subcategoria completa nu da rezultate, reincearca pe categoria principala
+    if len(results) == 0 and category_path and "/" in category_path:
+        main_cat = category_path.split("/")[0]
+        results = _fetch_and_parse(main_cat)
 
     # Imbogateste fiecare rezultat cu imaginile la rezolutie maxima si descrierea
     # de pe pagina detaliilor. Apelurile sunt secventiale cu delay aleator pentru

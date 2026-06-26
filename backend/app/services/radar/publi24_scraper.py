@@ -84,6 +84,8 @@ def search_publi24(
     exclude_words: Optional[list[str]] = None,
     judet: Optional[str] = None,
     oras: Optional[str] = None,
+    category: Optional[str] = None,
+    page: int = 1,
 ) -> list[dict]:
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
@@ -91,11 +93,16 @@ def search_publi24(
         return []
 
     q = urllib.parse.quote(keyword_clean)
-    url = f"https://www.publi24.ro/anunturi/cautare/?q={q}"
+    if category:
+        url = f"https://www.publi24.ro/anunturi/{category.strip('/')}/?q={q}"
+    else:
+        url = f"https://www.publi24.ro/anunturi/?q={q}"
     if max_price and max_price > 0:
         url += f"&pretMax={int(max_price)}"
     if min_price and min_price > 0:
         url += f"&pretMin={int(min_price)}"
+    if page > 1:
+        url += f"&pagina={page}"
 
     headers = build_headers({"Referer": "https://www.publi24.ro/"})
     proxy_cfg = get_proxy_config()
@@ -126,7 +133,8 @@ def search_publi24(
 
     soup = BeautifulSoup(html, "html.parser")
     cards = (
-        soup.select(".article-item")
+        soup.select(".article-content")
+        or soup.select(".article-item")
         or soup.select(".listing-card")
         or soup.select("article")
         or soup.select("[data-id]")

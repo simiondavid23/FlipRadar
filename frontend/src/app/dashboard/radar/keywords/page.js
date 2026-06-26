@@ -85,6 +85,9 @@ const EMPTY_FORM = {
   min_margin_pct: 10.0,
   notify_email: true,
   notify_discord: true,
+  use_active_hours: false,
+  active_hours_start: 8,
+  active_hours_end: 22,
   car_filters: { ...EMPTY_CAR_FILTERS },
 };
 
@@ -93,6 +96,21 @@ function feeCeiling(resale, platform) {
   const ship = 20;
   if (platform === "okazii") return Math.max(0, r * 0.92 - ship);
   return Math.max(0, r - ship);
+}
+
+// Parseaza exclude_words (array sau string) intr-un array de chip-uri.
+function parseExcludeWords(raw) {
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch {
+      // nu e JSON — cade pe split dupa virgula
+    }
+    return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 // ── Wizard marketplace (alerte keyword) — NU pentru auto sau imobiliare ──────────
@@ -181,6 +199,16 @@ const EMPTY_WIZARD = {
   filters: {},
 };
 
+// MODULE 2k — platforme single-select pentru formularul de keyword (fără auto).
+const PLATFORMS = [
+  { value: "olx", label: "OLX" },
+  { value: "vinted", label: "Vinted" },
+  { value: "okazii", label: "Okazii" },
+  { value: "facebook", label: "Facebook" },
+  { value: "lajumate", label: "LaJumate" },
+  { value: "publi24", label: "Publi24" },
+];
+
 export default function RadarKeywordsPage() {
   const [keywords, setKeywords] = useState([]);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
@@ -188,7 +216,14 @@ export default function RadarKeywordsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [excludeInput, setExcludeInput] = useState("");
+  const [excludeChips, setExcludeChips] = useState([]);
+  const [chipInput, setChipInput] = useState("");
+  const [excludeDescChips, setExcludeDescChips] = useState([]);
+  const [descChipInput, setDescChipInput] = useState("");
+  const [allCategories, setAllCategories] = useState({});
+  const [formPlatform, setFormPlatform] = useState("");
+  const [formMainCat, setFormMainCat] = useState("");
+  const [formSubCat, setFormSubCat] = useState("");
   // Wizard marketplace (3 pasi) pentru adaugare keyword
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
@@ -206,7 +241,7 @@ export default function RadarKeywordsPage() {
         radarAPI.getCategories().catch(() => null),
       ]);
       setKeywords(kw.data || []);
-      if (cat?.data?.categories?.length) setCategories(cat.data.categories);
+      setAllCategories(cat?.data || {});
     } catch (e) {
       console.error("[RadarKeywords]", e);
     } finally {
@@ -216,10 +251,25 @@ export default function RadarKeywordsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Sincronizeaza chip-urile de excludere inapoi in form (ca JSON string).
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, exclude_words: JSON.stringify(excludeChips) }));
+  }, [excludeChips]);
+
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, exclude_description_words: JSON.stringify(excludeDescChips) }));
+  }, [excludeDescChips]);
+
   const openCreate = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
-    setExcludeInput("");
+    setExcludeChips([]);
+    setChipInput("");
+    setExcludeDescChips([]);
+    setDescChipInput("");
+    setFormPlatform("");
+    setFormMainCat("");
+    setFormSubCat("");
     setShowForm(true);
   };
 
@@ -327,9 +377,37 @@ export default function RadarKeywordsPage() {
       min_margin_pct: kw.min_margin_pct,
       notify_email: kw.notify_email !== false,
       notify_discord: kw.notify_discord !== false,
+      use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
+      active_hours_start: kw.active_hours_start ?? 8,
+      active_hours_end: kw.active_hours_end ?? 22,
       car_filters: { ...EMPTY_CAR_FILTERS, ...(kw.car_filters || {}) },
     });
-    setExcludeInput("");
+    setExcludeChips(parseExcludeWords(kw.exclude_words));
+    setChipInput("");
+    const descWords = (() => {
+      const raw = kw.exclude_description_words;
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw || "[]"); } catch { return []; }
+    })();
+    setExcludeDescChips(Array.isArray(descWords) ? descWords : []);
+    setDescChipInput("");
+    // MODULE 2k — initializeaza platforma + categoria (main/sub) din keyword
+    const platformVal = kw.platform
+      || (Array.isArray(kw.platforms) ? kw.platforms[0] : (() => { try { return JSON.parse(kw.platforms || "[]")[0]; } catch { return ""; } })())
+      || "";
+    setFormPlatform(platformVal);
+    const cats = allCategories[platformVal] || [];
+    let foundMain = "", foundSub = "";
+    for (const cat of cats) {
+      if (cat.value === kw.category) { foundMain = cat.value; break; }
+      let matched = false;
+      for (const sub of (cat.subcategories || [])) {
+        if (sub.value === kw.category) { foundMain = cat.value; foundSub = sub.value; matched = true; break; }
+      }
+      if (matched) break;
+    }
+    setFormMainCat(foundMain || "");
+    setFormSubCat(foundSub || "");
     setShowForm(true);
   };
 
@@ -340,19 +418,6 @@ export default function RadarKeywordsPage() {
         ? prev.platforms.filter((x) => x !== p)
         : [...prev.platforms, p],
     }));
-  };
-
-  const addExclude = () => {
-    const w = excludeInput.trim();
-    if (!w) return;
-    if (!form.exclude_words.includes(w)) {
-      setForm({ ...form, exclude_words: [...form.exclude_words, w] });
-    }
-    setExcludeInput("");
-  };
-
-  const removeExclude = (w) => {
-    setForm({ ...form, exclude_words: form.exclude_words.filter((x) => x !== w) });
   };
 
   const submit = async (e) => {
@@ -377,9 +442,11 @@ export default function RadarKeywordsPage() {
       max_price: parseFloat(form.max_price),
       min_price: minPriceVal,
       resale_price: parseFloat(form.resale_price),
-      category: form.category || null,
-      exclude_words: form.exclude_words,
-      platforms: form.platforms,
+      category: formSubCat || formMainCat || null,
+      platform: formPlatform,
+      exclude_words: excludeChips,
+      exclude_description_words: excludeDescChips,
+      platforms: formPlatform ? [formPlatform] : [],
       poll_interval_minutes: parseInt(form.poll_interval_minutes) || 5,
       judet: form.judet || null,
       oras: form.oras || null,
@@ -388,6 +455,8 @@ export default function RadarKeywordsPage() {
       min_margin_pct: parseFloat(form.min_margin_pct) || 10.0,
       notify_email: !!form.notify_email,
       notify_discord: !!form.notify_discord,
+      active_hours_start: form.use_active_hours ? (form.active_hours_start ?? 8) : null,
+      active_hours_end: form.use_active_hours ? (form.active_hours_end ?? 22) : null,
       car_filters: carFiltersForSend,
     };
     if (!payload.name || !payload.max_price || !payload.resale_price) {
@@ -409,6 +478,10 @@ export default function RadarKeywordsPage() {
         await radarAPI.createKeyword(payload);
       }
       setShowForm(false);
+      setExcludeChips([]);
+      setChipInput("");
+      setExcludeDescChips([]);
+      setDescChipInput("");
       load();
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la salvare.");
@@ -509,7 +582,7 @@ export default function RadarKeywordsPage() {
           </p>
         </div>
         <button
-          onClick={openWizard}
+          onClick={openCreate}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -596,6 +669,21 @@ export default function RadarKeywordsPage() {
                     <tr key={k.id} style={{ borderTop: "1px solid var(--border-color)" }}>
                       <td style={td}>
                         <div>{k.name}</div>
+                        {k.active_hours_start !== null && k.active_hours_start !== undefined &&
+                          k.active_hours_end !== null && k.active_hours_end !== undefined && (
+                            <span style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.2rem",
+                              fontSize: "0.7rem",
+                              color: "var(--text-secondary)",
+                              marginTop: "0.2rem",
+                            }}>
+                              🕐 {String(k.active_hours_start).padStart(2, "0")}:00
+                              {" – "}
+                              {String(k.active_hours_end).padStart(2, "0")}:00
+                            </span>
+                          )}
                         {k.marketplace_config && (() => {
                           const mc = k.marketplace_config;
                           const plat = WIZARD_PLATFORMS.find((p) => p.value === mc.platform)?.label || mc.platform;
@@ -949,6 +1037,51 @@ export default function RadarKeywordsPage() {
             </div>
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
+              <Field label="Platformă">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                  {PLATFORMS.map((p) => (
+                    <button key={p.value} type="button"
+                      onClick={() => { setFormPlatform(p.value); setFormMainCat(""); setFormSubCat(""); setForm((prev) => ({ ...prev, platforms: [p.value] })); }}
+                      style={{
+                        padding: "0.375rem 0.875rem", borderRadius: "0.5rem", fontSize: "0.8125rem",
+                        fontWeight: formPlatform === p.value ? 600 : 400, cursor: "pointer",
+                        border: formPlatform === p.value ? "2px solid #2563eb" : "1px solid var(--border-color)",
+                        backgroundColor: formPlatform === p.value ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
+                        color: formPlatform === p.value ? "#60a5fa" : "var(--text-secondary)",
+                      }}
+                    >{p.label}</button>
+                  ))}
+                </div>
+              </Field>
+
+              {formPlatform && (() => {
+                const currentPlatformCats = allCategories[formPlatform] || [];
+                const selectedMainCat = currentPlatformCats.find((c) => c.value === formMainCat);
+                const hasSubs = selectedMainCat?.subcategories?.length > 0;
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: hasSubs ? "1fr 1fr" : "1fr", gap: "0.75rem" }}>
+                    <Field label="Categorie principală">
+                      <select value={formMainCat} onChange={(e) => { setFormMainCat(e.target.value); setFormSubCat(""); }} style={inputStyle}>
+                        <option value="">Toate categoriile</option>
+                        {currentPlatformCats.map((c) => (
+                          <option key={c.value ?? c.label} value={c.value ?? ""}>{c.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    {hasSubs && (
+                      <Field label="Subcategorie">
+                        <select value={formSubCat} onChange={(e) => setFormSubCat(e.target.value)} style={inputStyle}>
+                          <option value="">Toate</option>
+                          {selectedMainCat.subcategories.map((s) => (
+                            <option key={s.value ?? s.label} value={s.value ?? ""}>{s.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
+                  </div>
+                );
+              })()}
+
               <Field label="Keyword">
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="iPhone 13" style={inputStyle} required />
               </Field>
@@ -977,22 +1110,6 @@ export default function RadarKeywordsPage() {
                 </small>
               </Field>
 
-              <Field label="Categorie">
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  style={inputStyle}
-                >
-                  <option value="">Toate categoriile</option>
-                  {categories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <small style={{ color: "var(--text-muted)", fontSize: "0.7rem" }}>
-                  Selectarea categoriei reduce rezultatele irelevante (ex: alege Telefoane pentru a exclude husele și accesoriile)
-                </small>
-              </Field>
-
               {marginPreview && (
                 <div style={{ padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem" }}>
                   Marjă estimată: <strong style={{ color: marginPreview.pct >= 25 ? "#4ade80" : marginPreview.pct >= 10 ? "#facc15" : "#fb923c" }}>
@@ -1011,72 +1128,113 @@ export default function RadarKeywordsPage() {
                 </div>
               )}
 
-              <Field label="Exclude cuvinte (Enter pentru a adăuga)">
+              <Field label="Exclude cuvinte din titlu (Enter pentru a adăuga)">
                 <div style={{
                   border: "1px solid var(--border-color)",
-                  backgroundColor: "var(--bg-dark)",
                   borderRadius: "0.5rem",
+                  backgroundColor: "var(--bg-dark)",
                   padding: "0.375rem 0.5rem",
-                  display: "flex", flexWrap: "wrap", gap: "0.375rem",
-                  alignItems: "center",
+                  display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem",
+                  minHeight: "2.5rem",
                 }}>
-                  {form.exclude_words.map((w) => (
-                    <span key={w} style={{
-                      backgroundColor: "rgba(239,68,68,0.15)",
-                      border: "1px solid rgba(239,68,68,0.3)",
-                      color: "#f87171",
+                  {excludeChips.map((chip) => (
+                    <span key={chip} style={{
+                      display: "inline-flex", alignItems: "center", gap: "0.25rem",
+                      backgroundColor: "rgba(37,99,235,0.15)",
+                      border: "1px solid rgba(37,99,235,0.3)",
+                      color: "#60a5fa",
+                      fontSize: "0.75rem",
                       padding: "0.125rem 0.5rem",
                       borderRadius: "0.375rem",
-                      fontSize: "0.75rem",
-                      display: "inline-flex", alignItems: "center", gap: "0.25rem",
                     }}>
-                      {w}
-                      <button type="button" onClick={() => removeExclude(w)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: 0, display: "flex" }}>
+                      {chip}
+                      <button
+                        type="button"
+                        onClick={() => setExcludeChips(excludeChips.filter((c) => c !== chip))}
+                        style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", padding: 0, display: "flex" }}
+                      >
                         <X style={{ width: "12px", height: "12px" }} />
                       </button>
                     </span>
                   ))}
                   <input
                     type="text"
-                    value={excludeInput}
-                    onChange={(e) => setExcludeInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExclude(); } }}
-                    placeholder="defect, stricat, ..."
+                    value={chipInput}
+                    onChange={(e) => setChipInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const w = chipInput.trim();
+                        if (w && !excludeChips.includes(w)) {
+                          setExcludeChips([...excludeChips, w]);
+                        }
+                        setChipInput("");
+                      }
+                    }}
+                    placeholder="Adaugă cuvânt sau frază... (Enter)"
                     style={{
-                      flex: 1, minWidth: "120px",
-                      backgroundColor: "transparent !important",
-                      border: "none !important",
-                      color: "var(--text-primary) !important",
+                      flex: 1, minWidth: "140px",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      color: "var(--text-primary)",
                       fontSize: "0.8125rem", outline: "none", padding: "0.25rem",
                     }}
                   />
                 </div>
               </Field>
 
-              <Field label="Platforme active">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                  {PLATFORM_OPTIONS.map((p) => {
-                    const on = form.platforms.includes(p.value);
-                    return (
+              <Field label={<>Exclude cuvinte din descriere (Enter pentru a adăuga)<span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>— funcționează pe OLX și Vinted</span></>}>
+                <div style={{
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "0.5rem",
+                  backgroundColor: "var(--bg-dark)",
+                  padding: "0.375rem 0.5rem",
+                  display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem",
+                  minHeight: "2.5rem",
+                }}>
+                  {excludeDescChips.map((chip) => (
+                    <span key={chip} style={{
+                      display: "inline-flex", alignItems: "center", gap: "0.25rem",
+                      backgroundColor: "rgba(37,99,235,0.15)",
+                      border: "1px solid rgba(37,99,235,0.3)",
+                      color: "#60a5fa",
+                      fontSize: "0.75rem",
+                      padding: "0.125rem 0.5rem",
+                      borderRadius: "0.375rem",
+                    }}>
+                      {chip}
                       <button
-                        key={p.value}
                         type="button"
-                        onClick={() => togglePlatform(p.value)}
-                        style={{
-                          padding: "0.375rem 0.75rem",
-                          backgroundColor: on ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
-                          color: on ? "#60a5fa" : "var(--text-secondary)",
-                          border: `1px solid ${on ? "rgba(37,99,235,0.3)" : "var(--border-color)"}`,
-                          borderRadius: "0.5rem",
-                          fontSize: "0.8125rem",
-                          fontWeight: 500,
-                          cursor: "pointer",
-                        }}
+                        onClick={() => setExcludeDescChips(excludeDescChips.filter((c) => c !== chip))}
+                        style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", padding: 0, display: "flex" }}
                       >
-                        {on ? "✓ " : ""}{p.label}
+                        <X style={{ width: "12px", height: "12px" }} />
                       </button>
-                    );
-                  })}
+                    </span>
+                  ))}
+                  <input
+                    type="text"
+                    value={descChipInput}
+                    onChange={(e) => setDescChipInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const w = descChipInput.trim();
+                        if (w && !excludeDescChips.includes(w)) {
+                          setExcludeDescChips([...excludeDescChips, w]);
+                        }
+                        setDescChipInput("");
+                      }
+                    }}
+                    placeholder="Adaugă cuvânt sau frază... (Enter)"
+                    style={{
+                      flex: 1, minWidth: "140px",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      color: "var(--text-primary)",
+                      fontSize: "0.8125rem", outline: "none", padding: "0.25rem",
+                    }}
+                  />
                 </div>
               </Field>
 
@@ -1121,6 +1279,57 @@ export default function RadarKeywordsPage() {
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} style={{ width: "auto" }} />
                 Activ
               </label>
+
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+                  <input
+                    type="checkbox"
+                    id="use-hours"
+                    checked={form.use_active_hours || false}
+                    onChange={(e) => setForm((prev) => ({ ...prev, use_active_hours: e.target.checked }))}
+                    style={{ width: "15px", height: "15px", cursor: "pointer" }}
+                  />
+                  <label htmlFor="use-hours" style={{ fontSize: "0.875rem", color: "var(--text-primary)", cursor: "pointer" }}>
+                    Activ doar în interval orar
+                  </label>
+                </div>
+
+                {form.use_active_hours && (
+                  <div style={{ marginTop: "0.625rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div>
+                      <label style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", display: "block", marginBottom: "0.25rem" }}>
+                        De la (ora)
+                      </label>
+                      <select
+                        value={form.active_hours_start ?? 8}
+                        onChange={(e) => setForm((prev) => ({ ...prev, active_hours_start: parseInt(e.target.value) }))}
+                        style={inputStyle}
+                      >
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", display: "block", marginBottom: "0.25rem" }}>
+                        Până la (ora)
+                      </label>
+                      <select
+                        value={form.active_hours_end ?? 22}
+                        onChange={(e) => setForm((prev) => ({ ...prev, active_hours_end: parseInt(e.target.value) }))}
+                        style={inputStyle}
+                      >
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p style={{ gridColumn: "1/-1", fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "-0.25rem" }}>
+                      Keyword-ul nu va fi scanat în afara acestui interval. Suportă intervale peste miezul nopții (ex: 22:00–06:00).
+                    </p>
+                  </div>
+                )}
+              </div>
 
               <div style={{
                 backgroundColor: "transparent",

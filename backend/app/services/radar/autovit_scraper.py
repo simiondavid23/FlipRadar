@@ -163,9 +163,12 @@ def search_autovit(
     min_price: Optional[float] = None,
     exclude_words: Optional[list[str]] = None,
     car_filters: Optional[dict] = None,
+    page: int = 1,
 ) -> list[dict]:
     exclude_words = exclude_words or []
     url = build_autovit_url(keyword, max_price, min_price, car_filters)
+    if page > 1:
+        url += (f"&page={page}" if "?" in url else f"?page={page}")
 
     headers = build_headers({"Referer": "https://www.autovit.ro/"})
     proxy_cfg = get_proxy_config()

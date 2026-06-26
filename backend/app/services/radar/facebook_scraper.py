@@ -14,7 +14,6 @@ from datetime import datetime
 from typing import Optional
 
 from app.services.radar.base_scraper import is_excluded, get_proxy_config
-from app.services.radar.categories import FACEBOOK_CATEGORY_IDS
 
 
 def _session_max_age_days() -> int:
@@ -73,8 +72,15 @@ def search_facebook(
     session_path: Optional[str] = None,
     min_price: Optional[float] = None,
     category: Optional[str] = None,
+    page: int = 1,
+    max_scrolls: int = 10,
 ) -> list[dict]:
-    """Cauta pe Facebook Marketplace cu o sesiune Playwright pre-logata."""
+    """Cauta pe Facebook Marketplace cu o sesiune Playwright pre-logata.
+
+    `page` e ignorat (Facebook foloseste infinite scroll); `max_scrolls` limiteaza
+    cat de mult derulam intr-o sesiune. Returneaza TOATE rezultatele adunate prin
+    scroll — scanner-ul se opreste cand o pagina nu mai aduce anunturi noi.
+    """
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
@@ -95,7 +101,7 @@ def search_facebook(
     if max_price and max_price > 0:
         url += f"&maxPrice={int(max_price)}"
     if category:
-        cat_id = FACEBOOK_CATEGORY_IDS.get(category)
+        cat_id = category
         if cat_id:
             url += f"&category={cat_id}"
 
@@ -126,85 +132,91 @@ def search_facebook(
                 if "login" in page.url.lower():
                     print("[FacebookScraper] Sesiune expirata — necesita reconectare")
                     return []
-                # Scroll pentru lazy load
-                for _ in range(2):
-                    page.mouse.wheel(0, 2500)
-                    page.wait_for_timeout(800)
 
-                # Selectoare candidat — Facebook isi schimba clasele frecvent,
-                # asa ca incercam mai multe pattern-uri si folosim primul care
-                # returneaza ceva
-                items = page.query_selector_all('a[href*="/marketplace/item/"]')
+                # Infinite scroll: Facebook nu are paginare prin URL, deci derulam
+                # pana cand o pasare nu mai aduce carduri noi (sau atingem max_scrolls).
                 seen_urls = set()
-                for it in items:
-                    try:
-                        href = it.get_attribute("href")
-                        if not href:
-                            continue
-                        full_url = href if href.startswith("http") else f"https://www.facebook.com{href}"
-                        # Curata query string-ul
-                        full_url = full_url.split("?")[0]
-                        if full_url in seen_urls:
-                            continue
-                        seen_urls.add(full_url)
-
-                        text = (it.inner_text() or "").strip()
-                        lines = [l.strip() for l in text.split("\n") if l.strip()]
-                        if len(lines) < 2:
-                            continue
-                        price = None
-                        title = ""
-                        location = None
-                        for line in lines:
-                            if price is None and ("RON" in line.upper() or "lei" in line.lower() or re.match(r"^\d", line)):
-                                p_val = _parse_price_text(line)
-                                if p_val is not None:
-                                    price = p_val
-                                    continue
-                            if not title and line and not re.match(r"^[\d.,]+$", line):
-                                title = line
+                prev_count = 0
+                scroll_count = 0
+                while scroll_count < max_scrolls:
+                    items = page.query_selector_all('a[href*="/marketplace/item/"]')
+                    for it in items:
+                        try:
+                            href = it.get_attribute("href")
+                            if not href:
                                 continue
-                            if not location and line and not re.match(r"^[\d.,]+", line):
-                                location = line
+                            full_url = href if href.startswith("http") else f"https://www.facebook.com{href}"
+                            # Curata query string-ul
+                            full_url = full_url.split("?")[0]
+                            if full_url in seen_urls:
+                                continue
+                            seen_urls.add(full_url)
 
-                        if not title or price is None:
-                            continue
-                        if max_price and price > max_price:
-                            continue
-                        if min_price and price < min_price:
-                            continue
-                        if is_excluded(title, exclude_words):
+                            text = (it.inner_text() or "").strip()
+                            lines = [l.strip() for l in text.split("\n") if l.strip()]
+                            if len(lines) < 2:
+                                continue
+                            price = None
+                            title = ""
+                            location = None
+                            for line in lines:
+                                if price is None and ("RON" in line.upper() or "lei" in line.lower() or re.match(r"^\d", line)):
+                                    p_val = _parse_price_text(line)
+                                    if p_val is not None:
+                                        price = p_val
+                                        continue
+                                if not title and line and not re.match(r"^[\d.,]+$", line):
+                                    title = line
+                                    continue
+                                if not location and line and not re.match(r"^[\d.,]+", line):
+                                    location = line
+
+                            if not title or price is None:
+                                continue
+                            if max_price and price > max_price:
+                                continue
+                            if min_price and price < min_price:
+                                continue
+                            if is_excluded(title, exclude_words):
+                                continue
+
+                            ext_id = _extract_external_id(full_url)
+                            if not ext_id:
+                                continue
+
+                            img_el = it.query_selector("img")
+                            image_url = img_el.get_attribute("src") if img_el else None
+                            images = [image_url] if image_url else []
+
+                            # Facebook nu expune data postarii in cardul de pe pagina de cautare —
+                            # paginile au "X zile in urma" doar pe pagina detalii. Cadem pe now()
+                            # ca sa avem totusi o valoare sortabila.
+                            results.append({
+                                "external_id": ext_id,
+                                "platform": "facebook",
+                                "title": title,
+                                "price": price,
+                                "currency": "RON",
+                                "condition": None,
+                                "location": location,
+                                "url": full_url,
+                                "images": images,
+                                "description": None,
+                                "seller_name": None,
+                                "seller_id": None,
+                                "listed_at": datetime.now(),
+                            })
+                        except Exception as exc:
+                            print(f"[FacebookScraper] Eroare la parsare card: {exc}")
                             continue
 
-                        ext_id = _extract_external_id(full_url)
-                        if not ext_id:
-                            continue
-
-                        img_el = it.query_selector("img")
-                        image_url = img_el.get_attribute("src") if img_el else None
-                        images = [image_url] if image_url else []
-
-                        # Facebook nu expune data postarii in cardul de pe pagina de cautare —
-                        # paginile au "X zile in urma" doar pe pagina detalii. Cadem pe now()
-                        # ca sa avem totusi o valoare sortabila.
-                        results.append({
-                            "external_id": ext_id,
-                            "platform": "facebook",
-                            "title": title,
-                            "price": price,
-                            "currency": "RON",
-                            "condition": None,
-                            "location": location,
-                            "url": full_url,
-                            "images": images,
-                            "description": None,
-                            "seller_name": None,
-                            "seller_id": None,
-                            "listed_at": datetime.now(),
-                        })
-                    except Exception as exc:
-                        print(f"[FacebookScraper] Eroare la parsare card: {exc}")
-                        continue
+                    # Stop cand un scroll nu mai aduce carduri noi.
+                    if len(results) == prev_count and scroll_count > 0:
+                        break
+                    prev_count = len(results)
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(2500)
+                    scroll_count += 1
             finally:
                 context.close()
                 browser.close()

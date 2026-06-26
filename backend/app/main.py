@@ -17,6 +17,9 @@ from app.routers import real_estate  # FlipRadar — Modul Imobiliare (OLX/Stori
 from app.routers import ml  # FlipRadar — ML: predictie pret + timp de vanzare
 from app.routers.facebook_groups import router as facebook_groups_router  # FlipRadar — Grupuri Facebook
 from app.routers.tracked_products import router as tracked_router  # FlipRadar — Produse Urmarite (favorite + watchlist)
+from app.routers.logs import router as logs_router  # FlipRadar — Jurnale Live (SSE)
+from app.routers.auto_listings_keywords import router as auto_listings_router  # FlipRadar — Auto Anunturi (keyword-uri + feed)
+from app.routers.real_estate_keywords import router as re_monitor_router  # FlipRadar — Imobiliare Monitor (keyword-uri + feed)
 
 # Import all models
 from app.models import user, product, price_history, product_source
@@ -80,6 +83,90 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
         next_run_time=datetime.now(),
     )
+
+    # FlipRadar — Auto Anunturi: scaneaza keyword-urile auto la fiecare 10 min.
+    try:
+        from app.services.auto_listings_scanner import run_auto_scan
+
+        def _run_auto_scan():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_auto_scan(_db)
+            except Exception as exc:
+                print(f"[AutoScan] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(
+            _run_auto_scan,
+            "interval",
+            minutes=10,
+            id="auto_listings_scan",
+            replace_existing=True,
+        )
+        print("[Scheduler] Auto listings scan (10m) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] Auto scan setup failed: {exc}")
+
+    # FlipRadar — Imobiliare Monitor: scan (30m) + pHash (1h) + cleanup (12:30).
+    try:
+        from app.services.real_estate_scanner import run_real_estate_scan
+
+        def _run_re_scan():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_real_estate_scan(_db)
+            except Exception as exc:
+                print(f"[REScan] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(_run_re_scan, "interval", minutes=30,
+            id="real_estate_scan", replace_existing=True)
+        print("[Scheduler] Real estate scan (30m) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] RE scan setup failed: {exc}")
+
+    try:
+        from app.services.real_estate.phash_job import run_phash_job
+
+        def _run_phash():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_phash_job(_db)
+            except Exception as exc:
+                print(f"[pHash] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(_run_phash, "interval", hours=1,
+            id="re_phash_job", replace_existing=True)
+        print("[Scheduler] pHash job (1h) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] pHash setup failed: {exc}")
+
+    try:
+        from app.services.real_estate_scanner import run_cleanup
+
+        def _run_re_cleanup():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_cleanup(_db)
+            except Exception as exc:
+                print(f"[RECleanup] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(_run_re_cleanup, "cron", hour=12, minute=30,
+            id="re_daily_cleanup", replace_existing=True)
+        print("[Scheduler] RE cleanup (12:30) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] RE cleanup setup failed: {exc}")
+
     # FlipRadar — Imobiliare: scaneaza alertele la fiecare 30 minute (prima rulare
     # nu e imediata, ca sa nu scrapeze la fiecare restart).
     scheduler.add_job(
@@ -90,40 +177,114 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
 
+    # FlipRadar — cleanup zilnic (04:00): sterge definitiv anunturile disparute
+    # de pe marketplace (404 / sold/removed), inclusiv cele salvate/ignorate.
+    def _daily_radar_cleanup():
+        from app.database import SessionLocal
+        from app.services.radar.cleanup_service import cleanup_removed_listings_daily
+        _db = SessionLocal()
+        try:
+            cleanup_removed_listings_daily(_db)
+        finally:
+            _db.close()
+
+    scheduler.add_job(
+        _daily_radar_cleanup,
+        "cron",
+        hour=12,
+        minute=0,
+        id="radar_daily_cleanup",
+        replace_existing=True,
+    )
+
+    # ML sold detection — runs daily at 13:00
+    # Checks market_listings for sold status → generates training labels
+    try:
+        from app.services.ml.sold_detector import run_sold_detection
+
+        def _run_sold_detection():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_sold_detection(_db, batch_size=100)
+            except Exception as exc:
+                print(f"[ML SoldDetector] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(
+            _run_sold_detection,
+            "cron",
+            hour=13,
+            minute=0,
+            id="ml_sold_detection",
+            replace_existing=True,
+        )
+        print("[Scheduler] ML sold detection (13:00 zilnic) înregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] ML sold detection setup failed: {exc}")
+
     # FlipRadar — ML: colectare date piata (BMW/Apple) la 6h, verificare vandute la
     # 12h, reantrenare modele lunea la 03:00. Izolat in try/except ca lipsa
     # dependintelor ML (scikit-learn etc.) sa nu impiedice pornirea aplicatiei.
     try:
         import asyncio
         from app.database import SessionLocal
-        from app.services.ml.bmw_collector import BMWCollector
-        from app.services.ml.apple_collector import AppleCollector
+        # ML collectors disabled — data now collected via feed scanners
+        # (Radar Piață → electronics_apple, Auto Anunțuri → auto_bmw).
+        # To re-enable: uncomment the imports, instantiation and jobs below.
+        # from app.services.ml.bmw_collector import BMWCollector
+        # from app.services.ml.apple_collector import AppleCollector
         from app.services.ml.price_predictor import (
             train_ml_models_if_ready, models_available, MODELS_DIR,
         )
 
-        bmw_collector = BMWCollector()
-        apple_collector = AppleCollector()
+        # bmw_collector = BMWCollector()
+        # apple_collector = AppleCollector()
 
-        def _run_async_collector(coro_fn):
-            db = SessionLocal()
-            try:
-                asyncio.run(coro_fn(db))
-            except Exception as exc:
-                print(f"[ML job] eroare: {exc}")
-            finally:
-                db.close()
+        # def _run_async_collector(coro_fn):
+        #     db = SessionLocal()
+        #     try:
+        #         asyncio.run(coro_fn(db))
+        #     except Exception as exc:
+        #         print(f"[ML job] eroare: {exc}")
+        #     finally:
+        #         db.close()
 
-        scheduler.add_job(lambda: _run_async_collector(bmw_collector.collect_new_listings),
-                          "interval", hours=6, id="collect_bmw", replace_existing=True)
-        scheduler.add_job(lambda: _run_async_collector(apple_collector.collect_new_listings),
-                          "interval", hours=6, id="collect_apple", replace_existing=True)
-        scheduler.add_job(lambda: _run_async_collector(bmw_collector.check_sold_status),
-                          "interval", hours=12, id="check_sold_bmw", replace_existing=True)
-        scheduler.add_job(lambda: _run_async_collector(apple_collector.check_sold_status),
-                          "interval", hours=12, id="check_sold_apple", replace_existing=True)
+        # ML collectors disabled — data now collected via feed scanners
+        # (Radar Piață → electronics_apple, Auto Anunțuri → auto_bmw)
+        # To re-enable: uncomment and restart
+        # scheduler.add_job(lambda: _run_async_collector(bmw_collector.collect_new_listings),
+        #                   "interval", hours=6, id="collect_bmw", replace_existing=True)
+        # scheduler.add_job(lambda: _run_async_collector(apple_collector.collect_new_listings),
+        #                   "interval", hours=6, id="collect_apple", replace_existing=True)
+        # scheduler.add_job(lambda: _run_async_collector(bmw_collector.check_sold_status),
+        #                   "interval", hours=12, id="check_sold_bmw", replace_existing=True)
+        # scheduler.add_job(lambda: _run_async_collector(apple_collector.check_sold_status),
+        #                   "interval", hours=12, id="check_sold_apple", replace_existing=True)
         scheduler.add_job(train_ml_models_if_ready,
                           "cron", day_of_week="mon", hour=3, id="retrain_models", replace_existing=True)
+
+        # Initial ML collection disabled — feed scanners handle this now
+        # import threading as _threading
+        #
+        # async def _delayed_initial_collect():
+        #     await asyncio.sleep(60)
+        #     _cdb = SessionLocal()
+        #     try:
+        #         print("[ML] Colectare initiala pornita dupa startup...")
+        #         await bmw_collector.collect_new_listings(_cdb)
+        #         await apple_collector.collect_new_listings(_cdb)
+        #         print("[ML] Colectare initiala finalizata.")
+        #     except Exception as exc:
+        #         print(f"[ML] Eroare colectare initiala: {exc}")
+        #     finally:
+        #         _cdb.close()
+        #
+        # def _run_initial():
+        #     asyncio.run(_delayed_initial_collect())
+        #
+        # _threading.Thread(target=_run_initial, daemon=True).start()
 
         if models_available():
             print(f"[ML] Modele ML gasite in {MODELS_DIR}.")
@@ -160,6 +321,12 @@ async def lifespan(app: FastAPI):
         + (" + ML collectors (6h/12h) + retrain (luni 03:00)" if _ml_jobs_ok else "")
         + (" + facebook_group_checks (30m) + cookie_expiry (09:00)." if _fb_jobs_ok else ".")
     )
+
+    # Jurnale Live — emit de pornire pentru fiecare modul, ca tab-urile sa nu fie
+    # goale inainte sa ruleze primul scraper.
+    from app.services.log_manager import log_manager as _lm
+    for _mod in ["radar", "catalog", "auto_lots", "auto_listings", "real_estate"]:
+        _lm.emit(_mod, "INFO", f"FlipRadar pornit — modul {_mod} initializat")
 
     # Diagnostic SMTP la fiecare pornire — ca sa fie clar daca alertele
     # vor putea trimite email atunci cand se declanseaza.
@@ -222,6 +389,9 @@ app.include_router(real_estate.router)
 app.include_router(ml.router)
 app.include_router(facebook_groups_router)
 app.include_router(tracked_router, prefix="/api/tracked-products")
+app.include_router(logs_router)
+app.include_router(auto_listings_router)
+app.include_router(re_monitor_router)
 
 
 @app.get("/")

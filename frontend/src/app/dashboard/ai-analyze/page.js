@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { aiAPI } from "@/lib/api";
-import { Sparkles, Target, BarChart3, Package, Calendar, CheckCircle, XCircle, MinusCircle, AlertTriangle, ShoppingBag, Euro, Clock, TrendingUp } from "lucide-react";
+import { Sparkles, Target, BarChart3, Package, Calendar, CheckCircle, XCircle, MinusCircle, AlertTriangle, ShoppingBag, Euro, Clock, TrendingUp, Lock } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 const PLATFORM_COLORS = {
   "OLX":                  { bg: "rgba(96,165,250,0.15)",  color: "#60a5fa" },
@@ -18,6 +19,8 @@ function platformBadgeStyle(name) {
 }
 
 export default function AIAnalyzePage() {
+  const { user } = useAuth();
+  const featureDisabled = user?.ai_features_config?.ai_advisor === false;
   const [formData, setFormData] = useState({ product_name: "", category: "", price: "", source: "", resale_price: "" });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -98,6 +101,24 @@ export default function AIAnalyzePage() {
         </p>
       </div>
 
+      {featureDisabled && (
+        <div style={{
+          backgroundColor: "rgba(100,116,139,0.1)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem",
+          padding: "1rem 1.25rem",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          marginBottom: "1.5rem",
+        }}>
+          <Lock style={{ width: "18px", height: "18px", color: "var(--text-secondary)", flexShrink: 0 }} />
+          <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+            Această funcționalitate este dezactivată.{" "}
+            <a href="/dashboard/settings" style={{ color: "#60a5fa", fontWeight: 600 }}>Activează din Setări →</a>
+          </span>
+        </div>
+      )}
+
+      <div style={{ opacity: featureDisabled ? 0.4 : 1, pointerEvents: featureDisabled ? "none" : "auto" }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
         {/* Form */}
         <div style={cardStyle}>
@@ -361,6 +382,7 @@ export default function AIAnalyzePage() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       <style>{`
