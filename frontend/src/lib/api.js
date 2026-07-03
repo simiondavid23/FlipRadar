@@ -1,30 +1,56 @@
 import axios from "axios";
   
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
+  // MODIFICARE 3 — trimite automat cookie-urile httpOnly de sesiune la fiecare request.
+  withCredentials: true,
 });
 
-api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("flipradar_token");
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
+// MODIFICARE 3 — refresh automat al access_token-ului. La primul 401 pe un endpoint
+// protejat, încearcă o singură dată /api/auth/refresh și reia request-ul original.
+// Cererile concurente care primesc 401 în timpul unui refresh în curs sunt puse în
+// așteptare și reluate după ce refresh-ul reușește (sau respinse dacă eșuează), ca
+// să nu eșueze panourile care fac request-uri în paralel (ex: Dashboard).
+// Dacă refresh-ul eșuează, redirecționează utilizatorul la /login.
+let isRefreshing = false;
+let refreshWaiters = [];
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const original = error.config;
     if (
       error.response?.status === 401 &&
-      typeof window !== "undefined" &&
-      !window.location.pathname.startsWith("/login")
+      original &&
+      !original._retry &&
+      !original.url?.includes("/auth/")
     ) {
-      localStorage.removeItem("flipradar_token");
-      window.location.href = "/login";
+      original._retry = true;
+      // Un refresh e deja în curs — punem cererea în coadă și o reluăm după.
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          refreshWaiters.push({ resolve, reject, original });
+        });
+      }
+      isRefreshing = true;
+      try {
+        await api.post("/api/auth/refresh");
+        isRefreshing = false;
+        const waiters = refreshWaiters;
+        refreshWaiters = [];
+        waiters.forEach((w) => w.resolve(api(w.original)));
+        return api(original);
+      } catch (refreshErr) {
+        isRefreshing = false;
+        const waiters = refreshWaiters;
+        refreshWaiters = [];
+        waiters.forEach((w) => w.reject(refreshErr));
+        // Redirect la login dacă refresh-ul eșuează (reload-ul curăță starea React).
+        if (typeof window !== "undefined") window.location.href = "/login";
+        return Promise.reject(refreshErr);
+      }
     }
     return Promise.reject(error);
   }
@@ -34,6 +60,8 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (data) => api.post("/api/auth/register", data),
   login: (data) => api.post("/api/auth/login", data),
+  logout: () => api.post("/api/auth/logout"),
+  refresh: () => api.post("/api/auth/refresh"),
   getSecurityQuestion: (email) => api.get("/api/auth/security-question", { params: { email } }),
   resetPassword: (data) => api.post("/api/auth/reset-password", data),
   getMe: () => api.get("/api/auth/me"),
@@ -55,6 +83,11 @@ export const productsAPI = {
   refreshPrice: (id) => api.post(`/api/products/${id}/refresh-price`),
   deleteProduct: (id) => api.delete(`/api/products/${id}`),
   calculateProfit: (data) => api.post("/api/products/calculate-profit", data),
+  // Sugestii de surse cross-shop (potrivire pe nume) — confirmare / respingere.
+  confirmSuggestion: (productId, suggestionId) =>
+    api.post(`/api/products/${productId}/suggestions/${suggestionId}/confirm`),
+  deleteSuggestion: (productId, suggestionId) =>
+    api.delete(`/api/products/${productId}/suggestions/${suggestionId}`),
 };
 
 // Lista de urmărit
@@ -78,6 +111,8 @@ export const dashboardAPI = {
   getStats: () => api.get("/api/dashboard/stats"),
   getSalesTimeseries: (days) => api.get("/api/dashboard/sales-timeseries", { params: { days: days || 30 } }),
   getTopProducts: (limit) => api.get("/api/dashboard/top-products", { params: { limit: limit || 5 } }),
+  // MODIFICARE 15 — status scheduler (joburi + next run)
+  getSchedulerStatus: () => api.get("/api/dashboard/scheduler-status"),
 };
 
 // Inteligență Artificială
@@ -120,6 +155,8 @@ export const adminAPI = {
 export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),
   getSettings: () => api.get("/api/users/settings"),
+  // MODIFICARE 13 — status sesiuni platforme (Vinted/Okazii/LaJumate/Facebook)
+  getSessionStatus: () => api.get("/api/users/settings/session-status"),
   updateAIFeatures: (config) => api.patch("/api/users/settings", { ai_features_config: config }),
 };
 
@@ -149,6 +186,8 @@ export const autoListingsAPI = {
   deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
   getStats:       ()         => api.get("/api/auto-listings/stats"),
   scanNow:        ()         => api.post("/api/auto-listings/scan-now"),
+  // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
+  getKeywordImpact: (id)     => api.get(`/api/auto-listings/keywords/${id}/impact`),
 };
 
 // Imobiliare Monitor — keyword-uri + feed scorat (zone, duplicate, price history)
@@ -163,23 +202,26 @@ export const realEstateMonitorAPI = {
   flagDuplicate: (id, dupId) => api.post(`/api/real-estate-monitor/feed/${id}/flag-duplicate`, { duplicate_of_id: dupId }),
   getStats:      ()         => api.get("/api/real-estate-monitor/stats"),
   scanNow:       ()         => api.post("/api/real-estate-monitor/scan-now"),
+  // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
+  getKeywordImpact: (id)    => api.get(`/api/real-estate-monitor/keywords/${id}/impact`),
 };
 
 // Modulul 1 Marketplace — cautare live pe platforme (OLX, Vinted, etc.).
 // `filters` se trimite ca JSON encodat in query string.
 const _mpFilters = (filters) => (filters ? JSON.stringify(filters) : undefined);
 export const marketplaceAPI = {
-  olxGeneral: (q, category = "", filters) =>
-    api.get("/api/marketplace/olx-general", { params: { q, category, filters: _mpFilters(filters) } }),
-  vinted: (q, filters) =>
-    api.get("/api/marketplace/vinted", { params: { q, filters: _mpFilters(filters) } }),
-  lajumate: (q, filters) => api.get("/api/marketplace/lajumate", { params: { q, filters: _mpFilters(filters) } }),
-  publi24: (q, filters) => api.get("/api/marketplace/publi24", { params: { q, filters: _mpFilters(filters) } }),
-  okazii: (q, filters) => api.get("/api/marketplace/okazii", { params: { q, filters: _mpFilters(filters) } }),
-  kleinanzeigen: (q, categoryId = "", filters) =>
-    api.get("/api/marketplace/kleinanzeigen", { params: { q, category_id: categoryId, filters: _mpFilters(filters) } }),
-  searchAll: (q, platforms = "olx,vinted,okazii", filters) =>
-    api.get("/api/marketplace/search-all", { params: { q, platforms, filters: _mpFilters(filters) } }),
+  // MODIFICARE 17 — opts = { page, per_page } pentru paginare "Încarcă mai multe".
+  olxGeneral: (q, category = "", filters, opts = {}) =>
+    api.get("/api/marketplace/olx-general", { params: { q, category, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
+  vinted: (q, filters, opts = {}) =>
+    api.get("/api/marketplace/vinted", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
+  lajumate: (q, filters, opts = {}) => api.get("/api/marketplace/lajumate", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
+  publi24: (q, filters, opts = {}) => api.get("/api/marketplace/publi24", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
+  okazii: (q, filters, opts = {}) => api.get("/api/marketplace/okazii", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
+  kleinanzeigen: (q, categoryId = "", filters, opts = {}) =>
+    api.get("/api/marketplace/kleinanzeigen", { params: { q, category_id: categoryId, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
+  searchAll: (q, platforms = "olx,vinted,okazii", filters, opts = {}) =>
+    api.get("/api/marketplace/search-all", { params: { q, platforms, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
   // Anunturi salvate
   getSaved: () => api.get("/api/marketplace/saved"),
   saveListing: (data) => api.post("/api/marketplace/saved", data),
@@ -335,11 +377,14 @@ export const radarAPI = {
   createKeyword: (data) => api.post("/api/radar/keywords", data),
   updateKeyword: (id, data) => api.put(`/api/radar/keywords/${id}`, data),
   deleteKeyword: (id) => api.delete(`/api/radar/keywords/${id}`),
+  // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
+  getKeywordImpact: (id) => api.get(`/api/radar/keywords/${id}/impact`),
   toggleKeyword: (id) => api.patch(`/api/radar/keywords/${id}/toggle`),
   getListings: (params) => api.get("/api/radar/listings", { params }),
   searchManual: (data) => api.post("/api/radar/search-manual", data),
   getListing: (id) => api.get(`/api/radar/listings/${id}`),
   generateListingAIReview: (id) => api.get(`/api/radar/listings/${id}/ai-review`),
+  getVintedDetail: (id) => api.get(`/api/radar/listings/${id}/vinted-detail`),
   updateListingStatus: (id, status) =>
     api.patch(`/api/radar/listings/${id}/status`, { status }),
   deleteListing: (id) => api.delete(`/api/radar/listings/${id}`),
@@ -350,7 +395,6 @@ export const radarAPI = {
   updateSettings: (data) => api.put("/api/radar/settings", data),
   testDiscord: (webhook_url) =>
     api.post("/api/radar/settings/test-discord", { webhook_url }),
-  testVintedToken: () => api.get("/api/radar/vinted/test"),
   testLaJumateCookie: () => api.get("/api/radar/lajumate/test"),
   testOkaziiCookie: () => api.get("/api/radar/okazii/test"),
   getFacebookStatus: () => api.get("/api/radar/facebook/status"),

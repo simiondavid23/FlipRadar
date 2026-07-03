@@ -259,6 +259,12 @@ def run_migrations():
             if not _column_exists(inspector, "radar_listings", "listed_at"):
                 _migrate(conn, "add_radar_listings_listed_at",
                          "ALTER TABLE radar_listings ADD COLUMN listed_at TIMESTAMP")
+            # Vinted: flag ca detaliul complet (poze/descriere/data) a fost adus
+            # on-demand o singura data (evita re-fetch si hammering pe 403).
+            if not _column_exists(inspector, "radar_listings", "vinted_detail_fetched"):
+                _migrate(conn, "add_radar_listings_vinted_detail_fetched",
+                         "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS "
+                         "vinted_detail_fetched BOOLEAN NOT NULL DEFAULT FALSE")
 
         # Radar keywords: car_filters (JSON serializat) + extensii pentru scrapere auto
         if _table_exists(inspector, "radar_keywords"):
@@ -269,6 +275,36 @@ def run_migrations():
             if not _column_exists(inspector, "radar_keywords", "marketplace_config"):
                 _migrate(conn, "add_radar_keywords_marketplace_config",
                          "ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS marketplace_config TEXT")
+
+            # FlipRadar — remapare catalog_id-uri Vinted pe keyword-urile old-form.
+            # Dropdown-ul vechi (PLATFORM_CATEGORIES["vinted"]) stoca ID-uri gresite fata de
+            # arborele real Vinted (ex. "Telefoane"=2995 = de fapt "Alte dispozitive si accesorii"),
+            # deci filtrarea server-side (catalog_ids) nimerea categoria gresita. Aliniem valorile
+            # deja salvate cu dropdown-ul corectat din categories.py, ca get_category_label sa
+            # continue sa reflecte selectia userului iar scraper-ul sa filtreze corect.
+            # NB: unele ID-uri noi coincid cu alte ID-uri vechi (ex. 196->257, 257->79), deci
+            # folosim UN singur UPDATE cu CASE (evaluat o data pe valoarea originala a randului)
+            # in loc de UPDATE-uri secventiale per-valoare care s-ar inlantui si ar dubla migrarea.
+            _vinted_id_remap = {
+                "4": "12", "3": "10", "6": "9", "270": "183", "79": "11", "8": "1037",
+                "256": "13", "87": "4", "17": "29", "15": "28", "68": "4",
+                "195": "76", "198": "2050", "201": "34", "196": "257", "257": "79",
+                "255": "2050", "197": "1206", "200": "32", "199": "80",
+                "2": "1193", "151": "1193", "152": "1193", "153": "1193", "154": "1193",
+                "203": "1231", "155": "1193",
+                "1206": "1187", "1232": "19", "1234": "160", "1235": "21", "1236": "22",
+                "1237": "26", "1238": "88", "1239": "89",
+                "76": "4332", "62": "4332", "61": "4332", "63": "4334", "64": "4335",
+                "1919": "1934", "1920": "1924", "1921": "1920", "1922": "1919",
+                "1203": "146", "1204": "964", "1240": "152", "1241": "956", "1242": "1902",
+                "2995": "3661", "2996": "3567", "2997": "3566", "3025": "3002", "2998": "3580",
+                "3263": "2309", "3264": "2312", "3265": "3036", "3266": "3037",
+            }
+            _when = " ".join(f"WHEN '{o}' THEN '{n}'" for o, n in _vinted_id_remap.items())
+            _in = ", ".join(f"'{o}'" for o in _vinted_id_remap)
+            _migrate(conn, "remap_vinted_category_ids_to_live_tree",
+                     f"UPDATE radar_keywords SET category = CASE category {_when} ELSE category END "
+                     f"WHERE category IN ({_in}) AND (platform = 'vinted' OR platform IS NULL)")
 
         # Radar settings: noi toggle-uri pentru platforme
         if _table_exists(inspector, "radar_settings"):
@@ -282,6 +318,14 @@ def run_migrations():
                      "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS lajumate_cookie TEXT")
             _migrate(conn, "add_okazii_cookie",
                      "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS okazii_cookie TEXT")
+            # Vinted: mecanismul de cookie a fost eliminat (folosim libraria vinted-scraper,
+            # care gestioneaza DataDome automat). Renuntam la coloana ca sa nu ramana date moarte.
+            _migrate(conn, "drop_radar_settings_vinted_cookie",
+                     "ALTER TABLE radar_settings DROP COLUMN IF EXISTS vinted_cookie")
+            # MODIFICARE 9 — batch size configurabil pentru jobul ML de detectie vanzari.
+            _migrate(conn, "add_sold_detection_batch_size",
+                     "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS "
+                     "sold_detection_batch_size INTEGER DEFAULT 100")
 
         # FlipRadar — populeaza coloana `brand` din primul cuvant al numelui pentru
         # produsele vechi care nu au brand setat inca. Rulata o singura data prin
@@ -397,6 +441,29 @@ def run_migrations():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_discord_notif_dedup "
             "ON discord_notifications_sent(listing_id, module, webhook_url)")
 
+        # MODIFICARE 7 — coada Discord persistenta (pending/sent/failed).
+        if not _table_exists(inspector, "discord_queue"):
+            _migrate(conn, "create_discord_queue", """
+                CREATE TABLE discord_queue (
+                    id SERIAL PRIMARY KEY,
+                    webhook_url TEXT NOT NULL,
+                    embed TEXT NOT NULL,
+                    listing_id TEXT NOT NULL,
+                    module TEXT NOT NULL,
+                    grade TEXT,
+                    mention_here BOOLEAN DEFAULT FALSE,
+                    image_url TEXT,
+                    status TEXT DEFAULT 'pending',
+                    retry_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    sent_at TIMESTAMPTZ,
+                    error_msg TEXT
+                )
+            """)
+            _migrate(conn, "idx_discord_queue_status",
+                "CREATE INDEX IF NOT EXISTS ix_discord_queue_status "
+                "ON discord_queue(status, created_at)")
+
         _migrate(conn, "add_discord_auto_all",
             "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS discord_webhook_auto_all TEXT")
         _migrate(conn, "add_discord_auto_b",
@@ -494,6 +561,50 @@ def run_migrations():
         # Tabela reala e `real_estate_listings` (nu `real_estate_monitor_listings`).
         _migrate(conn, "add_re_duplicate_match_id",
             "ALTER TABLE real_estate_listings ADD COLUMN IF NOT EXISTS duplicate_match_id INTEGER")
+
+        # MODIFICARE 10 — seller_id pentru deduplicare Level 1b (seller + price).
+        _migrate(conn, "add_re_seller_id",
+            "ALTER TABLE real_estate_listings ADD COLUMN IF NOT EXISTS seller_id VARCHAR(200)")
+
+        # MODIFICARE 19 — flag calitate date ML pe market_listings.
+        if _table_exists(inspector, "market_listings") and not _column_exists(inspector, "market_listings", "features_complete"):
+            _migrate(conn, "add_market_listings_features_complete",
+                     "ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS "
+                     "features_complete BOOLEAN DEFAULT FALSE")
+
+        # Catalog — sugestii de surse cross-shop (potrivire pe nume, neconfirmate).
+        if not _table_exists(inspector, "product_source_suggestions"):
+            _migrate(conn, "create_product_source_suggestions", """
+                CREATE TABLE product_source_suggestions (
+                    id SERIAL PRIMARY KEY,
+                    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                    source TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    name TEXT,
+                    price DOUBLE PRECISION,
+                    currency TEXT NOT NULL DEFAULT 'EUR',
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    CONSTRAINT uq_product_suggestion_source UNIQUE (product_id, source)
+                )
+            """)
+            _migrate(conn, "idx_product_suggestions_product",
+                "CREATE INDEX IF NOT EXISTS ix_product_source_suggestions_product_id "
+                "ON product_source_suggestions(product_id)")
+
+        # MODIFICARE 12 — tabel pentru persistarea optionala a log-urilor (TTL 24h).
+        if not _table_exists(inspector, "log_entries"):
+            _migrate(conn, "create_log_entries", """
+                CREATE TABLE log_entries (
+                    id SERIAL PRIMARY KEY,
+                    module TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            _migrate(conn, "ix_log_entries_module_created",
+                "CREATE INDEX IF NOT EXISTS ix_log_entries_module_created "
+                "ON log_entries (module, created_at)")
 
     _backfill_product_sources()
 

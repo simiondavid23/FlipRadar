@@ -185,6 +185,16 @@ def run_sold_detection(db: Session,
 
     stats = {"checked": 0, "sold": 0, "errors": 0}
 
+    # MODIFICARE 9 — batch_size efectiv citit din radar_settings (config global).
+    # Daca nu exista setari, folosim valoarea primita ca parametru (implicit 100).
+    try:
+        from app.models.radar_settings import RadarSettings
+        settings = db.query(RadarSettings).first()
+        if settings and settings.sold_detection_batch_size:
+            batch_size = settings.sold_detection_batch_size
+    except Exception:
+        pass
+
     try:
         # Fetch listings without sold_at, oldest last_seen_at first
         # (prioritize listings that haven't been checked recently)

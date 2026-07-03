@@ -1,6 +1,6 @@
 # FlipRadar — model pentru anunturi reale de piata (date istorice de vanzari),
 # folosit la injectarea contextului de piata in analiza AB a Consilierului AI.
-from sqlalchemy import Column, Integer, String, Text, DateTime, Numeric, JSON, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, Numeric, JSON, Index, Boolean
 from datetime import datetime
 from app.database import Base
 
@@ -30,3 +30,5 @@ class MarketListing(Base):
     source_url = Column(Text, nullable=True)
     thumbnail_url = Column(Text, nullable=True)
     scraped_at = Column(DateTime, default=datetime.utcnow)
+    # MODIFICARE 19 — listing-ul are datele minime pentru antrenare ML (calitate date).
+    features_complete = Column(Boolean, default=False)

@@ -1,6 +1,6 @@
 """
 4-level duplicate detection for real estate listings.
-Level 1: same external_id or same URL → auto-group (certain)
+Level 1: 1a same source URL · 1b same seller_id + price → auto-group (certain)
 Level 2: pHash ≤10 OR (pHash ≤20 AND color_hist ≥0.85) → auto-group
 Level 3: price ±3% + zone + rooms + area ±8%, no image confirm → badge
 Level 4: partial match only → no action
@@ -89,16 +89,33 @@ def check_duplicates(listing, db: Session, model_class,
     """
     Returns (duplicate_level, group_id_or_none, matched_listing_or_none)
     """
-    # Level 1: same external_id on different platform
-    if listing.external_id:
-        l1 = db.query(model_class).filter(
+    # MODIFICARE 10 — Level 1 revizuit. Vechiul check pe `external_id` nu se putea
+    # declansa niciodata (exista index unic pe (user, platform, external_id), deci
+    # nu pot exista doua randuri cu acelasi external_id pentru acelasi user).
+    #
+    # Level 1a: acelasi URL sursa (acelasi anunt indexat de doua ori). In schema
+    # reala coloana se numeste `url` (nu `source_url`).
+    if getattr(listing, "url", None):
+        l1a = db.query(model_class).filter(
             model_class.user_id == user_id,
-            model_class.external_id == listing.external_id,
+            model_class.url == listing.url,
             model_class.id != listing.id,
         ).first()
-        if l1:
-            group_id = l1.duplicate_group_id or str(uuid.uuid4())
-            return 1, group_id, l1
+        if l1a:
+            group_id = l1a.duplicate_group_id or str(uuid.uuid4())
+            return 1, group_id, l1a
+
+    # Level 1b: acelasi vanzator + acelasi pret (acelasi anunt de la acelasi owner).
+    if getattr(listing, "seller_id", None) and listing.price:
+        l1b = db.query(model_class).filter(
+            model_class.user_id == user_id,
+            model_class.seller_id == listing.seller_id,
+            model_class.price == listing.price,
+            model_class.id != listing.id,
+        ).first()
+        if l1b:
+            group_id = l1b.duplicate_group_id or str(uuid.uuid4())
+            return 1, group_id, l1b
 
     # Level 2: image hash match
     if listing.phash:

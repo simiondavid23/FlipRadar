@@ -49,6 +49,19 @@ class ProductSourceResponse(BaseModel):
         from_attributes = True
 
 
+class ProductSourceSuggestionResponse(BaseModel):
+    id: int
+    source: str
+    source_url: str
+    name: Optional[str] = None
+    price: Optional[float] = None
+    currency: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ProductResponse(BaseModel):
     id: int
     name: str
@@ -115,6 +128,8 @@ class PriceHistoryResponse(BaseModel):
 class ProductDetailResponse(BaseModel):
     product: ProductResponse
     price_history: List[PriceHistoryResponse] = []
+    # FlipRadar — sugestii de surse cross-shop (potrivire pe nume) ce asteapta confirmare.
+    suggestions: List[ProductSourceSuggestionResponse] = []
     lowest_price: Optional[float] = None
     highest_price: Optional[float] = None
     average_price: Optional[float] = None

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User
 from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword as RealEstateKeyword
@@ -267,8 +269,24 @@ def get_stats(
     }
 
 
+# MODIFICARE 18 — impactul stergerii unui keyword imobiliar (listinguri asociate).
+@router.get("/keywords/{keyword_id}/impact")
+def get_keyword_impact(
+    keyword_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    listing_count = db.query(func.count(RealEstateListing.id)).filter(
+        RealEstateListing.keyword_id == keyword_id,
+        RealEstateListing.user_id == current_user.id,
+    ).scalar() or 0
+    return {"listing_count": listing_count, "seen_count": 0}
+
+
 @router.post("/scan-now")
+@limiter.limit("5/minute")
 def scan_now(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

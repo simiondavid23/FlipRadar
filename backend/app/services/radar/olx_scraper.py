@@ -19,6 +19,10 @@ from app.services.radar.base_scraper import build_headers, rate_limit_backoff, i
 
 _IMPERSONATE = "chrome110"
 
+# OLX nu afiseaza mai mult de ~5 pagini utile per query; peste asta apar 404-uri
+# (paginare depasita). Cap hard ca sa nu paginam la nesfarsit / sa nu crape scanul.
+_OLX_MAX_PAGES = 5
+
 
 # Maparea simpla judet -> slug folosit in URL-ul OLX. Acopera judetele
 # cele mai cautate; pentru restul cadem inapoi pe cautarea fara filtru.
@@ -42,6 +46,39 @@ _JUDET_SLUGS = {
     "neamt": "neamt",
     "maramures": "maramures",
 }
+
+
+# MODIFICARE 5 — maparea numelui de afisare al categoriei (din MARKETPLACE_CATEGORIES.olx)
+# la slug-ul de path OLX. keyword.category stocheaza numele de afisare, nu slug-ul.
+OLX_CATEGORY_SLUGS = {
+    "Electronice si electrocasnice": "electronice-si-electrocasnice",
+    "Moda si frumusete": "moda-si-frumusete",
+    "Piese auto": "piese-auto-moto-si-ambarcatiuni",
+    "Casa si gradina": "casa-si-gradina",
+    "Mama si copilul": "mama-si-copilul",
+    "Sport, timp liber, arta": "sport-timp-liber-si-arta",
+    "Animale de companie": "animale-de-companie",
+    "Agro si industrie": "agro-si-industrie",
+    "Servicii": "servicii",
+    "Echipamente profesionale si vanzare companii": "echipamente-profesionale-si-vanzare-companii",
+    "Cazare - Turism": "cazare-si-turism",
+    "Inchiriere bunuri si vehicule": "inchiriere-bunuri-si-vehicule",
+}
+
+
+def _olx_category_slug(category: Optional[str]) -> Optional[str]:
+    """Traduce numele categoriei la slug OLX. Daca nu e in mapping dar arata deja
+    ca un slug (fara spatii), il pastreaza; altfel None (cautare generala)."""
+    if not category:
+        return None
+    cat = category.strip()
+    slug = OLX_CATEGORY_SLUGS.get(cat)
+    if slug:
+        return slug
+    # Compat: daca vine deja un slug (fara spatii), foloseste-l ca atare.
+    if " " not in cat:
+        return cat.strip("/") or None
+    return None
 
 
 def _normalize_judet(judet: Optional[str]) -> Optional[str]:
@@ -228,6 +265,35 @@ def _fetch_detail_image(url: str) -> Optional[str]:
         return None
 
 
+def _extract_olx_categories(html: str) -> dict:
+    """Extrage {href_id -> category_id} din window.__PRERENDERED_STATE__ (Apollo).
+
+    OLX NU foloseste __NEXT_DATA__; ad-urile sunt in state.listing.listing.ads[],
+    fiecare cu category:{id:<numeric>}. Cheia e ID-ul din url (`-ID<xxx>.html`) ca
+    sa se potriveasca cu external_id-ul cardului. Fara request extra per listing.
+    Dict gol la orice esec (safe default → nu se exclude nimic).
+    """
+    try:
+        import json
+        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html, re.DOTALL)
+        if not m:
+            return {}
+        state = json.loads(json.loads(m.group(1)))  # dublu-decode (string JSON escapat)
+        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
+        result: dict = {}
+        for ad in ads:
+            cat = ad.get("category")
+            cat_id = cat.get("id") if isinstance(cat, dict) else None
+            url = ad.get("url") or ad.get("urlPath") or ""
+            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
+            if mm and cat_id is not None:
+                result[mm.group(1)] = str(cat_id)
+        return result
+    except Exception as e:
+        print(f"[OlxScraper] __PRERENDERED_STATE__ parse error: {e}")
+        return {}
+
+
 def search_olx(
     keyword: str,
     max_price: float,
@@ -250,10 +316,15 @@ def search_olx(
     if not keyword_clean:
         return []
 
+    # FIX paginare — peste limita hard nu mai cerem nimic de la OLX (evita 404-urile
+    # de paginare depasita si opreste bucla de paginare din scanner).
+    if page > _OLX_MAX_PAGES:
+        return []
+
     q = urllib.parse.quote(keyword_clean)
     judet_slug = _normalize_judet(judet)
-    # Categoria e folosita direct ca slug/path (noul model), fara mapare.
-    category_path = category.strip("/") if category else None
+    # MODIFICARE 5 — mapam numele categoriei la slug OLX (None => cautare generala).
+    category_path = _olx_category_slug(category)
 
     def _fetch_and_parse(cat_path: Optional[str]) -> list[dict]:
         # Path-ul OLX: /[judet]/[categorie]/oferte/q-<keyword>/
@@ -300,6 +371,10 @@ def search_olx(
                     print(f"[OlxScraper] 429 rate limit, retry {attempt+1}/3 dupa {delay:.1f}s")
                     time.sleep(delay)
                     continue
+                # 404 = paginare depasita (pagina nu exista) -> stop curat, nu eroare.
+                if resp.status_code == 404:
+                    return []
+                # Orice alt status non-200 opreste fetch-ul fara crash.
                 print(f"[OlxScraper] HTTP {resp.status_code} pentru {url}")
                 return []
             except Exception as exc:
@@ -414,31 +489,50 @@ def search_olx(
             except Exception as exc:
                 print(f"[OlxScraper] Eroare la parsarea unui card: {exc}")
                 continue
+
+        # Atasam categoria OLX (ID numeric) din __PRERENDERED_STATE__, pentru
+        # filtrarea pe subcategorie din scanner. Fara request extra per listing.
+        cat_map = _extract_olx_categories(html)
+        if cat_map:
+            for item in parsed:
+                hid = (item.get("external_id") or "").replace("olx_", "")
+                item["olx_category"] = cat_map.get(hid, "")
         return parsed
 
-    results = _fetch_and_parse(category_path)
-    # Fallback: daca subcategoria completa nu da rezultate, reincearca pe categoria principala
-    if len(results) == 0 and category_path and "/" in category_path:
-        main_cat = category_path.split("/")[0]
-        results = _fetch_and_parse(main_cat)
+    # FIX paginare — intreaga colectare + procesare e protejata: nicio exceptie
+    # (404, parsing, retea) nu trebuie sa iasa din search_olx si sa opreasca scanul.
+    results: list[dict] = []
+    try:
+        results = _fetch_and_parse(category_path)
+        # Fallback: daca subcategoria completa nu da rezultate, reincearca pe categoria principala
+        if len(results) == 0 and category_path and "/" in category_path:
+            main_cat = category_path.split("/")[0]
+            results = _fetch_and_parse(main_cat)
+        # MODIFICARE 5 — daca URL-ul cu categorie nu da nimic (slug gresit / blocat),
+        # cadem pe cautare generala (fara categorie) ca sa nu ramanem cu 0 anunturi.
+        if len(results) == 0 and category_path:
+            results = _fetch_and_parse(None)
 
-    # Imbogateste fiecare rezultat cu imaginile la rezolutie maxima si descrierea
-    # de pe pagina detaliilor. Apelurile sunt secventiale cu delay aleator pentru
-    # a nu supraincarca OLX.
-    for idx, item in enumerate(results):
-        if idx > 0:
-            time.sleep(random.uniform(0.5, 1.0))
-        try:
-            details = fetch_olx_listing_details(item["url"])
-            if details.get("images"):
-                item["images"] = details["images"]
-            elif item.get("images"):
-                item["images"] = [_upgrade_image_url(u) for u in item["images"] if u]
-            if details.get("description"):
-                item["description"] = details["description"]
-        except Exception as exc:
-            print(f"[OlxScraper] details {item['external_id']}: {exc}")
-            continue
+        # Imbogateste fiecare rezultat cu imaginile la rezolutie maxima si descrierea
+        # de pe pagina detaliilor. Apelurile sunt secventiale cu delay aleator pentru
+        # a nu supraincarca OLX.
+        for idx, item in enumerate(results):
+            if idx > 0:
+                time.sleep(random.uniform(0.5, 1.0))
+            try:
+                details = fetch_olx_listing_details(item["url"])
+                if details.get("images"):
+                    item["images"] = details["images"]
+                elif item.get("images"):
+                    item["images"] = [_upgrade_image_url(u) for u in item["images"] if u]
+                if details.get("description"):
+                    item["description"] = details["description"]
+            except Exception as exc:
+                print(f"[OlxScraper] details {item['external_id']}: {exc}")
+                continue
+    except Exception as e:
+        # Stop curat: returnam ce s-a colectat pana acum, fara sa propagam eroarea.
+        print(f"[OlxScraper] Eroare la paginare (page={page}): {e}")
 
     print(f"[OlxScraper] {len(results)} rezultate pentru '{keyword_clean}'")
     return results

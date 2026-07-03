@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { autoListingsAPI } from "@/lib/api";
+import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import { Car, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw } from "lucide-react";
 
 const AUTO_PLATFORMS = [
@@ -11,6 +12,28 @@ const AUTO_PLATFORMS = [
   { value: "facebook_auto",      label: "Facebook Auto",      currency: "RON" },
   { value: "kleinanzeigen_auto", label: "eBay Kleinanzeigen", currency: "EUR" },
 ];
+
+// MODIFICARE 14 — badge avertisment Mobile.de (functioneaza doar de pe IP rezidential).
+function MobileDeWarning() {
+  return (
+    <span
+      title="Funcționează doar de pe IP rezidential. Pe server sau datacenter returnează 403 (blocat Imperva). 0 rezultate pe server = comportament normal."
+      style={{
+        marginLeft: "0.375rem",
+        fontSize: "10px",
+        padding: "0.125rem 0.4rem",
+        borderRadius: "4px",
+        background: "var(--bg-warning)",
+        color: "var(--text-warning)",
+        verticalAlign: "middle",
+        cursor: "help",
+        fontWeight: 500,
+      }}
+    >
+      ⚠ IP local
+    </span>
+  );
+}
 
 const MAKES = [
   "Audi", "BMW", "Chevrolet", "Chrysler", "Citroën", "Dacia", "Dodge",
@@ -26,6 +49,15 @@ const BODY_TYPES = [
   "Berlina", "SUV", "Hatchback", "Break/Combi",
   "Coupe", "Cabrio", "Monovolum", "Pickup", "Van",
 ];
+const OLX_AUTO_VEHICLE_TYPES = [
+  "Autoturisme",
+  "Autoutilitare",
+  "Camioane - Rulote - Remorci",
+  "Motociclete",
+  "Scutere - ATV - UTV",
+  "Ambarcatiuni",
+  "Utilaje agricole si industriale",
+];
 const MOBILE_DE_MAKES = [
   "Audi", "BMW", "Ford", "Honda", "Hyundai", "Kia", "Mazda",
   "Mercedes-Benz", "Nissan", "Opel", "Peugeot", "Porsche", "Renault",
@@ -37,7 +69,7 @@ const POLL_OPTIONS = [5, 10, 15, 30, 60];
 const EMPTY_FORM = {
   name: "", make: "", model: "", query: "",
   year_from: "", year_to: "", km_max: "", price_max: "",
-  fuel_type: "", transmission: "", body_type: "", location: "",
+  fuel_type: "", transmission: "", body_type: "", vehicle_type: "", location: "",
   is_active: true, notify_email: false, notify_discord: false,
   use_active_hours: false, active_hours_start: 8, active_hours_end: 22,
   polling_interval: 10,
@@ -60,6 +92,8 @@ export default function AutoKeywordsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // MODIFICARE 18 — modal confirmare stergere cu impact.
+  const [deleteModal, setDeleteModal] = useState(null);
 
   const handleScanNow = async () => {
     setScanning(true);
@@ -98,7 +132,7 @@ export default function AutoKeywordsPage() {
       name: kw.name || "", make: kw.make || "", model: kw.model || "", query: kw.query || "",
       year_from: kw.year_from ?? "", year_to: kw.year_to ?? "", km_max: kw.km_max ?? "",
       price_max: kw.price_max ?? "", fuel_type: kw.fuel_type || "", transmission: kw.transmission || "",
-      body_type: kw.body_type || "", location: kw.location || "",
+      body_type: kw.body_type || "", vehicle_type: kw.vehicle_type || "", location: kw.location || "",
       is_active: kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
       use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
       active_hours_start: kw.active_hours_start ?? 8, active_hours_end: kw.active_hours_end ?? 22,
@@ -123,6 +157,7 @@ export default function AutoKeywordsPage() {
       fuel_type: form.fuel_type || null,
       transmission: form.transmission || null,
       body_type: form.body_type || null,
+      vehicle_type: form.vehicle_type || null,
       location: form.location || null,
       is_active: form.is_active,
       notify_email: form.notify_email,
@@ -162,8 +197,17 @@ export default function AutoKeywordsPage() {
     }
   };
 
-  const remove = async (id) => {
-    if (!confirm("Ștergi acest keyword?")) return;
+  // MODIFICARE 18 — deschide modalul cu impactul (nr. listinguri asociate).
+  const handleDeleteClick = async (kw) => {
+    let impact = { listing_count: 0, seen_count: 0 };
+    try { impact = (await autoListingsAPI.getKeywordImpact(kw.id)).data; } catch { /* fallback 0 */ }
+    setDeleteModal({
+      keywordId: kw.id, keywordName: kw.name,
+      listingCount: impact.listing_count ?? 0, seenCount: impact.seen_count ?? 0,
+    });
+  };
+
+  const performDelete = async (id) => {
     try { await autoListingsAPI.deleteKeyword(id); await load(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere."); }
   };
@@ -237,6 +281,7 @@ export default function AutoKeywordsPage() {
                     <span style={{ fontSize: "0.6875rem", fontWeight: 600, color: "#60a5fa", backgroundColor: "rgba(37,99,235,0.15)", padding: "0.125rem 0.5rem", borderRadius: "999px" }}>
                       {platLabel(k.platform)}
                     </span>
+                    {k.platform === "mobile_de" && <MobileDeWarning />}
                   </td>
                   <td style={td}>{[k.make, k.model].filter(Boolean).join(" ") || k.query || "—"}</td>
                   <td style={td}>{k.price_max ? `${Math.round(k.price_max).toLocaleString("ro-RO")} ${k.price_currency}` : "—"}</td>
@@ -249,7 +294,7 @@ export default function AutoKeywordsPage() {
                   <td style={td}>
                     <div style={{ display: "flex", gap: "0.375rem" }}>
                       <button onClick={() => openEdit(k)} title="Editează" style={iconBtn}><Pencil style={{ width: "14px", height: "14px" }} /></button>
-                      <button onClick={() => remove(k.id)} title="Șterge" style={{ ...iconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
+                      <button onClick={() => handleDeleteClick(k)} title="Șterge" style={{ ...iconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
                     </div>
                   </td>
                 </tr>
@@ -271,6 +316,13 @@ export default function AutoKeywordsPage() {
           onSubmit={submit}
         />
       )}
+
+      {/* MODIFICARE 18 — modal confirmare stergere cu impact */}
+      <DeleteKeywordModal
+        data={deleteModal}
+        onCancel={() => setDeleteModal(null)}
+        onConfirm={() => { performDelete(deleteModal.keywordId); setDeleteModal(null); }}
+      />
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -349,6 +401,12 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
       case "olx_auto":
         return (
           <>
+            <Field label="Tip vehicul">
+              <select value={form.vehicle_type} onChange={(e) => set({ vehicle_type: e.target.value })} style={inputStyle}>
+                <option value="">Toate tipurile</option>
+                {OLX_AUTO_VEHICLE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
             <Field label="Căutare"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: BMW E46" style={inputStyle} /></Field>
             <div style={{ gridColumn: "1/-1" }}>{yearRow}</div>
             {kmField}
@@ -423,6 +481,10 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
             <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={inputStyle}>
               {AUTO_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
+            {/* MODIFICARE 14 — avertisment cand platforma selectata e Mobile.de */}
+            {platform === "mobile_de" && (
+              <div style={{ marginTop: "0.375rem" }}>Mobile.de<MobileDeWarning /></div>
+            )}
           </Field>
 
           {platform === "facebook_auto" && (

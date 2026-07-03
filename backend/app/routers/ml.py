@@ -12,10 +12,33 @@ router = APIRouter(prefix="/api/ml", tags=["ml"])
 
 @router.get("/stats")
 def ml_stats(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from app.services.ml.price_predictor import get_model_stats
-    return get_model_stats()
+    from app.models.market_listing import MarketListing
+    from sqlalchemy import func
+
+    stats = get_model_stats()
+    if not isinstance(stats, dict):
+        stats = {}
+
+    # MODIFICARE 19 — calitatea datelor de antrenare per categorie (complete/total).
+    for category in ["auto_bmw", "electronics_apple"]:
+        total = db.query(func.count(MarketListing.id)).filter(
+            MarketListing.category == category).scalar() or 0
+        complete = db.query(func.count(MarketListing.id)).filter(
+            MarketListing.category == category,
+            MarketListing.features_complete == True).scalar() or 0
+        cat = stats.get(category)
+        if not isinstance(cat, dict):
+            cat = {}
+            stats[category] = cat
+        cat["total"] = total
+        cat["complete"] = complete
+        cat["completeness_pct"] = round(complete / total * 100) if total else 0
+
+    return stats
 
 
 class PredictRequest(BaseModel):

@@ -1,10 +1,10 @@
 """
-Global Discord notification queue.
-- Processes all modules (radar, auto, imobiliare) through one queue.
-- 1 second delay between sends to respect Discord rate limits.
-- Automatic retry on HTTP 429 using retry_after from response.
-- Deduplication: same listing_id + module + webhook = skip if sent < 24h ago.
-- @here injected for Grade A if toggle enabled.
+Discord notification service — coadă persistentă în PostgreSQL (MODIFICARE 7).
+- La enqueue: inserează în discord_queue cu status 'pending'
+- Worker thread: polling la fiecare 2s, procesează max 5 iteme/ciclu
+- Deduplicare: verifică discord_notifications_sent (tabel existent) înainte de insert
+- Retry: max 3 încercări, după care status='failed'
+- La startup: items 'pending' mai vechi de 1h → 'failed' (stale cleanup)
 
 NOTA Radar: modulul Radar Piata are deja un router Discord complet, cu 3 niveluri
 (all / buy_now=A,B / maybe=C,D) si embed-uri bogate (resale/marja/date) — vezi
@@ -13,105 +13,140 @@ regresam (canalul C/D + campurile bogate). Coada globala de aici e folosita de
 modulele noi (Auto + Imobiliare). send_radar_notification e pastrat corect (pe
 field-urile reale discord_webhook_all/buy_now) pentru completitudine.
 """
+import json
 import time
 import threading
-from dataclasses import dataclass
-from queue import Queue
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import requests as req
 from sqlalchemy.orm import Session
-
-
-@dataclass
-class DiscordNotification:
-    webhook_url: str
-    embed: dict
-    listing_id: str
-    module: str          # "radar" | "auto" | "imobiliare"
-    grade: str           # "A" | "B" | "C" | "D"
-    mention_here: bool = False
-    image_url: Optional[str] = None
+from app.database import SessionLocal
 
 
 class DiscordNotificationService:
+    _MAX_RETRY = 3
+    _POLL_INTERVAL = 2  # secunde între polling-uri
+
     def __init__(self):
-        self._queue: Queue = Queue()
         self._thread = threading.Thread(
-            target=self._worker, daemon=True, name="discord-notif-worker")
+            target=self._worker, daemon=True, name="discord-queue-worker")
         self._thread.start()
 
-    def enqueue(self, notif: DiscordNotification, db: Session) -> None:
-        if not notif.webhook_url or not notif.webhook_url.startswith("http"):
+    def enqueue(self, webhook_url: str, embed: dict, listing_id: str,
+                module: str, grade: str, mention_here: bool = False,
+                image_url: Optional[str] = None) -> None:
+        if not webhook_url or not webhook_url.startswith("http"):
             return
-        if self._is_duplicate(notif, db):
-            return
-        self._queue.put(notif)
+        db = SessionLocal()
+        try:
+            # Deduplicare 24h
+            if self._is_duplicate(listing_id, module, webhook_url, db):
+                return
+            from app.models.discord_queue_db import DiscordQueueItem
+            item = DiscordQueueItem(
+                webhook_url=webhook_url,
+                embed=json.dumps(embed, ensure_ascii=False),
+                listing_id=listing_id,
+                module=module,
+                grade=grade,
+                mention_here=mention_here,
+                image_url=image_url,
+            )
+            db.add(item)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[Discord] Eroare la enqueue: {exc}")
+        finally:
+            db.close()
 
-    def _is_duplicate(self, notif: DiscordNotification, db: Session) -> bool:
+    def _is_duplicate(self, listing_id: str, module: str,
+                      webhook_url: str, db: Session) -> bool:
         from sqlalchemy import text
-        from datetime import datetime, timedelta, timezone
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         result = db.execute(
             text("SELECT 1 FROM discord_notifications_sent "
-                 "WHERE listing_id = :lid AND module = :mod "
-                 "AND webhook_url = :wh AND sent_at > :cutoff LIMIT 1"),
-            {"lid": notif.listing_id, "mod": notif.module,
-             "wh": notif.webhook_url, "cutoff": cutoff}
+                 "WHERE listing_id=:lid AND module=:mod AND webhook_url=:wh AND sent_at>:cutoff LIMIT 1"),
+            {"lid": listing_id, "mod": module, "wh": webhook_url, "cutoff": cutoff}
         ).fetchone()
         return result is not None
 
-    def _mark_sent(self, notif: DiscordNotification, db: Session) -> None:
+    def _mark_sent(self, listing_id: str, module: str,
+                   webhook_url: str, db: Session) -> None:
         from sqlalchemy import text
-        try:
-            db.execute(
-                text("INSERT INTO discord_notifications_sent "
-                     "(listing_id, module, webhook_url) "
-                     "VALUES (:lid, :mod, :wh) "
-                     "ON CONFLICT DO NOTHING"),
-                {"lid": notif.listing_id, "mod": notif.module,
-                 "wh": notif.webhook_url}
-            )
-            db.commit()
-        except Exception:
-            db.rollback()
-
-    def _send(self, notif: DiscordNotification) -> None:
-        payload = {"embeds": [notif.embed]}
-        if notif.mention_here and notif.grade == "A":
-            payload["content"] = "@here"
-
-        for attempt in range(5):
-            try:
-                resp = req.post(notif.webhook_url, json=payload, timeout=10)
-                if resp.status_code == 204:
-                    return
-                if resp.status_code == 429:
-                    retry_after = resp.json().get("retry_after", 1.0)
-                    time.sleep(float(retry_after) + 0.1)
-                    continue
-                print(f"[Discord] HTTP {resp.status_code} on attempt {attempt+1}")
-                break
-            except Exception as exc:
-                print(f"[Discord] Send error attempt {attempt+1}: {exc}")
-                time.sleep(2)
+        db.execute(
+            text("INSERT INTO discord_notifications_sent (listing_id, module, webhook_url, sent_at) "
+                 "VALUES (:lid, :mod, :wh, :now) ON CONFLICT DO NOTHING"),
+            {"lid": listing_id, "mod": module, "wh": webhook_url,
+             "now": datetime.now(timezone.utc)}
+        )
+        db.commit()
 
     def _worker(self) -> None:
+        """Worker thread: polling PostgreSQL pentru iteme pending."""
         while True:
-            notif: DiscordNotification = self._queue.get()
             try:
-                self._send(notif)
-                # Mark sent in DB
-                from app.database import SessionLocal
-                _db = SessionLocal()
-                try:
-                    self._mark_sent(notif, _db)
-                finally:
-                    _db.close()
+                self._process_batch()
             except Exception as exc:
-                print(f"[Discord] Worker error: {exc}")
-            finally:
-                self._queue.task_done()
-                time.sleep(1.0)  # 1 second delay between sends
+                print(f"[Discord] Eroare worker: {exc}")
+            time.sleep(self._POLL_INTERVAL)
+
+    def _process_batch(self) -> None:
+        from app.models.discord_queue_db import DiscordQueueItem
+        db = SessionLocal()
+        try:
+            items = db.query(DiscordQueueItem).filter(
+                DiscordQueueItem.status == "pending"
+            ).order_by(DiscordQueueItem.created_at).limit(5).all()
+
+            for item in items:
+                self._send_item(item, db)
+                time.sleep(1)  # 1s între trimiteri (rate limit Discord)
+        finally:
+            db.close()
+
+    def _send_item(self, item, db: Session) -> None:
+        try:
+            embed = json.loads(item.embed)
+            payload: dict = {"embeds": [embed]}
+            if item.mention_here:
+                payload["content"] = "@here"
+
+            resp = req.post(item.webhook_url, json=payload, timeout=10)
+
+            if resp.status_code == 429:
+                retry_after = resp.json().get("retry_after", 5)
+                time.sleep(retry_after)
+                return  # Va fi reîncercat în ciclul următor
+
+            if resp.status_code in (200, 204):
+                item.status = "sent"
+                item.sent_at = datetime.now(timezone.utc)
+                db.commit()
+                self._mark_sent(item.listing_id, item.module, item.webhook_url, db)
+            else:
+                self._handle_failure(item, f"HTTP {resp.status_code}", db)
+
+        except Exception as exc:
+            self._handle_failure(item, str(exc)[:200], db)
+
+    def _handle_failure(self, item, error: str, db: Session) -> None:
+        item.retry_count += 1
+        item.error_msg = error
+        if item.retry_count >= self._MAX_RETRY:
+            item.status = "failed"
+        db.commit()
+
+    def cleanup_stale(self, db: Session) -> None:
+        """La startup: marchează pending mai vechi de 1h ca failed (stale)."""
+        from sqlalchemy import text
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        db.execute(
+            text("UPDATE discord_queue SET status='failed', error_msg='Stale la restart' "
+                 "WHERE status='pending' AND created_at < :cutoff"),
+            {"cutoff": cutoff}
+        )
+        db.commit()
 
 
 # Module-level singleton
@@ -163,7 +198,7 @@ def build_radar_embed(listing: dict, grade: str, score: int,
         "title": f"{GRADE_EMOJI[grade]} [{grade}] {title_text}",
         "color": GRADE_COLORS[grade],
         "fields": fields,
-        "footer": {"text": f"FlipRadar Radar Piată · Score {score}/100"},
+        "footer": {"text": f"FlipRadar Radar Piață · Score {score}/100"},
     }
     if listing.get("url"):
         embed["url"] = listing["url"]
@@ -307,9 +342,9 @@ def send_radar_notification(listing: dict, grade: str, score: int,
     ]:
         wh = getattr(settings, wh_attr, None)
         if wh and grade in allowed_grades:
-            discord_service.enqueue(DiscordNotification(
+            discord_service.enqueue(
                 webhook_url=wh, embed=embed, listing_id=listing_id,
-                module="radar", grade=grade, mention_here=mention), db)
+                module="radar", grade=grade, mention_here=mention)
             queued += 1
     return queued
 
@@ -329,9 +364,9 @@ def send_auto_notification(listing: dict, grade: str, score: int,
     ]:
         wh = getattr(settings, wh_attr, None)
         if wh and grade in allowed_grades:
-            discord_service.enqueue(DiscordNotification(
+            discord_service.enqueue(
                 webhook_url=wh, embed=embed, listing_id=listing_id,
-                module="auto", grade=grade, mention_here=mention), db)
+                module="auto", grade=grade, mention_here=mention)
 
 
 def send_imob_notification(listing: dict, grade: str, score: int,
@@ -350,6 +385,6 @@ def send_imob_notification(listing: dict, grade: str, score: int,
     ]:
         wh = getattr(settings, wh_attr, None)
         if wh and grade in allowed_grades:
-            discord_service.enqueue(DiscordNotification(
+            discord_service.enqueue(
                 webhook_url=wh, embed=embed, listing_id=listing_id,
-                module="imobiliare", grade=grade, mention_here=mention), db)
+                module="imobiliare", grade=grade, mention_here=mention)

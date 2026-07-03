@@ -5,10 +5,11 @@ import asyncio
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User
 from app.models.real_estate_listing import RealEstateListing
@@ -28,7 +29,9 @@ router = APIRouter(prefix="/api/real-estate", tags=["Real Estate"])
 
 
 @router.get("/search")
+@limiter.limit("5/minute")
 async def search(
+    request: Request,
     platforms: str = Query("olx,storia", description="Lista platforme separate prin virgula"),
     tip_anunt: str = Query("vanzare"),
     tip_proprietate: str = Query("apartament"),

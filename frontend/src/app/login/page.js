@@ -6,7 +6,7 @@ import axios from "axios";
 import { useTheme } from "@/lib/theme";
 import { Mail, Lock, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap, Sun, Moon } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function ThemeToggleFloating() {
   const { theme, toggleTheme } = useTheme();
@@ -45,13 +45,13 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const loginRes = await axios.post(API_URL + "/api/auth/login", { email, password });
-      const token = loginRes.data.access_token;
-      localStorage.setItem("flipradar_token", token);
-      const meRes = await axios.get(API_URL + "/api/auth/me", {
-        headers: { Authorization: "Bearer " + token },
-      });
-      if (meRes.data.is_admin) {
+      // MODIFICARE 3 — login setează cookie-urile httpOnly; răspunsul conține user-ul.
+      const loginRes = await axios.post(
+        API_URL + "/api/auth/login",
+        { email, password },
+        { withCredentials: true }
+      );
+      if (loginRes.data?.user?.is_admin) {
         window.location.href = "/admin";
       } else {
         window.location.href = "/dashboard";

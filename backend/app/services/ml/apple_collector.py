@@ -42,11 +42,10 @@ class AppleCollector(BaseMLCollector):
     @staticmethod
     def _normalize_vinted(results) -> list:
         """Mapeaza formatul scraperului Radar (external_id/url/images) la forma
-        asteptata de _ingest/_listing_data (platform_id/source_url/thumbnail_url).
-        Sare peste santinela de cookie expirat ({"__vinted_auth_error": True})."""
+        asteptata de _ingest/_listing_data (platform_id/source_url/thumbnail_url)."""
         out = []
         for r in results or []:
-            if not isinstance(r, dict) or r.get("__vinted_auth_error"):
+            if not isinstance(r, dict):
                 continue
             images = r.get("images") or []
             out.append({

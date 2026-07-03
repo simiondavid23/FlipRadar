@@ -34,6 +34,51 @@ def require_admin(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+# MODIFICARE 9 — config global (sold detection batch size) editabil de admin.
+class AppConfigUpdate(BaseModel):
+    sold_detection_batch_size: int
+
+
+@router.get("/config")
+def get_app_config(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Returnează configul global (citit din primul rând radar_settings)."""
+    from app.models.radar_settings import RadarSettings
+    settings = db.query(RadarSettings).first()
+    return {
+        "sold_detection_batch_size": (
+            settings.sold_detection_batch_size if settings else 100
+        ) or 100,
+    }
+
+
+@router.patch("/config")
+def update_app_config(
+    data: AppConfigUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Actualizează configul global. Validare: batch_size între 10 și 500."""
+    if not (10 <= data.sold_detection_batch_size <= 500):
+        raise HTTPException(status_code=422, detail="batch_size trebuie să fie între 10 și 500")
+    from app.models.radar_settings import RadarSettings
+    # Setarea e un parametru global de job; o aplicăm pe toate rândurile ca
+    # cititorul (RadarSettings.first()) să găsească mereu valoarea corectă.
+    updated = db.query(RadarSettings).update(
+        {RadarSettings.sold_detection_batch_size: data.sold_detection_batch_size},
+        synchronize_session=False,
+    )
+    if updated == 0:
+        db.add(RadarSettings(
+            user_id=admin.id,
+            sold_detection_batch_size=data.sold_detection_batch_size,
+        ))
+    db.commit()
+    return {"sold_detection_batch_size": data.sold_detection_batch_size}
+
+
 @router.get("/stats", response_model=AdminStats)
 def get_admin_stats(
     db: Session = Depends(get_db),

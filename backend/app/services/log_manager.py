@@ -1,8 +1,12 @@
 from collections import deque
 from datetime import datetime, date
+import os
 import time
 import json
 import re as _re
+
+# MODIFICARE 12 — persistarea log-urilor in DB e optionala (env LOG_DB_PERSISTENCE).
+_DB_PERSISTENCE = os.getenv("LOG_DB_PERSISTENCE", "false").lower() == "true"
 
 
 class LogManager:
@@ -24,6 +28,22 @@ class LogManager:
             "msg": clean,
         }
         self.buffers[module].append(entry)
+
+        # MODIFICARE 12 — persistare optionala in DB (nu afecteaza deque-ul SSE).
+        if _DB_PERSISTENCE:
+            self._persist_to_db(module, level.upper(), clean)
+
+    def _persist_to_db(self, module: str, level: str, message: str) -> None:
+        """Inserare non-blocking în DB. Eșecul DB nu afectează logging-ul în memorie."""
+        try:
+            from app.database import SessionLocal
+            from app.models.log_entry import LogEntry
+            db = SessionLocal()
+            db.add(LogEntry(module=module, level=level, message=message))
+            db.commit()
+            db.close()
+        except Exception:
+            pass  # Silențios — logging-ul în memorie continuă indiferent
 
     def get_all(self, module: str) -> list:
         return list(self.buffers.get(module, []))

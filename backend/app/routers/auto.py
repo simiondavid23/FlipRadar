@@ -4,10 +4,11 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User
 from app.models.auto_lot import AutoLot
@@ -98,7 +99,9 @@ def _parse_filters(filters: Optional[str]) -> dict:
 
 
 @router.get("/lots/search")
+@limiter.limit("5/minute")
 async def search_lots(
+    request: Request,
     q: str = Query("", description="Cuvant cheie (marca/model)"),
     platforms: str = Query("copart,iaai", description="Lista platforme separate prin virgula"),
     filters: Optional[str] = Query(None, description="JSON encodat cu filtre (make, model, ...)"),
@@ -312,7 +315,9 @@ async def extract_description(
 
 
 @router.get("/listings/search")
+@limiter.limit("5/minute")
 async def search_listings(
+    request: Request,
     q: str = Query("", description="Cuvant cheie / marca"),
     platforms: str = Query("autovit,olx_auto", description="Lista platforme separate prin virgula"),
     filters: Optional[str] = Query(None, description="JSON encodat cu filtre"),

@@ -14,14 +14,16 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import cast, func, Date
 from sqlalchemy.orm import Session
 
 from app.config import VAPID_PUBLIC_KEY
+from app.rate_limit import limiter
 from app.database import get_db
+from app.services.crypto_service import encrypt_cookie, decrypt_cookie
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
 from app.models.radar_blocked_seller import RadarBlockedSeller
@@ -31,7 +33,7 @@ from app.models.radar_message_template import RadarMessageTemplate
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.radar.ai_reviewer import generate_ai_review
-from app.services.radar.categories import PLATFORM_CATEGORIES
+from app.services.radar.categories import PLATFORM_CATEGORIES, get_category_label
 from app.services.radar.discord_service import send_test_message
 from app.services.radar.excel_exporter import build_listings_xlsx
 from app.services.radar.facebook_auth import start_facebook_login_session
@@ -129,7 +131,6 @@ class SettingsUpdate(BaseModel):
     platform_publi24_enabled: Optional[bool] = None
     platform_autovit_enabled: Optional[bool] = None
     platform_mobilede_enabled: Optional[bool] = None
-    vinted_cookie: Optional[str] = None
     lajumate_cookie: Optional[str] = None
     okazii_cookie: Optional[str] = None
 
@@ -192,6 +193,38 @@ class PushSubscribe(BaseModel):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _build_keyword_label(kw: RadarKeyword) -> Optional[str]:
+    """Label human-readable al categoriei pentru AFISARE (camp calculat, nepersistat).
+
+    Traduce valoarea tehnica din keyword.category (slug OLX / catalog_id Vinted) la
+    label-ul din dropdown si adauga subcategoria din marketplace_config daca exista.
+    La orice esec cade pe valoarea bruta -> nicio regresie.
+    """
+    platforms = _parse_json_list(kw.platforms)
+    platform = getattr(kw, "platform", None) or (platforms[0] if platforms else None)
+
+    mc = {}
+    if getattr(kw, "marketplace_config", None):
+        try:
+            mc = json.loads(kw.marketplace_config) or {}
+        except Exception:
+            mc = {}
+    sub = mc.get("subcategory") or mc.get("_keyword_subcategory")
+
+    if kw.category:
+        label = get_category_label(platform, kw.category)
+    else:
+        label = mc.get("category") or None
+
+    if sub and isinstance(sub, str) and sub.strip():
+        sub = sub.strip()
+        if label and sub.lower() not in label.lower():
+            label = f"{label} > {sub}"
+        elif not label:
+            label = sub
+    return label or None
+
+
 def _kw_to_dict(kw: RadarKeyword) -> dict:
     return {
         "id": kw.id,
@@ -200,6 +233,7 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "min_price": kw.min_price,
         "resale_price": kw.resale_price,
         "category": kw.category,
+        "category_label": _build_keyword_label(kw),
         "platform": getattr(kw, "platform", None),
         "exclude_words": _parse_json_list(kw.exclude_words),
         "exclude_description_words": (getattr(kw, "exclude_description_words", None) or []),
@@ -303,9 +337,9 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "platform_publi24_enabled": bool(getattr(s, "platform_publi24_enabled", True)),
         "platform_autovit_enabled": bool(getattr(s, "platform_autovit_enabled", True)),
         "platform_mobilede_enabled": bool(getattr(s, "platform_mobilede_enabled", True)),
-        "vinted_cookie": s.vinted_cookie,
-        "lajumate_cookie": getattr(s, "lajumate_cookie", None),
-        "okazii_cookie": getattr(s, "okazii_cookie", None),
+        # MODIFICARE 4 — decriptăm pentru afișare în UI (backward compatible cu plain text).
+        "lajumate_cookie": decrypt_cookie(getattr(s, "lajumate_cookie", None) or ""),
+        "okazii_cookie": decrypt_cookie(getattr(s, "okazii_cookie", None) or ""),
         "facebook_session_path": s.facebook_session_path,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
@@ -526,7 +560,7 @@ def list_listings(
     status_filter: Optional[str] = Query(None, alias="status"),
     hide_filtered: bool = Query(True),
     page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=100),
+    per_page: int = Query(100, ge=1, le=500),
 ):
     """Feed-ul de listinguri. Implicit returneaza active+saved, sortat dupa found_at DESC."""
     q = db.query(RadarListing).filter(RadarListing.user_id == current_user.id)
@@ -566,25 +600,11 @@ def list_listings(
         k.id: k for k in db.query(RadarKeyword).filter(RadarKeyword.id.in_(keyword_ids)).all()
     } if keyword_ids else {}
 
-    # FIX 6 — semnaleaza frontend-ului daca cookie-ul Vinted a expirat recent.
-    # Reflecta orice notificare "Cookie Vinted expirat" creata in ultimele 2 ore.
-    vinted_auth_error = (
-        db.query(Notification)
-        .filter(
-            Notification.user_id == current_user.id,
-            Notification.title == "Cookie Vinted expirat",
-            Notification.created_at >= datetime.now(timezone.utc) - timedelta(hours=2),
-        )
-        .first()
-        is not None
-    )
-
     return {
         "total": total,
         "page": page,
         "per_page": per_page,
         "items": [_listing_to_dict(it, keywords.get(it.keyword_id)) for it in items],
-        "vinted_auth_error": vinted_auth_error,
     }
 
 
@@ -657,6 +677,49 @@ def get_listing(
     return _listing_to_dict(listing, keyword)
 
 
+@router.get("/listings/{listing_id}/vinted-detail")
+def get_vinted_listing_detail(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Îmbogățește on-demand un anunț Vinted cu poze/descriere/dată
+    complete, o singură dată per anunț (rezultat cache-uit în DB)."""
+    from app.services.radar.vinted_scraper import get_vinted_item_detail
+    listing = (
+        db.query(RadarListing)
+        .filter(RadarListing.id == listing_id, RadarListing.user_id == current_user.id)
+        .first()
+    )
+    if not listing:
+        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    if listing.platform != "vinted":
+        keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
+        return _listing_to_dict(listing, keyword)
+
+    if not listing.vinted_detail_fetched:
+        item_id = (listing.external_id or "").replace("vinted_", "", 1)
+        detail = get_vinted_item_detail(item_id) if item_id else None
+        if detail:
+            if detail.get("images"):
+                listing.images = json.dumps(detail["images"], ensure_ascii=False)
+            if detail.get("description"):
+                listing.description = detail["description"]
+            if detail.get("listed_at"):
+                listing.listed_at = detail["listed_at"]
+            # Marcam fetched=True DOAR la succes. La esec (403/404/exceptie,
+            # detail=None) lasam flag-ul False intentionat, ca sa reincercam
+            # data viitoare cand redeschizi anuntul — dupa ce limita Vinted
+            # pe endpoint-ul de detaliu se reseteaza (biblioteca insasi
+            # documenteaza ca da 403 dupa putine folosiri per sesiune).
+            listing.vinted_detail_fetched = True
+            db.commit()
+            db.refresh(listing)
+
+    keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
+    return _listing_to_dict(listing, keyword)
+
+
 @router.get("/listings/{listing_id}/ai-review")
 def generate_listing_ai_review(
     listing_id: int,
@@ -671,6 +734,12 @@ def generate_listing_ai_review(
     )
     if not listing:
         raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    # PARTEA B — nu genera review nou daca userul a dezactivat "Review AI în feed".
+    if (current_user.ai_features_config or {}).get("ai_radar_review") is False:
+        raise HTTPException(
+            status_code=403,
+            detail="Review-ul AI este dezactivat din Setări (Review AI în feed).",
+        )
     keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
     resale = keyword.resale_price if keyword else 0
     review = generate_ai_review(
@@ -769,8 +838,25 @@ def block_listing_seller(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+# MODIFICARE 18 — impactul stergerii unui keyword (cate listinguri sunt asociate).
+# RadarSeenId nu e legat de keyword (e global pe user+platforma), deci seen_count=0.
+@router.get("/keywords/{keyword_id}/impact")
+def get_keyword_impact(
+    keyword_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    listing_count = db.query(func.count(RadarListing.id)).filter(
+        RadarListing.keyword_id == keyword_id,
+        RadarListing.user_id == current_user.id,
+    ).scalar() or 0
+    return {"listing_count": listing_count, "seen_count": 0}
+
+
 @router.post("/search-manual")
+@limiter.limit("5/minute")
 def search_manual(
+    request: Request,
     data: ManualSearchRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -816,7 +902,7 @@ def search_manual(
                                   exclude_words=exclude_words, min_price=min_price, category=data.category)
             if platform == "vinted":
                 return search_vinted(keyword=keyword, max_price=max_price, condition="all",
-                                     exclude_words=exclude_words, cookie_str=settings.vinted_cookie,
+                                     exclude_words=exclude_words,
                                      min_price=min_price, category=data.category)
             if platform == "okazii":
                 return search_okazii(keyword=keyword, max_price=max_price, condition="all",
@@ -854,8 +940,6 @@ def search_manual(
             for r in rows:
                 if not isinstance(r, dict):
                     continue
-                if r.get("__vinted_auth_error"):
-                    continue  # santinela cookie expirat — nu e un rezultat real
                 price = float(r.get("price") or 0)
                 score_data = calculate_score(
                     listing_price=price,
@@ -986,12 +1070,11 @@ def update_settings(
         s.platform_autovit_enabled = bool(data.platform_autovit_enabled)
     if data.platform_mobilede_enabled is not None:
         s.platform_mobilede_enabled = bool(data.platform_mobilede_enabled)
-    if data.vinted_cookie is not None:
-        s.vinted_cookie = data.vinted_cookie or None
+    # MODIFICARE 4 — criptăm cookie-urile de sesiune înainte de stocare în DB.
     if data.lajumate_cookie is not None:
-        s.lajumate_cookie = data.lajumate_cookie or None
+        s.lajumate_cookie = encrypt_cookie(data.lajumate_cookie) or None
     if data.okazii_cookie is not None:
-        s.okazii_cookie = data.okazii_cookie or None
+        s.okazii_cookie = encrypt_cookie(data.okazii_cookie) or None
     s.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(s)
@@ -1011,72 +1094,6 @@ def test_discord_webhook(
     return {"message": "Mesaj de test trimis cu succes."}
 
 
-@router.get("/vinted/test")
-async def test_vinted_token(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    import re as _re
-    settings = db.query(RadarSettings).filter(RadarSettings.user_id == current_user.id).first()
-    cookie = (settings.vinted_cookie or "").strip() if settings else ""
-    print(f"[VintedTest] Cookie length: {len(cookie)}")
-    print(f"[VintedTest] Has access_token_web: {'access_token_web' in cookie}")
-    print(f"[VintedTest] Cookie preview: {cookie[:30]}...")
-    if not cookie:
-        return {"valid": False, "message": "Niciun token salvat."}
-
-    # Vinted cere adesea si Cookie SI header Authorization: Bearer <access_token_web>
-    token_match = _re.search(r"access_token_web=([^;]+)", cookie)
-    token_value = token_match.group(1).strip() if token_match else None
-
-    headers = {
-        "Cookie": cookie,
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    }
-    if token_value:
-        headers["Authorization"] = f"Bearer {token_value}"
-
-    endpoints = [
-        "https://www.vinted.ro/api/v2/catalog/items?search_text=iphone&per_page=1",
-        "https://www.vinted.ro/api/v2/users/current",
-    ]
-
-    last_status = None
-    last_detail = ""
-    try:
-        from curl_cffi.requests import AsyncSession
-        async with AsyncSession() as session:
-            for url in endpoints:
-                try:
-                    resp = await session.get(url, headers=headers, impersonate="chrome131", timeout=10)
-                except Exception as exc:
-                    last_detail = f"{type(exc).__name__}: {str(exc)[:120]}"
-                    print(f"[VintedTest] {url} -> exceptie: {last_detail}")
-                    continue
-                last_status = resp.status_code
-                print(f"[VintedTest] Status: {resp.status_code}")
-                print(f"[VintedTest] Response: {resp.text[:300]}")
-                if resp.status_code == 200:
-                    try:
-                        data = resp.json()
-                    except Exception:
-                        data = {}
-                    # /catalog/items -> "items"; /users/current -> "user"/"id"
-                    if data.get("items") is not None or data.get("user") is not None or data.get("id") is not None:
-                        return {"valid": True, "message": "Token valid — Vinted funcționează corect."}
-                    last_detail = "răspuns 200 dar fără datele așteptate"
-                    continue
-                last_detail = (resp.text or "")[:160]
-                if resp.status_code in (401, 403):
-                    return {"valid": False, "message": f"HTTP {resp.status_code} — token expirat sau invalid."}
-        if last_status is not None:
-            return {"valid": False, "message": f"HTTP {last_status} — {last_detail}"}
-        return {"valid": False, "message": f"Eroare la testare: {last_detail or 'fără răspuns'}"}
-    except Exception as exc:
-        return {"valid": False, "message": f"Eroare la testare: {str(exc)[:120]}"}
-
-
 @router.get("/lajumate/test")
 async def test_lajumate_token(
     db: Session = Depends(get_db),
@@ -1084,7 +1101,7 @@ async def test_lajumate_token(
 ):
     settings = db.query(RadarSettings).filter(
         RadarSettings.user_id == current_user.id).first()
-    cookie = (settings.lajumate_cookie or "").strip() if settings else ""
+    cookie = decrypt_cookie((settings.lajumate_cookie or "").strip()) if settings else ""
     if not cookie:
         return {"valid": False, "message": "Niciun cookie salvat."}
     try:
@@ -1114,7 +1131,7 @@ async def test_okazii_token(
 ):
     settings = db.query(RadarSettings).filter(
         RadarSettings.user_id == current_user.id).first()
-    cookie = (settings.okazii_cookie or "").strip() if settings else ""
+    cookie = decrypt_cookie((settings.okazii_cookie or "").strip()) if settings else ""
     if not cookie:
         return {"valid": False, "message": "Niciun cookie salvat."}
     try:

@@ -17,6 +17,22 @@ const PLATFORMS = [
 const FUELS = [["", "Toate"], ["benzina", "Benzina"], ["diesel", "Diesel"], ["hibrid", "Hibrid"], ["electric", "Electric"]];
 const GEARBOXES = [["", "Toate"], ["manuala", "Manuala"], ["automata", "Automata"]];
 
+// MODIFICARE 14 — badge avertisment Mobile.de (functioneaza doar de pe IP rezidential).
+function MobileDeWarning() {
+  return (
+    <span
+      title="Funcționează doar de pe IP rezidential. Pe server sau datacenter returnează 403 (blocat Imperva). 0 rezultate pe server = comportament normal."
+      style={{
+        marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem",
+        borderRadius: "4px", background: "var(--bg-warning)", color: "var(--text-warning)",
+        verticalAlign: "middle", cursor: "help", fontWeight: 500,
+      }}
+    >
+      ⚠ IP local
+    </span>
+  );
+}
+
 const inputStyle = {
   width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
   borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
@@ -110,6 +126,7 @@ export default function AutoListingsSearchPage() {
               return (
                 <label key={p.value} style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", cursor: "pointer", padding: "0.3rem 0.625rem", borderRadius: "0.5rem", fontWeight: 600, color: active ? "var(--blue-light)" : "var(--text-secondary)", border: `1px solid ${active ? "var(--blue-primary)" : "var(--border-color)"}`, backgroundColor: active ? "var(--blue-dim)" : "transparent" }}>
                   <input type="checkbox" checked={active} onChange={() => toggle(p.value)} style={{ display: "none" }} /> {p.label}
+                  {p.value === "mobile_de" && <MobileDeWarning />}
                 </label>
               );
             })}

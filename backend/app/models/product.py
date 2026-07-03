@@ -34,3 +34,5 @@ class Product(Base):
     watchlist_items = relationship("WatchlistItem", back_populates="product", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="product", cascade="all, delete-orphan")
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
+    # FlipRadar — sugestii de surse (potrivire pe nume) care asteapta confirmarea userului.
+    suggestions = relationship("ProductSourceSuggestion", back_populates="product", cascade="all, delete-orphan")

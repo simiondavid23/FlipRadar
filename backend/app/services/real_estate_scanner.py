@@ -175,6 +175,8 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         image_url       = raw.get("thumbnail_url") or raw.get("image_url") or "",
         images_json     = raw.get("images", []),
         url             = raw.get("source_url") or raw.get("url") or "",
+        # MODIFICARE 10 — vanzator (cand scraperul il ofera) pentru dedup Level 1b.
+        seller_id       = raw.get("seller_id") or raw.get("owner_id") or None,
         description     = desc[:2000],
         score           = score,
         grade           = grade,

@@ -1,6 +1,8 @@
 import asyncio
 import json
+import random
 import re
+import time
 import urllib.parse
 from typing import Optional
 
@@ -972,6 +974,74 @@ def refresh_price_from_source(
                     except (TypeError, ValueError):
                         continue
     return None
+
+
+def find_cross_shop_matches(
+    name: str,
+    ean: Optional[str],
+    exclude_source: Optional[str],
+    max_results: int = 20,
+) -> dict:
+    """Caută același produs pe celelalte magazine (toate din _SCRAPERS_BY_SOURCE
+    minus sursa de origine). Returnează:
+        {"ean_matches": [...], "name_candidates": [...]}
+
+    Strategie (adaptată la realitatea scraperelor): căutăm pe NUME pe fiecare
+    magazin — singura interogare fiabilă, fiindcă doar Altex expune `ean` în
+    rezultatele de căutare. Apoi:
+      - dacă un rezultat are EAN-ul identic cu al produsului  -> ean_matches
+        (potrivire sigură -> se atașează automat ca sursă);
+      - altfel, dacă există EXACT un candidat relevant pe nume -> name_candidates
+        (sugestie ce așteaptă confirmarea userului). 0 sau 2+ = prea ambiguu, sărim.
+
+    Secvențial, cu delay aleator între magazine (același pattern anti-blocare ca
+    refresh_price_from_source). Nu paralelizează.
+    """
+    ean_matches: list = []
+    name_candidates: list = []
+    query = (name or "").strip()
+    if not query:
+        return {"ean_matches": ean_matches, "name_candidates": name_candidates}
+
+    ean_norm = (ean or "").strip().lstrip("0")
+    exclude = (exclude_source or "").strip().lower()
+
+    for source, scraper in _SCRAPERS_BY_SOURCE.items():
+        if source == exclude:
+            continue
+        time.sleep(random.uniform(0.6, 1.4))  # anti-blocare, ca la refresh_price_from_source
+        try:
+            raw = scraper(query[:80], max_results)
+        except Exception as exc:
+            log_manager.emit("catalog", "WARN",
+                             f"Cross-shop {source}: eroare scraper ({str(exc)[:60]})")
+            continue
+        _emit_catalog(source, query, raw)
+
+        real = [r for r in raw
+                if isinstance(r, dict) and "error" not in r and "message" not in r]
+        if not real:
+            continue
+
+        # 1) Potrivire confirmată prin EAN (doar magazinele care expun `ean` în
+        #    rezultate, ex. Altex). Re-verificăm egalitatea strict, ca să nu
+        #    atașăm din greșeală rezultate cu EAN gol.
+        if ean_norm:
+            confirmed = [r for r in real
+                         if (r.get("ean") or "").strip().lstrip("0") == ean_norm]
+            if confirmed:
+                ean_matches.append({**confirmed[0], "source": source})
+                continue
+
+        # 2) Candidat unic pe nume -> sugestie. filter_by_relevance păstrează doar
+        #    produsele al căror nume conține toți tokenii semnificativi din query.
+        relevant = filter_by_relevance(real, query)
+        clear = [r for r in relevant
+                 if isinstance(r, dict) and "error" not in r and "message" not in r]
+        if len(clear) == 1:  # un singur candidat clar; 0 sau 2+ = prea ambiguu, sărim
+            name_candidates.append({**clear[0], "source": source})
+
+    return {"ean_matches": ean_matches, "name_candidates": name_candidates}
 
 
 def _tokenize_query(query: str) -> list:

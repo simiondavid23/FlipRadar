@@ -34,6 +34,9 @@ class RealEstateMonitorListing(Base):
     image_url                 = Column(Text)
     images_json               = Column(JSON, default=list)
     url                       = Column(Text)
+    # MODIFICARE 10 — identificator vanzator (pentru deduplicare Level 1b
+    # seller+price). Populat din datele scraperului cand sunt disponibile.
+    seller_id                 = Column(String(200))
     description               = Column(Text)
     score                     = Column(Integer, default=50)
     grade                     = Column(String(5), default="C")

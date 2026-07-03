@@ -29,6 +29,8 @@ export default function MarketplaceSearchPage() {
   const [activeTab, setActiveTab] = useState("all");
   const [sortBy, setSortBy] = useState("relevance");
   const [hasSearched, setHasSearched] = useState(false);
+  // MODIFICARE 17 — query-ul efectiv cautat (pentru "Încarcă mai multe").
+  const [searchedQ, setSearchedQ] = useState("");
 
   const [savedKeys, setSavedKeys] = useState(new Set());
   const [savingKey, setSavingKey] = useState(null);
@@ -59,14 +61,15 @@ export default function MarketplaceSearchPage() {
     return out;
   };
 
-  const callPlatform = (platform, q, filters) => {
+  // MODIFICARE 17 — opts = { page, per_page } transmise scraperelor (paginare).
+  const callPlatform = (platform, q, filters, opts = {}) => {
     switch (platform) {
-      case "olx": return marketplaceAPI.olxGeneral(q, "", filters);
-      case "vinted": return marketplaceAPI.vinted(q, filters);
-      case "lajumate": return marketplaceAPI.lajumate(q, filters);
-      case "publi24": return marketplaceAPI.publi24(q, filters);
-      case "okazii": return marketplaceAPI.okazii(q, filters);
-      case "kleinanzeigen": return marketplaceAPI.kleinanzeigen(q, "", filters);
+      case "olx": return marketplaceAPI.olxGeneral(q, "", filters, opts);
+      case "vinted": return marketplaceAPI.vinted(q, filters, opts);
+      case "lajumate": return marketplaceAPI.lajumate(q, filters, opts);
+      case "publi24": return marketplaceAPI.publi24(q, filters, opts);
+      case "okazii": return marketplaceAPI.okazii(q, filters, opts);
+      case "kleinanzeigen": return marketplaceAPI.kleinanzeigen(q, "", filters, opts);
       case "facebook":
         return Promise.reject({ response: { data: { detail: "Facebook Marketplace necesita autentificare — indisponibil momentan." } } });
       default:
@@ -74,13 +77,38 @@ export default function MarketplaceSearchPage() {
     }
   };
 
-  const fetchPlatform = async (platform, q) => {
-    try {
-      const res = await callPlatform(platform, q, buildFilters(platform));
-      setResults((prev) => ({ ...prev, [platform]: { loading: false, results: res.data?.results || [], error: null } }));
-    } catch (e) {
-      setResults((prev) => ({ ...prev, [platform]: { loading: false, results: [], error: e.response?.data?.detail || "Eroare la cautare." } }));
+  const fetchPlatform = async (platform, q, page = 1, append = false) => {
+    if (append) {
+      setResults((prev) => ({ ...prev, [platform]: { ...prev[platform], loadingMore: true } }));
     }
+    try {
+      const res = await callPlatform(platform, q, buildFilters(platform), { page, per_page: 20 });
+      const newResults = res.data?.results || [];
+      setResults((prev) => ({
+        ...prev,
+        [platform]: {
+          loading: false, loadingMore: false,
+          results: append ? [...(prev[platform]?.results || []), ...newResults] : newResults,
+          error: null, page, hasMore: !!res.data?.has_more,
+        },
+      }));
+    } catch (e) {
+      setResults((prev) => ({
+        ...prev,
+        [platform]: {
+          loading: false, loadingMore: false,
+          results: append ? (prev[platform]?.results || []) : [],
+          error: e.response?.data?.detail || "Eroare la cautare.",
+          page: append ? (prev[platform]?.page || 1) : 1, hasMore: false,
+        },
+      }));
+    }
+  };
+
+  const loadMore = (platform) => {
+    const cur = results[platform];
+    if (!cur || cur.loadingMore || !cur.hasMore) return;
+    fetchPlatform(platform, searchedQ, (cur.page || 1) + 1, true);
   };
 
   const doSearch = (e) => {
@@ -89,11 +117,12 @@ export default function MarketplaceSearchPage() {
     if (!q) { alert("Introdu un cuvant cheie pentru cautare."); return; }
     if (selected.length === 0) { alert("Selecteaza cel putin o platforma."); return; }
     setHasSearched(true);
+    setSearchedQ(q);
     setActiveTab("all");
     const init = {};
-    selected.forEach((p) => { init[p] = { loading: true, results: [], error: null }; });
+    selected.forEach((p) => { init[p] = { loading: true, results: [], error: null, page: 1, hasMore: false }; });
     setResults(init);
-    selected.forEach((p) => fetchPlatform(p, q));
+    selected.forEach((p) => fetchPlatform(p, q, 1, false));
   };
 
   const handleSave = async (listing) => {
@@ -334,6 +363,7 @@ export default function MarketplaceSearchPage() {
 
           {/* Grid carduri */}
           {sorted.length > 0 ? (
+            <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1rem" }}>
               {sorted.map((l, i) => (
                 <MarketplaceListingCard
@@ -345,6 +375,23 @@ export default function MarketplaceSearchPage() {
                 />
               ))}
             </div>
+            {/* MODIFICARE 17 — "Încarcă mai multe" pe tab-ul unei platforme cu has_more */}
+            {activeTab !== "all" && results[activeTab]?.hasMore && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: "1.25rem" }}>
+                <button
+                  onClick={() => loadMore(activeTab)}
+                  disabled={results[activeTab]?.loadingMore}
+                  style={{
+                    padding: "0.5rem 1.5rem", borderRadius: "0.5rem", fontSize: "0.875rem", fontWeight: 600,
+                    cursor: results[activeTab]?.loadingMore ? "not-allowed" : "pointer",
+                    border: "1px solid var(--border-color)", backgroundColor: "var(--bg-card)", color: "var(--text-primary)",
+                  }}
+                >
+                  {results[activeTab]?.loadingMore ? "Se încarcă..." : "Încarcă mai multe"}
+                </button>
+              </div>
+            )}
+            </>
           ) : (
             selected.some((p) => results[p]?.loading) ? (
               <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}>

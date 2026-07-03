@@ -74,6 +74,7 @@ def search_facebook(
     category: Optional[str] = None,
     page: int = 1,
     max_scrolls: int = 10,
+    _retry: bool = False,
 ) -> list[dict]:
     """Cauta pe Facebook Marketplace cu o sesiune Playwright pre-logata.
 
@@ -225,4 +226,17 @@ def search_facebook(
         return []
 
     print(f"[FacebookScraper] {len(results)} rezultate pentru '{keyword_clean}'")
+
+    # MODIFICARE 11 — daca sesiunea pare expirata (0 rezultate + storage_state vechi
+    # de >23h), incearca re-autentificarea automata si re-ruleaza scrape-ul O SINGURA
+    # DATA (_retry previne bucla infinita).
+    if not _retry:
+        from app.services.facebook_auth import needs_reauth, re_authenticate
+        if needs_reauth(results) and re_authenticate():
+            return search_facebook(
+                keyword=keyword, max_price=max_price, judet=judet, oras=oras,
+                exclude_words=exclude_words, session_path=session_path,
+                min_price=min_price, category=category, page=page,
+                max_scrolls=max_scrolls, _retry=True,
+            )
     return results

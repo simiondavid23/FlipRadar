@@ -185,6 +185,26 @@ function CategoryCard({ meta, data, retraining, onRetrain }) {
         </div>
       </div>
 
+      {/* MODIFICARE 19 — indicator calitate date antrenare (features complete) */}
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>
+          <span>Calitate date antrenare</span>
+          <span>{fmt(data.complete ?? 0)}/{fmt(data.total ?? 0)} complete</span>
+        </div>
+        <div style={{ height: 6, background: "var(--bg-dark)", borderRadius: 99, overflow: "hidden", border: "1px solid var(--border-color)" }}>
+          <div style={{
+            height: "100%",
+            width: `${data.completeness_pct || 0}%`,
+            background: (data.completeness_pct ?? 0) >= 90 ? "#4ade80" : (data.completeness_pct ?? 0) >= 70 ? "#f59e0b" : "#ef4444",
+            borderRadius: 99,
+            transition: "width 0.3s",
+          }} />
+        </div>
+        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+          {data.completeness_pct ?? 0}% utilizabile pentru antrenare
+        </div>
+      </div>
+
       {/* Total + status model */}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
         <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>

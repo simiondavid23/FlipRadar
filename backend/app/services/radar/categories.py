@@ -111,120 +111,126 @@ PLATFORM_CATEGORIES = {
     ],
 
     "vinted": [
-        # IDs marked CONFIRMED sunt din codul existent si au fost verificate.
-        # IDs marcate VERIFY sunt estimari — trebuie validate cu GET /api/v2/catalog/categories.
+        # Valorile sunt catalog_id-uri Vinted validate 2026-07-03 contra arborelui live
+        # (VINTED_CATALOG_ID_MAP din vinted_scraper.py, construit din /api/v2/catalog).
+        # Comentariul arata calea reala Tab > Categorie > Subcategorie. Cateva subcategorii
+        # inventate (grupe de varsta, "Echipament sportiv" generic, camasi, hanorace) NU au
+        # nod echivalent pe Vinted -> colapseaza la cel mai apropiat nod real. Vechile ID-uri
+        # (multe gresite — ex. Telefoane=2995 = de fapt "Alte dispozitive") sunt remapate pe
+        # datele deja salvate de migrarea remap_vinted_category_ids_to_live_tree (db_migrate).
         {
             "label": "Femei",
-            "value": "1904",  # CONFIRMED
+            "value": "1904",  # Femei
             "subcategories": [
-                {"label": "Topuri și Bluze", "value": "4"},  # VERIFY
-                {"label": "Rochii", "value": "3"},  # VERIFY
-                {"label": "Pantaloni și Colanti", "value": "6"},  # VERIFY
-                {"label": "Blugi", "value": "270"},  # VERIFY
-                {"label": "Fuste", "value": "79"},  # VERIFY
-                {"label": "Jachete și Paltoane", "value": "8"},  # VERIFY
-                {"label": "Pulovere și Cardigan", "value": "256"},  # VERIFY
-                {"label": "Hanorace", "value": "87"},  # VERIFY
-                {"label": "Lenjerie și Pijamale", "value": "17"},  # VERIFY
-                {"label": "Costume de Baie", "value": "15"},  # VERIFY
-                {"label": "Ciorapi și Dresuri", "value": "68"},  # VERIFY
+                {"label": "Topuri și Bluze", "value": "12"},   # Femei > Haine > Topuri și tricouri
+                {"label": "Rochii", "value": "10"},            # Femei > Haine > Rochii
+                {"label": "Pantaloni și Colanti", "value": "9"},    # Femei > Haine > Pantaloni și colanți
+                {"label": "Blugi", "value": "183"},            # Femei > Haine > Blugi
+                {"label": "Fuste", "value": "11"},             # Femei > Haine > Fuste
+                {"label": "Jachete și Paltoane", "value": "1037"},  # Femei > Haine > Îmbrăcăminte de exterior
+                {"label": "Pulovere și Cardigan", "value": "13"},   # Femei > Haine > Pulovere
+                {"label": "Hanorace", "value": "4"},           # Femei > Haine (fara nod dedicat)
+                {"label": "Lenjerie și Pijamale", "value": "29"},   # Femei > Haine > Lenjerie intimă și pijamale
+                {"label": "Costume de Baie", "value": "28"},   # Femei > Haine > Costume de baie
+                {"label": "Ciorapi și Dresuri", "value": "4"}, # Femei > Haine (fara nod dedicat)
             ],
         },
         {
             "label": "Bărbati",
-            "value": "5",  # VERIFY
+            "value": "5",  # Bărbați
             "subcategories": [
-                {"label": "Tricouri și Maiouri", "value": "195"},  # VERIFY
-                {"label": "Cămăși", "value": "198"},  # VERIFY
-                {"label": "Pantaloni", "value": "201"},  # VERIFY
-                {"label": "Blugi", "value": "196"},  # VERIFY
-                {"label": "Pulovere și Cardigane", "value": "257"},  # VERIFY
-                {"label": "Hanorace", "value": "255"},  # VERIFY
-                {"label": "Jachete și Paltoane", "value": "197"},  # VERIFY
-                {"label": "Costume și Sacouri", "value": "200"},  # VERIFY
-                {"label": "Pantaloni Scurti", "value": "199"},  # VERIFY
+                {"label": "Tricouri și Maiouri", "value": "76"},    # Bărbați > Haine > Topuri și tricouri
+                {"label": "Cămăși", "value": "2050"},          # Bărbați > Haine (fara nod dedicat)
+                {"label": "Pantaloni", "value": "34"},         # Bărbați > Haine > Pantaloni
+                {"label": "Blugi", "value": "257"},            # Bărbați > Haine > Blugi
+                {"label": "Pulovere și Cardigane", "value": "79"},  # Bărbați > Haine > Pulovere
+                {"label": "Hanorace", "value": "2050"},        # Bărbați > Haine (fara nod dedicat)
+                {"label": "Jachete și Paltoane", "value": "1206"},  # Bărbați > Haine > Îmbrăcăminte de exterior
+                {"label": "Costume și Sacouri", "value": "32"},     # Bărbați > Haine > Costume și blazere
+                {"label": "Pantaloni Scurti", "value": "80"},  # Bărbați > Haine > Pantaloni scurți
             ],
         },
         {
             "label": "Copii și Bebeluși",
-            "value": "2",  # VERIFY
+            "value": "1193",  # Copii
+            # Vinted nu filtreaza dupa varsta -> toate grupele colapseaza la tab-ul Copii.
             "subcategories": [
-                {"label": "0-2 ani", "value": "151"},  # VERIFY
-                {"label": "3-5 ani", "value": "152"},  # VERIFY
-                {"label": "6-9 ani", "value": "153"},  # VERIFY
-                {"label": "10-14 ani", "value": "154"},  # VERIFY
+                {"label": "0-2 ani", "value": "1193"},   # Copii
+                {"label": "3-5 ani", "value": "1193"},   # Copii
+                {"label": "6-9 ani", "value": "1193"},   # Copii
+                {"label": "10-14 ani", "value": "1193"}, # Copii
             ],
         },
         {
             "label": "Încăltăminte",
-            "value": "1231",  # CONFIRMED
+            "value": "1231",  # Bărbați > Pantofi (nu exista nod unic "toata incaltamintea")
             "subcategories": [
-                {"label": "Femei", "value": "16"},  # VERIFY
-                {"label": "Bărbati", "value": "203"},  # VERIFY
-                {"label": "Copii", "value": "155"},  # VERIFY
+                {"label": "Femei", "value": "16"},       # Femei > Pantofi
+                {"label": "Bărbati", "value": "1231"},   # Bărbați > Pantofi
+                {"label": "Copii", "value": "1193"},     # Copii (fara nod dedicat pantofi copii)
             ],
         },
         {
             "label": "Genti și Accesorii",
-            "value": "1206",  # VERIFY
+            "value": "1187",  # Femei > Accesorii
             "subcategories": [
-                {"label": "Genti", "value": "1232"},  # VERIFY
-                {"label": "Portofele", "value": "1234"},  # VERIFY
-                {"label": "Bijuterii", "value": "1235"},  # VERIFY
-                {"label": "Ceasuri", "value": "1236"},  # VERIFY
-                {"label": "Ochelari", "value": "1237"},  # VERIFY
-                {"label": "Pălării și Căciuli", "value": "1238"},  # VERIFY
-                {"label": "Esarfe și Fular", "value": "1239"},  # VERIFY
+                {"label": "Genti", "value": "19"},        # Femei > Genți
+                {"label": "Portofele", "value": "160"},   # Femei > Genți > Poșete și portofele
+                {"label": "Bijuterii", "value": "21"},    # Femei > Accesorii > Bijuterii
+                {"label": "Ceasuri", "value": "22"},      # Femei > Accesorii > Ceasuri
+                {"label": "Ochelari", "value": "26"},     # Femei > Accesorii > Ochelari de soare
+                {"label": "Pălării și Căciuli", "value": "88"},  # Femei > Accesorii > Pălării și șepci
+                {"label": "Esarfe și Fular", "value": "89"},     # Femei > Accesorii > Fulare și eșarfe
             ],
         },
         {
             "label": "Sport",
-            "value": "76",  # CONFIRMED
+            "value": "4332",  # Sporturi
             "subcategories": [
-                {"label": "Echipament Sportiv", "value": "62"},  # VERIFY
-                {"label": "Încăltăminte Sport", "value": "61"},  # VERIFY
-                {"label": "Fitness", "value": "63"},  # VERIFY
-                {"label": "Sporturi Outdoor", "value": "64"},  # VERIFY
+                {"label": "Echipament Sportiv", "value": "4332"},  # Sporturi (generic, fara nod unic)
+                {"label": "Încăltăminte Sport", "value": "4332"},  # Sporturi (fara nod dedicat pantofi sport)
+                {"label": "Fitness", "value": "4334"},    # Sporturi > Fitness, alergare și yoga
+                {"label": "Sporturi Outdoor", "value": "4335"},    # Sporturi > Sporturi în aer liber
             ],
         },
         {
             "label": "Casă",
-            "value": "1918",  # CONFIRMED
+            "value": "1918",  # Casă
             "subcategories": [
-                {"label": "Decoratiuni", "value": "1919"},  # VERIFY
-                {"label": "Lenjerie de Pat", "value": "1920"},  # VERIFY
-                {"label": "Veselă și Tacâmuri", "value": "1921"},  # VERIFY
-                {"label": "Textile", "value": "1922"},  # VERIFY
+                {"label": "Decoratiuni", "value": "1934"},       # Casă > Accesorii pentru casă
+                {"label": "Lenjerie de Pat", "value": "1924"},   # Casă > Textile > Lenjerie de pat
+                {"label": "Veselă și Tacâmuri", "value": "1920"},   # Casă > Articole de masă
+                {"label": "Textile", "value": "1919"},           # Casă > Textile
             ],
         },
         {
             "label": "Frumusete",
-            "value": "1203",  # VERIFY
+            "value": "146",  # Femei > Frumusețe
             "subcategories": [
-                {"label": "Cosmetice", "value": "1204"},  # VERIFY
-                {"label": "Parfumuri", "value": "1240"},  # VERIFY
-                {"label": "Îngrijire Corp", "value": "1241"},  # VERIFY
-                {"label": "Îngrijire Păr", "value": "1242"},  # VERIFY
+                {"label": "Cosmetice", "value": "964"},   # Femei > Frumusețe > Machiaj
+                {"label": "Parfumuri", "value": "152"},   # Femei > Frumusețe > Parfum
+                {"label": "Îngrijire Corp", "value": "956"},    # Femei > Frumusețe > Îngrijirea corpului
+                {"label": "Îngrijire Păr", "value": "1902"},    # Femei > Frumusețe > Îngrijirea părului
             ],
         },
         {
             "label": "Electronice și Gadgeturi",
-            "value": "2994",  # CONFIRMED
+            "value": "2994",  # Electronice
             "subcategories": [
-                {"label": "Telefoane", "value": "2995"},  # VERIFY
-                {"label": "Tablete și E-readere", "value": "2996"},  # VERIFY
-                {"label": "Căsti și Audio", "value": "2997"},  # VERIFY
-                {"label": "Console și Jocuri", "value": "3025"},  # CONFIRMED
-                {"label": "Laptopuri", "value": "2998"},  # VERIFY
+                {"label": "Telefoane", "value": "3661"},  # Electronice > Telefoane mobile și comunicare > Telefoane mobile
+                {"label": "Tablete și E-readere", "value": "3567"},  # Electronice > Tablete, e-readere și accesorii
+                {"label": "Căsti și Audio", "value": "3566"},   # Electronice > Audio, căști și hi-fi
+                {"label": "Console și Jocuri", "value": "3002"},     # Electronice > Jocuri video și console
+                {"label": "Laptopuri", "value": "3580"},  # Electronice > Calculatoare și accesorii > Laptopuri
             ],
         },
         {
             "label": "Cărti, Muzică și Film",
-            "value": "3263",  # CONFIRMED
+            "value": "2309",  # Media și cărți
             "subcategories": [
-                {"label": "Cărti", "value": "3264"},  # VERIFY
-                {"label": "Muzică", "value": "3265"},  # VERIFY
-                {"label": "Film", "value": "3266"},  # VERIFY
+                {"label": "Cărti", "value": "2312"},      # Media și cărți > Cărți
+                {"label": "Muzică", "value": "3036"},     # Media și cărți > Muzică
+                {"label": "Film", "value": "3037"},       # Media și cărți > Video
             ],
         },
     ],
@@ -382,3 +388,47 @@ PLATFORM_CATEGORIES = {
 
 def get_platform_categories(platform: str) -> list:
     return PLATFORM_CATEGORIES.get(platform, [])
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Lookup invers pentru AFISARE (valoare tehnica stocata -> label human-readable).
+# Construit o singura data din PLATFORM_CATEGORIES — aceeasi structura din care se
+# populeaza dropdown-ul de categorii. keyword.category stocheaza mereu un `value` de
+# aici (slug OLX "cat/subcat", catalog_id Vinted "2995", slug okazii etc.), deci
+# inversul lui reda exact label-ul pe care utilizatorul l-a selectat.
+#   olx  "electronice-si-electrocasnice/telefoane-mobile" -> "Electronice și Electrocasnice > Telefoane Mobile"
+#   vinted "2995" -> "Electronice și Gadgeturi > Telefoane"
+# ──────────────────────────────────────────────────────────────────────────────
+_VALUE_TO_LABEL: dict[tuple, str] = {}
+for _platform, _cats in PLATFORM_CATEGORIES.items():
+    for _cat in _cats:
+        _cval, _clabel = _cat.get("value"), _cat.get("label")
+        if _cval is not None and _clabel:
+            _VALUE_TO_LABEL[(_platform, str(_cval))] = _clabel
+        for _sub in (_cat.get("subcategories") or []):
+            _sval, _slabel = _sub.get("value"), _sub.get("label")
+            if _sval is not None and _slabel:
+                _VALUE_TO_LABEL[(_platform, str(_sval))] = (
+                    f"{_clabel} > {_slabel}" if _clabel else _slabel
+                )
+
+
+def get_category_label(platform: Optional[str], category: Optional[str]) -> Optional[str]:
+    """Converteste valoarea tehnica stocata pe keyword la label human-readable.
+
+    Sursa e PLATFORM_CATEGORIES (dropdown-ul de categorii). Daca maparea esueaza —
+    valoare necunoscuta sau text deja lizibil (ex. "Femei > Haine" din wizard) —
+    intoarce valoarea bruta ca fallback (nicio regresie).
+    """
+    if not category:
+        return None
+    cat = str(category).strip()
+    if platform:
+        label = _VALUE_TO_LABEL.get((platform, cat))
+        if label:
+            return label
+    # platforma lipsa/necunoscuta -> incearca in oricare platforma
+    for (_p, _v), _lbl in _VALUE_TO_LABEL.items():
+        if _v == cat:
+            return _lbl
+    return category

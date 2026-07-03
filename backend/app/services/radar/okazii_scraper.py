@@ -111,10 +111,12 @@ def search_okazii(
             # Cookie de sesiune salvat (radar_settings.okazii_cookie) injectat in context.
             from app.database import SessionLocal
             from app.models.radar_settings import RadarSettings
+            from app.services.crypto_service import decrypt_cookie
             _db = SessionLocal()
             try:
                 _rs = _db.query(RadarSettings).first()
-                cookie_str = (_rs.okazii_cookie or "").strip() if _rs else ""
+                # MODIFICARE 4 — cookie-ul e stocat criptat; îl decriptăm la citire.
+                cookie_str = decrypt_cookie((_rs.okazii_cookie or "").strip()) if _rs else ""
             finally:
                 _db.close()
 

@@ -1,4 +1,5 @@
 """Periodic scanner for auto_keywords — similar to radar_scanner."""
+import random
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -6,25 +7,29 @@ from sqlalchemy.orm import Session
 from app.models.auto_keyword import AutoKeyword
 from app.models.auto_feed_listing import AutoFeedListing
 from app.services.auto_scorer import (
-    compute_score, compute_import_costs, IMPORT_PLATFORMS)
+    compute_score, compute_import_costs, IMPORT_PLATFORMS, _fetch_market_avg)
 from app.services.log_manager import log_manager
 from app.services.ml.feed_ml_bridge import try_save_to_ml
 
 _CURRENT_YEAR = 2026
 
 # MODULE 3 — delay (secunde) intre paginile aceleiasi platforme la paginare.
-_AUTO_PLATFORM_DELAYS = {
-    "autovit": 1.0,
-    "olx_auto": 0.5,
-    "mobile_de": 1.0,
-    "autoscout24": 1.0,
-    "facebook_auto": 2.0,
-    "kleinanzeigen_auto": 1.0,
+# MODIFICARE 6 — interval (min, max) per platforma; delay aleator in interval ca
+# sa nu existe un pattern temporal fix detectabil ca bot.
+_AUTO_PLATFORM_DELAY_RANGES: dict[str, tuple[float, float]] = {
+    "autovit":            (0.5, 1.3),
+    "olx_auto":           (0.3, 0.9),
+    "mobile_de":          (0.8, 1.8),
+    "autoscout24":        (0.8, 1.8),
+    "facebook_auto":      (1.5, 3.5),
+    "kleinanzeigen_auto": (0.7, 1.5),
 }
 
 
 def _auto_platform_delay(platform: str) -> float:
-    return _AUTO_PLATFORM_DELAYS.get((platform or "").lower(), 1.0)
+    """Returnează un delay aleator în intervalul platformei (anti bot-detection)."""
+    lo, hi = _AUTO_PLATFORM_DELAY_RANGES.get((platform or "").lower(), (0.5, 1.5))
+    return random.uniform(lo, hi)
 
 
 def _within_hours(kw: AutoKeyword) -> bool:
@@ -115,7 +120,9 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
 
 def _save_listing(db: Session, user_id: int, keyword_id: int,
                   raw: dict, platform: str,
-                  market_avg_ron: Optional[float]) -> bool:
+                  market_avg_ron: Optional[float],
+                  make: Optional[str] = None,
+                  model: Optional[str] = None) -> bool:
     """Persist new listing. Returns True if new (not seen before)."""
     ext_id = (raw.get("external_id") or raw.get("platform_id") or "").strip()
     if not ext_id:
@@ -136,6 +143,16 @@ def _save_listing(db: Session, user_id: int, keyword_id: int,
     year   = raw.get("year")
     km     = raw.get("km")
     title  = raw.get("title") or raw.get("titlu") or ""
+
+    # MODIFICARE 8 — daca nu avem o medie de piata keyword-level, o calculam dinamic
+    # per-listing (marca din titlu, an ±2) ca referinta de scoring.
+    if market_avg_ron is None and db is not None:
+        market_avg_ron = _fetch_market_avg(
+            make=raw.get("make") or make,
+            model=raw.get("model") or model,
+            year=year,
+            db=db,
+        )
 
     score, grade = compute_score(price, cur, year, km, title, market_avg_ron)
 
@@ -223,7 +240,6 @@ def run_auto_scan(db: Session) -> None:
 
         # MODULE 3 — paginare: aduna pagini pana cand una nu mai aduce anunturi noi.
         page = 1
-        delay = _auto_platform_delay(kw.platform)
         total_new = 0
         total_seen = 0
         while True:
@@ -234,7 +250,8 @@ def run_auto_scan(db: Session) -> None:
             new_on_page = 0
             for r in results:
                 is_new = _save_listing(
-                    db, kw.user_id, kw.id, r, kw.platform, market_avg)
+                    db, kw.user_id, kw.id, r, kw.platform, market_avg,
+                    make=kw.make, model=kw.model)
                 if is_new:
                     new_on_page += 1
                     total_new += 1
@@ -276,7 +293,8 @@ def run_auto_scan(db: Session) -> None:
             if new_on_page == 0:
                 break
             page += 1
-            time.sleep(delay)
+            # MODIFICARE 6 — delay aleator proaspăt la fiecare pagină (nu fix).
+            time.sleep(_auto_platform_delay(kw.platform))
 
         log_manager.emit("auto_listings", "OK",
             f"{kw.platform}: {total_seen} rezultate · {total_new} noi")

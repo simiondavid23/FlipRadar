@@ -9,10 +9,11 @@ import asyncio
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User
 from app.models.marketplace_saved import MarketplaceSaved
@@ -39,73 +40,126 @@ def _parse_filters(filters: Optional[str]) -> dict:
         return {}
 
 
+def _paginate(all_results: list, page: int, per_page: int) -> tuple:
+    """MODIFICARE 17 — paginare in memorie peste setul intors de scraper.
+    Scraperele aduc tot setul (cateva pagini), deci feliem aici pentru butonul
+    "Încarcă mai multe". Returneaza (felie, has_more)."""
+    page = max(1, page)
+    per_page = max(1, per_page)
+    start = (page - 1) * per_page
+    end = page * per_page
+    sliced = all_results[start:end]
+    has_more = len(all_results) > end
+    return sliced, has_more
+
+
 @router.get("/olx-general")
+@limiter.limit("5/minute")
 async def olx_general(
+    request: Request,
     q: str = Query(..., min_length=1),
     category: str = Query(""),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     results = await search_olx_general(q, category, _parse_filters(filters))
-    return {"results": results, "count": len(results), "source": "olx"}
+    sliced, has_more = _paginate(results, page, per_page)
+    return {"results": sliced, "count": len(sliced), "source": "olx",
+            "page": page, "has_more": has_more}
 
 
 @router.get("/vinted")
+@limiter.limit("5/minute")
 async def vinted(
+    request: Request,
     q: str = Query(..., min_length=1),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     results = await search_vinted(q, _parse_filters(filters))
-    return {"results": results, "count": len(results), "source": "vinted"}
+    sliced, has_more = _paginate(results, page, per_page)
+    return {"results": sliced, "count": len(sliced), "source": "vinted",
+            "page": page, "has_more": has_more}
 
 
 @router.get("/lajumate")
+@limiter.limit("5/minute")
 async def lajumate(
+    request: Request,
     q: str = Query(..., min_length=1),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     results = await search_lajumate(q, _parse_filters(filters))
-    return {"results": results, "count": len(results), "source": "lajumate"}
+    sliced, has_more = _paginate(results, page, per_page)
+    return {"results": sliced, "count": len(sliced), "source": "lajumate",
+            "page": page, "has_more": has_more}
 
 
 @router.get("/publi24")
+@limiter.limit("5/minute")
 async def publi24(
+    request: Request,
     q: str = Query(..., min_length=1),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     results = await search_publi24(q, _parse_filters(filters))
-    return {"results": results, "count": len(results), "source": "publi24"}
+    sliced, has_more = _paginate(results, page, per_page)
+    return {"results": sliced, "count": len(sliced), "source": "publi24",
+            "page": page, "has_more": has_more}
 
 
 @router.get("/okazii")
+@limiter.limit("5/minute")
 async def okazii(
+    request: Request,
     q: str = Query(..., min_length=1),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     results = await search_okazii(q, _parse_filters(filters))
-    return {"results": results, "count": len(results), "source": "okazii"}
+    sliced, has_more = _paginate(results, page, per_page)
+    return {"results": sliced, "count": len(sliced), "source": "okazii",
+            "page": page, "has_more": has_more}
 
 
 @router.get("/kleinanzeigen")
+@limiter.limit("5/minute")
 async def kleinanzeigen(
+    request: Request,
     q: str = Query(..., min_length=1),
     category_id: str = Query(""),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     results = await search_kleinanzeigen(q, category_id, _parse_filters(filters))
-    return {"results": results, "count": len(results), "source": "kleinanzeigen"}
+    sliced, has_more = _paginate(results, page, per_page)
+    return {"results": sliced, "count": len(sliced), "source": "kleinanzeigen",
+            "page": page, "has_more": has_more}
 
 
 @router.get("/search-all")
+@limiter.limit("5/minute")
 async def search_all(
+    request: Request,
     q: str = Query(..., min_length=1),
     platforms: str = Query("olx,vinted,okazii"),
     filters: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     """Cauta in paralel pe toate platformele selectate (asyncio.gather)."""
@@ -135,7 +189,9 @@ async def search_all(
         merged.extend(res)
         by_platform[platform] = len(res)
 
-    return {"results": merged, "by_platform": by_platform, "count": len(merged)}
+    sliced, has_more = _paginate(merged, page, per_page)
+    return {"results": sliced, "by_platform": by_platform, "count": len(sliced),
+            "page": page, "has_more": has_more}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

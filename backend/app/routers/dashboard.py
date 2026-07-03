@@ -16,6 +16,38 @@ from app.services.currency_service import convert
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
+# MODIFICARE 15 — status scheduler (joburi + next run) pentru widget-ul de dashboard.
+@router.get("/scheduler-status")
+def scheduler_status(current_user: User = Depends(get_current_user)):
+    from app.main import scheduler
+    # Nume prietenoase pentru ID-urile reale de joburi din lifespan.
+    job_names = {
+        "radar_scan": "Radar Piață",
+        "auto_listings_scan": "Auto Anunțuri",
+        "real_estate_scan": "Imobiliare",
+        "re_phash_job": "pHash imagini",
+        "re_daily_cleanup": "Cleanup imobiliare",
+        "discord_queue_cleanup": "Cleanup Discord queue",
+        "log_entries_cleanup": "Cleanup logs DB",
+        "check_alerts": "Verificare alerte",
+        "real_estate_alerts": "Alerte imobiliare",
+        "radar_daily_cleanup": "Cleanup Radar",
+        "ml_sold_detection": "ML detecție vânzări",
+        "retrain_models": "Reantrenare ML",
+        "facebook_group_checks": "Grupuri Facebook",
+        "facebook_cookie_expiry_check": "Expirare cookies FB",
+    }
+    jobs_info = []
+    for job in scheduler.get_jobs():
+        jobs_info.append({
+            "id": job.id,
+            "name": job_names.get(job.id, job.id),
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            "running": scheduler.running,
+        })
+    return {"jobs": jobs_info, "scheduler_running": scheduler.running}
+
+
 @router.get("/stats")
 def get_dashboard_stats(
     db: Session = Depends(get_db),

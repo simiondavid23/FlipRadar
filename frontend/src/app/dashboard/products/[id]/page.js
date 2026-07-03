@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { productsAPI, watchlistAPI, alertsAPI } from "@/lib/api";
 import {
-  ArrowLeft, ExternalLink, Eye, Bell, Package, TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
+  ArrowLeft, ExternalLink, Eye, Bell, Package, TrendingUp, TrendingDown, Minus, Trash2, RefreshCw, Check, X,
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -32,6 +32,8 @@ export default function ProductDetailPage() {
   const [resaleEditing, setResaleEditing] = useState(false);
   const [resaleValue, setResaleValue] = useState("");
   const [resaleSaving, setResaleSaving] = useState(false);
+  // Cross-shop: sugestia pe care o procesam acum (confirm/respinge) — pentru disable.
+  const [suggestionBusy, setSuggestionBusy] = useState(null);
 
   const copyToClipboard = async (value, key) => {
     if (!value) return;
@@ -123,6 +125,30 @@ export default function ProductDetailPage() {
     }
   };
 
+  const handleConfirmSuggestion = async (suggestionId) => {
+    setSuggestionBusy(suggestionId);
+    try {
+      await productsAPI.confirmSuggestion(productId, suggestionId);
+      await loadProduct();
+    } catch (error) {
+      alert(error.response?.data?.detail || "Eroare la confirmarea sugestiei");
+    } finally {
+      setSuggestionBusy(null);
+    }
+  };
+
+  const handleRejectSuggestion = async (suggestionId) => {
+    setSuggestionBusy(suggestionId);
+    try {
+      await productsAPI.deleteSuggestion(productId, suggestionId);
+      await loadProduct();
+    } catch (error) {
+      alert(error.response?.data?.detail || "Eroare la respingerea sugestiei");
+    } finally {
+      setSuggestionBusy(null);
+    }
+  };
+
   const handleDeleteProduct = async () => {
     const name = data?.product?.name || "acest produs";
     const ok = window.confirm(
@@ -155,7 +181,7 @@ export default function ProductDetailPage() {
     );
   }
 
-  const { product, price_history, lowest_price, highest_price, average_price } = data;
+  const { product, price_history, suggestions, lowest_price, highest_price, average_price } = data;
 
   // Pregătim datele graficului (cele mai vechi primele)
   const chartData = [...(price_history || [])].reverse().map((ph) => ({
@@ -597,6 +623,78 @@ export default function ProductDetailPage() {
                   >
                     <ExternalLink style={{ width: "12px", height: "12px" }} /> Vezi
                   </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Sugestii surse cross-shop (potrivire pe nume) — asteapta confirmare */}
+      {suggestions && suggestions.length > 0 && (
+        <div style={{
+          backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+          borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+        }}>
+          <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>
+            Sugestii surse noi ({suggestions.length})
+          </h2>
+          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+            Gasite automat pe alte magazine prin potrivire pe nume. Confirma pentru a le adauga ca sursa (intra in calculul pretului minim).
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {suggestions.map((sug) => {
+              const busy = suggestionBusy === sug.id;
+              const sc = SOURCE_COLORS[sug.source] || { bg: "rgba(234,179,8,0.15)", fg: "#facc15" };
+              return (
+                <div key={sug.id} style={{
+                  display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.75rem",
+                  backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem",
+                  border: "1px solid rgba(234,179,8,0.3)",
+                }}>
+                  <span style={{
+                    padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                    backgroundColor: sc.bg, color: sc.fg, minWidth: "100px", textAlign: "center",
+                  }}>{sug.source}</span>
+                  <span
+                    title={sug.name || ""}
+                    style={{ flex: 1, fontSize: "0.8125rem", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {sug.name || "—"}
+                  </span>
+                  <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: "white", whiteSpace: "nowrap" }}>
+                    {sug.price ?? "—"} {sug.currency}
+                  </span>
+                  {sug.source_url && (
+                    <a
+                      href={sug.source_url} target="_blank" rel="noopener noreferrer"
+                      style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "#60a5fa", fontSize: "0.75rem", textDecoration: "none" }}
+                    >
+                      <ExternalLink style={{ width: "12px", height: "12px" }} /> Vezi
+                    </a>
+                  )}
+                  <button
+                    type="button" disabled={busy} onClick={() => handleConfirmSuggestion(sug.id)}
+                    title="Confirma si ataseaza ca sursa"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.375rem 0.625rem",
+                      borderRadius: "0.375rem", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80",
+                      border: "none", cursor: busy ? "wait" : "pointer", fontSize: "0.75rem", fontWeight: 500, opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    <Check style={{ width: "14px", height: "14px" }} /> Confirma
+                  </button>
+                  <button
+                    type="button" disabled={busy} onClick={() => handleRejectSuggestion(sug.id)}
+                    title="Respinge sugestia"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.375rem 0.625rem",
+                      borderRadius: "0.375rem", backgroundColor: "rgba(248,113,113,0.15)", color: "#f87171",
+                      border: "none", cursor: busy ? "wait" : "pointer", fontSize: "0.75rem", fontWeight: 500, opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    <X style={{ width: "14px", height: "14px" }} /> Respinge
+                  </button>
                 </div>
               );
             })}

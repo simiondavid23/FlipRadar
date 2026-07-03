@@ -234,6 +234,15 @@ function RECard({ listing, onClick }) {
       </div>
       <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.375rem", flex: 1 }}>
         <div style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-primary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{listing.title || "—"}</div>
+        {/* MODIFICARE 16 — zona normalizata vizibila (cu adresa bruta cand difera) */}
+        {listing.zone_normalized && (
+          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{listing.zone_normalized}</span>
+            {listing.zone_raw && listing.zone_raw.trim() !== listing.zone_normalized.trim() && (
+              <span style={{ color: "var(--text-muted)" }}>← {listing.zone_raw}</span>
+            )}
+          </div>
+        )}
         <div style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)" }}>
           {priceLine(listing)}
           {drop !== null && <span style={{ fontSize: "0.7rem", color: "#fb923c", marginLeft: "0.375rem" }}>↓ {drop}%</span>}

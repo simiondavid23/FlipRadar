@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { radarAPI, usersAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Radar, Save, Send, ToggleLeft, ToggleRight,
-  CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Activity,
+  CheckCircle2, AlertCircle, Activity,
   BellRing, BellOff, Link as LinkIcon, Sparkles, FileText, MessageCircle, FileBarChart
 } from "lucide-react";
 import {
@@ -61,9 +61,6 @@ export default function SettingsPage() {
   const [pushStatus, setPushStatus] = useState({ subscribed: false, configured: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [howToOpen, setHowToOpen] = useState(false);
-  const [vintedTestResult, setVintedTestResult] = useState(null);
-  const [testingVinted, setTestingVinted] = useState(false);
   const [lajumateTestResult, setLajumateTestResult] = useState(null);
   const [testingLajumate, setTestingLajumate] = useState(false);
   const [okaziiTestResult, setOkaziiTestResult] = useState(null);
@@ -107,31 +104,6 @@ export default function SettingsPage() {
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la actualizare.");
       update({ [key]: !newVal });
-    }
-  };
-
-  const saveVintedCookie = async () => {
-    setSaving(true);
-    try {
-      await radarAPI.updateSettings({ vinted_cookie: settings.vinted_cookie || "" });
-      alert("Token Vinted salvat.");
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la salvare.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testVinted = async () => {
-    setTestingVinted(true);
-    setVintedTestResult(null);
-    try {
-      const r = await radarAPI.testVintedToken();
-      setVintedTestResult(r.data);
-    } catch {
-      setVintedTestResult({ valid: false, message: "Eroare la testare." });
-    } finally {
-      setTestingVinted(false);
     }
   };
 
@@ -365,6 +337,8 @@ export default function SettingsPage() {
             <>
             {activeSection === "radar" && (
               <div>
+                {/* MODIFICARE 13 — status sesiuni platforme (badge-uri OK/Lipsă/Expirat) */}
+                <SessionStatusPanel />
                 {/* Platforms */}
                 <Section title="Platforme active">
                   <PlatformToggle label="OLX" enabled={settings.platform_olx_enabled} onToggle={() => togglePlatform("platform_olx_enabled")} />
@@ -415,53 +389,6 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </div>
-                </Section>
-
-                {/* Vinted Cookie */}
-                <Section title="Token Vinted">
-                  <textarea
-                    value={settings.vinted_cookie || ""}
-                    onChange={(e) => update({ vinted_cookie: e.target.value })}
-                    placeholder="Lipește cookie-ul Vinted aici (access_token_web=...)..."
-                    rows={3}
-                    style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}
-                  />
-
-                  <button
-                    onClick={() => setHowToOpen(!howToOpen)}
-                    style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: 0, marginTop: "0.5rem" }}
-                  >
-                    {howToOpen ? <ChevronUp style={{ width: "14px", height: "14px" }} /> : <ChevronDown style={{ width: "14px", height: "14px" }} />}
-                    Cum obțin cookie-ul Vinted?
-                  </button>
-                  {howToOpen && (
-                    <ol style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.5rem", paddingLeft: "1.25rem", lineHeight: 1.6 }}>
-                      <li>Loghează-te pe vinted.ro</li>
-                      <li>Deschide DevTools (F12) → Application → Cookies</li>
-                      <li>Copiază valoarea cookie-ului care conține <code>access_token_web</code></li>
-                      <li>Lipește-o mai sus</li>
-                    </ol>
-                  )}
-
-                  <div style={{ marginTop: "0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <button onClick={saveVintedCookie} disabled={saving} style={primaryBtn(saving)}>
-                      <Save style={{ width: "14px", height: "14px" }} />
-                      Salvează token
-                    </button>
-                    <button
-                      onClick={testVinted}
-                      disabled={testingVinted}
-                      style={{ ...primaryBtn(testingVinted), backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)" }}
-                    >
-                      <Activity style={{ width: "14px", height: "14px" }} />
-                      {testingVinted ? "Se testează..." : "Testează token"}
-                    </button>
-                  </div>
-                  {vintedTestResult && (
-                    <div style={{ fontSize: "0.8125rem", marginTop: "0.375rem", color: vintedTestResult.valid ? "#4ade80" : "#f87171" }}>
-                      {vintedTestResult.valid ? "✓ " : "✗ "}{vintedTestResult.message}
-                    </div>
-                  )}
                 </Section>
 
                 {/* Cookie LaJumate */}
@@ -763,6 +690,62 @@ export default function SettingsPage() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  );
+}
+
+// MODIFICARE 13 — panou status sesiuni platforme (Vinted/Okazii/LaJumate/Facebook).
+function SessionStatusPanel() {
+  const [status, setStatus] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    usersAPI.getSessionStatus()
+      .then((r) => { if (!cancelled) setStatus(r.data); })
+      .catch(() => { if (!cancelled) setStatus(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const badge = (st) => {
+    if (st === "ok") return { bg: "var(--bg-success, rgba(34,197,94,0.15))", fg: "var(--text-success, #16a34a)", label: "OK" };
+    if (st === "expired") return { bg: "var(--bg-warning, rgba(245,158,11,0.15))", fg: "var(--text-warning, #d97706)", label: "Expirat" };
+    return { bg: "var(--bg-danger, rgba(239,68,68,0.15))", fg: "var(--text-danger, #dc2626)", label: "Lipsă" };
+  };
+
+  const rows = status ? [
+    { key: "vinted", label: "Vinted", info: status.vinted },
+    { key: "okazii", label: "Okazii", info: status.okazii },
+    { key: "lajumate", label: "LaJumate", info: status.lajumate },
+    { key: "facebook", label: "Facebook", info: status.facebook },
+  ] : [];
+
+  return (
+    <Section title="Status sesiuni platforme">
+      {!status ? (
+        <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Se încarcă...</p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.625rem" }}>
+          {rows.map(({ key, label, info }) => {
+            const b = badge(info?.status);
+            return (
+              <div key={key} style={{ display: "flex", flexDirection: "column", gap: "0.375rem", padding: "0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
+                  <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.5rem", borderRadius: "999px", background: b.bg, color: b.fg }}>{b.label}</span>
+                </div>
+                {key === "vinted" && info?.status === "ok" && info?.token_preview && (
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace" }}>token: {info.token_preview}</span>
+                )}
+                {key === "facebook" && info?.age_hours != null && (
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>sesiune: acum {info.age_hours}h</span>
+                )}
+                {info?.detail && (
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{info.detail}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
   );
 }
 

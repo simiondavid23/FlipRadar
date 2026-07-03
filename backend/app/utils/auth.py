@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -40,11 +40,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
+def decode_token(token: str) -> dict:
+    """Decodează și validează un JWT (semnătură + expirare).
+    Aruncă JWTError dacă token-ul e invalid sau expirat."""
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> User:
     """Extract and validate the current user from the JWT token.
+
+    MODIFICARE 3 — token-ul se citește din cookie-ul httpOnly `access_token`
+    (prioritar), cu fallback pe header-ul `Authorization: Bearer <token>` pentru
+    Postman / clienți API externi.
 
     Also refuses tokens belonging to deactivated accounts so that an admin
     can flip `is_active=False` and immediately cut off API access for any
@@ -55,6 +65,19 @@ async def get_current_user(
         detail="Token invalid sau expirat",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Neautentificat",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("sub")

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { radarAPI } from "@/lib/api";
+import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import {
   Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp
 } from "lucide-react";
@@ -126,17 +127,244 @@ const WIZARD_PLATFORMS = [
 
 const MARKETPLACE_CATEGORIES = {
   olx: [
-    { name: "Electronice si electrocasnice", sub: ["Telefoane mobile", "Laptopuri si PC", "Tablete", "Casti si audio", "TV si video", "Aparate foto"] },
-    { name: "Imbracaminte si accesorii", sub: ["Haine barbati", "Haine femei", "Pantofi", "Genti si portofele"] },
-    { name: "Casa si gradina", sub: ["Mobila", "Electrocasnice", "Decoratiuni"] },
-    { name: "Sport, timp liber, arta", sub: ["Biciclete", "Fitness", "Gaming", "Muzica"] },
-    { name: "Copii si bebelusi", sub: ["Jucarii", "Imbracaminte copii", "Carucioare"] },
+    {
+      name: "Electronice si electrocasnice",
+      sub: [
+        "Telefoane", "Electrocasnice", "Tablete - eReadere", "TV",
+        "Videoproiectoare & Accesorii", "Retelistica & Servere",
+        "Piese telefoane & tablete", "Laptop-Calculator-Gaming",
+        "Ingrijire Personala", "Periferice & Accesorii Laptop-PC-Gaming",
+        "Imprimante, scannere", "Home Cinema & Audio",
+        "Gadgets, Wearables & Camere foto-video", "Drone & accesorii",
+        "Componente Laptop-PC", "Casti Audio",
+        "Casa inteligenta - Smarthome", "Audio Hi Fi & Profesionale",
+        "Aparate medicale & Wellness", "Accesorii telefoane & tablete",
+      ],
+    },
+    {
+      name: "Moda si frumusete",
+      sub: [
+        "Haine dama", "Incaltaminte dama", "Incaltaminte barbati", "Haine barbati",
+        "Accesorii", "Ceasuri", "Lenjerie si costume de baie dama",
+        "Haine pentru gravide", "Lenjerie si costume de inot barbati",
+        "Palarii, sepci si bandane", "Haine pentru nunta", "Sanatate si frumusete",
+        "Alte accesorii de moda si frumusete", "Cadouri",
+      ],
+    },
+    {
+      name: "Piese auto",
+      sub: [
+        "Roti - Jante - Anvelope", "Consumabile - accesorii",
+        "Caroserie - Interior", "Mecanica - electrica",
+        "Alte piese", "Alte Vehicule", "Vehicule pentru dezmembrare",
+      ],
+    },
+    {
+      name: "Casa si gradina",
+      sub: [
+        "Articole menaj", "Constructii", "Decoratiuni pentru interior",
+        "Finisaj interior", "Gradina",
+        "Hale metalice, structuri metalice si containere",
+        "Iluminat", "Instalatii electrice", "Instalatii sanitare",
+        "Instalatii termice", "Mobila", "Scule, unelte, feronerie",
+      ],
+    },
+    {
+      name: "Mama si copilul",
+      sub: [
+        "Haine - Incaltaminte copii si gravide", "La plimbare",
+        "Jocuri - Jucarii", "Camera copilului",
+        "Alimentatie - Ingrijire", "Articole scolare - papetarie",
+        "Alte produse copii",
+      ],
+    },
+    {
+      name: "Sport, timp liber, arta",
+      sub: [
+        "Airsoft", "Alergare", "Alpinism, escalada", "Baschet", "Baseball",
+        "Biliard", "Box", "Biciclete - Fitness - Suplimente", "Camping",
+        "Dans, gimnastica", "Drumetie", "Echitatie", "Fotbal", "Genti, trolere",
+        "Golf", "Karate - Judo", "Moto, enduro, atv", "Parapanta", "Pescuit",
+        "Sporturi de apa", "Sporturi de iarna", "Tenis", "Tir cu arcul",
+        "Trambuline", "Trotinete, role, skateboard", "Vanatoare", "Volei",
+        "Echipamente sportive si de turism", "Arta - Obiecte de colectie",
+        "Carti - Muzica - Filme", "Evenimente - Divertisment",
+      ],
+    },
+    {
+      name: "Animale de companie",
+      sub: [
+        "Caini", "Pisici",
+        "Mancare si gustari pentru animale de companie",
+        "Accesorii pentru animale de companie",
+        "Servicii pentru animale de companie",
+        "Adoptii", "Alte animale de companie",
+      ],
+    },
+    {
+      name: "Agro si industrie",
+      sub: [
+        "Utilaje agricole si industriale", "Produse piata - alimentatie",
+        "Cereale - plante - pomi", "Animale domestice si pasari",
+        "Echipamente si articole zootehnie",
+      ],
+    },
+    {
+      name: "Servicii",
+      sub: [
+        "Servicii Auto - Transport", "Meseriasi - Constructori",
+        "Reparatii electrocasnice, electronice si telefoane", "Evenimente",
+        "Cursuri - Meditatii",
+        "Servicii specializate si servicii pentru afaceri",
+        "Servicii de infrumusetare", "Servicii de curatenie",
+        "Servicii diverse",
+        "Servicii medicale - Servicii de ingrijire - Croitorie",
+      ],
+    },
+    {
+      name: "Echipamente profesionale si vanzare companii",
+      sub: [
+        "Echipamente pentru magazine si birouri",
+        "Echipamente profesionale de curatenie",
+        "Firme si licente de vanzare", "Horeca",
+        "Echipamente pentru reparatii auto si spalatorii auto",
+        "Echipamente pentru evenimente",
+        "Echipamente pentru industria textila",
+        "Echipamente de lucru si protectie",
+        "Echipamente profesionale de constructii",
+        "Alte echipamente profesionale",
+      ],
+    },
+    {
+      name: "Cazare - Turism",
+      sub: ["Cazare - Turism", "Cazare muncitori", "Sejururi si oferte de vacanta"],
+    },
+    {
+      name: "Inchiriere bunuri si vehicule",
+      sub: [
+        "Inchiriere Vehicule", "Inchiriere Echipament de Constructii",
+        "Inchiriere Materiale pentru Evenimente",
+        "Inchiriere Electronice & Jocuri", "Inchiriere Articole Sport",
+        "Inchiriere Articole Moda & Copii", "Inchiriere Alte Articole",
+      ],
+    },
   ],
   vinted: [
-    { name: "Femei", sub: ["Bluze si topuri", "Pantaloni", "Rochii", "Geci", "Pantofi", "Genti"] },
-    { name: "Barbati", sub: ["Tricouri", "Pantaloni", "Hanorace", "Incaltaminte"] },
-    { name: "Copii", sub: ["Haine fete", "Haine baieti", "Jucarii", "Carti"] },
-    { name: "Electrocasnice si electronice", sub: ["Telefoane", "Laptopuri", "Tablete", "Accesorii"] },
+    {
+      tab: "Femei",
+      categories: [
+        { name: "Haine", sub: ["Pulovere","Rochii","Fustă-pantaloni scurtă","Blugi","Pantaloni scurți și pantaloni trei sferturi","Costume de baie","Haine maternitate","Costume și ținute speciale","Îmbrăcăminte de exterior","Costume și blazere","Fuste","Topuri și tricouri","Pantaloni și colanți","Salopete lungi și scurte","Lenjerie intimă și pijamale","Îmbrăcăminte pentru sport","Alte articole de îmbrăcăminte"] },
+        { name: "Pantofi", sub: ["Pantofi tip boat shoe, loaferi și mocasini","Saboți","Flip-flops și șlapi","Pantofi cu șiret","Sandale","Încălțăminte sport","Balerini","Cizme și ghete","Espadrile","Pantofi cu toc","Pantofi Mary Jane și T-bar","Papuci de casă","Pantofi sport"] },
+        { name: "Genți", sub: ["Genți plajă","Genți bucket","Plicuri","Genți sport","Genți hobo","Genți de călătorie și valize","Genți tip poștas","Sacoșe","Poșete de mână","Rucsacuri","Serviete","Borsete","Saci protecție haine","Genți de mână","Genți și saci de voiaj","Genți pentru cosmetice","Genți de umăr","Poșete și portofele"] },
+        { name: "Accesorii", sub: ["Curele","Accesorii pentru păr","Pălării și șepci","Brelocuri","Ochelari de soare","Ceasuri","Bandane și panglici","Mănuși","Batiste","Bijuterii","Fulare și eșarfe","Umbrele","Alte accesorii"] },
+        { name: "Frumusețe", sub: ["Parfum","Instrumente pentru înfrumusețare","Îngrijirea unghiilor","Îngrijirea părului","Machiaj","Îngrijirea tenului","Îngrijirea mâinilor","Îngrijirea corpului","Alte articole de frumusețe"] },
+      ]
+    },
+    {
+      tab: "Bărbați",
+      categories: [
+        { name: "Haine", sub: ["Îmbrăcăminte de exterior","Costume și blazere","Pantaloni","Șosete și lenjerie intimă","Costume de baie","Costume și ținute speciale","Blugi","Topuri și tricouri","Pulovere","Pantaloni scurți","Haine de dormit","Îmbrăcăminte pentru sport","Alte articole de îmbrăcăminte"] },
+        { name: "Pantofi", sub: ["Cizme și ghete","Espadrile","Pantofi eleganți","Papuci de casă","Pantofi sport","Pantofi tip boat shoe, loaferi și mocasini","Saboți și papuci","Flip-flops și șlapi","Sandale","Încălțăminte sport"] },
+        { name: "Accesorii", sub: ["Bandane și eșarfe de păr","Bretele","Batiste","Bijuterii","Fulare și eșarfe","Cravate și papioane","Genți și rucsacuri","Curele","Mănuși","Pălării și șepci","Batiste buzunar","Ochelari de soare","Ceasuri","Altele"] },
+        { name: "Îngrijire", sub: ["Instrumente și accesorii","Îngrijirea corpului","Aftershave și apă de colonie","Seturi de îngrijire","Îngrijirea tenului","Îngrijirea părului","Îngrijirea mâinilor și a unghiilor","Machiaj","Alte articole de îngrijire"] },
+      ]
+    },
+    {
+      tab: "Designer",
+      categories: [
+        { name: "Designer femei", sub: ["Pantofi de designer","Îmbrăcăminte de designer","Genți de designer","Accesorii de designer"] },
+        { name: "Designer bărbați", sub: ["Accesorii de designer","Pantofi de designer","Îmbrăcăminte de designer"] },
+      ]
+    },
+    {
+      tab: "Copii",
+      categories: [
+        { name: "Îmbrăcăminte pentru fete", sub: ["Pantofi","Pulovere și hanorace cu glugă","Rochii","Pantaloni și pantaloni scurți","Accesorii","Lenjerie intimă și șosete","Îmbrăcăminte sportivă","Îmbrăcăminte pentru gemeni","Ținute de ocazie","Îmbrăcăminte pentru bebe fată","Îmbrăcăminte de exterior","Topuri și tricouri","Fuste","Genți și rucsacuri","Costume de baie","Pijamale","Pachete îmbrăcăminte","Ținute și costume de carnaval","Alte articole de îmbrăcăminte pentru fete"] },
+        { name: "Îmbrăcăminte pentru băieți", sub: ["Pantofi","Pulovere și hanorace cu glugă","Pantaloni și salopete","Accesorii","Lenjerie intimă și șosete","Îmbrăcăminte sportivă","Îmbrăcăminte pentru gemeni","Ținute de ocazie","Îmbrăcăminte pentru bebe băiat","Îmbrăcăminte de exterior","Topuri și tricouri","Genți și rucsacuri","Costume de baie","Pijamale","Pachete îmbrăcăminte","Ținute și costume de carnaval","Alte haine pentru băieți"] },
+        { name: "Jucării", sub: ["Arte și meșteșuguri","Cuburi și jucării de construit","Costumează-te și intră în rol","Jucării electronice","Noutăți și jucării fidget","Jucării moi și animale de pluș","Figurine și accesorii","Activități și jucării pentru copii","Păpuși și accesorii","Jucării educative","Jucării muzicale și instrumente de jucărie","Jucării pentru exterior și sportive","Mașini, trenuri și alte vehicule de jucărie"] },
+        { name: "Cărucioare, landouri și scaune auto", sub: ["Cărucioare","Scaune auto","Accesorii scaune auto","Sisteme de purtare și wrap-uri pentru bebeluși","Accesorii Buggy","Înălțătoare"] },
+        { name: "Mobilier și decorațiuni", sub: ["Saltele și covoare de joacă","Șezlonguri și cuiburi","Mobilier pentru camera copilului","Scaune","Rafturi","Șifoniere","Saltele pentru copii","Țarcuri de joacă","Decorațiuni și suveniruri","Covoare și carpete","Mobilier de joacă","Mese și birouri"] },
+        { name: "Îmbăiere și înfășare", sub: ["Baie","Scutece","Olițe","Scaune cu trepte","Genți pentru înfășat","Saltele pentru schimbat și huse","Depozitarea și eliminarea scutecelor","Îngrijirea pielii și igienă"] },
+        { name: "Echipamente de protecție și siguranță pentru copii", sub: ["Accesorii de protecție pentru copii","Hamuri și centuri de siguranță","Porți și protecții pentru copii","Protecție fonică"] },
+        { name: "Sănătate și sarcină", sub: ["Aspiratoare nazale","Perne pentru sarcină","Cântare","Umidificatoare","Îngrijirea postpartum","Centuri de susținere pentru sarcină","Termometre"] },
+        { name: "Rechizite școlare", sub: ["Ghiozdane","Cutii și pungi pentru prânz","Rechizite școlare"] },
+      ]
+    },
+    {
+      tab: "Casă",
+      categories: [
+        { name: "Aparate electrocasnice mici", sub: ["Aparate pentru cafea, ceai și espresso","Blendere, mixere și procesoare de alimente","Friteuze","Plite","Dozatoare pentru apă și suc","Accesorii pentru electrocasnice mici de bucătărie","Ceainice","Prăjitoare de pâine","Microunde","Grătare și grătare electrice","Storcătoare","Aparate specializate","Piese pentru electrocasnice mici de bucătărie"] },
+        { name: "Ustensile de gătit și de copt", sub: ["Tigăi","Tăvi de cuptor și prăjit","Ustensile de gătit și de copt speciale","Accesorii pentru vase de gătit și de copt","Oale","Tavă de copt","Forme de copt","Ustensile pentru gătit și copt"] },
+        { name: "Ustensile de bucătărie", sub: ["Ustensile de gătit","Căni și linguri de măsurat","Boluri de amestecare","Depozitarea alimentelor","Unelte de bucătărie speciale","Tocătoare","Cântar de bucătărie","Termometre alimentare","Sită, strecurătoare","Ustensile pentru bar"] },
+        { name: "Articole de masă", sub: ["Veselă","Tacâmuri","Pahare"] },
+        { name: "Îngrijirea gospodăriei", sub: ["Fiare de călcat și îngrijire îmbrăcăminte","Încălzire, răcire și aerisire","Aspirare și curățare"] },
+        { name: "Textile", sub: ["Pături","Perne decorative","Covoare și covorașe","Tapiserii","Lenjerie de pat","Perdele și jaluzele","Huse","Fețe de masă","Prosoape"] },
+        { name: "Accesorii pentru casă", sub: ["Ceasuri","Accesorii decorative","Accesorii pentru șemineu","Rafturi de prezentare","Oglinzi","Vaze","Lumânări și parfumuri pentru casă","Sculpturi și figurine","Plante și flori artificiale","Iluminat","Rame foto și imagini","Depozitare și organizare","Decorațiune de perete"] },
+        { name: "Consumabile de birou", sub: ["Caiete și blocuri de scris","Semne de carte","Accesorii pentru birou","Consumabile pentru scris","Bandă adezivă, cleme și elemente de fixare","Materiale pentru prezentări","Seifuri","Planificatoare și agende personale","Penare","Calculatoare","Organizatoare de documente","Instrumente pentru desen tehnic","Capsatoare și perforatoare","Aparate electronice de birou"] },
+        { name: "Festivități și sărbători", sub: ["Cărți poștale și plicuri","Decor de sărbători","Decorațiuni de masă","Coronițe","Bannere, steaguri și fanioane","Hârtie și pungi de cadouri","Decorațiuni de petrecere","Decorațiuni pentru copaci"] },
+        { name: "Unelte și DIY", sub: ["Unelte manuale","Unelte și accesorii pentru vopsit","Echipament pentru electricieni","Accesorii pentru unelte","Transport și depozitare unelte","Feronerie","Unelte electrice","Instrumente de măsurare","Unelte instalații sanitare","Unelte de zidărie","Echipament de protecție","Echipamente pentru atelier și șantier","Casă inteligentă și securitate"] },
+        { name: "Exterior și grădină", sub: ["Accesorii pentru unelte electrice de exterior","Ghivece, jardiniere și accesorii","Decor pentru exterior și grădină","Spa-uri, piscine și echipamente","Unelte pentru îndepărtarea zăpezii","Unelte electrice pentru exterior","Unelte de mână pentru exterior","Echipament de udare","Ustensile pentru grătar și gătit în aer liber","Instrumente meteorologice"] },
+        { name: "Animale", sub: ["Pisici","Pești","Reptile","Câini","Animale de companie mici","Păsări"] },
+      ]
+    },
+    {
+      tab: "Electronice",
+      categories: [
+        { name: "Jocuri video și console", sub: ["Jocuri","Căști pentru jocuri","Realitate virtuală","Console","Controlere","Simulatoare","Accesorii"] },
+        { name: "Calculatoare și accesorii", sub: ["Calculatoare desktop","Blank media","Accesorii pentru laptop","Tastaturi și accesorii","Mouse pad-uri","Difuzoare pentru computer","Camere web","Imprimante și accesorii","Plăcuțe tactile și stylus","Laptopuri","Piese și componente de calculator","Accesorii pentru computere","Docking stations și hub-uri USB","Mouse-uri","Monitoare și accesorii","Microfoane de calculator","Dispozitive de rețea","Scanere și accesorii"] },
+        { name: "Telefoane mobile și comunicare", sub: ["Piese și accesorii pentru telefoane mobile","Faxuri","Telefoane mobile demo","Telefoane mobile","Telefoane fixe","Comunicații radio"] },
+        { name: "Audio, căști și hi-fi", sub: ["Playere muzicale portabile","Boxe portabile","Sisteme audio pentru acasă","Piese audio și hi-fi","Căști și earbuds","Radiouri portabile","Difuzoare inteligente","Accesorii pentru dispozitive audio"] },
+        { name: "Camere foto și accesorii", sub: ["Obiective","Carduri de memorie","Stabilizatoare și suporturi","Echipament de studio","Accesorii","Alte echipamente fotografice","Camere foto","Blițuri","Trepieduri și monopieduri","Echipament pentru camera obscură","Drone cu cameră și accesorii","Piese de schimb pentru aparat foto"] },
+        { name: "Tablete, e-readere și accesorii", sub: ["E-readere","PDAs","Tablete","Agende electronice","Accesorii"] },
+        { name: "TV și home cinema", sub: ["Proiectoare","Antene TV","Decodificatoare video","Sisteme home cinema","DVD playere","Alte dispozitive de redare video","Televizoare","Dispozitive de streaming","Antene satelit","Receptoare de televiziune","Playere Blu-ray","Videocasetofoane","Accesorii TV și home cinema"] },
+        { name: "Electronice pentru frumusețe și îngrijire personală", sub: ["Instrumente de înfrumusețare","Instrumente de masaj","Instrumente pentru îngrijirea unghiilor","Instrumente de coafură","Bărbierit și îndepărtarea părului","Îngrijire dentară și orală electrică","Cântare pentru uz personal"] },
+        { name: "Portabile", sub: ["Monitoare de fitness","Inele inteligente","Carcase pentru ceasuri inteligente","Ceasuri inteligente","Ochelari inteligenți","Benzi de schimb"] },
+        { name: "Alte dispozitive și accesorii", sub: ["GPS și dispozitive de navigație prin satelit","Cântare pentru bagaje","Cabluri","Baterii externe","Baterii și surse de alimentare","Imprimare și scanare 3D","Detectoare de obiecte","Adaptoare","Încărcătoare","Protecții la supratensiune și prelungitoare","Alte accesorii"] },
+      ]
+    },
+    {
+      tab: "Media și cărți",
+      categories: [
+        { name: "Cărți", sub: ["Non-ficțiune","Benzi desenate, manga și romane grafice","Cărți de colorat, puzzle și activități","Ficțiune","Copii și tineri adulți","Manuale și materiale de studiu"] },
+        { name: "Reviste", sub: [] },
+        { name: "Muzică", sub: ["CD-uri","Discuri de vinil","Casete audio","MiniDiscuri"] },
+        { name: "Video", sub: ["Betamax","DVD","LaserDisc","4K Blu-ray","Blu-ray","HD DVD","VHS"] },
+      ]
+    },
+    {
+      tab: "Hobbyuri și colecții",
+      categories: [
+        { name: "Carduri de tranzacționare", sub: ["Pachete Booster","Pachete de cărți de joc","Poster cu carduri","Carduri de tranzacționare individuale","Cutii Booster","Loturi de carduri de tranzacționare"] },
+        { name: "Jocuri de societate", sub: [] },
+        { name: "Puzzle-uri", sub: [] },
+        { name: "Jocuri de masă și în miniatură", sub: [] },
+        { name: "Suveniruri", sub: ["Suveniruri muzicale","Alte suveniruri","Suvenir sportiv","Suveniruri de film și TV"] },
+        { name: "Monede și bancnote", sub: ["Monede","Medalii și recompense","Bancnote","Loturi și seturi","Certificate de acțiuni"] },
+        { name: "Timbre", sub: ["Loturi și seturi de timbre","Cataloage și ghiduri de timbre","Timbre individuale","First day covers (FDC)","Instrumente și echipamente pentru timbre"] },
+        { name: "Cărți poștale", sub: [] },
+        { name: "Instrumente muzicale și echipamente", sub: ["Amplificatoare și pedale","Claviaturi și sintetizatoare","Instrumente de suflat","Echipament DJ","Accesorii pentru creație muzicală","Chitare și chitare bas","Tobe și percuție","Instrumente cu coarde","Echipament de studio și sunet live","Echipament pentru karaoke"] },
+        { name: "Arte și meșteșuguri", sub: ["Pictură","Caligrafie","Papercraft","Fabricarea lumânărilor","Materiale pentru artizanat","Cusut, tricotat și broderie","Desene și schițe","Mărgele și accesorii de bijuterii","Tăiere cu matrița","Sculptură și olărit","Unelte de meșteșugărit"] },
+        { name: "Depozitare obiecte de colecție", sub: ["Cutii pentru păstrarea obiectelor de colecție","Suporturi de carduri cu șurub","Separatoare pentru albume și clasoare","Covoare pentru puzzle","Albume și clasoare","Huse pentru cărți de joc","Cutii pentru pachete de cărți","Folii pentru albume și clasoare","Depozitarea altor obiecte de colecție"] },
+        { name: "Accesorii pentru jocuri", sub: ["Pietre și jetoane de joc","Alte accesorii pentru jocuri","Zar","Covoare pentru jocuri"] },
+      ]
+    },
+    {
+      tab: "Sporturi",
+      categories: [
+        { name: "Ciclism", sub: ["Căști pentru biciclete","Remorci pentru biciclete","Piese de bicicletă","Biciclete pentru copii","Accesorii și unelte pentru ciclism","Scaune pentru biciclete pentru copii"] },
+        { name: "Fitness, alergare și yoga", sub: ["Alergare","Accesorii de fitness pentru acasă","Antrenament de forță","Echipament pentru yoga și pilates","Sticle de apă"] },
+        { name: "Sporturi în aer liber", sub: ["Pescuit și vânătoare","Rucsacuri pentru drumeții","Alte accesorii pentru sporturi în aer liber","Corturi de camping și echipament de dormit","Torțe, faruri și lanterne","Binocluri și lunete","Mobilier de camping","Cățărare și bouldering","Arzătoare de camping și ustensile de gătit","Răcitoare","Busole","Sisteme și pachete de hidratare","Bețe de trekking"] },
+        { name: "Sporturi nautice", sub: ["Înot","Costume, mănuși și ghete de neopren","Accesorii pentru sporturi nautice","Dispozitive personale de plutire","Plute gonflabile","Plăci de paddleboarding","Caiace","Kiteboarduri","Plăci de wakeboard","Căști pentru sporturi nautice","Colac remorcabil","Schiuri de apă","Skimboards"] },
+        { name: "Sporturi de echipă", sub: ["Fotbal","Alte echipamente pentru sporturi de echipă","Baschet","Volei","Echipament de antrenament și de arbitraj","Handball","Fotbal american","Baseball și softball","Rugby","Hochei de sală","Lacrosse","Hochei pe iarbă","Sporturi gaelice","Cricket","Netball"] },
+        { name: "Sporturi cu rachetă", sub: ["Tenis","Tenis de masă","Padel","Badminton","Squash","Pickleball","Protecție pentru ochi în sporturile cu rachetă","Racquetball"] },
+        { name: "Golf", sub: ["Mingi de golf","Crose de golf","Accesorii de golf","Echipament de antrenament pentru golf","Saci de golf","Mănuși de golf","Cărucioare de golf"] },
+        { name: "Echitație", sub: ["Șei și accesorii","Veste de protecție pentru călărie","Caschete de echitație","Mănuși de echitație","Huse de mătase pentru căști de echitație"] },
+        { name: "Skateboard-uri și scutere", sub: ["Scutere","Skateboarduri","Protecție pentru skateboard","Piese și accesorii pentru skateboard","Căști de skateboarding","Piese și accesorii pentru skate","Plăci de longboard"] },
+        { name: "Box și arte marțiale", sub: ["Protecție corporală pentru box și arte marțiale","Mănuși de box și arte marțiale","Centuri de arte marțiale","Saci de box viteză","Protecție pentru cap pentru box și arte marțiale","Protecții pentru lovituri cu pumnul și piciorul","Fășii pentru protecția mâinilor","Saci de box grei","Alte echipamente pentru arte marțiale"] },
+        { name: "Sporturi și jocuri ocazionale", sub: ["Echipament pentru darts","Mingi pentru terenul de joacă","Roundnet și spikeball","Boules & alte jocuri","Frisbee și disc golf","Biliard american și snooker","Bowling cu zece popice"] },
+        { name: "Sporturi de iarnă", sub: ["Echipament pentru snowboard","Accesorii pentru patinaj artistic","Rachete de zăpadă","Ochelari de schi","Echipament de schi","Hochei pe gheață","Săniuș","Ghetre","Căști pentru sporturi de iarnă"] },
+      ]
+    },
   ],
   facebook: [
     { name: "Electronica", sub: ["Telefoane", "Computere si laptopuri", "Tablete", "TV si video"] },
@@ -194,6 +422,7 @@ const JUDETE = [
 const EMPTY_WIZARD = {
   platform: "",
   keyword: "",
+  vintedTab: "",
   category: "",
   subcategory: "",
   filters: {},
@@ -214,6 +443,8 @@ export default function RadarKeywordsPage() {
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  // MODIFICARE 18 — modal confirmare stergere cu impact.
+  const [deleteModal, setDeleteModal] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [excludeChips, setExcludeChips] = useState([]);
@@ -321,6 +552,12 @@ export default function RadarKeywordsPage() {
       }
     }
 
+    // Vinted: convenția de filtrare stochează categoria ca "Tab > Categorie".
+    const effectiveCategory =
+      wizardData.platform === "vinted" && wizardData.vintedTab && wizardData.category
+        ? `${wizardData.vintedTab} > ${wizardData.category}`
+        : (wizardData.category || null);
+
     const payload = {
       name: wizardData.keyword.trim(),
       // Backend cere max_price si resale_price > 0; pentru o alerta simpla folosim
@@ -328,7 +565,7 @@ export default function RadarKeywordsPage() {
       max_price: priceMax && priceMax > 0 ? priceMax : 1000000,
       min_price: priceMin && priceMin > 0 ? priceMin : null,
       resale_price: priceMax && priceMax > 0 ? priceMax : 1000000,
-      category: wizardData.category || null,
+      category: effectiveCategory,
       platforms: [wizardData.platform],
       condition: "all",
       judet: f.location_county || null,
@@ -337,7 +574,8 @@ export default function RadarKeywordsPage() {
       marketplace_config: {
         platform: wizardData.platform,
         keyword: wizardData.keyword.trim(),
-        category: wizardData.category || null,
+        vintedTab: wizardData.vintedTab || null,
+        category: effectiveCategory,
         subcategory: wizardData.subcategory || null,
         filters: cleanFilters,
       },
@@ -488,8 +726,17 @@ export default function RadarKeywordsPage() {
     }
   };
 
-  const remove = async (id) => {
-    if (!confirm("Sigur vrei să ștergi acest keyword? Anunțurile asociate vor fi șterse.")) return;
+  // MODIFICARE 18 — deschide modalul cu impactul (nr. listinguri asociate).
+  const handleDeleteClick = async (kw) => {
+    let impact = { listing_count: 0, seen_count: 0 };
+    try { impact = (await radarAPI.getKeywordImpact(kw.id)).data; } catch { /* fallback 0 */ }
+    setDeleteModal({
+      keywordId: kw.id, keywordName: kw.name,
+      listingCount: impact.listing_count ?? 0, seenCount: impact.seen_count ?? 0,
+    });
+  };
+
+  const performDelete = async (id) => {
     try {
       await radarAPI.deleteKeyword(id);
       load();
@@ -721,7 +968,18 @@ export default function RadarKeywordsPage() {
                       <td style={{ ...td, color: m >= 25 ? "#4ade80" : m >= 10 ? "#facc15" : "#fb923c" }}>
                         {Math.round(m)}%
                       </td>
-                      <td style={td}>{k.category || "—"}</td>
+                      <td style={td} title={k.category_label || k.category || ""}>
+                        <span style={{
+                          display: "inline-block",
+                          maxWidth: "200px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          verticalAlign: "bottom",
+                        }}>
+                          {k.category_label || k.category || "—"}
+                        </span>
+                      </td>
                       <td style={td}>{(k.platforms || []).join(", ")}</td>
                       <td style={td}>{k.poll_interval_minutes} min</td>
                       <td style={td}>
@@ -743,7 +1001,7 @@ export default function RadarKeywordsPage() {
                           <button onClick={() => openEdit(k)} style={iconBtn} title="Editează">
                             <Pencil style={{ width: "14px", height: "14px" }} />
                           </button>
-                          <button onClick={() => remove(k.id)} style={{ ...iconBtn, color: "#f87171" }} title="Șterge">
+                          <button onClick={() => handleDeleteClick(k)} style={{ ...iconBtn, color: "#f87171" }} title="Șterge">
                             <Trash2 style={{ width: "14px", height: "14px" }} />
                           </button>
                         </div>
@@ -870,29 +1128,78 @@ export default function RadarKeywordsPage() {
                     <input value={wizardData.keyword} onChange={(e) => setWizardData({ ...wizardData, keyword: e.target.value })}
                       placeholder="ex: iPhone 14 Pro" style={inputStyle} autoFocus />
                   </div>
-                  <div>
-                    <label style={wlabel}>Categorie principala</label>
-                    <select value={wizardData.category}
-                      onChange={(e) => setWizardData({ ...wizardData, category: e.target.value, subcategory: "" })}
-                      style={inputStyle}>
-                      <option value="">Alege categoria</option>
-                      {(MARKETPLACE_CATEGORIES[plat] || []).map((c) => (
-                        <option key={c.name} value={c.name}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  {wizardData.category && (
-                    <div>
-                      <label style={wlabel}>Sub-categorie</label>
-                      <select value={wizardData.subcategory}
-                        onChange={(e) => setWizardData({ ...wizardData, subcategory: e.target.value })}
-                        style={inputStyle}>
-                        <option value="">Toate sub-categoriile</option>
-                        {((MARKETPLACE_CATEGORIES[plat] || []).find((c) => c.name === wizardData.category)?.sub || []).map((s) => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {plat === "vinted" ? (
+                    <>
+                      {/* Vinted — 3 niveluri: Tab > Categorie > Subcategorie */}
+                      <div>
+                        <label style={wlabel}>Tab principal</label>
+                        <select value={wizardData.vintedTab}
+                          onChange={(e) => setWizardData({ ...wizardData, vintedTab: e.target.value, category: "", subcategory: "" })}
+                          style={inputStyle}>
+                          <option value="">Alege tab-ul</option>
+                          {(MARKETPLACE_CATEGORIES.vinted || []).map((t) => (
+                            <option key={t.tab} value={t.tab}>{t.tab}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {wizardData.vintedTab && (
+                        <div>
+                          <label style={wlabel}>Categorie</label>
+                          <select value={wizardData.category}
+                            onChange={(e) => setWizardData({ ...wizardData, category: e.target.value, subcategory: "" })}
+                            style={inputStyle}>
+                            <option value="">Alege categoria</option>
+                            {((MARKETPLACE_CATEGORIES.vinted || []).find((t) => t.tab === wizardData.vintedTab)?.categories || []).map((c) => (
+                              <option key={c.name} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {wizardData.category && (() => {
+                        const vSubs = (MARKETPLACE_CATEGORIES.vinted || [])
+                          .find((t) => t.tab === wizardData.vintedTab)?.categories
+                          ?.find((c) => c.name === wizardData.category)?.sub || [];
+                        if (vSubs.length === 0) return null;
+                        return (
+                          <div>
+                            <label style={wlabel}>Sub-categorie</label>
+                            <select value={wizardData.subcategory}
+                              onChange={(e) => setWizardData({ ...wizardData, subcategory: e.target.value })}
+                              style={inputStyle}>
+                              <option value="">Toate sub-categoriile</option>
+                              {vSubs.map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label style={wlabel}>Categorie principala</label>
+                        <select value={wizardData.category}
+                          onChange={(e) => setWizardData({ ...wizardData, category: e.target.value, subcategory: "" })}
+                          style={inputStyle}>
+                          <option value="">Alege categoria</option>
+                          {(MARKETPLACE_CATEGORIES[plat] || []).map((c) => (
+                            <option key={c.name} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {wizardData.category && (
+                        <div>
+                          <label style={wlabel}>Sub-categorie</label>
+                          <select value={wizardData.subcategory}
+                            onChange={(e) => setWizardData({ ...wizardData, subcategory: e.target.value })}
+                            style={inputStyle}>
+                            <option value="">Toate sub-categoriile</option>
+                            {((MARKETPLACE_CATEGORIES[plat] || []).find((c) => c.name === wizardData.category)?.sub || []).map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -1386,6 +1693,13 @@ export default function RadarKeywordsPage() {
           onDaysChange={changeTrendDays}
         />
       )}
+
+      {/* MODIFICARE 18 — modal confirmare stergere cu impact */}
+      <DeleteKeywordModal
+        data={deleteModal}
+        onCancel={() => setDeleteModal(null)}
+        onConfirm={() => { performDelete(deleteModal.keywordId); setDeleteModal(null); }}
+      />
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

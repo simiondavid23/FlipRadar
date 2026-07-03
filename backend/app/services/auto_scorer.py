@@ -1,6 +1,40 @@
 """Scoring and import cost calculator for auto feed listings."""
 from typing import Optional
+from sqlalchemy.orm import Session
 from app.services.bnr_exchange import get_eur_ron
+
+
+def _fetch_market_avg(make: str, model: str, year: int, db: Session) -> Optional[float]:
+    """Calculează media prețurilor RON din propriul DB pentru make/an ±2.
+    Returnează None dacă sunt < 3 listing-uri (medie nesemnificativă statistic).
+
+    Notă schema reală: feed-ul auto (AutoFeedListing) NU are coloană `make` sau
+    `price_ron`. Filtrăm marca după titlu (`title ilike %make%`) și convertim
+    fiecare preț EUR→RON, ca media să fie comparabilă cu price_ron din scoring.
+    """
+    if not make or not year:
+        return None
+    try:
+        from app.models.auto_feed_listing import AutoFeedListing
+        rows = db.query(AutoFeedListing.price, AutoFeedListing.currency).filter(
+            AutoFeedListing.title.ilike(f"%{make}%"),
+            AutoFeedListing.year.between(year - 2, year + 2),
+            AutoFeedListing.status == "active",
+            AutoFeedListing.price.isnot(None),
+        ).all()
+        rate = get_eur_ron()
+        prices_ron = []
+        for price, currency in rows:
+            if price is None:
+                continue
+            p = float(price) * (rate if (currency or "").upper() == "EUR" else 1.0)
+            if 500 <= p <= 1_500_000:
+                prices_ron.append(p)
+        if len(prices_ron) >= 3:
+            return sum(prices_ron) / len(prices_ron)
+    except Exception as exc:
+        print(f"[AutoScorer] Eroare calcul market avg: {exc}")
+    return None
 
 _YEAR = 2026
 IMPORT_PLATFORMS = {"mobile_de", "autoscout24", "kleinanzeigen_auto"}

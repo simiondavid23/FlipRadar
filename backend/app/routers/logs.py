@@ -43,7 +43,12 @@ async def stream_logs(
 ):
     """SSE endpoint — streams log events for the given module.
     Token is passed as a query param because EventSource doesn't support headers.
+
+    MODIFICARE 3 — EventSource(withCredentials) trimite automat cookie-ul httpOnly
+    `access_token`; dacă nu vine token în query, îl citim din cookie.
     """
+    if not token and request is not None:
+        token = request.cookies.get("access_token")
     user = _get_user_from_token(token, db)
     if not user:
         raise HTTPException(status_code=401, detail="Token invalid sau lipsă.")

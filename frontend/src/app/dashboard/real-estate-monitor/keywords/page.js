@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
+import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import { Home, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw } from "lucide-react";
 
 const RE_PLATFORMS = [
@@ -12,9 +13,18 @@ const RE_PLATFORMS = [
 ];
 
 const PROPERTY_TYPES = [
-  "Garsonieră", "Studio", "Apartament 1 cameră",
-  "Apartament 2 camere", "Apartament 3 camere",
-  "Apartament 4+ camere", "Casă/Vilă",
+  "Apartamente - Garsoniere de vanzare",
+  "Apartamente - Garsoniere de inchiriat",
+  "Case de vanzare",
+  "Case de inchiriat",
+  "Terenuri",
+  "Birouri - Spatii comerciale",
+  "Schimburi Imobiliare",
+  "Alte proprietati",
+  "Parcari si Garaje",
+  "Depozite si Hale",
+  "Caut coleg - Camere de inchiriat",
+  "Proprietati Internationale",
 ];
 
 const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov",
@@ -53,6 +63,8 @@ export default function REKeywordsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // MODIFICARE 18 — modal confirmare stergere cu impact.
+  const [deleteModal, setDeleteModal] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -145,8 +157,17 @@ export default function REKeywordsPage() {
     } catch (e) { alert(e.response?.data?.detail || "Eroare la actualizare."); }
   };
 
-  const remove = async (id) => {
-    if (!confirm("Ștergi acest keyword?")) return;
+  // MODIFICARE 18 — deschide modalul cu impactul (nr. listinguri asociate).
+  const handleDeleteClick = async (kw) => {
+    let impact = { listing_count: 0, seen_count: 0 };
+    try { impact = (await realEstateMonitorAPI.getKeywordImpact(kw.id)).data; } catch { /* fallback 0 */ }
+    setDeleteModal({
+      keywordId: kw.id, keywordName: kw.name,
+      listingCount: impact.listing_count ?? 0, seenCount: impact.seen_count ?? 0,
+    });
+  };
+
+  const performDelete = async (id) => {
     try { await realEstateMonitorAPI.deleteKeyword(id); await load(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere."); }
   };
@@ -229,7 +250,7 @@ export default function REKeywordsPage() {
                   <td style={td}>
                     <div style={{ display: "flex", gap: "0.375rem" }}>
                       <button onClick={() => openEdit(k)} title="Editează" style={iconBtn}><Pencil style={{ width: "14px", height: "14px" }} /></button>
-                      <button onClick={() => remove(k.id)} title="Șterge" style={{ ...iconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
+                      <button onClick={() => handleDeleteClick(k)} title="Șterge" style={{ ...iconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
                     </div>
                   </td>
                 </tr>
@@ -244,6 +265,13 @@ export default function REKeywordsPage() {
           form={form} setForm={setForm} saving={saving}
           onClose={() => setShowModal(false)} onSubmit={submit} />
       )}
+
+      {/* MODIFICARE 18 — modal confirmare stergere cu impact */}
+      <DeleteKeywordModal
+        data={deleteModal}
+        onCancel={() => setDeleteModal(null)}
+        onConfirm={() => { performDelete(deleteModal.keywordId); setDeleteModal(null); }}
+      />
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

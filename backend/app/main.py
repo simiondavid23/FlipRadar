@@ -1,3 +1,8 @@
+# MODIFICARE 1 — validarea variabilelor de mediu obligatorii ruleaza prima,
+# inainte de orice alt import din app (care ar declansa conectarea la DB).
+from app.startup_checks import validate_env
+validate_env()
+
 import asyncio
 import subprocess
 import sys
@@ -23,6 +28,8 @@ from app.routers.real_estate_keywords import router as re_monitor_router  # Flip
 
 # Import all models
 from app.models import user, product, price_history, product_source
+# FlipRadar — sugestii cross-shop (potrivire pe nume, asteapta confirmare)
+from app.models import product_source_suggestion
 from app.models import watchlist as watchlist_model
 from app.models import alert, chat_message, support_ticket
 from app.models import favorite, notification
@@ -40,6 +47,10 @@ from app.models import marketplace_saved, marketplace_keyword_alert
 from app.models import real_estate_alert
 # FlipRadar — Grupuri Facebook (config + postari)
 from app.models import facebook_group_config, facebook_group_post
+# MODIFICARE 7 — coada Discord persistenta (tabel discord_queue)
+from app.models import discord_queue_db
+# MODIFICARE 12 — persistare optionala log-uri SSE (tabel log_entries)
+from app.models import log_entry
 
 # Create all database tables
 Base.metadata.create_all(bind=engine)
@@ -315,12 +326,64 @@ async def lifespan(app: FastAPI):
         _fb_jobs_ok = False
         print(f"[Scheduler] Setup joburi Grupuri Facebook esuat: {exc}")
 
+    # MODIFICARE 7 — cleanup zilnic (03:30) al cozii Discord: sterge itemele
+    # trimise mai vechi de 7 zile (istoricul nu trebuie pastrat la nesfarsit).
+    def _cleanup_discord_queue():
+        from sqlalchemy import text
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            db.execute(text(
+                "DELETE FROM discord_queue WHERE status='sent' AND sent_at < NOW() - INTERVAL '7 days'"
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+    scheduler.add_job(
+        _cleanup_discord_queue, "cron", hour=3, minute=30,
+        id="discord_queue_cleanup", replace_existing=True,
+    )
+
+    # MODIFICARE 12 — cleanup zilnic (03:00) al log-urilor persistate: sterge
+    # intrarile mai vechi de 24h. No-op daca LOG_DB_PERSISTENCE nu e activ.
+    def _cleanup_log_entries():
+        import os
+        if os.getenv("LOG_DB_PERSISTENCE", "false").lower() != "true":
+            return
+        from sqlalchemy import text
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            db.execute(text("DELETE FROM log_entries WHERE created_at < NOW() - INTERVAL '24 hours'"))
+            db.commit()
+        finally:
+            db.close()
+
+    scheduler.add_job(
+        _cleanup_log_entries, "cron", hour=3, minute=0,
+        id="log_entries_cleanup", replace_existing=True,
+    )
+
     scheduler.start()
     print(
         "[Scheduler] Started - check_alerts (15m) + radar_scan (5m) + real_estate_alerts (30m)"
         + (" + ML collectors (6h/12h) + retrain (luni 03:00)" if _ml_jobs_ok else "")
         + (" + facebook_group_checks (30m) + cookie_expiry (09:00)." if _fb_jobs_ok else ".")
     )
+
+    # MODIFICARE 7 — la pornire marcam ca 'failed' itemele Discord ramase 'pending'
+    # mai vechi de 1h (dintr-un run anterior intrerupt), ca sa nu blocheze coada.
+    try:
+        from app.database import SessionLocal as _SL
+        from app.services.discord_service import discord_service as _ds
+        _ddb = _SL()
+        try:
+            _ds.cleanup_stale(_ddb)
+        finally:
+            _ddb.close()
+    except Exception as exc:
+        print(f"[Discord] cleanup_stale la startup esuat: {exc}")
 
     # Jurnale Live — emit de pornire pentru fiecare modul, ca tab-urile sa nu fie
     # goale inainte sa ruleze primul scraper.
@@ -363,7 +426,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# MODIFICARE 5 — rate limiting pe endpoint-urile de scraping manual (slowapi).
+# Limiter-ul e definit în app.rate_limit; aici îl atașăm de app + handler 429 în română.
+from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
+from app.rate_limit import limiter
+
+app.state.limiter = limiter
+
+
+def _rate_limit_handler(request, exc):
+    """Răspuns 429 cu mesaj în română la depășirea limitei."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Prea multe cereri într-un interval scurt. Așteaptă un minut și încearcă din nou."},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+
 # Register all routers
+# MODIFICARE 2 — health check montat primul, fara middleware de autentificare.
+from app.routers import health
+app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(products.router)
 app.include_router(watchlist.router)
@@ -404,6 +489,3 @@ def root():
     }
 
 
-@app.get("/api/health")
-def health_check():
-    return {"status": "healthy"}

@@ -1,36 +1,765 @@
-"""Scraper pentru Vinted Romania prin API-ul intern v2/catalog/items.
+"""Scraper pentru Vinted Romania prin libraria vinted-scraper.
 
-Vinted nu accepta requesturi anonime — avem nevoie de cookie-ul de sesiune
-copiat din browserul logat al userului (Application -> Cookies -> access_token_web).
-Cookie-ul se stocheaza in radar_settings.vinted_cookie si se trimite ca header
-"Cookie" la fiecare cerere.
+Foloseste libraria `vinted-scraper`, care gestioneaza automat DataDome (fara cookie
+de sesiune). Filtrarea pe categorie e server-side via `catalog_ids` (rezolvat din
+VINTED_CATALOG_ID_MAP), iar filtrarea pe subcategorie se face post-scrape pe
+titlu/descriere. La eroare returnam [] si logam — fara mecanism de fallback.
 """
-import re
-import time
-from datetime import datetime
 from typing import Optional
 
-from curl_cffi import requests as curl_requests
-
-from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
+from app.services.radar.base_scraper import is_excluded
 from app.services.log_manager import log_manager
 
 
-_IMPERSONATE = "chrome110"
-_API_URL = "https://www.vinted.ro/api/v2/catalog/items"
+# Generat automat — map_vinted_categories.py — 2026-07-03
+# Acoperire: 590/590 subcategorii · 669 intrari (tab/categorie/subcategorie)
+VINTED_CATALOG_ID_MAP: dict[tuple[str, str, str], int] = {
+    ("Femei", "", ""): 1904,
+    ("Femei", "Accesorii", ""): 1187,
+    ("Femei", "Accesorii", "Accesorii pentru păr"): 1123,
+    ("Femei", "Accesorii", "Alte accesorii"): 1140,
+    ("Femei", "Accesorii", "Bandane și panglici"): 2931,
+    ("Femei", "Accesorii", "Batiste"): 2932,
+    ("Femei", "Accesorii", "Bijuterii"): 21,
+    ("Femei", "Accesorii", "Brelocuri"): 1852,
+    ("Femei", "Accesorii", "Ceasuri"): 22,
+    ("Femei", "Accesorii", "Curele"): 20,
+    ("Femei", "Accesorii", "Fulare și eșarfe"): 89,
+    ("Femei", "Accesorii", "Mănuși"): 90,
+    ("Femei", "Accesorii", "Ochelari de soare"): 26,
+    ("Femei", "Accesorii", "Pălării și șepci"): 88,
+    ("Femei", "Accesorii", "Umbrele"): 1851,
+    ("Femei", "Frumusețe", ""): 146,
+    ("Femei", "Frumusețe", "Alte articole de frumusețe"): 153,
+    ("Femei", "Frumusețe", "Instrumente pentru înfrumusețare"): 1906,
+    ("Femei", "Frumusețe", "Machiaj"): 964,
+    ("Femei", "Frumusețe", "Parfum"): 152,
+    ("Femei", "Frumusețe", "Îngrijirea corpului"): 956,
+    ("Femei", "Frumusețe", "Îngrijirea mâinilor"): 1264,
+    ("Femei", "Frumusețe", "Îngrijirea părului"): 1902,
+    ("Femei", "Frumusețe", "Îngrijirea tenului"): 948,
+    ("Femei", "Frumusețe", "Îngrijirea unghiilor"): 960,
+    ("Femei", "Genți", ""): 19,
+    ("Femei", "Genți", "Borsete"): 1848,
+    ("Femei", "Genți", "Genți bucket"): 2942,
+    ("Femei", "Genți", "Genți de călătorie și valize"): 1850,
+    ("Femei", "Genți", "Genți de mână"): 156,
+    ("Femei", "Genți", "Genți de umăr"): 158,
+    ("Femei", "Genți", "Genți hobo"): 2945,
+    ("Femei", "Genți", "Genți pentru cosmetice"): 161,
+    ("Femei", "Genți", "Genți plajă"): 2940,
+    ("Femei", "Genți", "Genți sport"): 2944,
+    ("Femei", "Genți", "Genți tip poștas"): 1784,
+    ("Femei", "Genți", "Genți și saci de voiaj"): 1849,
+    ("Femei", "Genți", "Plicuri"): 159,
+    ("Femei", "Genți", "Poșete de mână"): 2939,
+    ("Femei", "Genți", "Poșete și portofele"): 160,
+    ("Femei", "Genți", "Rucsacuri"): 157,
+    ("Femei", "Genți", "Saci protecție haine"): 2943,
+    ("Femei", "Genți", "Sacoșe"): 552,
+    ("Femei", "Genți", "Serviete"): 2941,
+    ("Femei", "Haine", ""): 4,
+    ("Femei", "Haine", "Alte articole de îmbrăcăminte"): 18,
+    ("Femei", "Haine", "Blugi"): 183,
+    ("Femei", "Haine", "Costume de baie"): 28,
+    ("Femei", "Haine", "Costume și blazere"): 8,
+    ("Femei", "Haine", "Costume și ținute speciale"): 1782,
+    ("Femei", "Haine", "Fuste"): 11,
+    ("Femei", "Haine", "Fustă-pantaloni scurtă"): 5491,
+    ("Femei", "Haine", "Haine maternitate"): 1176,
+    ("Femei", "Haine", "Lenjerie intimă și pijamale"): 29,
+    ("Femei", "Haine", "Pantaloni scurți și pantaloni trei sferturi"): 15,
+    ("Femei", "Haine", "Pantaloni și colanți"): 9,
+    ("Femei", "Haine", "Pulovere"): 13,
+    ("Femei", "Haine", "Rochii"): 10,
+    ("Femei", "Haine", "Salopete lungi și scurte"): 1035,
+    ("Femei", "Haine", "Topuri și tricouri"): 12,
+    ("Femei", "Haine", "Îmbrăcăminte de exterior"): 1037,
+    ("Femei", "Haine", "Îmbrăcăminte pentru sport"): 73,
+    ("Femei", "Pantofi", ""): 16,
+    ("Femei", "Pantofi", "Balerini"): 2955,
+    ("Femei", "Pantofi", "Cizme și ghete"): 1049,
+    ("Femei", "Pantofi", "Espadrile"): 2953,
+    ("Femei", "Pantofi", "Flip-flops și șlapi"): 2952,
+    ("Femei", "Pantofi", "Pantofi Mary Jane și T-bar"): 2950,
+    ("Femei", "Pantofi", "Pantofi cu toc"): 543,
+    ("Femei", "Pantofi", "Pantofi cu șiret"): 2951,
+    ("Femei", "Pantofi", "Pantofi sport"): 2632,
+    ("Femei", "Pantofi", "Pantofi tip boat shoe, loaferi și mocasini"): 2954,
+    ("Femei", "Pantofi", "Papuci de casă"): 215,
+    ("Femei", "Pantofi", "Saboți"): 2623,
+    ("Femei", "Pantofi", "Sandale"): 2949,
+    ("Femei", "Pantofi", "Încălțăminte sport"): 2630,
+    ("Bărbați", "", ""): 5,
+    ("Bărbați", "Accesorii", ""): 82,
+    ("Bărbați", "Accesorii", "Altele"): 99,
+    ("Bărbați", "Accesorii", "Bandane și eșarfe de păr"): 2960,
+    ("Bărbați", "Accesorii", "Batiste"): 2958,
+    ("Bărbați", "Accesorii", "Batiste buzunar"): 2957,
+    ("Bărbați", "Accesorii", "Bijuterii"): 95,
+    ("Bărbați", "Accesorii", "Bretele"): 2959,
+    ("Bărbați", "Accesorii", "Ceasuri"): 97,
+    ("Bărbați", "Accesorii", "Cravate și papioane"): 2956,
+    ("Bărbați", "Accesorii", "Curele"): 96,
+    ("Bărbați", "Accesorii", "Fulare și eșarfe"): 87,
+    ("Bărbați", "Accesorii", "Genți și rucsacuri"): 94,
+    ("Bărbați", "Accesorii", "Mănuși"): 91,
+    ("Bărbați", "Accesorii", "Ochelari de soare"): 98,
+    ("Bărbați", "Accesorii", "Pălării și șepci"): 86,
+    ("Bărbați", "Haine", ""): 2050,
+    ("Bărbați", "Haine", "Alte articole de îmbrăcăminte"): 83,
+    ("Bărbați", "Haine", "Blugi"): 257,
+    ("Bărbați", "Haine", "Costume de baie"): 84,
+    ("Bărbați", "Haine", "Costume și blazere"): 32,
+    ("Bărbați", "Haine", "Costume și ținute speciale"): 92,
+    ("Bărbați", "Haine", "Haine de dormit"): 2910,
+    ("Bărbați", "Haine", "Pantaloni"): 34,
+    ("Bărbați", "Haine", "Pantaloni scurți"): 80,
+    ("Bărbați", "Haine", "Pulovere"): 79,
+    ("Bărbați", "Haine", "Topuri și tricouri"): 76,
+    ("Bărbați", "Haine", "Îmbrăcăminte de exterior"): 1206,
+    ("Bărbați", "Haine", "Îmbrăcăminte pentru sport"): 30,
+    ("Bărbați", "Haine", "Șosete și lenjerie intimă"): 85,
+    ("Bărbați", "Pantofi", ""): 1231,
+    ("Bărbați", "Pantofi", "Cizme și ghete"): 1233,
+    ("Bărbați", "Pantofi", "Espadrile"): 2657,
+    ("Bărbați", "Pantofi", "Flip-flops și șlapi"): 2969,
+    ("Bărbați", "Pantofi", "Pantofi eleganți"): 1238,
+    ("Bărbați", "Pantofi", "Pantofi sport"): 1242,
+    ("Bărbați", "Pantofi", "Pantofi tip boat shoe, loaferi și mocasini"): 2656,
+    ("Bărbați", "Pantofi", "Papuci de casă"): 2659,
+    ("Bărbați", "Pantofi", "Saboți și papuci"): 2970,
+    ("Bărbați", "Pantofi", "Sandale"): 2968,
+    ("Bărbați", "Pantofi", "Încălțăminte sport"): 1452,
+    ("Bărbați", "Îngrijire", ""): 139,
+    ("Bărbați", "Îngrijire", "Aftershave și apă de colonie"): 145,
+    ("Bărbați", "Îngrijire", "Alte articole de îngrijire"): 968,
+    ("Bărbați", "Îngrijire", "Instrumente și accesorii"): 2055,
+    ("Bărbați", "Îngrijire", "Machiaj"): 144,
+    ("Bărbați", "Îngrijire", "Seturi de îngrijire"): 1863,
+    ("Bărbați", "Îngrijire", "Îngrijirea corpului"): 141,
+    ("Bărbați", "Îngrijire", "Îngrijirea mâinilor și a unghiilor"): 142,
+    ("Bărbați", "Îngrijire", "Îngrijirea părului"): 140,
+    ("Bărbați", "Îngrijire", "Îngrijirea tenului"): 143,
+    ("Designer", "", ""): 2993,
+    ("Designer", "Designer bărbați", ""): 2988,
+    ("Designer", "Designer bărbați", "Accesorii de designer"): 2991,
+    ("Designer", "Designer bărbați", "Pantofi de designer"): 2990,
+    ("Designer", "Designer bărbați", "Îmbrăcăminte de designer"): 2992,
+    ("Designer", "Designer femei", ""): 2983,
+    ("Designer", "Designer femei", "Accesorii de designer"): 2986,
+    ("Designer", "Designer femei", "Genți de designer"): 2984,
+    ("Designer", "Designer femei", "Pantofi de designer"): 2985,
+    ("Designer", "Designer femei", "Îmbrăcăminte de designer"): 2987,
+    ("Copii", "", ""): 1193,
+    ("Copii", "Cărucioare, landouri și scaune auto", ""): 1496,
+    ("Copii", "Cărucioare, landouri și scaune auto", "Accesorii Buggy"): 1511,
+    ("Copii", "Cărucioare, landouri și scaune auto", "Accesorii scaune auto"): 3385,
+    ("Copii", "Cărucioare, landouri și scaune auto", "Cărucioare"): 1612,
+    ("Copii", "Cărucioare, landouri și scaune auto", "Scaune auto"): 3383,
+    ("Copii", "Cărucioare, landouri și scaune auto", "Sisteme de purtare și wrap-uri pentru bebeluși"): 3461,
+    ("Copii", "Cărucioare, landouri și scaune auto", "Înălțătoare"): 3384,
+    ("Copii", "Echipamente de protecție și siguranță pentru copii", ""): 3427,
+    ("Copii", "Echipamente de protecție și siguranță pentru copii", "Accesorii de protecție pentru copii"): 3429,
+    ("Copii", "Echipamente de protecție și siguranță pentru copii", "Hamuri și centuri de siguranță"): 3431,
+    ("Copii", "Echipamente de protecție și siguranță pentru copii", "Porți și protecții pentru copii"): 3428,
+    ("Copii", "Echipamente de protecție și siguranță pentru copii", "Protecție fonică"): 3430,
+    ("Copii", "Jucării", ""): 1499,
+    ("Copii", "Jucării", "Activități și jucării pentru copii"): 3344,
+    ("Copii", "Jucării", "Arte și meșteșuguri"): 3314,
+    ("Copii", "Jucării", "Costumează-te și intră în rol"): 3329,
+    ("Copii", "Jucării", "Cuburi și jucării de construit"): 1767,
+    ("Copii", "Jucării", "Figurine și accesorii"): 1730,
+    ("Copii", "Jucării", "Jucării educative"): 1763,
+    ("Copii", "Jucării", "Jucării electronice"): 1725,
+    ("Copii", "Jucării", "Jucării moi și animale de pluș"): 1764,
+    ("Copii", "Jucării", "Jucării muzicale și instrumente de jucărie"): 1766,
+    ("Copii", "Jucării", "Jucării pentru exterior și sportive"): 1771,
+    ("Copii", "Jucării", "Mașini, trenuri și alte vehicule de jucărie"): 3375,
+    ("Copii", "Jucării", "Noutăți și jucării fidget"): 3336,
+    ("Copii", "Jucării", "Păpuși și accesorii"): 1731,
+    ("Copii", "Mobilier și decorațiuni", ""): 1498,
+    ("Copii", "Mobilier și decorațiuni", "Covoare și carpete"): 3290,
+    ("Copii", "Mobilier și decorațiuni", "Decorațiuni și suveniruri"): 3276,
+    ("Copii", "Mobilier și decorațiuni", "Mese și birouri"): 3294,
+    ("Copii", "Mobilier și decorațiuni", "Mobilier de joacă"): 3292,
+    ("Copii", "Mobilier și decorațiuni", "Mobilier pentru camera copilului"): 3284,
+    ("Copii", "Mobilier și decorațiuni", "Rafturi"): 3293,
+    ("Copii", "Mobilier și decorațiuni", "Saltele pentru copii"): 1567,
+    ("Copii", "Mobilier și decorațiuni", "Saltele și covoare de joacă"): 1572,
+    ("Copii", "Mobilier și decorațiuni", "Scaune"): 3291,
+    ("Copii", "Mobilier și decorațiuni", "Șezlonguri și cuiburi"): 3275,
+    ("Copii", "Mobilier și decorațiuni", "Șifoniere"): 3295,
+    ("Copii", "Mobilier și decorațiuni", "Țarcuri de joacă"): 1573,
+    ("Copii", "Rechizite școlare", ""): 1501,
+    ("Copii", "Rechizite școlare", "Cutii și pungi pentru prânz"): 3269,
+    ("Copii", "Rechizite școlare", "Ghiozdane"): 1508,
+    ("Copii", "Rechizite școlare", "Rechizite școlare"): 1509,
+    ("Copii", "Sănătate și sarcină", ""): 3419,
+    ("Copii", "Sănătate și sarcină", "Aspiratoare nazale"): 3421,
+    ("Copii", "Sănătate și sarcină", "Centuri de susținere pentru sarcină"): 3425,
+    ("Copii", "Sănătate și sarcină", "Cântare"): 3426,
+    ("Copii", "Sănătate și sarcină", "Perne pentru sarcină"): 3424,
+    ("Copii", "Sănătate și sarcină", "Termometre"): 3422,
+    ("Copii", "Sănătate și sarcină", "Umidificatoare"): 3420,
+    ("Copii", "Sănătate și sarcină", "Îngrijirea postpartum"): 3423,
+    ("Copii", "Îmbrăcăminte pentru băieți", ""): 1194,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Accesorii"): 1714,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Alte haine pentru băieți"): 1205,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Costume de baie"): 1202,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Genți și rucsacuri"): 1257,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Lenjerie intimă și șosete"): 1203,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Pachete îmbrăcăminte"): 1760,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Pantaloni și salopete"): 1200,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Pantofi"): 1256,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Pijamale"): 1752,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Pulovere și hanorace cu glugă"): 1199,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Topuri și tricouri"): 1198,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Îmbrăcăminte de exterior"): 1197,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Îmbrăcăminte pentru bebe băiat"): 1196,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Îmbrăcăminte pentru gemeni"): 1761,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Îmbrăcăminte sportivă"): 1204,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Ținute de ocazie"): 2083,
+    ("Copii", "Îmbrăcăminte pentru băieți", "Ținute și costume de carnaval"): 1762,
+    ("Copii", "Îmbrăcăminte pentru fete", ""): 1195,
+    ("Copii", "Îmbrăcăminte pentru fete", "Accesorii"): 1574,
+    ("Copii", "Îmbrăcăminte pentru fete", "Alte articole de îmbrăcăminte pentru fete"): 1254,
+    ("Copii", "Îmbrăcăminte pentru fete", "Costume de baie"): 1251,
+    ("Copii", "Îmbrăcăminte pentru fete", "Fuste"): 1248,
+    ("Copii", "Îmbrăcăminte pentru fete", "Genți și rucsacuri"): 1258,
+    ("Copii", "Îmbrăcăminte pentru fete", "Lenjerie intimă și șosete"): 1252,
+    ("Copii", "Îmbrăcăminte pentru fete", "Pachete îmbrăcăminte"): 1510,
+    ("Copii", "Îmbrăcăminte pentru fete", "Pantaloni și pantaloni scurți"): 1249,
+    ("Copii", "Îmbrăcăminte pentru fete", "Pantofi"): 1255,
+    ("Copii", "Îmbrăcăminte pentru fete", "Pijamale"): 1594,
+    ("Copii", "Îmbrăcăminte pentru fete", "Pulovere și hanorace cu glugă"): 1246,
+    ("Copii", "Îmbrăcăminte pentru fete", "Rochii"): 1247,
+    ("Copii", "Îmbrăcăminte pentru fete", "Topuri și tricouri"): 1245,
+    ("Copii", "Îmbrăcăminte pentru fete", "Îmbrăcăminte de exterior"): 1244,
+    ("Copii", "Îmbrăcăminte pentru fete", "Îmbrăcăminte pentru bebe fată"): 1243,
+    ("Copii", "Îmbrăcăminte pentru fete", "Îmbrăcăminte pentru gemeni"): 1604,
+    ("Copii", "Îmbrăcăminte pentru fete", "Îmbrăcăminte sportivă"): 1253,
+    ("Copii", "Îmbrăcăminte pentru fete", "Ținute de ocazie"): 2080,
+    ("Copii", "Îmbrăcăminte pentru fete", "Ținute și costume de carnaval"): 1606,
+    ("Copii", "Îmbăiere și înfășare", ""): 3393,
+    ("Copii", "Îmbăiere și înfășare", "Baie"): 3412,
+    ("Copii", "Îmbăiere și înfășare", "Depozitarea și eliminarea scutecelor"): 3403,
+    ("Copii", "Îmbăiere și înfășare", "Genți pentru înfășat"): 3394,
+    ("Copii", "Îmbăiere și înfășare", "Olițe"): 3417,
+    ("Copii", "Îmbăiere și înfășare", "Saltele pentru schimbat și huse"): 3395,
+    ("Copii", "Îmbăiere și înfășare", "Scaune cu trepte"): 3418,
+    ("Copii", "Îmbăiere și înfășare", "Scutece"): 3399,
+    ("Copii", "Îmbăiere și înfășare", "Îngrijirea pielii și igienă"): 3408,
+    ("Casă", "", ""): 1918,
+    ("Casă", "Accesorii pentru casă", ""): 1934,
+    ("Casă", "Accesorii pentru casă", "Accesorii decorative"): 3823,
+    ("Casă", "Accesorii pentru casă", "Accesorii pentru șemineu"): 3833,
+    ("Casă", "Accesorii pentru casă", "Ceasuri"): 1936,
+    ("Casă", "Accesorii pentru casă", "Decorațiune de perete"): 3846,
+    ("Casă", "Accesorii pentru casă", "Depozitare și organizare"): 1939,
+    ("Casă", "Accesorii pentru casă", "Iluminat"): 3834,
+    ("Casă", "Accesorii pentru casă", "Lumânări și parfumuri pentru casă"): 1935,
+    ("Casă", "Accesorii pentru casă", "Oglinzi"): 1938,
+    ("Casă", "Accesorii pentru casă", "Plante și flori artificiale"): 3830,
+    ("Casă", "Accesorii pentru casă", "Rafturi de prezentare"): 1941,
+    ("Casă", "Accesorii pentru casă", "Rame foto și imagini"): 1937,
+    ("Casă", "Accesorii pentru casă", "Sculpturi și figurine"): 3822,
+    ("Casă", "Accesorii pentru casă", "Vaze"): 1940,
+    ("Casă", "Animale", ""): 5106,
+    ("Casă", "Animale", "Animale de companie mici"): 5111,
+    ("Casă", "Animale", "Câini"): 5107,
+    ("Casă", "Animale", "Pești"): 5112,
+    ("Casă", "Animale", "Pisici"): 5108,
+    ("Casă", "Animale", "Păsări"): 5110,
+    ("Casă", "Animale", "Reptile"): 5109,
+    ("Casă", "Aparate electrocasnice mici", ""): 3474,
+    ("Casă", "Aparate electrocasnice mici", "Accesorii pentru electrocasnice mici de bucătărie"): 3490,
+    ("Casă", "Aparate electrocasnice mici", "Aparate pentru cafea, ceai și espresso"): 3480,
+    ("Casă", "Aparate electrocasnice mici", "Aparate specializate"): 3489,
+    ("Casă", "Aparate electrocasnice mici", "Blendere, mixere și procesoare de alimente"): 3482,
+    ("Casă", "Aparate electrocasnice mici", "Ceainice"): 3479,
+    ("Casă", "Aparate electrocasnice mici", "Dozatoare pentru apă și suc"): 3488,
+    ("Casă", "Aparate electrocasnice mici", "Friteuze"): 3484,
+    ("Casă", "Aparate electrocasnice mici", "Grătare și grătare electrice"): 3486,
+    ("Casă", "Aparate electrocasnice mici", "Microunde"): 3483,
+    ("Casă", "Aparate electrocasnice mici", "Piese pentru electrocasnice mici de bucătărie"): 3491,
+    ("Casă", "Aparate electrocasnice mici", "Plite"): 3485,
+    ("Casă", "Aparate electrocasnice mici", "Prăjitoare de pâine"): 3481,
+    ("Casă", "Aparate electrocasnice mici", "Storcătoare"): 3487,
+    ("Casă", "Articole de masă", ""): 1920,
+    ("Casă", "Articole de masă", "Pahare"): 2005,
+    ("Casă", "Articole de masă", "Tacâmuri"): 1931,
+    ("Casă", "Articole de masă", "Veselă"): 1932,
+    ("Casă", "Consumabile de birou", ""): 5428,
+    ("Casă", "Consumabile de birou", "Accesorii pentru birou"): 5434,
+    ("Casă", "Consumabile de birou", "Aparate electronice de birou"): 5441,
+    ("Casă", "Consumabile de birou", "Bandă adezivă, cleme și elemente de fixare"): 5438,
+    ("Casă", "Consumabile de birou", "Caiete și blocuri de scris"): 5430,
+    ("Casă", "Consumabile de birou", "Calculatoare"): 5433,
+    ("Casă", "Consumabile de birou", "Capsatoare și perforatoare"): 5439,
+    ("Casă", "Consumabile de birou", "Consumabile pentru scris"): 5436,
+    ("Casă", "Consumabile de birou", "Instrumente pentru desen tehnic"): 5437,
+    ("Casă", "Consumabile de birou", "Materiale pentru prezentări"): 5440,
+    ("Casă", "Consumabile de birou", "Organizatoare de documente"): 5435,
+    ("Casă", "Consumabile de birou", "Penare"): 5431,
+    ("Casă", "Consumabile de birou", "Planificatoare și agende personale"): 5429,
+    ("Casă", "Consumabile de birou", "Seifuri"): 5442,
+    ("Casă", "Consumabile de birou", "Semne de carte"): 5432,
+    ("Casă", "Exterior și grădină", ""): 3812,
+    ("Casă", "Exterior și grădină", "Accesorii pentru unelte electrice de exterior"): 3889,
+    ("Casă", "Exterior și grădină", "Decor pentru exterior și grădină"): 3893,
+    ("Casă", "Exterior și grădină", "Echipament de udare"): 3892,
+    ("Casă", "Exterior și grădină", "Ghivece, jardiniere și accesorii"): 3891,
+    ("Casă", "Exterior și grădină", "Instrumente meteorologice"): 3896,
+    ("Casă", "Exterior și grădină", "Spa-uri, piscine și echipamente"): 3895,
+    ("Casă", "Exterior și grădină", "Unelte de mână pentru exterior"): 3890,
+    ("Casă", "Exterior și grădină", "Unelte electrice pentru exterior"): 3888,
+    ("Casă", "Exterior și grădină", "Unelte pentru îndepărtarea zăpezii"): 3897,
+    ("Casă", "Exterior și grădină", "Ustensile pentru grătar și gătit în aer liber"): 3894,
+    ("Casă", "Festivități și sărbători", ""): 2915,
+    ("Casă", "Festivități și sărbători", "Bannere, steaguri și fanioane"): 2917,
+    ("Casă", "Festivități și sărbători", "Coronițe"): 2926,
+    ("Casă", "Festivități și sărbători", "Cărți poștale și plicuri"): 2918,
+    ("Casă", "Festivități și sărbători", "Decor de sărbători"): 2922,
+    ("Casă", "Festivități și sărbători", "Decorațiuni de masă"): 2924,
+    ("Casă", "Festivități și sărbători", "Decorațiuni de petrecere"): 2923,
+    ("Casă", "Festivități și sărbători", "Decorațiuni pentru copaci"): 2925,
+    ("Casă", "Festivități și sărbători", "Hârtie și pungi de cadouri"): 2921,
+    ("Casă", "Textile", ""): 1919,
+    ("Casă", "Textile", "Covoare și covorașe"): 1927,
+    ("Casă", "Textile", "Fețe de masă"): 1928,
+    ("Casă", "Textile", "Huse"): 3869,
+    ("Casă", "Textile", "Lenjerie de pat"): 1924,
+    ("Casă", "Textile", "Perdele și jaluzele"): 1926,
+    ("Casă", "Textile", "Perne decorative"): 1974,
+    ("Casă", "Textile", "Prosoape"): 1930,
+    ("Casă", "Textile", "Pături"): 1925,
+    ("Casă", "Textile", "Tapiserii"): 1929,
+    ("Casă", "Unelte și DIY", ""): 3811,
+    ("Casă", "Unelte și DIY", "Accesorii pentru unelte"): 3882,
+    ("Casă", "Unelte și DIY", "Casă inteligentă și securitate"): 3887,
+    ("Casă", "Unelte și DIY", "Echipament de protecție"): 3883,
+    ("Casă", "Unelte și DIY", "Echipament pentru electricieni"): 3880,
+    ("Casă", "Unelte și DIY", "Echipamente pentru atelier și șantier"): 3885,
+    ("Casă", "Unelte și DIY", "Feronerie"): 3886,
+    ("Casă", "Unelte și DIY", "Instrumente de măsurare"): 3877,
+    ("Casă", "Unelte și DIY", "Transport și depozitare unelte"): 3884,
+    ("Casă", "Unelte și DIY", "Unelte de zidărie"): 3881,
+    ("Casă", "Unelte și DIY", "Unelte electrice"): 3875,
+    ("Casă", "Unelte și DIY", "Unelte instalații sanitare"): 3879,
+    ("Casă", "Unelte și DIY", "Unelte manuale"): 3876,
+    ("Casă", "Unelte și DIY", "Unelte și accesorii pentru vopsit"): 3878,
+    ("Casă", "Ustensile de bucătărie", ""): 3477,
+    ("Casă", "Ustensile de bucătărie", "Boluri de amestecare"): 3521,
+    ("Casă", "Ustensile de bucătărie", "Cântar de bucătărie"): 3518,
+    ("Casă", "Ustensile de bucătărie", "Căni și linguri de măsurat"): 3519,
+    ("Casă", "Ustensile de bucătărie", "Depozitarea alimentelor"): 3523,
+    ("Casă", "Ustensile de bucătărie", "Sită, strecurătoare"): 3522,
+    ("Casă", "Ustensile de bucătărie", "Termometre alimentare"): 3520,
+    ("Casă", "Ustensile de bucătărie", "Tocătoare"): 3515,
+    ("Casă", "Ustensile de bucătărie", "Unelte de bucătărie speciale"): 3524,
+    ("Casă", "Ustensile de bucătărie", "Ustensile de gătit"): 3516,
+    ("Casă", "Ustensile de bucătărie", "Ustensile pentru bar"): 3562,
+    ("Casă", "Ustensile de gătit și de copt", ""): 3476,
+    ("Casă", "Ustensile de gătit și de copt", "Accesorii pentru vase de gătit și de copt"): 3513,
+    ("Casă", "Ustensile de gătit și de copt", "Forme de copt"): 3511,
+    ("Casă", "Ustensile de gătit și de copt", "Oale"): 3507,
+    ("Casă", "Ustensile de gătit și de copt", "Tavă de copt"): 3509,
+    ("Casă", "Ustensile de gătit și de copt", "Tigăi"): 3508,
+    ("Casă", "Ustensile de gătit și de copt", "Tăvi de cuptor și prăjit"): 3510,
+    ("Casă", "Ustensile de gătit și de copt", "Ustensile de gătit și de copt speciale"): 3514,
+    ("Casă", "Ustensile de gătit și de copt", "Ustensile pentru gătit și copt"): 3512,
+    ("Casă", "Îngrijirea gospodăriei", ""): 3478,
+    ("Casă", "Îngrijirea gospodăriei", "Aspirare și curățare"): 3527,
+    ("Casă", "Îngrijirea gospodăriei", "Fiare de călcat și îngrijire îmbrăcăminte"): 3526,
+    ("Casă", "Îngrijirea gospodăriei", "Încălzire, răcire și aerisire"): 3525,
+    ("Electronice", "", ""): 2994,
+    ("Electronice", "Alte dispozitive și accesorii", ""): 2995,
+    ("Electronice", "Alte dispozitive și accesorii", "Adaptoare"): 3005,
+    ("Electronice", "Alte dispozitive și accesorii", "Alte accesorii"): 3013,
+    ("Electronice", "Alte dispozitive și accesorii", "Baterii externe"): 3792,
+    ("Electronice", "Alte dispozitive și accesorii", "Baterii și surse de alimentare"): 3794,
+    ("Electronice", "Alte dispozitive și accesorii", "Cabluri"): 3006,
+    ("Electronice", "Alte dispozitive și accesorii", "Cântare pentru bagaje"): 3791,
+    ("Electronice", "Alte dispozitive și accesorii", "Detectoare de obiecte"): 3052,
+    ("Electronice", "Alte dispozitive și accesorii", "GPS și dispozitive de navigație prin satelit"): 3789,
+    ("Electronice", "Alte dispozitive și accesorii", "Imprimare și scanare 3D"): 3788,
+    ("Electronice", "Alte dispozitive și accesorii", "Protecții la supratensiune și prelungitoare"): 3793,
+    ("Electronice", "Alte dispozitive și accesorii", "Încărcătoare"): 3008,
+    ("Electronice", "Audio, căști și hi-fi", ""): 3566,
+    ("Electronice", "Audio, căști și hi-fi", "Accesorii pentru dispozitive audio"): 3686,
+    ("Electronice", "Audio, căști și hi-fi", "Boxe portabile"): 3681,
+    ("Electronice", "Audio, căști și hi-fi", "Căști și earbuds"): 3678,
+    ("Electronice", "Audio, căști și hi-fi", "Difuzoare inteligente"): 3682,
+    ("Electronice", "Audio, căști și hi-fi", "Piese audio și hi-fi"): 3687,
+    ("Electronice", "Audio, căști și hi-fi", "Playere muzicale portabile"): 3679,
+    ("Electronice", "Audio, căști și hi-fi", "Radiouri portabile"): 3680,
+    ("Electronice", "Audio, căști și hi-fi", "Sisteme audio pentru acasă"): 3683,
+    ("Electronice", "Calculatoare și accesorii", ""): 3564,
+    ("Electronice", "Calculatoare și accesorii", "Accesorii pentru computere"): 3584,
+    ("Electronice", "Calculatoare și accesorii", "Accesorii pentru laptop"): 3585,
+    ("Electronice", "Calculatoare și accesorii", "Blank media"): 3583,
+    ("Electronice", "Calculatoare și accesorii", "Calculatoare desktop"): 3581,
+    ("Electronice", "Calculatoare și accesorii", "Camere web"): 3593,
+    ("Electronice", "Calculatoare și accesorii", "Difuzoare pentru computer"): 3591,
+    ("Electronice", "Calculatoare și accesorii", "Dispozitive de rețea"): 3594,
+    ("Electronice", "Calculatoare și accesorii", "Docking stations și hub-uri USB"): 3586,
+    ("Electronice", "Calculatoare și accesorii", "Imprimante și accesorii"): 3595,
+    ("Electronice", "Calculatoare și accesorii", "Laptopuri"): 3580,
+    ("Electronice", "Calculatoare și accesorii", "Microfoane de calculator"): 3592,
+    ("Electronice", "Calculatoare și accesorii", "Monitoare și accesorii"): 3590,
+    ("Electronice", "Calculatoare și accesorii", "Mouse pad-uri"): 3589,
+    ("Electronice", "Calculatoare și accesorii", "Mouse-uri"): 3588,
+    ("Electronice", "Calculatoare și accesorii", "Piese și componente de calculator"): 3582,
+    ("Electronice", "Calculatoare și accesorii", "Plăcuțe tactile și stylus"): 3597,
+    ("Electronice", "Calculatoare și accesorii", "Scanere și accesorii"): 3596,
+    ("Electronice", "Calculatoare și accesorii", "Tastaturi și accesorii"): 3587,
+    ("Electronice", "Camere foto și accesorii", ""): 3054,
+    ("Electronice", "Camere foto și accesorii", "Accesorii"): 3059,
+    ("Electronice", "Camere foto și accesorii", "Alte echipamente fotografice"): 3064,
+    ("Electronice", "Camere foto și accesorii", "Blițuri"): 3062,
+    ("Electronice", "Camere foto și accesorii", "Camere foto"): 3060,
+    ("Electronice", "Camere foto și accesorii", "Carduri de memorie"): 3063,
+    ("Electronice", "Camere foto și accesorii", "Drone cu cameră și accesorii"): 3716,
+    ("Electronice", "Camere foto și accesorii", "Echipament de studio"): 3066,
+    ("Electronice", "Camere foto și accesorii", "Echipament pentru camera obscură"): 3715,
+    ("Electronice", "Camere foto și accesorii", "Obiective"): 3061,
+    ("Electronice", "Camere foto și accesorii", "Piese de schimb pentru aparat foto"): 3717,
+    ("Electronice", "Camere foto și accesorii", "Stabilizatoare și suporturi"): 3065,
+    ("Electronice", "Camere foto și accesorii", "Trepieduri și monopieduri"): 3067,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", ""): 3569,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Bărbierit și îndepărtarea părului"): 3760,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Cântare pentru uz personal"): 3764,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Instrumente de coafură"): 3758,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Instrumente de masaj"): 3761,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Instrumente de înfrumusețare"): 3759,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Instrumente pentru îngrijirea unghiilor"): 3763,
+    ("Electronice", "Electronice pentru frumusețe și îngrijire personală", "Îngrijire dentară și orală electrică"): 3762,
+    ("Electronice", "Jocuri video și console", ""): 3002,
+    ("Electronice", "Jocuri video și console", "Accesorii"): 3024,
+    ("Electronice", "Jocuri video și console", "Console"): 3025,
+    ("Electronice", "Jocuri video și console", "Controlere"): 3570,
+    ("Electronice", "Jocuri video și console", "Căști pentru jocuri"): 3571,
+    ("Electronice", "Jocuri video și console", "Jocuri"): 3026,
+    ("Electronice", "Jocuri video și console", "Realitate virtuală"): 3576,
+    ("Electronice", "Jocuri video și console", "Simulatoare"): 3575,
+    ("Electronice", "Portabile", ""): 3004,
+    ("Electronice", "Portabile", "Benzi de schimb"): 3032,
+    ("Electronice", "Portabile", "Carcase pentru ceasuri inteligente"): 3810,
+    ("Electronice", "Portabile", "Ceasuri inteligente"): 3035,
+    ("Electronice", "Portabile", "Inele inteligente"): 3034,
+    ("Electronice", "Portabile", "Monitoare de fitness"): 3031,
+    ("Electronice", "Portabile", "Ochelari inteligenți"): 3033,
+    ("Electronice", "TV și home cinema", ""): 3568,
+    ("Electronice", "TV și home cinema", "Accesorii TV și home cinema"): 3750,
+    ("Electronice", "TV și home cinema", "Alte dispozitive de redare video"): 3749,
+    ("Electronice", "TV și home cinema", "Antene TV"): 3741,
+    ("Electronice", "TV și home cinema", "Antene satelit"): 3742,
+    ("Electronice", "TV și home cinema", "DVD playere"): 3747,
+    ("Electronice", "TV și home cinema", "Decodificatoare video"): 3743,
+    ("Electronice", "TV și home cinema", "Dispozitive de streaming"): 3740,
+    ("Electronice", "TV și home cinema", "Playere Blu-ray"): 3746,
+    ("Electronice", "TV și home cinema", "Proiectoare"): 3739,
+    ("Electronice", "TV și home cinema", "Receptoare de televiziune"): 3744,
+    ("Electronice", "TV și home cinema", "Sisteme home cinema"): 3745,
+    ("Electronice", "TV și home cinema", "Televizoare"): 3738,
+    ("Electronice", "TV și home cinema", "Videocasetofoane"): 3748,
+    ("Electronice", "Tablete, e-readere și accesorii", ""): 3567,
+    ("Electronice", "Tablete, e-readere și accesorii", "Accesorii"): 3732,
+    ("Electronice", "Tablete, e-readere și accesorii", "Agende electronice"): 3730,
+    ("Electronice", "Tablete, e-readere și accesorii", "E-readere"): 3729,
+    ("Electronice", "Tablete, e-readere și accesorii", "PDAs"): 3731,
+    ("Electronice", "Tablete, e-readere și accesorii", "Tablete"): 3728,
+    ("Electronice", "Telefoane mobile și comunicare", ""): 3565,
+    ("Electronice", "Telefoane mobile și comunicare", "Comunicații radio"): 3665,
+    ("Electronice", "Telefoane mobile și comunicare", "Faxuri"): 3664,
+    ("Electronice", "Telefoane mobile și comunicare", "Piese și accesorii pentru telefoane mobile"): 3662,
+    ("Electronice", "Telefoane mobile și comunicare", "Telefoane fixe"): 3663,
+    ("Electronice", "Telefoane mobile și comunicare", "Telefoane mobile"): 3661,
+    ("Electronice", "Telefoane mobile și comunicare", "Telefoane mobile demo"): 3666,
+    ("Media și cărți", "", ""): 2309,
+    ("Media și cărți", "Cărți", ""): 2312,
+    ("Media și cărți", "Cărți", "Benzi desenate, manga și romane grafice"): 5425,
+    ("Media și cărți", "Cărți", "Copii și tineri adulți"): 2318,
+    ("Media și cărți", "Cărți", "Cărți de colorat, puzzle și activități"): 5427,
+    ("Media și cărți", "Cărți", "Ficțiune"): 2319,
+    ("Media și cărți", "Cărți", "Manuale și materiale de studiu"): 5426,
+    ("Media și cărți", "Cărți", "Non-ficțiune"): 2320,
+    ("Media și cărți", "Muzică", ""): 3036,
+    ("Media și cărți", "Muzică", "CD-uri"): 3039,
+    ("Media și cărți", "Muzică", "Casete audio"): 3038,
+    ("Media și cărți", "Muzică", "Discuri de vinil"): 3041,
+    ("Media și cărți", "Muzică", "MiniDiscuri"): 3040,
+    ("Media și cărți", "Reviste", ""): 5424,
+    ("Media și cărți", "Video", ""): 3037,
+    ("Media și cărți", "Video", "4K Blu-ray"): 3042,
+    ("Media și cărți", "Video", "Betamax"): 3043,
+    ("Media și cărți", "Video", "Blu-ray"): 3044,
+    ("Media și cărți", "Video", "DVD"): 3045,
+    ("Media și cărți", "Video", "HD DVD"): 3046,
+    ("Media și cărți", "Video", "LaserDisc"): 3047,
+    ("Media și cărți", "Video", "VHS"): 3048,
+    ("Hobbyuri și colecții", "", ""): 4824,
+    ("Hobbyuri și colecții", "Accesorii pentru jocuri", ""): 4916,
+    ("Hobbyuri și colecții", "Accesorii pentru jocuri", "Alte accesorii pentru jocuri"): 4920,
+    ("Hobbyuri și colecții", "Accesorii pentru jocuri", "Covoare pentru jocuri"): 4919,
+    ("Hobbyuri și colecții", "Accesorii pentru jocuri", "Pietre și jetoane de joc"): 4918,
+    ("Hobbyuri și colecții", "Accesorii pentru jocuri", "Zar"): 4917,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", ""): 5151,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Caligrafie"): 5293,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Cusut, tricotat și broderie"): 5152,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Desene și schițe"): 5276,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Fabricarea lumânărilor"): 5349,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Materiale pentru artizanat"): 5372,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Mărgele și accesorii de bijuterii"): 5301,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Papercraft"): 5322,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Pictură"): 5251,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Sculptură și olărit"): 5357,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Tăiere cu matrița"): 5339,
+    ("Hobbyuri și colecții", "Arte și meșteșuguri", "Unelte de meșteșugărit"): 5401,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", ""): 4874,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", "Carduri de tranzacționare individuale"): 4875,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", "Cutii Booster"): 4877,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", "Loturi de carduri de tranzacționare"): 4879,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", "Pachete Booster"): 4876,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", "Pachete de cărți de joc"): 4878,
+    ("Hobbyuri și colecții", "Carduri de tranzacționare", "Poster cu carduri"): 4880,
+    ("Hobbyuri și colecții", "Cărți poștale", ""): 4894,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", ""): 4906,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Albume și clasoare"): 4907,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Covoare pentru puzzle"): 4914,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Cutii pentru pachete de cărți"): 4911,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Cutii pentru păstrarea obiectelor de colecție"): 4908,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Depozitarea altor obiecte de colecție"): 4915,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Folii pentru albume și clasoare"): 4913,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Huse pentru cărți de joc"): 4909,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Separatoare pentru albume și clasoare"): 4912,
+    ("Hobbyuri și colecții", "Depozitare obiecte de colecție", "Suporturi de carduri cu șurub"): 4910,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", ""): 4825,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Accesorii pentru creație muzicală"): 4831,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Amplificatoare și pedale"): 4826,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Chitare și chitare bas"): 4828,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Claviaturi și sintetizatoare"): 4830,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Echipament DJ"): 5091,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Echipament de studio și sunet live"): 4833,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Echipament pentru karaoke"): 4829,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Instrumente cu coarde"): 4832,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Instrumente de suflat"): 4834,
+    ("Hobbyuri și colecții", "Instrumente muzicale și echipamente", "Tobe și percuție"): 4827,
+    ("Hobbyuri și colecții", "Jocuri de masă și în miniatură", ""): 4883,
+    ("Hobbyuri și colecții", "Jocuri de societate", ""): 4881,
+    ("Hobbyuri și colecții", "Monede și bancnote", ""): 4895,
+    ("Hobbyuri și colecții", "Monede și bancnote", "Bancnote"): 4896,
+    ("Hobbyuri și colecții", "Monede și bancnote", "Certificate de acțiuni"): 4900,
+    ("Hobbyuri și colecții", "Monede și bancnote", "Loturi și seturi"): 4898,
+    ("Hobbyuri și colecții", "Monede și bancnote", "Medalii și recompense"): 4899,
+    ("Hobbyuri și colecții", "Monede și bancnote", "Monede"): 4897,
+    ("Hobbyuri și colecții", "Puzzle-uri", ""): 4882,
+    ("Hobbyuri și colecții", "Suveniruri", ""): 4901,
+    ("Hobbyuri și colecții", "Suveniruri", "Alte suveniruri"): 4905,
+    ("Hobbyuri și colecții", "Suveniruri", "Suvenir sportiv"): 4902,
+    ("Hobbyuri și colecții", "Suveniruri", "Suveniruri de film și TV"): 4904,
+    ("Hobbyuri și colecții", "Suveniruri", "Suveniruri muzicale"): 4903,
+    ("Hobbyuri și colecții", "Timbre", ""): 4888,
+    ("Hobbyuri și colecții", "Timbre", "Cataloage și ghiduri de timbre"): 4892,
+    ("Hobbyuri și colecții", "Timbre", "First day covers (FDC)"): 4891,
+    ("Hobbyuri și colecții", "Timbre", "Instrumente și echipamente pentru timbre"): 4893,
+    ("Hobbyuri și colecții", "Timbre", "Loturi și seturi de timbre"): 4890,
+    ("Hobbyuri și colecții", "Timbre", "Timbre individuale"): 4889,
+    ("Sporturi", "", ""): 4332,
+    ("Sporturi", "Box și arte marțiale", ""): 4342,
+    ("Sporturi", "Box și arte marțiale", "Alte echipamente pentru arte marțiale"): 4625,
+    ("Sporturi", "Box și arte marțiale", "Centuri de arte marțiale"): 4621,
+    ("Sporturi", "Box și arte marțiale", "Fășii pentru protecția mâinilor"): 4620,
+    ("Sporturi", "Box și arte marțiale", "Mănuși de box și arte marțiale"): 4619,
+    ("Sporturi", "Box și arte marțiale", "Protecție corporală pentru box și arte marțiale"): 4617,
+    ("Sporturi", "Box și arte marțiale", "Protecție pentru cap pentru box și arte marțiale"): 4616,
+    ("Sporturi", "Box și arte marțiale", "Protecții pentru lovituri cu pumnul și piciorul"): 4618,
+    ("Sporturi", "Box și arte marțiale", "Saci de box grei"): 4622,
+    ("Sporturi", "Box și arte marțiale", "Saci de box viteză"): 4624,
+    ("Sporturi", "Ciclism", ""): 4333,
+    ("Sporturi", "Ciclism", "Accesorii și unelte pentru ciclism"): 4349,
+    ("Sporturi", "Ciclism", "Biciclete pentru copii"): 4347,
+    ("Sporturi", "Ciclism", "Căști pentru biciclete"): 4348,
+    ("Sporturi", "Ciclism", "Piese de bicicletă"): 4353,
+    ("Sporturi", "Ciclism", "Remorci pentru biciclete"): 4351,
+    ("Sporturi", "Ciclism", "Scaune pentru biciclete pentru copii"): 4352,
+    ("Sporturi", "Echitație", ""): 4340,
+    ("Sporturi", "Echitație", "Caschete de echitație"): 4810,
+    ("Sporturi", "Echitație", "Huse de mătase pentru căști de echitație"): 4812,
+    ("Sporturi", "Echitație", "Mănuși de echitație"): 4811,
+    ("Sporturi", "Echitație", "Veste de protecție pentru călărie"): 4809,
+    ("Sporturi", "Echitație", "Șei și accesorii"): 4742,
+    ("Sporturi", "Fitness, alergare și yoga", ""): 4334,
+    ("Sporturi", "Fitness, alergare și yoga", "Accesorii de fitness pentru acasă"): 4417,
+    ("Sporturi", "Fitness, alergare și yoga", "Alergare"): 4415,
+    ("Sporturi", "Fitness, alergare și yoga", "Antrenament de forță"): 4414,
+    ("Sporturi", "Fitness, alergare și yoga", "Echipament pentru yoga și pilates"): 4416,
+    ("Sporturi", "Fitness, alergare și yoga", "Sticle de apă"): 4698,
+    ("Sporturi", "Golf", ""): 4339,
+    ("Sporturi", "Golf", "Accesorii de golf"): 4470,
+    ("Sporturi", "Golf", "Crose de golf"): 4473,
+    ("Sporturi", "Golf", "Cărucioare de golf"): 4475,
+    ("Sporturi", "Golf", "Echipament de antrenament pentru golf"): 4476,
+    ("Sporturi", "Golf", "Mingi de golf"): 4472,
+    ("Sporturi", "Golf", "Mănuși de golf"): 4474,
+    ("Sporturi", "Golf", "Saci de golf"): 4471,
+    ("Sporturi", "Skateboard-uri și scutere", ""): 4341,
+    ("Sporturi", "Skateboard-uri și scutere", "Căști de skateboarding"): 4608,
+    ("Sporturi", "Skateboard-uri și scutere", "Piese și accesorii pentru skate"): 4610,
+    ("Sporturi", "Skateboard-uri și scutere", "Piese și accesorii pentru skateboard"): 4611,
+    ("Sporturi", "Skateboard-uri și scutere", "Plăci de longboard"): 4606,
+    ("Sporturi", "Skateboard-uri și scutere", "Protecție pentru skateboard"): 4609,
+    ("Sporturi", "Skateboard-uri și scutere", "Scutere"): 4818,
+    ("Sporturi", "Skateboard-uri și scutere", "Skateboarduri"): 4607,
+    ("Sporturi", "Sporturi cu rachetă", ""): 4338,
+    ("Sporturi", "Sporturi cu rachetă", "Badminton"): 4479,
+    ("Sporturi", "Sporturi cu rachetă", "Padel"): 4482,
+    ("Sporturi", "Sporturi cu rachetă", "Pickleball"): 4483,
+    ("Sporturi", "Sporturi cu rachetă", "Protecție pentru ochi în sporturile cu rachetă"): 4484,
+    ("Sporturi", "Sporturi cu rachetă", "Racquetball"): 4480,
+    ("Sporturi", "Sporturi cu rachetă", "Squash"): 4478,
+    ("Sporturi", "Sporturi cu rachetă", "Tenis"): 4477,
+    ("Sporturi", "Sporturi cu rachetă", "Tenis de masă"): 4481,
+    ("Sporturi", "Sporturi de echipă", ""): 4337,
+    ("Sporturi", "Sporturi de echipă", "Alte echipamente pentru sporturi de echipă"): 4499,
+    ("Sporturi", "Sporturi de echipă", "Baschet"): 4486,
+    ("Sporturi", "Sporturi de echipă", "Baseball și softball"): 4492,
+    ("Sporturi", "Sporturi de echipă", "Cricket"): 4493,
+    ("Sporturi", "Sporturi de echipă", "Echipament de antrenament și de arbitraj"): 4490,
+    ("Sporturi", "Sporturi de echipă", "Fotbal"): 4485,
+    ("Sporturi", "Sporturi de echipă", "Fotbal american"): 4491,
+    ("Sporturi", "Sporturi de echipă", "Handball"): 4487,
+    ("Sporturi", "Sporturi de echipă", "Hochei de sală"): 4495,
+    ("Sporturi", "Sporturi de echipă", "Hochei pe iarbă"): 4494,
+    ("Sporturi", "Sporturi de echipă", "Lacrosse"): 4497,
+    ("Sporturi", "Sporturi de echipă", "Netball"): 4498,
+    ("Sporturi", "Sporturi de echipă", "Rugby"): 4489,
+    ("Sporturi", "Sporturi de echipă", "Sporturi gaelice"): 4496,
+    ("Sporturi", "Sporturi de echipă", "Volei"): 4488,
+    ("Sporturi", "Sporturi de iarnă", ""): 4344,
+    ("Sporturi", "Sporturi de iarnă", "Accesorii pentru patinaj artistic"): 4716,
+    ("Sporturi", "Sporturi de iarnă", "Căști pentru sporturi de iarnă"): 4721,
+    ("Sporturi", "Sporturi de iarnă", "Echipament de schi"): 4713,
+    ("Sporturi", "Sporturi de iarnă", "Echipament pentru snowboard"): 4714,
+    ("Sporturi", "Sporturi de iarnă", "Ghetre"): 4719,
+    ("Sporturi", "Sporturi de iarnă", "Hochei pe gheață"): 4715,
+    ("Sporturi", "Sporturi de iarnă", "Ochelari de schi"): 4720,
+    ("Sporturi", "Sporturi de iarnă", "Rachete de zăpadă"): 4718,
+    ("Sporturi", "Sporturi de iarnă", "Săniuș"): 4717,
+    ("Sporturi", "Sporturi nautice", ""): 4336,
+    ("Sporturi", "Sporturi nautice", "Accesorii pentru sporturi nautice"): 4769,
+    ("Sporturi", "Sporturi nautice", "Caiace"): 4759,
+    ("Sporturi", "Sporturi nautice", "Colac remorcabil"): 4763,
+    ("Sporturi", "Sporturi nautice", "Costume, mănuși și ghete de neopren"): 4768,
+    ("Sporturi", "Sporturi nautice", "Căști pentru sporturi nautice"): 4767,
+    ("Sporturi", "Sporturi nautice", "Dispozitive personale de plutire"): 4766,
+    ("Sporturi", "Sporturi nautice", "Kiteboarduri"): 4760,
+    ("Sporturi", "Sporturi nautice", "Plute gonflabile"): 4758,
+    ("Sporturi", "Sporturi nautice", "Plăci de paddleboarding"): 4784,
+    ("Sporturi", "Sporturi nautice", "Plăci de wakeboard"): 4764,
+    ("Sporturi", "Sporturi nautice", "Schiuri de apă"): 4765,
+    ("Sporturi", "Sporturi nautice", "Skimboards"): 4761,
+    ("Sporturi", "Sporturi nautice", "Înot"): 4747,
+    ("Sporturi", "Sporturi în aer liber", ""): 4335,
+    ("Sporturi", "Sporturi în aer liber", "Alte accesorii pentru sporturi în aer liber"): 4666,
+    ("Sporturi", "Sporturi în aer liber", "Arzătoare de camping și ustensile de gătit"): 4657,
+    ("Sporturi", "Sporturi în aer liber", "Bețe de trekking"): 4663,
+    ("Sporturi", "Sporturi în aer liber", "Binocluri și lunete"): 4658,
+    ("Sporturi", "Sporturi în aer liber", "Busole"): 4664,
+    ("Sporturi", "Sporturi în aer liber", "Corturi de camping și echipament de dormit"): 4652,
+    ("Sporturi", "Sporturi în aer liber", "Cățărare și bouldering"): 4626,
+    ("Sporturi", "Sporturi în aer liber", "Mobilier de camping"): 4661,
+    ("Sporturi", "Sporturi în aer liber", "Pescuit și vânătoare"): 4627,
+    ("Sporturi", "Sporturi în aer liber", "Rucsacuri pentru drumeții"): 4665,
+    ("Sporturi", "Sporturi în aer liber", "Răcitoare"): 4659,
+    ("Sporturi", "Sporturi în aer liber", "Sisteme și pachete de hidratare"): 4660,
+    ("Sporturi", "Sporturi în aer liber", "Torțe, faruri și lanterne"): 4662,
+    ("Sporturi", "Sporturi și jocuri ocazionale", ""): 4343,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Biliard american și snooker"): 4687,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Boules & alte jocuri"): 4682,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Bowling cu zece popice"): 4689,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Echipament pentru darts"): 4683,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Frisbee și disc golf"): 4684,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Mingi pentru terenul de joacă"): 4686,
+    ("Sporturi", "Sporturi și jocuri ocazionale", "Roundnet și spikeball"): 4688,
+}
 
 
-def get_vinted_token(cookie_str: str) -> Optional[str]:
-    """Extrage access_token_web din string-ul de cookie copiat din browser."""
-    if not cookie_str:
+def _resolve_vinted_catalog_id(category, subcategory):
+    """Rezolva catalog_id-ul Vinted din (category, subcategory) stocate pe keyword.
+
+    Doua formate coexista pe keyword.category:
+      • wizard: "Tab > Categorie" (ex: "Femei > Haine") + subcategory text ("Rochii")
+        -> lookup in VINTED_CATALOG_ID_MAP (arborele live).
+      • edit form vechi: catalog_id numeric brut din dropdown-ul PLATFORM_CATEGORIES
+        (ex: "2995") -> il folosim direct ca filtru (restaureaza vechiul int(category)).
+    Incearca in ordine descrescatoare de specificitate: subcategorie -> categorie -> tab.
+    Returneaza None daca nimic nu se potriveste (caller cauta fara catalog_ids -> nicio regresie).
+    """
+    if not category:
         return None
-    m = re.search(r"access_token_web=([^;]+)", cookie_str)
-    if m:
-        return m.group(1).strip()
-    # Daca userul a copiat doar valoarea, presupunem ca asta e
-    if "=" not in cookie_str and len(cookie_str) > 20:
-        return cookie_str.strip()
-    return None
+    # Format vechi: valoare numerica bruta = catalog_id Vinted direct din dropdown.
+    # (subcategoria e mai specifica, deci o preferam daca si ea e un ID numeric).
+    sub_raw = (subcategory or "").strip()
+    if sub_raw.isdigit():
+        return int(sub_raw)
+    if str(category).strip().isdigit():
+        return int(str(category).strip())
+    # Format wizard: "Tab > Categorie" + subcategorie text -> lookup in arbore.
+    parts = [p.strip() for p in category.split(">")]
+    tab = parts[0] if len(parts) > 0 else ""
+    cat = parts[1] if len(parts) > 1 else ""
+    sub = (subcategory or "").strip()
+    if sub:
+        cid = VINTED_CATALOG_ID_MAP.get((tab, cat, sub))
+        if cid:
+            return cid
+    if cat:
+        cid = VINTED_CATALOG_ID_MAP.get((tab, cat, ""))
+        if cid:
+            return cid
+    return VINTED_CATALOG_ID_MAP.get((tab, "", ""))
+
+
+def _strip_accents(s: Optional[str]) -> str:
+    return (s or "").lower().replace("ă", "a").replace("â", "a").replace("î", "i") \
+        .replace("ș", "s").replace("ş", "s").replace("ț", "t").replace("ţ", "t")
+
+
+def _apply_subcategory_filter(results: list, subcategory: Optional[str]) -> list:
+    """MODIFICARE 4 — filtrare post-scrape pe subcategorie (Vinted nu întoarce
+    metadata de categorie în rezultate). Un anunț trece dacă subcategoria apare
+    ca substring (accent-insensitive) în titlu sau descriere.
+
+    Non-destructiv: dacă filtrul ar elimina TOATE rezultatele (ex: forme flexionare
+    diferite gen "rochie"/"Rochii"), păstrăm rezultatele filtrate pe keyword ca să
+    nu golim feed-ul; logăm before/after ca să fie vizibil în Jurnale Live.
+    """
+    if not subcategory:
+        return results
+    full = _strip_accents(subcategory)
+    if not full:
+        return results
+    # Stem-ul primului cuvant (max 5 caractere) tolereaza plural/singular romanesc
+    # ("Rochii"->"rochi" prinde "rochie"; "Rucsacuri"->"rucsa" prinde "rucsac").
+    first_word = full.split()[0] if full.split() else full
+    stem = first_word[:5] if len(first_word) >= 5 else first_word
+
+    def _matches(r: dict) -> bool:
+        hay = _strip_accents(r.get("title")) + " " + _strip_accents(r.get("description"))
+        return (full in hay) or (len(stem) >= 4 and stem in hay)
+
+    before = len(results)
+    filtered = [r for r in results if isinstance(r, dict) and _matches(r)]
+    log_manager.emit("radar", "INFO",
+                     f"Vinted subcategorie '{subcategory}': {before} → {len(filtered)} după filtrare")
+    if not filtered and before:
+        # Nicio potrivire (probabil flexionare) — nu golim feed-ul, pastram keyword-only.
+        log_manager.emit("radar", "WARN",
+                         f"Vinted subcategorie '{subcategory}': 0 potriviri pe titlu/descriere — pastrez rezultatele pe keyword")
+        return results
+    return filtered
 
 
 def _condition_label(api_label: Optional[str]) -> Optional[str]:
@@ -51,10 +780,11 @@ def _search_vinted_library(
     category: Optional[str],
     exclude_words: list,
     exclude_description_words: list,
+    subcategory: Optional[str] = None,
     page: int = 1,
-) -> Optional[list]:
-    """Metoda primara — foloseste libraria vinted-scraper (gestioneaza DataDome
-    automat, fara cookie). Returneaza None la esec → declanseaza fallback-ul pe cookie.
+) -> list:
+    """Cauta pe Vinted prin libraria vinted-scraper (gestioneaza DataDome automat,
+    fara cookie). Returneaza intotdeauna o lista (goala la eroare sau zero rezultate).
 
     Rezultatele sunt mapate in formatul standard al aplicatiei (external_id,
     images list, platform...) ca scanner-ul si cautarea manuala sa le consume.
@@ -69,11 +799,13 @@ def _search_vinted_library(
             params["price_to"] = int(max_price)
         if min_price and min_price > 0:
             params["price_from"] = int(min_price)
-        if category:
-            try:
-                params["catalog_ids"] = [int(category)]
-            except (ValueError, TypeError):
-                pass
+        # Filtrare server-side: rezolvam catalog_id-ul din (category, subcategory)
+        # text -> ID Vinted. Inainte se incerca int(category) care esua mereu (text).
+        catalog_id = _resolve_vinted_catalog_id(category, subcategory)
+        if catalog_id:
+            params["catalog_ids"] = [catalog_id]
+            _label = category + (f" > {subcategory}" if subcategory else "")
+            print(f"[VintedScraper] catalog_id={catalog_id} pentru '{_label}'")
 
         raw_items = scraper.search(params)
         results = []
@@ -128,8 +860,8 @@ def _search_vinted_library(
         log_manager.emit("radar", "OK", f"Vinted library: {len(results)} rezultate pentru '{keyword}'")
         return results
     except Exception as exc:
-        log_manager.emit("radar", "WARN", f"Vinted library failed: {str(exc)[:80]} → fallback la cookie")
-        return None
+        log_manager.emit("radar", "ERR", f"Vinted library eroare: {str(exc)[:120]}")
+        return []
 
 
 def search_vinted(
@@ -137,167 +869,70 @@ def search_vinted(
     max_price: float,
     condition: str = "all",
     exclude_words: Optional[list[str]] = None,
-    cookie_str: Optional[str] = None,
     min_price: Optional[float] = None,
     category: Optional[str] = None,
     exclude_description_words: Optional[list] = None,
     page: int = 1,
+    subcategory: Optional[str] = None,
 ) -> list[dict]:
-    """Cauta pe Vinted prin API-ul intern si returneaza listinguri standard."""
-    exclude_words = exclude_words or []
+    """Cauta pe Vinted prin libraria vinted-scraper (DataDome gestionat automat).
+
+    `category` ("Tab > Categorie") + `subcategory` sunt rezolvate la un `catalog_id`
+    Vinted (VINTED_CATALOG_ID_MAP) si trimise ca filtru server-side. Daca maparea
+    reuseste, filtrarea pe subcategorie o face Vinted; altfel se aplica local pe
+    titlu/descriere (fallback fara regresie). La eroare, libraria returneaza [].
+    `condition` e acceptat pentru compatibilitate cu apelantii (nefolosit de librarie).
+    """
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
         return []
 
-    # MODULE 3 — incearca intai libraria vinted-scraper (fara cookie). Daca
-    # esueaza (None), cade pe metoda existenta cu cookie.
-    library_results = _search_vinted_library(
+    # Daca resolverul gaseste un catalog_id, Vinted filtreaza server-side pe
+    # subcategorie -> NU mai aplicam filtrul local pe text. Altfel (None) pastram
+    # filtrul local ca fallback -> nicio regresie.
+    _server_side = _resolve_vinted_catalog_id(category, subcategory) is not None
+    _local_sub = None if _server_side else subcategory
+
+    results = _search_vinted_library(
         keyword_clean, max_price, min_price, category,
-        exclude_words, exclude_description_words or [], page=page,
+        exclude_words or [], exclude_description_words or [],
+        subcategory=subcategory, page=page,
     )
-    if library_results is not None:
-        return library_results
+    return _apply_subcategory_filter(results, _local_sub)
 
-    if not cookie_str:
-        print("[VintedScraper] Cookie Vinted lipseste — skip.")
-        return []
 
-    params = {
-        "search_text": keyword_clean,
-        "per_page": 96,
-        "order": "newest_first",
-    }
-    if page > 1:
-        params["page"] = page
-    if max_price and max_price > 0:
-        params["price_to"] = int(max_price)
-        params["currency"] = "RON"
-    if min_price and min_price > 0:
-        params["price_from"] = int(min_price)
-        params["currency"] = "RON"
-    if category:
-        try:
-            cat_id = int(category)
-            params["catalog_ids[]"] = [cat_id]
-        except (ValueError, TypeError):
-            pass  # invalid ID, skip category filter
-
-    headers = build_headers({
-        "Accept": "application/json, text/plain, */*",
-        "Cookie": cookie_str,
-        "Referer": "https://www.vinted.ro/",
-        "X-Requested-With": "XMLHttpRequest",
-    })
-
-    proxy_cfg = get_proxy_config()
-    request_kwargs = {
-        "headers": headers, "params": params,
-        "impersonate": _IMPERSONATE, "timeout": 20,
-    }
-    if proxy_cfg:
-        request_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
-
-    data = None
-    for attempt in range(3):
-        try:
-            resp = curl_requests.get(_API_URL, **request_kwargs)
-            if resp.status_code in (401, 403):
-                print(f"[VintedScraper] Cookie expirat ({resp.status_code}) — necesita reconectare.")
-                # Santinela: semnaleaza caller-ului ca eroarea e de autentificare
-                # (cookie expirat), spre deosebire de un simplu rezultat gol.
-                return [{"__vinted_auth_error": True}]
-            if resp.status_code == 200:
-                data = resp.json()
-                break
-            if resp.status_code == 429:
-                delay = rate_limit_backoff(attempt)
-                print(f"[VintedScraper] 429 rate limit, retry {attempt+1}/3 dupa {delay:.1f}s")
-                time.sleep(delay)
-                continue
-            print(f"[VintedScraper] HTTP {resp.status_code}")
-            return []
-        except Exception as exc:
-            print(f"[VintedScraper] Eroare ({attempt+1}/3): {exc}")
-            time.sleep(rate_limit_backoff(attempt))
-
-    if not data:
-        return []
-
-    items = data.get("items") or []
-    results = []
-    for it in items:
-        try:
-            title = (it.get("title") or "").strip()
-            if not title:
-                continue
-            if is_excluded(title, exclude_words):
-                continue
-
-            # MODULE 1c — exclude pe descriere
-            description = (it.get("description") or "")[:500]
-            if exclude_description_words and description:
-                if is_excluded(description, exclude_description_words):
-                    continue
-
-            price_data = it.get("price") or {}
-            if isinstance(price_data, dict):
-                price = float(price_data.get("amount") or 0)
-                currency = price_data.get("currency_code") or "RON"
-            else:
-                price = float(it.get("price_numeric") or 0)
-                currency = it.get("currency") or "RON"
-
-            if price <= 0:
-                continue
-            if max_price and price > max_price:
-                continue
-            if min_price and price < min_price:
-                continue
-
-            cond_text = it.get("status") or it.get("size_title")
-            cond = _condition_label(cond_text)
-            if condition == "new" and cond != "nou":
-                continue
-            if condition == "used" and cond != "second hand":
-                continue
-
-            photo = it.get("photo") or {}
-            image_url = photo.get("url") or photo.get("full_size_url")
-            images = [image_url] if image_url else []
-
-            user = it.get("user") or {}
-            seller_id = str(user.get("id")) if user.get("id") is not None else None
-            seller_name = user.get("login") or user.get("name")
-
-            url = it.get("url") or f"https://www.vinted.ro/items/{it.get('id')}"
-            ext_id = f"vinted_{it.get('id')}"
-
-            listed_at = None
-            ts = it.get("created_at_ts") or it.get("photo", {}).get("high_resolution", {}).get("timestamp")
+def get_vinted_item_detail(item_id: str) -> Optional[dict]:
+    """Aduce detaliul complet al unui articol Vinted (poze toate,
+    descriere completă, timestamp exact) prin VintedScraper.item().
+    Returnează None la orice eroare (403/404/etc) — apelantul trebuie
+    sa trateze None ca 'nu am putut îmbogăți, păstrează ce am'."""
+    try:
+        from vinted_scraper import VintedScraper
+        scraper = VintedScraper("https://www.vinted.ro")
+        item = scraper.item(item_id)
+        if not item:
+            return None
+        photos = getattr(item, "photos", None) or []
+        image_urls = []
+        timestamps = []
+        for p in photos:
+            url = getattr(p, "full_size_url", None) or getattr(p, "url", None)
+            if url:
+                image_urls.append(url)
+            hr = getattr(p, "high_resolution", None)
+            ts = getattr(hr, "timestamp", None) if hr else None
             if ts:
-                try:
-                    listed_at = datetime.fromtimestamp(int(ts))
-                except (TypeError, ValueError, OSError):
-                    listed_at = None
-
-            results.append({
-                "external_id": ext_id,
-                "platform": "vinted",
-                "title": title,
-                "price": price,
-                "currency": currency,
-                "condition": cond,
-                "location": user.get("country_title") or user.get("country_code"),
-                "url": url,
-                "images": images,
-                "description": it.get("description"),
-                "seller_name": seller_name,
-                "seller_id": seller_id,
-                "listed_at": listed_at,
-            })
-        except Exception as exc:
-            print(f"[VintedScraper] Eroare la parsare item: {exc}")
-            continue
-
-    print(f"[VintedScraper] {len(results)} rezultate pentru '{keyword_clean}'")
-    return results
+                timestamps.append(int(ts))
+        listed_at = None
+        if timestamps:
+            from datetime import datetime
+            listed_at = datetime.fromtimestamp(min(timestamps))
+        description = (getattr(item, "description", None) or "").strip() or None
+        return {
+            "images": image_urls,
+            "description": description,
+            "listed_at": listed_at,
+        }
+    except Exception as exc:
+        log_manager.emit("radar", "WARN", f"Vinted item detail eșuat ({item_id}): {str(exc)[:100]}")
+        return None

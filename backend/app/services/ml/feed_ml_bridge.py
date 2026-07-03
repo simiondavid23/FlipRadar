@@ -79,6 +79,17 @@ def _extract_features(title: str, price: float, category: str,
     return {}
 
 
+# ── Feature completeness (MODIFICARE 19) ───────────────────────
+
+def _is_features_complete(features: dict, category: str) -> bool:
+    """Determină dacă listing-ul are datele minime necesare pentru antrenare ML."""
+    if category == "electronics_apple":
+        return bool(features.get("product_line") and features.get("storage_gb"))
+    if category == "auto_bmw":
+        return bool(features.get("year") and features.get("km"))
+    return False
+
+
 # ── Main save function ──────────────────────────────────────────
 
 def try_save_to_ml(
@@ -152,6 +163,8 @@ def try_save_to_ml(
             source_url=source_url or "",
             thumbnail_url=thumbnail_url or "",
             scraped_at=datetime.now(timezone.utc),
+            # MODIFICARE 19 — marcam daca datele minime de antrenare sunt prezente.
+            features_complete=_is_features_complete(features, category),
         )
         db.add(ml_entry)
         db.commit()

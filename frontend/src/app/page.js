@@ -1,17 +1,20 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import axios from "axios";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem("flipradar_token");
-    if (token) {
-      router.push("/dashboard");
-    } else {
-      router.push("/login");
-    }
+    // MODIFICARE 3 — cookie-ul de sesiune e httpOnly și nu poate fi citit din JS;
+    // verificăm sesiunea printr-un apel /me (cookie-ul pleacă automat).
+    axios
+      .get(API_URL + "/api/auth/me", { withCredentials: true })
+      .then(() => router.push("/dashboard"))
+      .catch(() => router.push("/login"));
   }, [router]);
 
   return (

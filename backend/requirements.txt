@@ -51,6 +51,9 @@ reportlab==4.4.10
 APScheduler==3.11.2
 tzlocal==5.3.1
 
+# Rate limiting endpoint-uri de scraping manual (MODIFICARE 5)
+slowapi==0.1.9
+
 # Web Push notifications (Radar)
 pywebpush==2.0.0
 py-vapid==1.9.1

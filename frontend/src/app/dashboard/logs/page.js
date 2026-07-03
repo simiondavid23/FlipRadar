@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { Activity, Pause, Play } from "lucide-react";
-import { logsAPI } from "@/lib/api";
+import { logsAPI, dashboardAPI } from "@/lib/api";
 
 // EventSource se conecteaza direct la backend (alt origin decat Next),
 // folosind acelasi base URL ca instanta axios.
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const MODULES = [
   { key: "radar", label: "Radar Piață" },
@@ -52,6 +52,106 @@ function parseLogMessage(text) {
   return parts;
 }
 
+// MODIFICARE — Status Scheduler (mutat din Dashboard) afișat ca panou de context
+// deasupra stream-ului de log-uri. Carduri uniforme (înălțime fixă, text trunchiat).
+function _fmtNextRun(iso) {
+  if (!iso) return "—";
+  const diffMs = new Date(iso).getTime() - Date.now();
+  if (diffMs <= 0) return "acum";
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 60) return `peste ${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `peste ${h}h ${m}min` : `peste ${h}h`;
+}
+
+function SchedulerStatusCard() {
+  const [data, setData] = useState(null);
+  const [, setTick] = useState(0); // re-render periodic pentru recalcularea timpilor
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await dashboardAPI.getSchedulerStatus();
+        if (!cancelled) setData(r.data);
+      } catch {
+        /* ignoram erorile — widget-ul e informativ */
+      }
+    };
+    load();
+    const id = setInterval(() => { load(); setTick((t) => t + 1); }, 60000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  if (!data) return null;
+  const running = data.scheduler_running;
+  const jobs = data.jobs || [];
+  // Variabilele spec (--fill-success/--fill-danger) au fallback pe paleta reală a app-ului.
+  const dotColor = running ? "var(--fill-success, #4ade80)" : "var(--fill-danger, #ef4444)";
+
+  return (
+    <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", marginBottom: "1.25rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: dotColor }} />
+        <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+          Status Scheduler{running ? "" : " — oprit"}
+        </h2>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+        {jobs.map((j) => (
+          <div
+            key={j.id}
+            style={{
+              minHeight: "56px",
+              padding: "0.5rem 0.75rem",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              position: "relative",
+              background: "var(--surface-1, var(--bg-dark))",
+              border: "0.5px solid var(--border, var(--border-color))",
+              borderRadius: "var(--radius, var(--radius-md, 8px))",
+            }}
+          >
+            <div
+              title={j.name}
+              style={{
+                fontSize: "13px",
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                paddingRight: "16px",
+              }}
+            >
+              {j.name}
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap", marginTop: "2px" }}>
+              {_fmtNextRun(j.next_run)}
+            </div>
+            <div
+              style={{
+                position: "absolute",
+                top: "8px",
+                right: "8px",
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: dotColor,
+              }}
+            />
+          </div>
+        ))}
+        {jobs.length === 0 && (
+          <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Niciun job activ.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function LogsPage() {
   const [activeModule, setActiveModule] = useState("radar");
   const [logs, setLogs] = useState([]);
@@ -62,9 +162,10 @@ export default function LogsPage() {
 
   // SSE stream — se redeschide cand se schimba modulul activ.
   useEffect(() => {
-    const token = (typeof window !== "undefined" && localStorage.getItem("flipradar_token")) || "";
-    const url = `${API_BASE}/api/logs/stream?module=${activeModule}&token=${encodeURIComponent(token)}`;
-    const es = new EventSource(url);
+    // MODIFICARE 3 — EventSource trimite automat cookie-ul httpOnly de sesiune
+    // (withCredentials); backend-ul citește token-ul din cookie.
+    const url = `${API_BASE}/api/logs/stream?module=${activeModule}`;
+    const es = new EventSource(url, { withCredentials: true });
     es.onmessage = (event) => {
       try {
         const entry = JSON.parse(event.data);
@@ -149,6 +250,9 @@ export default function LogsPage() {
           </div>
         ))}
       </div>
+
+      {/* Status Scheduler — panou de context deasupra stream-ului */}
+      <SchedulerStatusCard />
 
       {/* Panou tabbed cu stream */}
       <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden" }}>

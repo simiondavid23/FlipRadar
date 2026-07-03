@@ -156,8 +156,12 @@ function marginColor(pct) {
   return "#fb923c";
 }
 
+const FEED_PER_PAGE = 100;
+
 export default function RadarFeedPage() {
   const [listings, setListings] = useState([]);
+  const [feedTotal, setFeedTotal] = useState(0);
+  const [feedPage, setFeedPage] = useState(1);
   const [keywords, setKeywords] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -169,8 +173,6 @@ export default function RadarFeedPage() {
   const [showCompare, setShowCompare] = useState(false);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState("auto");
-  const [vintedAuthError, setVintedAuthError] = useState(false);
-  const [vintedWarnDismissed, setVintedWarnDismissed] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const [filters, setFilters] = useState({
@@ -204,24 +206,44 @@ export default function RadarFeedPage() {
     setTimeout(() => setToast(null), 2500);
   };
 
+  const _listingParams = useCallback((page) => {
+    const params = { hide_filtered: filters.hide_filtered, per_page: FEED_PER_PAGE, page };
+    if (filters.platform) params.platform = filters.platform;
+    if (filters.score) params.score = filters.score;
+    if (filters.keyword_id) params.keyword_id = filters.keyword_id;
+    if (filters.status) params.status = filters.status;
+    return params;
+  }, [filters]);
+
   const loadListings = useCallback(async () => {
     setRefreshing(true);
     try {
-      const params = { hide_filtered: filters.hide_filtered };
-      if (filters.platform) params.platform = filters.platform;
-      if (filters.score) params.score = filters.score;
-      if (filters.keyword_id) params.keyword_id = filters.keyword_id;
-      if (filters.status) params.status = filters.status;
-      const r = await radarAPI.getListings(params);
+      const r = await radarAPI.getListings(_listingParams(1));
       setListings(r.data?.items || []);
-      setVintedAuthError(!!r.data?.vinted_auth_error);
+      setFeedTotal(r.data?.total || 0);
+      setFeedPage(1);
     } catch (e) {
       console.error("[Radar] listings:", e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filters]);
+  }, [_listingParams]);
+
+  const loadMoreListings = useCallback(async () => {
+    const next = feedPage + 1;
+    setRefreshing(true);
+    try {
+      const r = await radarAPI.getListings(_listingParams(next));
+      setListings((prev) => [...prev, ...(r.data?.items || [])]);
+      setFeedTotal(r.data?.total || 0);
+      setFeedPage(next);
+    } catch (e) {
+      console.error("[Radar] loadMore:", e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [_listingParams, feedPage]);
 
   useEffect(() => {
     loadKeywords();
@@ -276,6 +298,15 @@ export default function RadarFeedPage() {
       alert(e.response?.data?.detail || "Nu am putut genera review-ul.");
     } finally {
       setGeneratingAI(false);
+    }
+  };
+
+  const loadVintedDetail = async (listingId) => {
+    try {
+      const r = await radarAPI.getVintedDetail(listingId);
+      setSelected((prev) => (prev && prev.id === listingId ? { ...prev, ...r.data } : prev));
+    } catch {
+      // silențios — panoul rămâne cu datele existente (thumbnail unic)
     }
   };
 
@@ -522,36 +553,6 @@ export default function RadarFeedPage() {
         </div>
       </div>
 
-      {/* FIX 6 — avertisment cookie Vinted expirat (dismiss pe sesiune) */}
-      {vintedAuthError && !vintedWarnDismissed && (
-        <div style={{
-          backgroundColor: "rgba(234,179,8,0.12)",
-          border: "1px solid rgba(234,179,8,0.3)",
-          color: "#fbbf24",
-          borderRadius: "0.5rem",
-          padding: "0.75rem 1rem",
-          marginBottom: "1.25rem",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "0.75rem",
-        }}>
-          <span>
-            ⚠️ Cookie-ul Vinted a expirat — rezultatele Vinted lipsesc. Reînnoiește cookie-ul în{" "}
-            <a href="/dashboard/radar/settings" style={{ color: "#fbbf24", fontWeight: 700, textDecoration: "underline" }}>
-              Setări Radar
-            </a>.
-          </span>
-          <button
-            onClick={() => setVintedWarnDismissed(true)}
-            aria-label="Închide avertismentul"
-            style={{ background: "transparent", border: "none", color: "#fbbf24", cursor: "pointer", padding: "0.25rem", display: "flex" }}
-          >
-            <X style={{ width: "16px", height: "16px" }} />
-          </button>
-        </div>
-      )}
-
       {/* Grilă listinguri */}
       {listings.length === 0 ? (
         <div style={{
@@ -593,6 +594,27 @@ export default function RadarFeedPage() {
           ))}
         </div>
       )}
+
+      {listings.length > 0 && listings.length < feedTotal && (
+        <div style={{ textAlign: "center", marginTop: "1.25rem" }}>
+          <button
+            onClick={loadMoreListings}
+            disabled={refreshing}
+            style={{
+              padding: "0.6rem 1.5rem",
+              backgroundColor: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "0.5rem",
+              color: "var(--text-primary)",
+              cursor: refreshing ? "default" : "pointer",
+              opacity: refreshing ? 0.6 : 1,
+              fontSize: "0.875rem",
+            }}
+          >
+            {refreshing ? "Se încarcă…" : `Încarcă mai multe (${feedTotal - listings.length} rămase)`}
+          </button>
+        </div>
+      )}
       </>
       ))}
 
@@ -607,6 +629,7 @@ export default function RadarFeedPage() {
           onBlockSeller={() => blockSeller(selected.id)}
           onGenerateAI={() => generateAIReview(selected.id)}
           generatingAI={generatingAI}
+          onLoadVintedDetail={loadVintedDetail}
         />
       )}
 
@@ -1181,7 +1204,7 @@ function ManualResultCard({ listing }) {
   );
 }
 
-function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBlockSeller, onGenerateAI, generatingAI }) {
+function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBlockSeller, onGenerateAI, generatingAI, onLoadVintedDetail }) {
   const { user } = useAuth();
   const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
   const scoreCfg = SCORE_COLORS[listing.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
@@ -1216,6 +1239,15 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
       })
       .finally(() => setMlLoading(false));
   }, [listing?.id]);
+
+  // PARTEA A — fetch on-demand al detaliului Vinted complet (poze/descriere/data)
+  // cand anuntul are doar thumbnail-ul unic din cautare. O singura data (cache DB).
+  useEffect(() => {
+    if (!listing || listing.platform !== "vinted") return;
+    const needsDetail = (listing.images || []).length <= 1 || !listing.description;
+    if (!needsDetail) return;
+    onLoadVintedDetail?.(listing.id);
+  }, [listing.id]);
 
   return (
     <div

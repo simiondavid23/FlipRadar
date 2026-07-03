@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, Text, Boolean
 from datetime import datetime, timezone
 from app.database import Base
 
@@ -28,3 +28,5 @@ class RadarListing(Base):
     listed_at = Column(DateTime, nullable=True)
     found_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     last_checked_at = Column(DateTime, nullable=True)
+    # Vinted: detaliul complet (poze/descriere/data) a fost adus on-demand o singura data.
+    vinted_detail_fetched = Column(Boolean, default=False, nullable=False)

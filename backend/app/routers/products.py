@@ -8,6 +8,7 @@ from typing import List, Optional
 from app.database import SessionLocal, get_db
 from app.models.product import Product
 from app.models.product_source import ProductSource
+from app.models.product_source_suggestion import ProductSourceSuggestion
 from app.models.price_history import PriceHistory
 from app.schemas.product import (
     ProductCreate,
@@ -21,7 +22,11 @@ from app.schemas.product import (
 from app.utils.auth import get_current_user
 from app.models.user import User
 from app.services.currency_service import convert
-from app.services.scraper_service import fetch_ean_from_url, refresh_price_from_source
+from app.services.scraper_service import (
+    fetch_ean_from_url,
+    refresh_price_from_source,
+    find_cross_shop_matches,
+)
 
 _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
@@ -45,6 +50,59 @@ def _recompute_primary_snapshot(product: Product) -> None:
     product.currency = cheapest.currency or base_currency
     product.source = cheapest.source
     product.source_url = cheapest.source_url
+
+
+def attach_source_to_product(
+    db: Session,
+    product: Product,
+    source: Optional[str],
+    source_url: Optional[str],
+    price: Optional[float] = None,
+    currency: Optional[str] = None,
+    name: Optional[str] = None,
+) -> None:
+    """Creează sau actualizează un ProductSource pe produs + PriceHistory, apoi
+    recalculează snapshot-ul primar (current_price = minimul dintre surse) și face
+    commit. Reutilizabilă din create_product și din task-ul de cross-shop matching.
+
+    `name` e acceptat pentru compatibilitate de semnătură (ProductSource nu are
+    coloană de nume — numele produsului e pe Product).
+    """
+    if not source:
+        return
+    ps = next((s for s in product.sources if s.source == source), None)
+    if ps is None and source_url:
+        ps = ProductSource(
+            product_id=product.id,
+            source=source,
+            source_url=source_url,
+            current_price=price,
+            currency=currency or "EUR",
+            last_checked_at=datetime.now(timezone.utc),
+        )
+        db.add(ps)
+        product.sources.append(ps)
+    elif ps is not None:
+        if price is not None:
+            ps.current_price = price
+        if currency:
+            ps.currency = currency
+        if source_url:
+            ps.source_url = source_url
+        ps.last_checked_at = datetime.now(timezone.utc)
+
+    if price is not None:
+        db.add(PriceHistory(
+            product_id=product.id,
+            price=price,
+            currency=currency or "EUR",
+            source=source,
+        ))
+
+    _recompute_primary_snapshot(product)
+    db.commit()
+    db.refresh(product)
+
 
 router = APIRouter(prefix="/api/products", tags=["Products"])
 
@@ -287,6 +345,26 @@ def get_products_stats(
     }
 
 
+def _build_detail_response(db: Session, product: Product) -> dict:
+    """Construieste payload-ul ProductDetailResponse (produs + istoric + sugestii +
+    agregate de pret). Reutilizat de GET detail si de confirmarea unei sugestii."""
+    price_history = (
+        db.query(PriceHistory)
+        .filter(PriceHistory.product_id == product.id)
+        .order_by(PriceHistory.recorded_at.desc())
+        .all()
+    )
+    prices = [ph.price for ph in price_history]
+    return {
+        "product": product,
+        "price_history": price_history,
+        "suggestions": product.suggestions,
+        "lowest_price": min(prices) if prices else None,
+        "highest_price": max(prices) if prices else None,
+        "average_price": round(sum(prices) / len(prices), 2) if prices else None,
+    }
+
+
 @router.get("/{product_id}", response_model=ProductDetailResponse)
 def get_product_detail(
     product_id: int,
@@ -301,21 +379,7 @@ def get_product_detail(
     if not product:
         raise HTTPException(status_code=404, detail="Produsul nu a fost gasit")
 
-    price_history = (
-        db.query(PriceHistory)
-        .filter(PriceHistory.product_id == product_id)
-        .order_by(PriceHistory.recorded_at.desc())
-        .all()
-    )
-
-    prices = [ph.price for ph in price_history]
-    return {
-        "product": product,
-        "price_history": price_history,
-        "lowest_price": min(prices) if prices else None,
-        "highest_price": max(prices) if prices else None,
-        "average_price": round(sum(prices) / len(prices), 2) if prices else None,
-    }
+    return _build_detail_response(db, product)
 
 
 def _normalize_name(name: str) -> str:
@@ -372,6 +436,52 @@ def _backfill_ean(product_id: int, source_url: str) -> None:
         db.close()
 
 
+def _cross_shop_match(product_id: int) -> None:
+    """Task de fundal: caută același produs pe celelalte magazine. Potrivirile prin
+    EAN se atașează automat ca surse; potrivirile pe nume devin sugestii ce așteaptă
+    confirmarea utilizatorului (nu intră în calculul current_price)."""
+    db: Session = SessionLocal()
+    try:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            return
+        matches = find_cross_shop_matches(product.name, product.ean, product.source)
+
+        # Potriviri confirmate prin EAN -> atasate automat ca surse.
+        for m in matches["ean_matches"]:
+            attach_source_to_product(
+                db, product,
+                m.get("source"), m.get("source_url"),
+                m.get("price"), m.get("currency"),
+            )
+
+        # Potriviri doar pe nume -> sugestii (nu intra in current_price pana la confirmare).
+        for c in matches["name_candidates"]:
+            src = c.get("source")
+            if not src or not c.get("source_url"):
+                continue
+            # Sare peste sursele deja atasate (ex. confirmate prin EAN in acelasi run).
+            if any(s.source == src for s in product.sources):
+                continue
+            exists = db.query(ProductSourceSuggestion).filter_by(
+                product_id=product.id, source=src).first()
+            if not exists:
+                db.add(ProductSourceSuggestion(
+                    product_id=product.id,
+                    source=src,
+                    source_url=c.get("source_url"),
+                    name=c.get("name"),
+                    price=c.get("price"),
+                    currency=c.get("currency") or "EUR",
+                ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[cross-shop match] Eroare pentru product_id={product_id}: {e}")
+    finally:
+        db.close()
+
+
 @router.post("/", response_model=ProductSaveResponse)
 def create_product(
     product_data: ProductCreate,
@@ -390,7 +500,7 @@ def create_product(
 
     def _add_or_update_source(existing: Product) -> dict:
         old_primary_price = existing.current_price
-        src_name = product_data.source
+        # Completeaza campurile lipsa la nivel de produs din datele noi.
         if product_data.ean and not existing.ean:
             existing.ean = product_data.ean
         if product_data.sku and not existing.sku:
@@ -398,40 +508,13 @@ def create_product(
         if product_data.image_url and not existing.image_url:
             existing.image_url = product_data.image_url
 
-        ps = None
-        if src_name:
-            ps = next((s for s in existing.sources if s.source == src_name), None)
-        if ps is None and src_name and product_data.source_url:
-            ps = ProductSource(
-                product_id=existing.id,
-                source=src_name,
-                source_url=product_data.source_url,
-                current_price=product_data.current_price,
-                currency=product_data.currency or "EUR",
-                last_checked_at=datetime.now(timezone.utc),
-            )
-            db.add(ps)
-            existing.sources.append(ps)
-        elif ps is not None:
-            if product_data.current_price is not None:
-                ps.current_price = product_data.current_price
-            if product_data.currency:
-                ps.currency = product_data.currency
-            if product_data.source_url:
-                ps.source_url = product_data.source_url
-            ps.last_checked_at = datetime.now(timezone.utc)
-
-        if product_data.current_price is not None and src_name:
-            db.add(PriceHistory(
-                product_id=existing.id,
-                price=product_data.current_price,
-                currency=product_data.currency or "EUR",
-                source=src_name,
-            ))
-
-        _recompute_primary_snapshot(existing)
-        db.commit()
-        db.refresh(existing)
+        # Scrierea sursei (ProductSource + PriceHistory + recompute + commit) e
+        # extrasa in attach_source_to_product (reutilizata si de cross-shop matching).
+        attach_source_to_product(
+            db, existing,
+            product_data.source, product_data.source_url,
+            product_data.current_price, product_data.currency,
+        )
         return _build_save_response(existing, is_new=False, previous_price=old_primary_price)
 
     user_products = _user_products_query(db, current_user.id)
@@ -485,6 +568,11 @@ def create_product(
 
     if not new_product.ean and new_product.source_url:
         background_tasks.add_task(_backfill_ean, new_product.id, new_product.source_url)
+
+    # Cross-shop matching DOAR pe ramura de produs nou. BackgroundTasks ruleaza
+    # secvential in ordinea adaugarii, deci porneste dupa _backfill_ean si vede
+    # EAN-ul proaspat completat daca a fost gasit.
+    background_tasks.add_task(_cross_shop_match, new_product.id)
 
     return _build_save_response(new_product, is_new=True, previous_price=None)
 
@@ -618,3 +706,72 @@ def delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Produsul a fost sters din baza de date"}
+
+
+@router.post("/{product_id}/suggestions/{suggestion_id}/confirm", response_model=ProductDetailResponse)
+def confirm_suggestion(
+    product_id: int,
+    suggestion_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Confirmă o sugestie: o atașează ca ProductSource (intră în calculul
+    current_price) și o șterge din lista de sugestii. Întoarce produsul actualizat."""
+    product = (
+        _user_products_query(db, current_user.id)
+        .filter(Product.id == product_id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Produsul nu a fost gasit")
+
+    sug = (
+        db.query(ProductSourceSuggestion)
+        .filter(
+            ProductSourceSuggestion.id == suggestion_id,
+            ProductSourceSuggestion.product_id == product_id,
+        )
+        .first()
+    )
+    if not sug:
+        raise HTTPException(status_code=404, detail="Sugestia nu a fost gasita")
+
+    attach_source_to_product(
+        db, product, sug.source, sug.source_url, sug.price, sug.currency, sug.name,
+    )
+    db.delete(sug)
+    db.commit()
+    db.refresh(product)
+    return _build_detail_response(db, product)
+
+
+@router.delete("/{product_id}/suggestions/{suggestion_id}")
+def delete_suggestion(
+    product_id: int,
+    suggestion_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Respinge (șterge) o sugestie de sursă fără a o atașa produsului."""
+    product = (
+        _user_products_query(db, current_user.id)
+        .filter(Product.id == product_id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Produsul nu a fost gasit")
+
+    sug = (
+        db.query(ProductSourceSuggestion)
+        .filter(
+            ProductSourceSuggestion.id == suggestion_id,
+            ProductSourceSuggestion.product_id == product_id,
+        )
+        .first()
+    )
+    if not sug:
+        raise HTTPException(status_code=404, detail="Sugestia nu a fost gasita")
+
+    db.delete(sug)
+    db.commit()
+    return {"message": "Sugestia a fost respinsa."}
