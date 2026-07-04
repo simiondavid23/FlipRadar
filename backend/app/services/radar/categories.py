@@ -465,12 +465,7 @@ PLATFORM_CATEGORIES = {
             ],
         },
         {"label": "Gratuități", "value": None, "subcategories": []},  # Free Stuff
-        {
-            "label": "Grădină și Exterior", "value": None,
-            "subcategories": [
-                {"label": "Amenajări cu Apă", "value": "800089866739547"},  # Water Feature LOW share=0.67 n=3 — monitorizare
-            ],
-        },
+        {"label": "Grădină și Exterior", "value": None, "subcategories": []},  # Garden & Outdoor (subcategoria Water Feature eliminata: filtra 24->4, B1)
         {
             "label": "Hobby-uri", "value": None,
             "subcategories": [
@@ -495,19 +490,9 @@ PLATFORM_CATEGORIES = {
             ],
         },
         {"label": "Vânzări Imobiliare", "value": None, "subcategories": []},  # Home Sales
-        {
-            "label": "Instrumente Muzicale", "value": "676772489112490",  # Musical Instruments vertical mono-id share=1.0 n=20
-            "subcategories": [
-                {"label": "Instrumente de Percuție", "value": "895487550471874"},  # Percussion Instruments MED share=1.0 n=7 — monitorizare
-            ],
-        },
+        {"label": "Instrumente Muzicale", "value": "676772489112490", "subcategories": []},  # Musical Instruments vertical mono-id share=1.0 n=20 (subcateg. Percussion eliminata: filtra 24->1, B1)
         {"label": "Papetărie și Birou", "value": None, "subcategories": []},  # Office Supplies
-        {
-            "label": "Articole pentru Animale", "value": None,
-            "subcategories": [
-                {"label": "Zgărzi, Hamuri și Lese", "value": "1550246318620997"},  # Pet Collars, Harnesses & Leashes LOW share=0.5 n=4 — monitorizare
-            ],
-        },
+        {"label": "Articole pentru Animale", "value": None, "subcategories": []},  # Pet Supplies (subcategoria Pet Collars eliminata: filtra 8->0, B1)
         {"label": "Chirii Imobiliare", "value": "1468271819871448", "subcategories": []},  # Property Rentals vertical mono-id share=0.96 n=24
         {"label": "Articole Sportive", "value": "1383948661922113", "subcategories": []},  # Sporting Goods vertical mono-id share=1.0 n=20
         {"label": "Jucării și Jocuri", "value": "606456512821491", "subcategories": []},  # Toys & Games vertical mono-id share=0.95 n=20
