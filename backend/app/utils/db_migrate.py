@@ -429,6 +429,47 @@ def run_migrations():
             "ON auto_feed_listings(user_id, platform, external_id) "
             "WHERE external_id IS NOT NULL")
 
+        # ── Loturi Auto: keyword-uri monitorizate + coloane noi pe auto_lot ──
+        _migrate(conn, "create_auto_lot_keywords", """
+            CREATE TABLE IF NOT EXISTS auto_lot_keywords (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name VARCHAR(200) NOT NULL,
+                platform VARCHAR(50) NOT NULL,
+                make VARCHAR(100),
+                model VARCHAR(100),
+                year_from INTEGER,
+                year_to INTEGER,
+                damage_primary VARCHAR(100),
+                bid_max NUMERIC(10,2),
+                location_state VARCHAR(100),
+                is_active BOOLEAN DEFAULT TRUE,
+                notify_email BOOLEAN DEFAULT FALSE,
+                notify_discord BOOLEAN DEFAULT FALSE,
+                active_hours_start INTEGER,
+                active_hours_end INTEGER,
+                polling_interval_minutes INTEGER DEFAULT 15,
+                last_scan_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        # auto_lot: coloane noi pentru feed monitorizat. Tabela e creata de create_all
+        # din modelul AutoLot; pe DB-uri existente coloanele lipsesc, deci le adaugam aici.
+        if _table_exists(inspector, "auto_lot"):
+            if not _column_exists(inspector, "auto_lot", "keyword_id"):
+                _migrate(conn, "add_auto_lot_keyword_id",
+                         "ALTER TABLE auto_lot ADD COLUMN keyword_id INTEGER "
+                         "REFERENCES auto_lot_keywords(id) ON DELETE SET NULL")
+            if not _column_exists(inspector, "auto_lot", "status"):
+                _migrate(conn, "add_auto_lot_status",
+                         "ALTER TABLE auto_lot ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
+            if not _column_exists(inspector, "auto_lot", "last_seen_at"):
+                _migrate(conn, "add_auto_lot_last_seen_at",
+                         "ALTER TABLE auto_lot ADD COLUMN last_seen_at TIMESTAMP")
+        _migrate(conn, "idx_auto_lot_user_platform_status",
+            "CREATE INDEX IF NOT EXISTS idx_auto_lot_user_platform_status "
+            "ON auto_lot(user_id, platform, status)")
+
         _migrate(conn, "add_discord_webhook_auto",
             "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS "
             "discord_webhook_auto TEXT")

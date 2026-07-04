@@ -10,6 +10,8 @@ class AutoLot(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # NULL pentru loturi gasite prin cautarea manuala; setat pentru cele din feed-ul monitorizat.
+    keyword_id = Column(Integer, ForeignKey("auto_lot_keywords.id", ondelete="SET NULL"), nullable=True)
     platform = Column(String(50))  # "copart" | "iaai" | "sca" | "openlane"
     lot_number = Column(String(100))
     title = Column(Text, nullable=True)
@@ -32,5 +34,8 @@ class AutoLot(Base):
     keys_present = Column(Boolean, nullable=True)
     vin = Column(String(20), nullable=True)
     ai_description_extract = Column(JSON, nullable=True)  # datele extrase de AI din descriere
-    saved = Column(Boolean, default=False)  # daca utilizatorul l-a salvat
+    saved = Column(Boolean, default=False)  # flag „Salveaza” din cautarea manuala (pastrat pt. pagina Loturi Salvate)
+    # Feed monitorizat: active/saved/ignored (independent de coloana `saved` de mai sus).
+    status = Column(String(20), default="active")
+    last_seen_at = Column(DateTime, nullable=True)  # ultima data cand scanerul a mai vazut lotul
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -1279,13 +1279,61 @@ def radar_stats(
     top_keywords = [
         {"id": r[0], "name": r[1], "count": int(r[2])} for r in top_kw_rows
     ]
+
+    active_keywords = (
+        db.query(func.count(RadarKeyword.id))
+        .filter(RadarKeyword.user_id == current_user.id, RadarKeyword.is_active == True)
+        .scalar() or 0
+    )
+
     return {
         "total_listings_found": int(total),
         "listings_by_score": by_score,
+        "active_keywords": int(active_keywords),
         "listings_saved": int(saved),
         "listings_acted_on": int(saved),
         "top_keywords": top_keywords,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCAN NOW (manual, scopat per-user)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/scan-now")
+@limiter.limit("5/minute")
+def radar_scan_now(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Pornește o scanare imediată DOAR pentru keyword-urile active ale userului curent.
+
+    Spre deosebire de run_radar_scan() (care iterează toți userii), aici apelăm
+    _scan_user(db, user) — deja scopat per-user — evitând bug-ul din Auto Anunțuri.
+    Reîncărcăm userul în sesiunea nouă a thread-ului ca să evităm DetachedInstanceError
+    (sesiunea request-ului se închide, iar _scan_user citește user.email la alerte).
+    """
+    from app.database import SessionLocal
+    from app.utils.radar_scanner import _scan_user
+
+    user_id = current_user.id
+
+    def _background_scan():
+        _db = SessionLocal()
+        try:
+            _user = _db.query(User).filter(User.id == user_id).first()
+            if _user:
+                _scan_user(_db, _user)
+        except Exception as exc:
+            print(f"[RadarScan manual] eroare user {user_id}: {exc}")
+        finally:
+            _db.close()
+
+    thread = threading.Thread(target=_background_scan, daemon=True)
+    thread.start()
+    return {"ok": True, "message": "Scanare pornită în background."}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

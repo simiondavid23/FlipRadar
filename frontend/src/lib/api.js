@@ -190,6 +190,18 @@ export const autoListingsAPI = {
   getKeywordImpact: (id)     => api.get(`/api/auto-listings/keywords/${id}/impact`),
 };
 
+// Loturi Auto — keyword-uri monitorizate + feed de loturi (Copart/IAAI/SCA/OpenLane)
+export const autoLotKeywordsAPI = {
+  getKeywords:   ()         => api.get("/api/auto-lots/keywords"),
+  createKeyword: (data)     => api.post("/api/auto-lots/keywords", data),
+  updateKeyword: (id, data) => api.put(`/api/auto-lots/keywords/${id}`, data),
+  deleteKeyword: (id)       => api.delete(`/api/auto-lots/keywords/${id}`),
+  getFeed:       (params)   => api.get("/api/auto-lots/feed", { params }),
+  updateStatus:  (id, st)   => api.patch(`/api/auto-lots/feed/${id}/status`, { status: st }),
+  getStats:      ()         => api.get("/api/auto-lots/stats"),
+  scanNow:       ()         => api.post("/api/auto-lots/scan-now"),
+};
+
 // Imobiliare Monitor — keyword-uri + feed scorat (zone, duplicate, price history)
 export const realEstateMonitorAPI = {
   getKeywords:   ()         => api.get("/api/real-estate-monitor/keywords"),
@@ -401,6 +413,7 @@ export const radarAPI = {
   getFacebookStatus: () => api.get("/api/radar/facebook/status"),
   connectFacebook: () => api.post("/api/radar/facebook/connect"),
   getStats: () => api.get("/api/radar/stats"),
+  scanNow: () => api.post("/api/radar/scan-now"),
   getCategories: () => api.get("/api/radar/categories"),
   // Proxy
   getProxy: () => api.get("/api/radar/settings/proxy"),

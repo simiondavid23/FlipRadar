@@ -7,6 +7,8 @@ import {
   X, Sparkles, ShieldOff, Tag, MapPin, Calendar, FileSpreadsheet,
   GitCompareArrows, MessageSquare, Copy, Check, Trash2, Scale
 } from "lucide-react";
+import StatCardsRow from "@/components/shared/StatCardsRow";
+import ScanNowButton from "@/components/shared/ScanNowButton";
 
 // ── ML Predictor: detectie categorie + construire features din anunt ──
 function detectMLCategory(title = "") {
@@ -42,8 +44,6 @@ const PLATFORMS = [
   { value: "facebook", label: "Facebook" },
   { value: "lajumate", label: "Lajumate" },
   { value: "publi24", label: "Publi24" },
-  { value: "autovit", label: "Autovit" },
-  { value: "mobilede", label: "Mobile.de" },
 ];
 
 const SCORES = [
@@ -67,8 +67,6 @@ const PLATFORM_COLORS = {
   facebook: { bg: "rgba(30,58,138,0.25)", border: "#1e40af", text: "#93c5fd" },
   lajumate: { bg: "rgba(249,115,22,0.15)", border: "#f97316", text: "#fdba74" },
   publi24: { bg: "rgba(21,128,61,0.18)", border: "#15803d", text: "#86efac" },
-  autovit: { bg: "rgba(220,38,38,0.15)", border: "#dc2626", text: "#fca5a5" },
-  mobilede: { bg: "rgba(30,64,175,0.20)", border: "#1e40af", text: "#93c5fd" },
 };
 
 // FIX 7 — eticheta dinamica pentru butonul "Deschide" in functie de platforma.
@@ -79,8 +77,6 @@ const PLATFORM_LABELS = {
   facebook: "Deschide pe Facebook",
   lajumate: "Deschide pe LaJumate",
   publi24: "Deschide pe Publi24",
-  autovit: "Deschide pe Autovit",
-  mobilede: "Deschide pe Mobile.de",
 };
 
 // FIX 2 — tab-uri pill (Feed Automat / Căutare Manuală).
@@ -174,6 +170,8 @@ export default function RadarFeedPage() {
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState("auto");
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [stats, setStats] = useState({});
+  const [scanning, setScanning] = useState(false);
 
   const [filters, setFilters] = useState({
     platform: "",
@@ -198,6 +196,15 @@ export default function RadarFeedPage() {
       setTemplates(r.data || []);
     } catch (e) {
       console.error("[Radar] templates:", e);
+    }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const r = await radarAPI.getStats();
+      setStats(r.data || {});
+    } catch (e) {
+      console.error("[Radar] stats:", e);
     }
   }, []);
 
@@ -245,10 +252,22 @@ export default function RadarFeedPage() {
     }
   }, [_listingParams, feedPage]);
 
+  const handleScanNow = async () => {
+    setScanning(true);
+    try {
+      await radarAPI.scanNow();
+      // Lăsăm scannerul de fundal să lucreze, apoi reîmprospătăm feed + statistici.
+      setTimeout(() => { loadListings(); loadStats(); setScanning(false); }, 15000);
+    } catch {
+      setScanning(false);
+    }
+  };
+
   useEffect(() => {
     loadKeywords();
     loadTemplates();
-  }, [loadKeywords, loadTemplates]);
+    loadStats();
+  }, [loadKeywords, loadTemplates, loadStats]);
 
   useEffect(() => {
     loadListings();
@@ -396,8 +415,22 @@ export default function RadarFeedPage() {
     minWidth: "160px",
   };
 
+  const byScore = stats.listings_by_score || {};
+  const statCards = [
+    { label: "Anunțuri găsite", value: stats.total_listings_found ?? 0, color: "#60a5fa" },
+    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
+    { label: "Grad A", value: byScore.A ?? 0, color: "#4ade80" },
+    { label: "Grad B", value: byScore.B ?? 0, color: "#60a5fa" },
+  ];
+
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
+      {/* Faza 2 — scanare manuală + statistici (header, deasupra tab-urilor) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
+        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+      </div>
+      <StatCardsRow cards={statCards} />
+
       {/* FIX 2 — Tab-uri: Feed Automat / Căutare Manuală */}
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
         <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
@@ -444,7 +477,17 @@ export default function RadarFeedPage() {
         </select>
         <select value={filters.keyword_id} onChange={(e) => setFilters({ ...filters, keyword_id: e.target.value })} style={selectStyle}>
           <option value="">Toate keyword-urile</option>
-          {keywords.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+          {[...keywords]
+            .sort((a, b) => a.name.localeCompare(b.name, "ro"))
+            .map((k) => {
+              const platformValue = k.platform || (Array.isArray(k.platforms) && k.platforms.length === 1 ? k.platforms[0] : null);
+              const platformLabel = platformValue ? (PLATFORMS.find((p) => p.value === platformValue)?.label || platformValue) : null;
+              return (
+                <option key={k.id} value={k.id}>
+                  {k.name}{platformLabel ? ` — ${platformLabel}` : ""}
+                </option>
+              );
+            })}
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} style={selectStyle}>
           {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -817,9 +860,6 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
         )}
 
         <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "0.125rem" }}>
-          {(listing.platform === "autovit" || listing.platform === "mobilede") && (
-            <AutoSpecsLine listing={listing} />
-          )}
           {listing.location && <span>{listing.location}</span>}
           <span>
             {listing.listed_at && formatListedDate(listing.listed_at) ? (
@@ -1931,23 +1971,6 @@ function smallActionBtn(color, bg, border) {
     fontWeight: 600, cursor: "pointer",
     display: "inline-flex", alignItems: "center",
   };
-}
-
-
-function AutoSpecsLine({ listing }) {
-  // Backend pune year, mileage in items + specs in dict; ne folosim de ce-i la indemana.
-  const specs = listing.specs || {};
-  const parts = [];
-  const year = listing.year || specs.an || specs.An;
-  const mileage = listing.mileage || specs.km || specs.Km;
-  const fuel = specs.Combustibil || specs.combustibil || specs.fuel || specs.Fuel;
-  const gearbox = specs.Cutie || specs.cutie || specs.transmission;
-  if (year) parts.push(year);
-  if (mileage) parts.push(`${Number(mileage).toLocaleString("ro-RO")} km`);
-  if (fuel) parts.push(fuel);
-  if (gearbox) parts.push(gearbox);
-  if (parts.length === 0) return null;
-  return <span style={{ color: "var(--text-secondary)" }}>{parts.join(" · ")}</span>;
 }
 
 

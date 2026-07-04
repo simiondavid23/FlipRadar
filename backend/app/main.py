@@ -24,6 +24,7 @@ from app.routers.facebook_groups import router as facebook_groups_router  # Flip
 from app.routers.tracked_products import router as tracked_router  # FlipRadar — Produse Urmarite (favorite + watchlist)
 from app.routers.logs import router as logs_router  # FlipRadar — Jurnale Live (SSE)
 from app.routers.auto_listings_keywords import router as auto_listings_router  # FlipRadar — Auto Anunturi (keyword-uri + feed)
+from app.routers.auto_lot_keywords import router as auto_lot_router  # FlipRadar — Loturi Auto (keyword-uri + feed monitorizat)
 from app.routers.real_estate_keywords import router as re_monitor_router  # FlipRadar — Imobiliare Monitor (keyword-uri + feed)
 
 # Import all models
@@ -119,6 +120,31 @@ async def lifespan(app: FastAPI):
         print("[Scheduler] Auto listings scan (10m) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] Auto scan setup failed: {exc}")
+
+    # FlipRadar — Loturi Auto: scaneaza keyword-urile de loturi la fiecare 15 min.
+    try:
+        from app.services.auto_lot_scanner import run_auto_lot_scan_global
+
+        def _run_auto_lot_scan():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_auto_lot_scan_global(_db)
+            except Exception as exc:
+                print(f"[AutoLotScan] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(
+            _run_auto_lot_scan,
+            "interval",
+            minutes=15,
+            id="auto_lots_scan",
+            replace_existing=True,
+        )
+        print("[Scheduler] Auto lots scan (15m) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] Auto lots scan setup failed: {exc}")
 
     # FlipRadar — Imobiliare Monitor: scan (30m) + pHash (1h) + cleanup (12:30).
     try:
@@ -476,6 +502,7 @@ app.include_router(facebook_groups_router)
 app.include_router(tracked_router, prefix="/api/tracked-products")
 app.include_router(logs_router)
 app.include_router(auto_listings_router)
+app.include_router(auto_lot_router)
 app.include_router(re_monitor_router)
 
 

@@ -1,30 +1,19 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
-import { Home, RefreshCw, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff } from "lucide-react";
+import { Home, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff } from "lucide-react";
+import { GRADE_COLORS, STATUS_TABS, selectStyle } from "@/lib/uiStyles";
+import StatCardsRow from "@/components/shared/StatCardsRow";
+import StatusTabsBar from "@/components/shared/StatusTabsBar";
+import ScanNowButton from "@/components/shared/ScanNowButton";
 
 const PLATFORM_LABELS = {
   olx: "OLX", storia: "Storia", imobiliare_ro: "Imobiliare.ro",
   facebook_marketplace: "FB Marketplace", facebook_groups: "Grupuri FB",
 };
-const GRADE_COLORS = {
-  A: { bg: "rgba(34,197,94,0.15)", fg: "#4ade80" },
-  B: { bg: "rgba(37,99,235,0.15)", fg: "#60a5fa" },
-  C: { bg: "rgba(245,158,11,0.15)", fg: "#fbbf24" },
-  D: { bg: "rgba(239,68,68,0.15)", fg: "#f87171" },
-};
-const STATUS_TABS = [
-  { value: "active", label: "Active" },
-  { value: "saved", label: "Salvate" },
-  { value: "ignored", label: "Ignorate" },
-];
 const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov", "Constanța", "Sibiu", "Oradea", "Arad", "Pitești"];
 
 const gradeCfg = (g) => GRADE_COLORS[g] || GRADE_COLORS.C;
-const selStyle = {
-  backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.5rem",
-  padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none",
-};
 
 export default function REFeedPage() {
   const [listings, setListings] = useState([]);
@@ -113,15 +102,7 @@ export default function REFeedPage() {
             <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>Chirii scorate, cu zone normalizate și detecție duplicate</p>
           </div>
         </div>
-        <button onClick={handleScanNow} disabled={scanning} style={{
-          display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem",
-          backgroundColor: scanning ? "rgba(37,99,235,0.08)" : "rgba(37,99,235,0.15)", color: "#60a5fa",
-          border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500,
-          cursor: scanning ? "default" : "pointer", opacity: scanning ? 0.7 : 1,
-        }}>
-          <RefreshCw style={{ width: "14px", height: "14px", animation: scanning ? "spin 1s linear infinite" : "none" }} />
-          {scanning ? "Se scanează..." : "Scanează acum"}
-        </button>
+        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
       </div>
 
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
@@ -136,40 +117,28 @@ export default function REFeedPage() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.875rem", marginBottom: "1.25rem" }}>
-        {statCards.map((c) => (
-          <div key={c.label} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: c.color }}>{c.value}</div>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.125rem" }}>{c.label}</div>
-          </div>
-        ))}
-      </div>
+      <StatCardsRow cards={statCards} />
 
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.625rem", marginBottom: "1.25rem" }}>
-        <div style={{ display: "inline-flex", gap: "0.25rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", padding: "0.25rem" }}>
-          {STATUS_TABS.map((t) => {
-            const active = filters.status === t.value;
-            return <button key={t.value} onClick={() => setFilters((f) => ({ ...f, status: t.value }))} style={{ padding: "0.375rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", border: "none", backgroundColor: active ? "rgba(37,99,235,0.15)" : "transparent", color: active ? "#60a5fa" : "var(--text-secondary)" }}>{t.label}</button>;
-          })}
-        </div>
-        <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selStyle}>
+        <StatusTabsBar tabs={STATUS_TABS} active={filters.status} onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
+        <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate sursele</option>
           {Object.entries(PLATFORM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} style={selStyle}>
+        <select value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} style={selectStyle}>
           <option value="">Toate gradele</option>
           {["A", "B", "C", "D"].map((g) => <option key={g} value={g}>Grad {g}</option>)}
         </select>
-        <select value={filters.rooms} onChange={(e) => setFilters((f) => ({ ...f, rooms: e.target.value }))} style={selStyle}>
+        <select value={filters.rooms} onChange={(e) => setFilters((f) => ({ ...f, rooms: e.target.value }))} style={selectStyle}>
           <option value="">Camere</option>
           {[1, 2, 3, 4].map((r) => <option key={r} value={r}>{r}{r === 4 ? "+" : ""} cam</option>)}
         </select>
-        <input placeholder="Zonă" value={filters.zone} onChange={(e) => setFilters((f) => ({ ...f, zone: e.target.value }))} style={{ ...selStyle, width: "120px" }} />
-        <select value={filters.city} onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} style={selStyle}>
+        <input placeholder="Zonă" value={filters.zone} onChange={(e) => setFilters((f) => ({ ...f, zone: e.target.value }))} style={{ ...selectStyle, width: "120px" }} />
+        <select value={filters.city} onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} style={selectStyle}>
           <option value="">Toate orașele</option>
           {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={filters.keyword_id} onChange={(e) => setFilters((f) => ({ ...f, keyword_id: e.target.value }))} style={selStyle}>
+        <select value={filters.keyword_id} onChange={(e) => setFilters((f) => ({ ...f, keyword_id: e.target.value }))} style={selectStyle}>
           <option value="">Toate keyword-urile</option>
           {keywords.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
@@ -223,7 +192,7 @@ function RECard({ listing, onClick }) {
         ) : (
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}><ImageOff style={{ width: "26px", height: "26px" }} /></div>
         )}
-        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", fontSize: "0.6875rem", fontWeight: 700, color: g.fg, backgroundColor: g.bg, padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{listing.grade}</span>
+        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", fontSize: "0.6875rem", fontWeight: 700, color: g.text, backgroundColor: g.bg, padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{listing.grade}</span>
         <span style={{ position: "absolute", top: "0.5rem", right: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "white", backgroundColor: "rgba(0,0,0,0.6)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{PLATFORM_LABELS[listing.platform] || listing.platform}</span>
         {listing.duplicate_level === 3 && (
           <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
@@ -275,7 +244,7 @@ function REModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDu
             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}><ImageOff style={{ width: "32px", height: "32px" }} /></div>
           )}
           <button onClick={onClose} style={{ position: "absolute", top: "0.625rem", right: "0.625rem", background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "0.375rem", padding: "0.25rem", cursor: "pointer", color: "white", display: "flex" }}><X style={{ width: "18px", height: "18px" }} /></button>
-          <span style={{ position: "absolute", top: "0.625rem", left: "0.625rem", fontSize: "0.75rem", fontWeight: 700, color: g.fg, backgroundColor: g.bg, padding: "0.125rem 0.625rem", borderRadius: "0.375rem" }}>Grad {listing.grade} · {listing.score}/100</span>
+          <span style={{ position: "absolute", top: "0.625rem", left: "0.625rem", fontSize: "0.75rem", fontWeight: 700, color: g.text, backgroundColor: g.bg, padding: "0.125rem 0.625rem", borderRadius: "0.375rem" }}>Grad {listing.grade} · {listing.score}/100</span>
         </div>
 
         <div style={{ padding: "1.25rem" }}>

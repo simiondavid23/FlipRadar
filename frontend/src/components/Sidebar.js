@@ -49,6 +49,8 @@ const categories = [
     id: "auto_lots",
     label: "Loturi Automobile",
     items: [
+      { name: "Feed Loturi", href: "/dashboard/auto/lots/feed", icon: Rss },
+      { name: "Keyword-uri", href: "/dashboard/auto/lots/keywords", icon: Tag },
       { name: "Cauta Loturi", href: "/dashboard/auto/lots/search", icon: Search },
       { name: "Loturi Salvate", href: "/dashboard/auto/lots/saved", icon: Heart },
       { name: "Calculator Import", href: "/dashboard/auto/lots/calculator", icon: Calculator },
