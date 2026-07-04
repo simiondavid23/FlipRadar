@@ -607,6 +607,8 @@ def _sync_scrape_emag(query: str, max_results: int) -> list:
                 return [{"error": f"Eroare conexiune eMAG: {exc}"}]
             break
 
+        print(f"[DEBUG TEMP] {url} -> status={response.status_code} len={len(response.text)}")  # DEBUG TEMP
+
         if response.status_code != 200:
             if page == 1:
                 return [{"error": f"eMAG a returnat status {response.status_code}"}]
@@ -621,6 +623,15 @@ def _sync_scrape_emag(query: str, max_results: int) -> list:
 
         page_products = _parse_emag_page(soup)
         if not page_products:
+            # DEBUG TEMP — status 200 dar 0 produse extrase: arata fragment + semne de blocare
+            if response.status_code == 200:
+                _snippet = re.sub(r"\s+", " ", response.text[:500]).strip()
+                _found = [k for k in (
+                    "captcha", "access denied", "blocked", "robot",
+                    "verify you are human", "cloudflare", "imperva", "datadome",
+                ) if k in response.text.lower()]
+                print(f"[DEBUG TEMP] 0 produse extrase, status 200. Continut suspect: {_found}. Fragment: {_snippet}")
+            # END DEBUG TEMP
             break
 
         new_this_page = 0
@@ -758,6 +769,8 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
                 return [{"error": f"Eroare conexiune PCGarage: {exc}"}]
             break
 
+        print(f"[DEBUG TEMP] {url} -> status={response.status_code} len={len(response.text)}")  # DEBUG TEMP
+
         if response.status_code != 200:
             if page == 1:
                 return [{"error": f"PCGarage a returnat status {response.status_code}"}]
@@ -772,6 +785,15 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
 
         page_products = _parse_pcgarage_page(soup)
         if not page_products:
+            # DEBUG TEMP — status 200 dar 0 produse extrase: arata fragment + semne de blocare
+            if response.status_code == 200:
+                _snippet = re.sub(r"\s+", " ", response.text[:500]).strip()
+                _found = [k for k in (
+                    "captcha", "access denied", "blocked", "robot",
+                    "verify you are human", "cloudflare", "imperva", "datadome",
+                ) if k in response.text.lower()]
+                print(f"[DEBUG TEMP] 0 produse extrase, status 200. Continut suspect: {_found}. Fragment: {_snippet}")
+            # END DEBUG TEMP
             break
 
         new_this_page = 0
@@ -973,6 +995,15 @@ def refresh_price_from_source(
                             return price
                     except (TypeError, ValueError):
                         continue
+    # DEBUG TEMP — ambele strategii de potrivire au esuat; pentru emag/pcgarage arata de ce
+    if source.lower() in ("emag.ro", "pcgarage.ro"):
+        _first = results[0] if results else None
+        if isinstance(_first, dict) and ("error" in _first or "message" in _first):
+            print(f"[DEBUG TEMP] Nepotrivit: query='{query[:80]}' rezultate={len(results)} primul_rezultat={_first}")
+        else:
+            _top5 = [(r.get("name"), r.get("source_url")) for r in results[:5] if isinstance(r, dict)]
+            print(f"[DEBUG TEMP] Nepotrivit: query='{query[:80]}' rezultate={len(results)} top5={_top5}")
+    # END DEBUG TEMP
     return None
 
 

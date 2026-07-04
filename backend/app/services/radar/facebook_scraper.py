@@ -1,9 +1,30 @@
-"""Scraper pentru Facebook Marketplace prin Playwright.
+"""Scraper Facebook Marketplace — curl_cffi (impersonate=chrome110), FĂRĂ Playwright.
 
-Facebook nu accepta scraping anonim — utilizatorul trebuie sa se logheze
-manual o data prin facebook_auth.start_facebook_login_session, iar cookies-urile
-de sesiune se salveaza pe disk. La fiecare scan reincarcam cookies-urile in
-contextul Playwright si verificam ca sesiunea inca e valida.
+Rescris Faza 1 (2026-07-04). Diagnosticul live a arătat că un GET cu curl_cffi +
+cookie-urile din storage_state-ul salvat (sesiunea Playwright de la login-ul manual)
+trece de anti-bot fără login-wall și primește pagina server-rendered cu tot feed-ul
+în blocuri <script type="application/json">. Playwright NU se mai importă aici —
+rămâne doar la login-ul manual (services/radar/facebook_auth.py) și la
+re-autentificarea automată headless (services/facebook_auth.py).
+
+Cardurile de listare sunt obiecte JSON care au SIMULTAN cheile
+"marketplace_listing_title" și "id" (typename observat GroupCommerceProductItem, dar
+căutăm STRUCTURAL după cele două chei ca să prindem și alte typename-uri). Câmpurile
+disponibile direct pe pagina de search (fără fetch de detaliu): id,
+marketplace_listing_title, listing_price.amount/formatted_amount, creation_time (în
+if_gk_just_listed_tag_on_search_feed), primary_listing_photo.image.uri,
+location.reverse_geocode.city / city_page.display_name,
+marketplace_listing_seller.name/.id, marketplace_listing_category_id, is_sold/is_live/
+is_pending/is_hidden.
+
+LOCAȚIE (judet/oras): testat live pe 2026-07-04 — filtrarea prin path de oraș NU
+funcționează. /marketplace/{slug}/search/ fie e redirecționat spre
+/marketplace/category/search/ (slug RO nerecunoscut: cluj-napoca, timisoara, iasi,
+constanta, bucuresti), fie păstrat dar întoarce EXACT același set de anunțuri
+(Jaccard 1.00 între toate orașele testate). Locația pe FB Marketplace e legată de
+lat/long-ul CONTULUI (buyLocation în GraphQL, ex. Bucureşti 44.43/26.10) + rază, nu
+de URL. Deci judet/oras rămân NEFOLOSITE (nu inventăm o filtrare falsă); URL-ul e
+/marketplace/search/ care respectă automat locația contului din sesiune.
 """
 import json
 import os
@@ -13,7 +34,18 @@ import urllib.parse
 from datetime import datetime
 from typing import Optional
 
-from app.services.radar.base_scraper import is_excluded, get_proxy_config
+from curl_cffi import requests as curl_requests
+
+from app.services.log_manager import log_manager
+from app.services.radar.base_scraper import (
+    build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
+)
+
+_IMPERSONATE = "chrome110"
+_BASE = "https://www.facebook.com"
+_SCRIPT_JSON_RE = re.compile(
+    r'<script[^>]*type="application/json"[^>]*>(.*?)</script>', re.DOTALL
+)
 
 
 def _session_max_age_days() -> int:
@@ -21,7 +53,11 @@ def _session_max_age_days() -> int:
 
 
 def is_facebook_session_valid(session_path: Optional[str]) -> bool:
-    """True daca fisierul exista, contine cookies si nu e mai vechi de 30 zile."""
+    """True daca fisierul exista, contine cookies si nu e mai vechi de 30 zile.
+
+    NESCHIMBATA fata de varianta Playwright — verifica doar fisierul de sesiune
+    (existenta + cookie c_user + varsta), nu depinde de Playwright.
+    """
     if not session_path:
         return False
     if not os.path.isfile(session_path):
@@ -44,24 +80,185 @@ def is_facebook_session_valid(session_path: Optional[str]) -> bool:
         return False
 
 
-def _parse_price_text(raw: str) -> Optional[float]:
-    if not raw:
-        return None
-    cleaned = re.sub(r"[^\d.,]", "", raw).replace(".", "").replace(",", ".")
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers curl_cffi
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _load_cookies(session_path: str) -> dict:
+    """storage_state Playwright -> dict {name: value} pentru curl_cffi."""
+    with open(session_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    raw = data.get("cookies") if isinstance(data, dict) else data
+    return {
+        c["name"]: ("" if c.get("value") is None else c["value"])
+        for c in (raw or []) if c.get("name")
+    }
 
 
-def _extract_external_id(url: str) -> Optional[str]:
-    if not url:
+def _build_search_url(keyword: str, min_price: Optional[float],
+                      max_price: Optional[float]) -> str:
+    """/marketplace/search/?query=&minPrice=&maxPrice= — FĂRĂ &category= (filtrarea
+    de categorie se face client-side, vezi mai jos) și FĂRĂ path de oraș (vezi nota
+    despre locație din docstring-ul modulului)."""
+    q = urllib.parse.quote(keyword)
+    min_p = int(min_price) if (min_price and min_price > 0) else 0
+    url = f"{_BASE}/marketplace/search/?query={q}&minPrice={min_p}"
+    if max_price and max_price > 0:
+        url += f"&maxPrice={int(max_price)}"
+    return url
+
+
+def _fetch(url: str, cookies: dict) -> tuple[Optional[str], Optional[str]]:
+    """GET cu curl_cffi + retry/backoff la 429 și erori de rețea (3 încercări, ca la
+    Okazii). Întoarce (html, final_url) sau (None, final_url_or_None)."""
+    headers = build_headers()
+    proxy_cfg = get_proxy_config()
+    kwargs = {
+        "headers": headers, "cookies": cookies, "impersonate": _IMPERSONATE,
+        "timeout": 30, "allow_redirects": True,
+    }
+    if proxy_cfg:
+        kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
+
+    for attempt in range(3):
+        try:
+            resp = curl_requests.get(url, **kwargs)
+            if resp.status_code == 200:
+                return (resp.text or ""), str(resp.url)
+            if resp.status_code == 429:
+                delay = rate_limit_backoff(attempt)
+                log_manager.emit("radar", "WARN",
+                    f"Facebook: 429 rate-limit, retry {attempt+1}/3 dupa {delay:.1f}s")
+                time.sleep(delay)
+                continue
+            log_manager.emit("radar", "WARN", f"Facebook: HTTP {resp.status_code}")
+            return None, str(resp.url)
+        except Exception as exc:
+            log_manager.emit("radar", "WARN",
+                f"Facebook: eroare fetch ({attempt+1}/3): {str(exc)[:100]}")
+            time.sleep(rate_limit_backoff(attempt))
+    return None, None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Parser JSON
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _iter_listing_objects(html: str) -> list[dict]:
+    """Extrage toate <script type=application/json>, json.loads pe fiecare (skip la
+    eroare) și walk recursiv după orice dict cu AMBELE chei
+    'marketplace_listing_title' și 'id'."""
+    found: list[dict] = []
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            if "marketplace_listing_title" in obj and "id" in obj:
+                found.append(obj)
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+
+    for block in _SCRIPT_JSON_RE.findall(html):
+        try:
+            data = json.loads(block)
+        except Exception:
+            continue
+        walk(data)
+    return found
+
+
+def _deep_first(obj, key: str, _depth: int = 0):
+    """Prima valoare scalară pentru `key` oriunde în obiect (creation_time e imbricat
+    în if_gk_just_listed_tag_on_search_feed, nu la nivelul de sus)."""
+    if _depth > 6:
         return None
-    m = re.search(r"/marketplace/item/(\d+)", url)
-    if m:
-        return f"fb_{m.group(1)}"
+    if isinstance(obj, dict):
+        if key in obj and not isinstance(obj[key], (dict, list)):
+            return obj[key]
+        for v in obj.values():
+            r = _deep_first(v, key, _depth + 1)
+            if r is not None:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _deep_first(v, key, _depth + 1)
+            if r is not None:
+                return r
     return None
 
+
+def _parse_price(obj: dict) -> tuple[Optional[float], str]:
+    """Prioritate listing_price.amount (float); fallback regex pe formatted_amount
+    ('RON800' -> 800.0/RON, '€800' -> 800.0/EUR)."""
+    lp = obj.get("listing_price") or {}
+    fmt = lp.get("formatted_amount") or ""
+    currency = "RON"
+    if fmt:
+        up = fmt.upper()
+        if "€" in fmt or "EUR" in up:
+            currency = "EUR"
+        elif "$" in fmt or "USD" in up:
+            currency = "USD"
+
+    price = None
+    amount = lp.get("amount")
+    if amount not in (None, ""):
+        try:
+            price = float(amount)
+        except (ValueError, TypeError):
+            price = None
+    if price is None and fmt:
+        m = re.search(r"[\d.,]+", fmt)
+        if m:
+            cleaned = m.group(0).replace(".", "").replace(",", ".")
+            try:
+                price = float(cleaned)
+            except ValueError:
+                price = None
+    return price, currency
+
+
+def _parse_location(obj: dict) -> Optional[str]:
+    rg = (obj.get("location") or {}).get("reverse_geocode") or {}
+    city = rg.get("city")
+    if city:
+        return city
+    return (rg.get("city_page") or {}).get("display_name")
+
+
+def _is_active(obj: dict) -> bool:
+    """Exclude sold/not-live/pending/hidden — DOAR daca cheia e prezenta (lipsa cheii
+    NU inseamna exclus)."""
+    if obj.get("is_sold") is True:
+        return False
+    if obj.get("is_live") is False:
+        return False
+    if obj.get("is_pending") is True:
+        return False
+    if obj.get("is_hidden") is True:
+        return False
+    return True
+
+
+def _known_facebook_category_ids() -> set:
+    """Toate id-urile de categorie din PLATFORM_CATEGORIES['facebook'] (top-level +
+    subcategorii), ca sa putem loga category_id-uri necunoscute."""
+    from app.services.radar.categories import PLATFORM_CATEGORIES
+    ids = set()
+    for cat in PLATFORM_CATEGORIES.get("facebook", []):
+        if cat.get("value"):
+            ids.add(str(cat["value"]))
+        for sub in cat.get("subcategories") or []:
+            if sub.get("value"):
+                ids.add(str(sub["value"]))
+    return ids
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Search
+# ──────────────────────────────────────────────────────────────────────────────
 
 def search_facebook(
     keyword: str,
@@ -76,163 +273,123 @@ def search_facebook(
     max_scrolls: int = 10,
     _retry: bool = False,
 ) -> list[dict]:
-    """Cauta pe Facebook Marketplace cu o sesiune Playwright pre-logata.
+    """Caută pe Facebook Marketplace cu o sesiune pre-logată, prin curl_cffi.
 
-    `page` e ignorat (Facebook foloseste infinite scroll); `max_scrolls` limiteaza
-    cat de mult derulam intr-o sesiune. Returneaza TOATE rezultatele adunate prin
-    scroll — scanner-ul se opreste cand o pagina nu mai aduce anunturi noi.
+    Semnătura e păstrată identică cu apelurile existente (radar_scanner, radar router).
+
+    `max_scrolls` — NO-OP (păstrat pentru compatibilitate). Nu se mai face scroll:
+        pagina server-rendered conține deja tot feed-ul inițial în JSON.
+    `page` — NO-OP efectiv (FB nu paginează prin URL, e un singur fetch); pentru page>1
+        întoarcem [] ca semnal „gata" (scanner-ul oricum se oprește după prima pagină
+        la facebook). `judet`/`oras` — NEFOLOSITE (vezi docstring modul: locația nu se
+        poate filtra prin URL).
+    `category` — dacă e setat, se filtrează CLIENT-SIDE pe
+        marketplace_listing_category_id == category.
     """
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
         return []
+    # FB nu paginează prin URL — un singur fetch aduce tot; page>1 nu mai aduce nimic.
+    if page and page > 1:
+        return []
     if not is_facebook_session_valid(session_path):
-        print("[FacebookScraper] Sesiune expirata — necesita reconectare")
+        log_manager.emit("radar", "WARN",
+            "Facebook: sesiune invalida/expirata — reconectare necesara")
         return []
 
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("[FacebookScraper] Playwright nu e instalat — skip.")
-        return []
+    cookies = _load_cookies(session_path)
+    url = _build_search_url(keyword_clean, min_price, max_price)
+    log_manager.emit("radar", "SCAN", f'Facebook "{keyword_clean}"')
 
-    q = urllib.parse.quote(keyword_clean)
-    min_p = int(min_price) if (min_price and min_price > 0) else 0
-    url = f"https://www.facebook.com/marketplace/search/?query={q}&minPrice={min_p}"
-    if max_price and max_price > 0:
-        url += f"&maxPrice={int(max_price)}"
-    if category:
-        cat_id = category
-        if cat_id:
-            url += f"&category={cat_id}"
+    html, final_url = _fetch(url, cookies)
 
-    results = []
-    proxy_cfg = get_proxy_config()
-    launch_kwargs = {"headless": True}
-    if proxy_cfg:
-        proxy_arg = {"server": proxy_cfg["https"]}
-        if proxy_cfg.get("username"):
-            proxy_arg["username"] = proxy_cfg["username"]
-            proxy_arg["password"] = proxy_cfg["password"]
-        launch_kwargs["proxy"] = proxy_arg
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(**launch_kwargs)
-            try:
-                with open(session_path, "r", encoding="utf-8") as f:
-                    storage = json.load(f)
-                context = browser.new_context(storage_state=storage)
-            except Exception:
-                context = browser.new_context()
-            page = context.new_page()
-            page.set_default_timeout(20000)
-            try:
-                page.goto(url, wait_until="domcontentloaded")
-                page.wait_for_timeout(3000)
-                # Daca apare login wall, abandonam
-                if "login" in page.url.lower():
-                    print("[FacebookScraper] Sesiune expirata — necesita reconectare")
-                    return []
+    results: list[dict] = []
+    if html is not None:
+        low = (final_url or "").lower()
+        if "login" in low or "checkpoint" in low:
+            # 4.6 — redirect spre login/checkpoint => sesiune expirata (results ramane gol)
+            log_manager.emit("radar", "WARN",
+                "Facebook: redirect spre login/checkpoint — sesiune posibil expirata")
+        else:
+            raw = _iter_listing_objects(html)
+            by_id: dict[str, dict] = {}
+            for o in raw:
+                oid = str(o.get("id"))
+                if oid and oid not in by_id:
+                    by_id[oid] = o
 
-                # Infinite scroll: Facebook nu are paginare prin URL, deci derulam
-                # pana cand o pasare nu mai aduce carduri noi (sau atingem max_scrolls).
-                seen_urls = set()
-                prev_count = 0
-                scroll_count = 0
-                while scroll_count < max_scrolls:
-                    items = page.query_selector_all('a[href*="/marketplace/item/"]')
-                    for it in items:
-                        try:
-                            href = it.get_attribute("href")
-                            if not href:
-                                continue
-                            full_url = href if href.startswith("http") else f"https://www.facebook.com{href}"
-                            # Curata query string-ul
-                            full_url = full_url.split("?")[0]
-                            if full_url in seen_urls:
-                                continue
-                            seen_urls.add(full_url)
+            known_ids = _known_facebook_category_ids() if category else None
+            excluded_sold = 0
+            for oid, o in by_id.items():
+                if not _is_active(o):
+                    excluded_sold += 1
+                    continue
+                title = (o.get("marketplace_listing_title") or "").strip()
+                if not title:
+                    continue
+                if is_excluded(title, exclude_words):
+                    continue
 
-                            text = (it.inner_text() or "").strip()
-                            lines = [l.strip() for l in text.split("\n") if l.strip()]
-                            if len(lines) < 2:
-                                continue
-                            price = None
-                            title = ""
-                            location = None
-                            for line in lines:
-                                if price is None and ("RON" in line.upper() or "lei" in line.lower() or re.match(r"^\d", line)):
-                                    p_val = _parse_price_text(line)
-                                    if p_val is not None:
-                                        price = p_val
-                                        continue
-                                if not title and line and not re.match(r"^[\d.,]+$", line):
-                                    title = line
-                                    continue
-                                if not location and line and not re.match(r"^[\d.,]+", line):
-                                    location = line
+                price, currency = _parse_price(o)
+                if max_price and max_price > 0 and price is not None and price > max_price:
+                    continue
+                if min_price and min_price > 0 and price is not None and price < min_price:
+                    continue
 
-                            if not title or price is None:
-                                continue
-                            if max_price and price > max_price:
-                                continue
-                            if min_price and price < min_price:
-                                continue
-                            if is_excluded(title, exclude_words):
-                                continue
+                cat_id = o.get("marketplace_listing_category_id")
+                cat_id = str(cat_id) if cat_id is not None else None
+                if category:
+                    # category_id necunoscut in tabel -> logam, dar NU excludem pe acest motiv
+                    if cat_id and known_ids is not None and cat_id not in known_ids:
+                        log_manager.emit("radar", "INFO",
+                            f"Facebook: category_id necunoscut {cat_id} ('{title[:40]}')")
+                    # excluderea de categorie se aplica DOAR cand userul a ales o categorie
+                    if cat_id != str(category):
+                        continue
 
-                            ext_id = _extract_external_id(full_url)
-                            if not ext_id:
-                                continue
+                ct = _deep_first(o, "creation_time")
+                listed_at = None
+                if isinstance(ct, (int, float)) and ct > 1_000_000_000:
+                    try:
+                        listed_at = datetime.fromtimestamp(ct)
+                    except (OverflowError, OSError, ValueError):
+                        listed_at = None
 
-                            img_el = it.query_selector("img")
-                            image_url = img_el.get_attribute("src") if img_el else None
-                            images = [image_url] if image_url else []
+                image_url = ((o.get("primary_listing_photo") or {}).get("image") or {}).get("uri")
+                images = [image_url] if image_url else []
+                seller = o.get("marketplace_listing_seller") or {}
 
-                            # Facebook nu expune data postarii in cardul de pe pagina de cautare —
-                            # paginile au "X zile in urma" doar pe pagina detalii. Cadem pe now()
-                            # ca sa avem totusi o valoare sortabila.
-                            results.append({
-                                "external_id": ext_id,
-                                "platform": "facebook",
-                                "title": title,
-                                "price": price,
-                                "currency": "RON",
-                                "condition": None,
-                                "location": location,
-                                "url": full_url,
-                                "images": images,
-                                "description": None,
-                                "seller_name": None,
-                                "seller_id": None,
-                                "listed_at": datetime.now(),
-                            })
-                        except Exception as exc:
-                            print(f"[FacebookScraper] Eroare la parsare card: {exc}")
-                            continue
+                results.append({
+                    "external_id": f"fb_{oid}",
+                    "platform": "facebook",
+                    "title": title,
+                    "price": price,
+                    "currency": currency,
+                    "condition": None,
+                    "location": _parse_location(o),
+                    "url": f"{_BASE}/marketplace/item/{oid}/",
+                    "images": images,
+                    "description": None,
+                    "seller_name": seller.get("name"),
+                    "seller_id": seller.get("id"),
+                    # creation_time daca exista; altfel None (mai bine null decat now() fals)
+                    "listed_at": listed_at,
+                })
 
-                    # Stop cand un scroll nu mai aduce carduri noi.
-                    if len(results) == prev_count and scroll_count > 0:
-                        break
-                    prev_count = len(results)
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.wait_for_timeout(2500)
-                    scroll_count += 1
-            finally:
-                context.close()
-                browser.close()
-    except Exception as exc:
-        print(f"[FacebookScraper] Eroare la scraping: {exc}")
-        return []
+            if excluded_sold:
+                log_manager.emit("radar", "INFO",
+                    f"Facebook: {excluded_sold} anunturi excluse (sold/not-live/pending/hidden)")
 
-    print(f"[FacebookScraper] {len(results)} rezultate pentru '{keyword_clean}'")
+    log_manager.emit("radar", "OK",
+        f'Facebook: {len(results)} rezultate pentru "{keyword_clean}"')
 
-    # MODIFICARE 11 — daca sesiunea pare expirata (0 rezultate + storage_state vechi
-    # de >23h), incearca re-autentificarea automata si re-ruleaza scrape-ul O SINGURA
-    # DATA (_retry previne bucla infinita).
+    # 4.6 + PAS 3 — re-autentificare automata (o singura data). needs_reauth e conservator
+    # (doar 0 rezultate + storage_state real mai vechi de 23h). session_path e pasat EXPLICIT
+    # (fix-ul de cale din facebook_auth) atat la citire cat si la scriere.
     if not _retry:
         from app.services.facebook_auth import needs_reauth, re_authenticate
-        if needs_reauth(results) and re_authenticate():
+        if needs_reauth(results, session_path) and re_authenticate(session_path):
             return search_facebook(
                 keyword=keyword, max_price=max_price, judet=judet, oras=oras,
                 exclude_words=exclude_words, session_path=session_path,

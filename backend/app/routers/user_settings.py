@@ -54,9 +54,16 @@ def update_user_settings(
 @router.get("/settings/session-status")
 def get_session_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Returnează statusul sesiunilor pentru platformele care necesită autentificare."""
-    from app.services.facebook_auth import STORAGE_STATE_PATH
+    from pathlib import Path
 
     settings = db.query(RadarSettings).filter(RadarSettings.user_id == current_user.id).first()
+
+    # Facebook: folosim calea REALĂ a sesiunii (RadarSettings.facebook_session_path),
+    # aceeași sursă ca search_facebook / re_authenticate — nu o constantă hardcodată
+    # (fostul STORAGE_STATE_PATH pointa spre un fișier care nu era cel real folosit).
+    fb_path_str = settings.facebook_session_path if settings else None
+    fb_path = Path(fb_path_str) if fb_path_str else None
+    fb_exists = bool(fb_path and fb_path.exists())
 
     return {
         # Vinted nu mai necesită cookie — libraria vinted-scraper gestionează DataDome automat.
@@ -64,9 +71,9 @@ def get_session_status(current_user: User = Depends(get_current_user), db: Sessi
         "okazii":   {"status": "ok" if (settings and settings.okazii_cookie) else "missing"},
         "lajumate": {"status": "ok" if (settings and settings.lajumate_cookie) else "missing"},
         "facebook": {
-            "status": "ok" if STORAGE_STATE_PATH.exists() else "missing",
-            "storage_state_exists": STORAGE_STATE_PATH.exists(),
-            "age_hours": round((time.time() - STORAGE_STATE_PATH.stat().st_mtime) / 3600, 1)
-                         if STORAGE_STATE_PATH.exists() else None,
+            "status": "ok" if fb_exists else "missing",
+            "storage_state_exists": fb_exists,
+            "age_hours": round((time.time() - fb_path.stat().st_mtime) / 3600, 1)
+                         if fb_exists else None,
         },
     }

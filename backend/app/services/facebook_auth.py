@@ -1,33 +1,62 @@
 """Re-autentificare automată Facebook când sesiunea expiră.
 Folosește credențialele din variabilele de mediu FACEBOOK_EMAIL și FACEBOOK_PASSWORD.
+
+Playwright e folosit DOAR aici (login headless automat) — calea de căutare
+(facebook_scraper.search_facebook) nu mai importă Playwright, merge pe curl_cffi.
 """
 import os
 import time
 from pathlib import Path
+from typing import Optional
+
 from app.services.log_manager import log_manager
 
-STORAGE_STATE_PATH = Path("facebook_storage_state.json")
 _reauth_lock = {"in_progress": False}
 
 
-def needs_reauth(results: list) -> bool:
-    """Sesiunea a expirat dacă scraperul returnează 0 rezultate
-    și nu există o altă cauză evidentă (keyword prea specific etc.).
-    Conservator: nu re-auth la fiecare 0 rezultate, ci doar dacă
-    storage_state există dar e vechi (> 24h).
+def needs_reauth(results: list, session_path: Optional[str]) -> bool:
+    """Sesiunea a expirat dacă scraperul returnează 0 rezultate ȘI storage_state-ul
+    real (`session_path`) există dar e vechi (> 23h).
+
+    Conservator: nu re-auth la fiecare 0 rezultate (keyword prea specific etc.),
+    ci doar dacă fișierul de sesiune e probabil expirat.
+
+    IMPORTANT (fix cale): `session_path` e pasat EXPLICIT de apelant — este
+    exact fișierul folosit de search_facebook (RadarSettings.facebook_session_path).
+    Înainte exista o constantă globală hardcodată `Path("facebook_storage_state.json")`,
+    complet diferită de sesiunea reală, deci verificarea de vârstă se făcea pe un
+    fișier inexistent și re-auth-ul nu se declanșa niciodată corect.
     """
     if results:
         return False
-    if not STORAGE_STATE_PATH.exists():
+    if not session_path:
         return False
-    age_hours = (time.time() - STORAGE_STATE_PATH.stat().st_mtime) / 3600
+    p = Path(session_path)
+    if not p.exists():
+        return False
+    age_hours = (time.time() - p.stat().st_mtime) / 3600
     return age_hours > 23  # Sesiunea e probabil expirată
 
 
-def re_authenticate() -> bool:
-    """Re-autentifică pe Facebook. Returnează True la succes.
-    Thread-safe: nu rulează concurent dacă un re-auth e deja în curs.
+def re_authenticate(session_path: Optional[str]) -> bool:
+    """Re-autentifică pe Facebook și salvează storage_state-ul ÎN `session_path`.
+
+    Returnează True la succes. Thread-safe: nu rulează concurent dacă un re-auth
+    e deja în curs.
+
+    `session_path` (pasat explicit) e citit/scris atât pentru target-ul de salvare
+    cât și de `needs_reauth` — nu mai există cale hardcodată. Login automat cu
+    FACEBOOK_EMAIL / FACEBOOK_PASSWORD (strategie neschimbată).
+
+    Dacă apare checkpoint / 2FA la login-ul automat, funcția loghează eroare clară
+    și întoarce False (comportament păstrat intenționat — un login automat headless
+    nu poate trece de 2FA; utilizatorul trebuie să refacă login-ul manual).
     """
+    if not session_path:
+        log_manager.emit("radar", "ERR",
+            "Facebook re-auth imposibil: session_path lipsește.")
+        return False
+
     if _reauth_lock["in_progress"]:
         log_manager.emit("radar", "WARN", "Facebook re-auth deja în curs, skip.")
         return False
@@ -43,6 +72,12 @@ def re_authenticate() -> bool:
     try:
         from playwright.sync_api import sync_playwright
         log_manager.emit("radar", "INFO", "Facebook: încearcă re-autentificare...")
+
+        storage_path = Path(session_path)
+        # Asigură directorul țintă (ex. .../backend/data/) înainte de scriere.
+        if storage_path.parent and not storage_path.parent.exists():
+            storage_path.parent.mkdir(parents=True, exist_ok=True)
+
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
@@ -59,10 +94,10 @@ def re_authenticate() -> bool:
                 browser.close()
                 return False
 
-            context.storage_state(path=str(STORAGE_STATE_PATH))
+            context.storage_state(path=str(storage_path))
             browser.close()
             log_manager.emit("radar", "OK",
-                "Facebook re-autentificare reușită. Sesiune nouă salvată.")
+                f"Facebook re-autentificare reușită. Sesiune nouă salvată în {storage_path}.")
             return True
     except Exception as exc:
         log_manager.emit("radar", "ERR", f"Facebook re-auth eroare: {str(exc)[:120]}")

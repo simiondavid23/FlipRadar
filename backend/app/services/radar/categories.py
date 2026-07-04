@@ -426,22 +426,131 @@ PLATFORM_CATEGORIES = {
     ],
 
     "facebook": [
-        # 1 level only. Values are category IDs used as &category={value} in URL.
-        # IDs CONFIRMED sunt din codul existent.
-        {"label": "Electronice și Gadgeturi", "value": "1561900557457147"},  # CONFIRMED
-        {"label": "Îmbrăcăminte și Accesorii", "value": "1490277691221416"},  # CONFIRMED
-        {"label": "Mobilă și Living", "value": "1577608482269133"},  # VERIFY
-        {"label": "Vehicule și Accesorii", "value": "807311116002614"},  # CONFIRMED
-        {"label": "Articole Sportive", "value": "1576585399249494"},  # VERIFY
-        {"label": "Jocuri și Console", "value": "1597932930455716"},  # VERIFY
-        {"label": "Instrumente Muzicale", "value": "1579655115447853"},  # VERIFY
-        {"label": "Cărti, Muzică și Film", "value": "1580747392014085"},  # VERIFY
-        {"label": "Articole pentru Copii", "value": "1580747392014090"},  # VERIFY
-        {"label": "Electrocasnice", "value": "1581668735253847"},  # VERIFY
-        {"label": "Animale de Companie", "value": "1583655371741708"},  # VERIFY
-        {"label": "Sănătate și Frumusete", "value": "1584963078277600"},  # VERIFY
-        {"label": "Grădinărit", "value": "1585543171552946"},  # VERIFY
-        {"label": "Diverse", "value": None},
+        # Taxonomie descoperita LIVE 2026-07-04 din site (curl_cffi + sesiune reala,
+        # esantion de anunturi pe /marketplace/category/{slug}/). "value" =
+        # marketplace_listing_category_id (id-ul cu care FB eticheteaza anuntul),
+        # folosit pentru filtrare CLIENT-SIDE in search_facebook (NU &category= in URL).
+        # Reguli: verticalele care colapseaza pe un singur id => value direct pe top-level
+        # (mono-id); altfel top-level = grup (value=None, ca Okazii) si subcategoriile
+        # poarta id-ul. Subcategoriile cu ACELASI id au fost deduplicate (o eticheta/id).
+        # share=fractia anunturilor cu acel id in esantion, n=marime esantion,
+        # HIGH/MED/LOW=incredere. Nume oficiale FB (engleza, cum apar in navigare).
+        {
+            "label": "Apparel", "value": None,  # grup (broad top-page id=931157863635831 share=0.55 n=20)
+            "subcategories": [
+                {"label": "Bags & Luggage", "value": "1567543000236608"},  # HIGH share=1.0 n=20 ex:"Geantă GUESS Shopper Originală – M"
+                {"label": "Women's", "value": "1266429133383966"},  # HIGH share=1.0 n=20 +nav:Kids' Clothing ex:"Rochie corset"
+                {"label": "Men’s", "value": "931157863635831"},  # HIGH share=1.0 n=20 +nav:Shoes ex:"nike air force 1 triple white"
+                {"label": "Baby Clothing", "value": "624859874282116"},  # HIGH share=0.9 n=20 (id broad al 'family') ex:"Lot haine fetita 3-9 luni cuprinde"
+                {"label": "Jewelry & Accessories", "value": "214968118845643"},  # HIGH share=0.88 n=24 ex:"inele argint925"
+            ],
+        },
+        {
+            "label": "Classifieds", "value": None,  # grup (broad top-page id=807311116002614 share=0.5 n=4)
+            "subcategories": [
+                {"label": "Garage Sale", "value": "1670493229902393"},  # LOW share=0.42 n=24 ex:"Tabla cutata și colorata la cel ma"
+            ],
+        },
+        {
+            "label": "Electronics", "value": "1792291877663080",  # vertical mono-id (share=0.95 n=20)
+            "subcategories": [
+                {"label": "Cell Phones", "value": "1557869527812749"},  # HIGH share=1.0 n=20 +nav:Cell Phone Accessories (id broad al 'free') ex:"iPhone 12ProMax"
+                {"label": "Video Games & Consoles", "value": "686977074745292"},  # MED share=0.75 n=20 (id broad al 'entertainment') ex:"Xbox Series S, 512GB"
+            ],
+        },
+        {
+            "label": "Entertainment", "value": None,  # grup (broad top-page id=686977074745292 share=0.5 n=20)
+            "subcategories": [
+                {"label": "Books, Movies & Music", "value": "613858625416355"},  # HIGH share=1.0 n=20 ex:"Carti pentru copii"
+            ],
+        },
+        {
+            "label": "Family", "value": None,  # grup (broad top-page id=624859874282116 share=0.6 n=20)
+            "subcategories": [
+                {"label": "Baby & Kids Items", "value": "624859874282116"},  # HIGH share=1.0 n=20 ex:"Leagăn pentru bebeluși"
+                {"label": "Health & Beauty", "value": "1555452698044988"},  # HIGH share=1.0 n=20 ex:"Parfumuri 1+1 la 250 lei"
+            ],
+        },
+        {
+            "label": "Free Stuff", "value": None,  # grup (broad top-page id=1557869527812749 share=0.45 n=20)
+            "subcategories": [],
+        },
+        {
+            "label": "Garden & Outdoor", "value": None,  # grup (broad top-page id=800089866739547 share=0.75 n=20)
+            "subcategories": [
+                {"label": "Water Feature", "value": "800089866739547"},  # LOW share=0.67 n=3 +nav:Outdoor Cooking,Outdoor Power Equipment,Garden Structures ex:"Cișmea de gradina \/ Stalpisori de"
+            ],
+        },
+        {
+            "label": "Hobbies", "value": None,  # grup (broad top-page id=1658310421102081 share=0.5 n=20)
+            "subcategories": [
+                {"label": "Bicycles", "value": "1658310421102081"},  # HIGH share=1.0 n=24 ex:"Bicicletă BMx"
+                {"label": "Auto Parts", "value": "757715671026531"},  # HIGH share=1.0 n=20 ex:"Lambo doors LSD doors balamale lam"
+                {"label": "Arts & Crafts", "value": "1534799543476160"},  # HIGH share=1.0 n=11 ex:"Sakura Koi Brush Pen Marker Tip Pe"
+                {"label": "Antiques & Collectibles", "value": "393860164117441"},  # HIGH share=0.85 n=20 ex:"VÂND STICKERE PANINI — WORLD CUP Q"
+            ],
+        },
+        {
+            "label": "Home Goods", "value": None,  # grup (broad top-page id=1583634935226685 share=0.75 n=20)
+            "subcategories": [
+                {"label": "Appliances", "value": "678754142233400"},  # HIGH share=1.0 n=20 (id broad al 'home-improvements') ex:"Cedez restaurant   fast food compl"
+                {"label": "Furniture", "value": "1583634935226685"},  # HIGH share=0.9 n=20 +nav:Bath Products ex:"URGENT!!! Vînd Garsonieră Cf 2 18 "
+                {"label": "Bedding", "value": "1569171756675761"},  # HIGH share=0.85 n=20 +nav:Home Lighting,Kitchen & Dining Products,Home Decor,Cleaning Supplies (id broad al 'propertyforsale') ex:"Super OFERTA ‼️ 2 Lenjerii damasc "
+            ],
+        },
+        {
+            "label": "Home Improvement Supplies", "value": None,  # grup (broad top-page id=678754142233400 share=0.3 n=20)
+            "subcategories": [
+                {"label": "Tools", "value": "1670493229902393"},  # HIGH share=1.0 n=20 ex:"Vand brichete tip Zippo noi"
+                {"label": "Showers & Shower Parts", "value": "1792291877663080"},  # LOW share=1.0 n=3 (id broad al 'electronics') ex:"7 - Person 56 - Jet Acrylic Square"
+                {"label": "Home Heating & Cooling", "value": "678754142233400"},  # MED share=0.5 n=20 ex:"Air Frayer nou wireless"
+                {"label": "Bricks & Cinder Blocks", "value": "606456512821491"},  # LOW share=0.5 n=4 (id broad al 'toys') ex:"LEGO Classic \'Bricks On A Roll\' "
+            ],
+        },
+        {
+            "label": "Home Sales", "value": None,  # grup (broad top-page id=1569171756675761 share=0.33 n=24)
+            "subcategories": [],
+        },
+        {
+            "label": "Musical Instruments", "value": "676772489112490",  # vertical mono-id (share=1.0 n=20)
+            "subcategories": [
+                {"label": "Percussion Instruments", "value": "895487550471874"},  # MED share=1.0 n=7 ex:"Tarabane de vanzare noi 350"
+                {"label": "Music Accessories", "value": "1792291877663080"},  # MED share=0.6 n=5 (id broad al 'electronics') ex:"Vând tuner stereo vintage Sansui T"
+            ],
+        },
+        {
+            "label": "Office Supplies", "value": None,  # grup (broad top-page id=None share=0.0 n=0)
+            "subcategories": [
+                {"label": "Bubble Wrap", "value": "676772489112490"},  # LOW share=0.5 n=4 (id broad al 'instruments') ex:"Chitară electrică ESP Ltd. MH-417B"
+            ],
+        },
+        {
+            "label": "Pet Supplies", "value": None,  # grup (broad top-page id=1550246318620997 share=1.0 n=3)
+            "subcategories": [
+                {"label": "Pet Collars, Harnesses & Leashes", "value": "1550246318620997"},  # LOW share=0.5 n=4 ex:"Lesa de prezentare in concurs pent"
+            ],
+        },
+        {
+            "label": "Property Rentals", "value": "1468271819871448",  # vertical mono-id (share=0.96 n=24)
+            "subcategories": [],
+        },
+        {
+            "label": "Sporting Goods", "value": "1383948661922113",  # vertical mono-id (share=1.0 n=20)
+            "subcategories": [
+                {"label": "Outdoor Recreation Equipment", "value": "1658310421102081"},  # MED share=0.7 n=20 (id broad al 'hobbies') ex:"Fat bike Pegas Cutezator"
+            ],
+        },
+        {
+            "label": "Toys & Games", "value": "606456512821491",  # vertical mono-id (share=0.95 n=20)
+            "subcategories": [
+                {"label": "Educational Toys", "value": "624859874282116"},  # LOW share=0.43 n=7 (id broad al 'family') ex:"Jucărie lemn cu xilofon , cu mingi"
+                {"label": "Model Kits", "value": "757715671026531"},  # LOW share=0.26 n=23 ex:"Kit Stație Radio CB PNI Escort HP "
+            ],
+        },
+        {
+            "label": "Vehicles", "value": "807311116002614",  # vertical mono-id (share=1.0 n=20)
+            "subcategories": [],
+        },
     ],
 
     "lajumate": [
