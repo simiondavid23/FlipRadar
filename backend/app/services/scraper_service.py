@@ -607,8 +607,6 @@ def _sync_scrape_emag(query: str, max_results: int) -> list:
                 return [{"error": f"Eroare conexiune eMAG: {exc}"}]
             break
 
-        print(f"[DEBUG TEMP] {url} -> status={response.status_code} len={len(response.text)}")  # DEBUG TEMP
-
         if response.status_code != 200:
             if page == 1:
                 return [{"error": f"eMAG a returnat status {response.status_code}"}]
@@ -623,15 +621,6 @@ def _sync_scrape_emag(query: str, max_results: int) -> list:
 
         page_products = _parse_emag_page(soup)
         if not page_products:
-            # DEBUG TEMP — status 200 dar 0 produse extrase: arata fragment + semne de blocare
-            if response.status_code == 200:
-                _snippet = re.sub(r"\s+", " ", response.text[:500]).strip()
-                _found = [k for k in (
-                    "captcha", "access denied", "blocked", "robot",
-                    "verify you are human", "cloudflare", "imperva", "datadome",
-                ) if k in response.text.lower()]
-                print(f"[DEBUG TEMP] 0 produse extrase, status 200. Continut suspect: {_found}. Fragment: {_snippet}")
-            # END DEBUG TEMP
             break
 
         new_this_page = 0
@@ -769,8 +758,6 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
                 return [{"error": f"Eroare conexiune PCGarage: {exc}"}]
             break
 
-        print(f"[DEBUG TEMP] {url} -> status={response.status_code} len={len(response.text)}")  # DEBUG TEMP
-
         if response.status_code != 200:
             if page == 1:
                 return [{"error": f"PCGarage a returnat status {response.status_code}"}]
@@ -785,15 +772,6 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
 
         page_products = _parse_pcgarage_page(soup)
         if not page_products:
-            # DEBUG TEMP — status 200 dar 0 produse extrase: arata fragment + semne de blocare
-            if response.status_code == 200:
-                _snippet = re.sub(r"\s+", " ", response.text[:500]).strip()
-                _found = [k for k in (
-                    "captcha", "access denied", "blocked", "robot",
-                    "verify you are human", "cloudflare", "imperva", "datadome",
-                ) if k in response.text.lower()]
-                print(f"[DEBUG TEMP] 0 produse extrase, status 200. Continut suspect: {_found}. Fragment: {_snippet}")
-            # END DEBUG TEMP
             break
 
         new_this_page = 0
@@ -932,6 +910,62 @@ _SCRAPERS_BY_SOURCE = {
 }
 
 
+def fetch_pcgarage_price_from_url(source_url: str, max_retries: int = 3) -> Optional[float]:
+    """Re-fetch pretul PCGarage DIRECT de pe pagina de produs (source_url stocat),
+    ocolind complet cautarea /cauta/ (challenge-uita agresiv de Cloudflare).
+
+    Pagina de produs trece de Cloudflare Managed Challenge in ~90% din cazuri per
+    incercare cu _IMPERSONATE-ul curent, deci reincercam pana la `max_retries` ori
+    cand nimerim interstitiul. Selectorii de pret sunt cei ai paginii de DETALIU
+    (.price_num / .ps_sell_price), diferiti de selectorii de lista din
+    _sync_scrape_pcgarage.
+    """
+    if not source_url:
+        return None
+    for attempt in range(1, max_retries + 1):
+        if attempt > 1:
+            time.sleep(random.uniform(1, 3))
+        try:
+            response = curl_requests.get(
+                source_url,
+                headers=_PCGARAGE_HEADERS,
+                impersonate=_IMPERSONATE,
+                timeout=25,
+                allow_redirects=True,
+            )
+        except Exception:
+            continue
+
+        # Cloudflare Managed Challenge: 403 si/sau header cf-mitigated=challenge si/sau
+        # <title>Just a moment... -> nu e pagina reala, mai incercam.
+        is_challenge = (
+            response.status_code == 403
+            or response.headers.get("cf-mitigated") == "challenge"
+            or "just a moment" in response.text[:2000].lower()
+        )
+        if is_challenge or response.status_code != 200:
+            continue
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        # Selectorii de pret ai paginii de PRODUS, in ordine. NU adauga
+        # meta[itemprop='price'] ca fallback: pe PCGarage atributul `content` e in
+        # format international cu zgomot float (ex "7619.979961"), pe care
+        # _parse_emag_price il interpreteaza gresit (punctul ca separator de mii) ->
+        # valoare aberanta. Doar selectorii vizuali au format romanesc "7.619,98 RON".
+        price_el = soup.select_one(".price_num") or soup.select_one(".ps_sell_price")
+        price = _parse_emag_price(price_el.get_text(" ", strip=True)) if price_el is not None else 0.0
+        if price and price > 0:
+            return price
+        # 200 real, dar niciun selector de pret potrivit / pret 0/invalid -> distinct
+        # de blocajul Cloudflare (posibila schimbare de structura a site-ului).
+        print(f"[AlertChecker] PCGarage: pagina incarcata (200) dar niciun selector de pret nu s-a potrivit — posibila schimbare de structura, verifica manual: {source_url}")
+        return None
+
+    # Toate incercarile au nimerit challenge-ul Cloudflare (sau eroare de retea).
+    print(f"[AlertChecker] PCGarage: blocat de Cloudflare dupa {max_retries} incercari pentru {source_url}")
+    return None
+
+
 def refresh_price_from_source(
     source: Optional[str],
     source_url: Optional[str],
@@ -946,12 +980,26 @@ def refresh_price_from_source(
     """
     if not source or not source_url:
         return None
+    # PCGarage: refresh direct de pe pagina de produs (source_url stocat), ocolind
+    # complet cautarea /cauta/ care e challenge-uita agresiv de Cloudflare. Restul
+    # aplicatiei (cautare, cross-shop) continua sa foloseasca _sync_scrape_pcgarage.
+    if source.lower() == "pcgarage.ro":
+        return fetch_pcgarage_price_from_url(source_url)
     scraper = _SCRAPERS_BY_SOURCE.get(source.lower())
     if not scraper:
         return None
-    if not sku and source.lower() == "altex.ro":
-        sku = _altex_sku_from_url(source_url)
-    query = (sku or product_name or "").strip()
+    # IMPORTANT: `sku` e cautabil DOAR pentru altex.ro, unde e un cod real de produs
+    # extras din URL (/cpd/<sku>/). Pentru celelalte surse (emag.ro, pcgarage.ro,
+    # sole.ro, farmaciatei.ro) `Product.sku` e ID-ul intern al magazinului (ex: eMAG
+    # data-product-id) — NECAUTABIL: search-ul cade pe potrivire fuzzy pe cifre si
+    # intoarce produse nelegate. De aceea acolo cautam MEREU dupa nume. (Nu reintroduce
+    # `sku or product_name` pentru non-altex — sparge refresh-ul pe eMAG/PCGarage.)
+    if source.lower() == "altex.ro":
+        if not sku:
+            sku = _altex_sku_from_url(source_url)
+        query = (sku or product_name or "").strip()
+    else:
+        query = (product_name or "").strip()
     if not query:
         return None
     try:
@@ -995,15 +1043,6 @@ def refresh_price_from_source(
                             return price
                     except (TypeError, ValueError):
                         continue
-    # DEBUG TEMP — ambele strategii de potrivire au esuat; pentru emag/pcgarage arata de ce
-    if source.lower() in ("emag.ro", "pcgarage.ro"):
-        _first = results[0] if results else None
-        if isinstance(_first, dict) and ("error" in _first or "message" in _first):
-            print(f"[DEBUG TEMP] Nepotrivit: query='{query[:80]}' rezultate={len(results)} primul_rezultat={_first}")
-        else:
-            _top5 = [(r.get("name"), r.get("source_url")) for r in results[:5] if isinstance(r, dict)]
-            print(f"[DEBUG TEMP] Nepotrivit: query='{query[:80]}' rezultate={len(results)} top5={_top5}")
-    # END DEBUG TEMP
     return None
 
 
