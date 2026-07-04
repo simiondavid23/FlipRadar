@@ -432,17 +432,23 @@ export default function RadarFeedPage() {
             <Radar style={{ width: "22px", height: "22px", color: "#2563eb" }} />
             Feed Anunțuri
           </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-            Anunțuri găsite în timp real ({listings.length} active în vizualizare)
-          </p>
+          {activeTab === "auto" && (
+            <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
+              Anunțuri găsite în timp real ({listings.length} active în vizualizare)
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Faza 2 — scanare manuală + statistici (deasupra tab-urilor) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
-        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
-      </div>
-      <StatCardsRow cards={statCards} />
+      {/* Faza 2 — scanare manuală + statistici (doar pe tab-ul auto) */}
+      {activeTab === "auto" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
+            <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+          </div>
+          <StatCardsRow cards={statCards} />
+        </>
+      )}
 
       {/* FIX 2 — Tab-uri: Feed Automat / Căutare Manuală */}
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>

@@ -211,10 +211,13 @@ def _notify(kw: AutoKeyword, saved_listing, db: Session):
             f"Notificare Discord auto esuata: {str(exc)[:80]}")
 
 
-def run_auto_scan(db: Session) -> None:
-    """Called by APScheduler every 10 minutes."""
-    keywords = db.query(AutoKeyword).filter(
-        AutoKeyword.is_active == True).all()
+def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
+    """Called by APScheduler every 10 minutes (global) sau din butonul „Scanează
+    acum” cu user_id setat (atunci scaneaza DOAR keyword-urile acelui user)."""
+    query = db.query(AutoKeyword).filter(AutoKeyword.is_active == True)
+    if user_id is not None:
+        query = query.filter(AutoKeyword.user_id == user_id)
+    keywords = query.all()
 
     if not keywords:
         return

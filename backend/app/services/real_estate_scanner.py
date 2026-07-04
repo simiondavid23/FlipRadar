@@ -268,9 +268,11 @@ def _save_fb_group_post(db: Session, post: dict, user_id: int,
     return listing
 
 
-def run_real_estate_scan(db: Session) -> None:
-    keywords = db.query(RealEstateKeyword).filter(
-        RealEstateKeyword.is_active == True).all()
+def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
+    query = db.query(RealEstateKeyword).filter(RealEstateKeyword.is_active == True)
+    if user_id is not None:
+        query = query.filter(RealEstateKeyword.user_id == user_id)
+    keywords = query.all()
     if not keywords:
         return
 

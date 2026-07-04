@@ -200,7 +200,7 @@ def scan_now(
     def _background_scan():
         _db = SessionLocal()
         try:
-            run_auto_scan(_db)
+            run_auto_scan(_db, user_id=user_id)
         except Exception as exc:
             print(f"[AutoScan manual] eroare user {user_id}: {exc}")
         finally:
