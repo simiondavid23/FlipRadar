@@ -236,101 +236,191 @@ PLATFORM_CATEGORIES = {
     ],
 
     "okazii": [
-        # URL format used by scraper: https://www.okazii.ro/{value}?q={keyword}
-        # All slugs marked VERIFY — test before confirming.
         {
-            "label": "Electronice",
-            "value": "electronice",
+            "label": "Fashion & Beauty",
+            "value": None,
             "subcategories": [
-                {"label": "Telefoane Mobile", "value": "electronice/telefoane-gsm"},  # VERIFY
-                {"label": "Laptopuri", "value": "electronice/laptopuri"},  # VERIFY
-                {"label": "Tablete", "value": "electronice/tablete"},  # VERIFY
-                {"label": "Calculatoare", "value": "electronice/calculatoare"},  # VERIFY
-                {"label": "Componente PC", "value": "electronice/componente-pc"},  # VERIFY
-                {"label": "Console și Jocuri Video", "value": "electronice/console-jocuri-video"},  # VERIFY
-                {"label": "Audio-Video și TV", "value": "electronice/audio-video"},  # VERIFY
-                {"label": "Foto și Video", "value": "electronice/aparate-foto"},  # VERIFY
-                {"label": "Smartwatch-uri", "value": "electronice/smartwatch"},  # VERIFY
-                {"label": "Accesorii Electronice", "value": "electronice/accesorii-electronice"},  # VERIFY
+                {"label": "Accesorii moda", "value": "accesorii-moda"},
+                {"label": "Bijuterii", "value": "bijuterii"},
+                {"label": "Ceasuri", "value": "ceasuri"},
+                {"label": "Cosmetice femei", "value": "cosmetice-femei"},
+                {"label": "Cosmetice barbati", "value": "cosmetice-barbati"},
+                {"label": "Gravide si mamici", "value": "gravide-si-mamici"},
+                {"label": "Handmade", "value": "handmade"},
+                {"label": "Imbracaminte", "value": "imbracaminte"},
+                {"label": "Incaltaminte", "value": "incaltaminte"},
+                {"label": "Parfumuri", "value": "parfumuri"},
+                {"label": "Nunta", "value": "nunta"},
+                {"label": "Ochelari", "value": "ochelari"},
+                {"label": "Produse sanatate", "value": "sanatate"},
+                {"label": "Turism", "value": "turism"},
             ],
         },
         {
-            "label": "Modă și Accesorii",
-            "value": "moda-fashion",
+            "label": "Telefoane mobile & Tablete",
+            "value": None,
             "subcategories": [
-                {"label": "Îmbrăcăminte Femei", "value": "moda-fashion/imbracaminte-femei"},  # VERIFY
-                {"label": "Îmbrăcăminte Bărbati", "value": "moda-fashion/imbracaminte-barbati"},  # VERIFY
-                {"label": "Îmbrăcăminte Copii", "value": "moda-fashion/imbracaminte-copii"},  # VERIFY
-                {"label": "Încăltăminte", "value": "moda-fashion/incaltaminte"},  # VERIFY
-                {"label": "Genti și Accesorii", "value": "moda-fashion/genti-accesorii"},  # VERIFY
-                {"label": "Bijuterii și Ceasuri", "value": "moda-fashion/bijuterii-ceasuri"},  # VERIFY
+                {"label": "Accesorii GSM", "value": "accesorii-gsm"},
+                {"label": "Accesorii tablete", "value": "accesorii-tablete"},
+                {"label": "Cartela SIM", "value": "cartele-sim"},
+                {"label": "Piese telefoane", "value": "piese-telefoane"},
+                {"label": "Piese tablete", "value": "piese-tablete"},
+                {"label": "Servicii gsm", "value": "servicii-gsm"},
+                {"label": "Tablete", "value": "tablete"},
+                {"label": "Telefoane mobile", "value": "telefoane-mobile-si-smartphones"},
             ],
         },
         {
-            "label": "Casă și Grădina",
-            "value": "casa-gradina",
+            "label": "Laptop, Computere, Gadgets",
+            "value": None,
             "subcategories": [
-                {"label": "Mobilă", "value": "casa-gradina/mobila"},  # VERIFY
-                {"label": "Decoratiuni", "value": "casa-gradina/decoratiuni"},  # VERIFY
-                {"label": "Electrocasnice", "value": "casa-gradina/electrocasnice"},  # VERIFY
-                {"label": "Grădinărit", "value": "casa-gradina/gradinarit"},  # VERIFY
-                {"label": "Bricolaj", "value": "casa-gradina/bricolaj"},  # VERIFY
+                {"label": "Accesorii laptop", "value": "accesorii-laptop"},
+                {"label": "Componente PC", "value": "componente-computere"},
+                {"label": "Computere", "value": "computere"},
+                {"label": "Gadget", "value": "gadget"},
+                {"label": "Imprimante", "value": "imprimante"},
+                {"label": "Laptop", "value": "laptopuri"},
+                {"label": "Monitoare", "value": "monitoare"},
+                {"label": "Piese si componente laptop", "value": "piese-componente-laptop"},
+                {"label": "Accesorii computere", "value": "periferice-multimedia"},
+                {"label": "Produse retelistica", "value": "retelistica-telecomunicatii"},
             ],
         },
         {
-            "label": "Auto și Moto",
-            "value": "auto-moto",
+            "label": "Electrocasnice",
+            "value": None,
             "subcategories": [
-                {"label": "Piese Auto", "value": "auto-moto/piese-auto"},  # VERIFY
-                {"label": "Accesorii Auto", "value": "auto-moto/accesorii-auto"},  # VERIFY
-                {"label": "Motociclete", "value": "auto-moto/motociclete"},  # VERIFY
+                {"label": "Aer conditionat si incalzire", "value": "aer-conditionat-incalzire"},
+                {"label": "Aragaze si hote", "value": "aragazuri-hote"},
+                {"label": "Aparate frigorifice", "value": "aparate-frigorifice"},
+                {"label": "Aspiratoare", "value": "aspiratoare"},
+                {"label": "Cuptoare", "value": "cuptoare"},
+                {"label": "Electrocasnice mici pentru bucatarie", "value": "electrocasnice-mici-bucatarie"},
+                {"label": "Espressoare, cafetiere, cafea", "value": "espressoare-cafetiere-cafea"},
+                {"label": "Fiare si statii de calcat", "value": "fiare-statii-calcat"},
+                {"label": "Electrocasnice ingrijire personala", "value": "ingrijire-personala"},
+                {"label": "Masini de spalat", "value": "masini-de-spalat"},
             ],
         },
         {
-            "label": "Sport și Recreere",
-            "value": "sport-recreere",
+            "label": "TV, Electronice & Foto",
+            "value": None,
             "subcategories": [
-                {"label": "Fitness", "value": "sport-recreere/fitness"},  # VERIFY
-                {"label": "Biciclete", "value": "sport-recreere/biciclete"},  # VERIFY
-                {"label": "Echipamente Sportive", "value": "sport-recreere/echipamente-sportive"},  # VERIFY
-                {"label": "Sporturi Outdoor", "value": "sport-recreere/outdoor"},  # VERIFY
+                {"label": "Aparate foto", "value": "aparate-foto"},
+                {"label": "Audio", "value": "audio"},
+                {"label": "Camere video si accesorii", "value": "camere-video-si-accesorii"},
+                {"label": "Componente electronice", "value": "componente-electronice"},
+                {"label": "Console jocuri si gaming", "value": "console-jocuri-si-accesorii"},
+                {"label": "Echipamente DJ si studio", "value": "echipamente-dj-si-studio"},
+                {"label": "Home Cinema si Media Player", "value": "homecinema"},
+                {"label": "Receivere, antene si accesorii tv", "value": "receivere-antene-accesorii-tv"},
+                {"label": "Sisteme de supraveghere", "value": "sisteme-supraveghere"},
+                {"label": "Televizoare", "value": "televizoare"},
+                {"label": "Videoproiectoare si accesorii", "value": "videoproiectoare-accesorii"},
+                {"label": "Conectica", "value": "conectica"},
             ],
         },
         {
-            "label": "Copii și Bebe",
-            "value": "copii-bebe",
+            "label": "Universul copiilor",
+            "value": None,
             "subcategories": [
-                {"label": "Haine Copii", "value": "copii-bebe/haine"},  # VERIFY
-                {"label": "Jucării", "value": "copii-bebe/jucarii"},  # VERIFY
-                {"label": "Cărucioare", "value": "copii-bebe/carucioare"},  # VERIFY
-                {"label": "Mobilier Copii", "value": "copii-bebe/mobilier"},  # VERIFY
+                {"label": "Alimentatia si ingrijirea copilului", "value": "alimentatia-si-ingrijirea-copilului"},
+                {"label": "Camera copilului", "value": "camera-copilului"},
+                {"label": "Carucioare copii si accesorii", "value": "carucioare-copii"},
+                {"label": "Jucarii copii", "value": "jucarii-fete-si-baieti"},
+                {"label": "Jocuri educative", "value": "jocuri-educative"},
+                {"label": "Jucarii exterior", "value": "jucarii-exterior"},
+                {"label": "Jucarii de interior", "value": "jucarii-interior-pentru-copii"},
+                {"label": "Lego", "value": "jocuri-lego"},
+                {"label": "Petreceri copii", "value": "petreceri-copii"},
+                {"label": "Transportarea copiilor", "value": "transportarea-copiilor"},
             ],
         },
         {
-            "label": "Sănătate și Frumusete",
-            "value": "sanatate-frumusete",
+            "label": "Librarie",
+            "value": None,
             "subcategories": [
-                {"label": "Cosmetice", "value": "sanatate-frumusete/cosmetice"},  # VERIFY
-                {"label": "Suplimente", "value": "sanatate-frumusete/suplimente"},  # VERIFY
-                {"label": "Echipamente Medicale", "value": "sanatate-frumusete/echipamente"},  # VERIFY
+                {"label": "Accesorii instrumente muzicale", "value": "accesorii-instrumente-muzicale"},
+                {"label": "Carti", "value": "carti"},
+                {"label": "Filme", "value": "filme"},
+                {"label": "Instrumente muzicale", "value": "instrumente-muzicale"},
+                {"label": "Muzica", "value": "muzica"},
+                {"label": "Papetarie si birotica", "value": "papetarie-si-birotica"},
             ],
         },
         {
-            "label": "Colectii și Artă",
-            "value": "colectii-arta",
+            "label": "Artă și obiecte de colecție",
+            "value": None,
             "subcategories": [
-                {"label": "Monede și Bancnote", "value": "colectii-arta/monede"},  # VERIFY
-                {"label": "Filatelie", "value": "colectii-arta/filatelie"},  # VERIFY
-                {"label": "Artă", "value": "colectii-arta/arta"},  # VERIFY
+                {"label": "Antichitati", "value": "antichitati"},
+                {"label": "Arta", "value": "arta"},
+                {"label": "Carti postale", "value": "carti-postale"},
+                {"label": "Colectii", "value": "colectii"},
+                {"label": "Obiecte bisericesti", "value": "obiecte-bisericesti"},
+                {"label": "Numismatica", "value": "numismatica"},
+                {"label": "Timbre", "value": "timbre"},
             ],
         },
         {
-            "label": "Cărti, Muzică și Film",
-            "value": "carti-muzica-film",
+            "label": "Casă, Grădină și Imobiliare",
+            "value": None,
             "subcategories": [
-                {"label": "Cărti", "value": "carti-muzica-film/carti"},  # VERIFY
-                {"label": "Muzică", "value": "carti-muzica-film/muzica"},  # VERIFY
-                {"label": "Film", "value": "carti-muzica-film/film"},  # VERIFY
+                {"label": "Alimente", "value": "alimente"},
+                {"label": "Bauturi", "value": "bauturi"},
+                {"label": "Casa", "value": "casa"},
+                {"label": "Decoratiuni", "value": "decoratiuni"},
+                {"label": "Do it yourself", "value": "do-it-yourself"},
+                {"label": "Gradina", "value": "gradina"},
+                {"label": "Imobiliare", "value": "imobiliare"},
+                {"label": "Materiale de constructii", "value": "materiale-de-constructii-si-amenajari"},
+                {"label": "Mobila", "value": "mobila"},
+                {"label": "Petshop", "value": "animale"},
+                {"label": "Scule si unelte", "value": "scule-si-unelte"},
+            ],
+        },
+        {
+            "label": "Sport",
+            "value": None,
+            "subcategories": [
+                {"label": "Accesorii sport", "value": "accesorii-sport"},
+                {"label": "Airsoft", "value": "airsoft"},
+                {"label": "Sporturi echipa", "value": "sport-echipa"},
+                {"label": "Biciclete", "value": "biciclete"},
+                {"label": "Fitness", "value": "fitness"},
+                {"label": "Fan zone", "value": "fan-zone"},
+                {"label": "Pescuit", "value": "pescuit"},
+                {"label": "Outdoor", "value": "outdoor"},
+                {"label": "Role si skateboard", "value": "role-si-skateboard"},
+                {"label": "Sporturi de iarna", "value": "sporturi-de-iarna"},
+                {"label": "Sporturi de camera", "value": "sporturi-de-camera"},
+                {"label": "Sporturi nautice", "value": "sporturi-nautice"},
+                {"label": "Vanatoare", "value": "vanatoare"},
+                {"label": "Sporturi cu paleta", "value": "sporturi-cu-paleta"},
+                {"label": "Sporturi de precizie", "value": "sporturi-de-precizie"},
+                {"label": "Sporturi contact", "value": "sporturi-contact"},
+            ],
+        },
+        {
+            "label": "Auto-moto, piese, accesorii",
+            "value": None,
+            "subcategories": [
+                {"label": "Accesorii si consumabile auto", "value": "accesorii-si-consumabile-auto"},
+                {"label": "Anvelope si jante", "value": "anvelope-si-jante"},
+                {"label": "ATV-uri si Accesorii", "value": "atv-si-accesorii"},
+                {"label": "Anunturi auto gratuite", "value": "anunturi-auto"},
+                {"label": "Barci", "value": "barci"},
+                {"label": "Detectoare si statii radio", "value": "detectoare-si-statii-radio"},
+                {"label": "Dezmembrari", "value": "dezmembrari"},
+                {"label": "Diagnoza si manuale auto", "value": "diagnoza-si-manuale"},
+                {"label": "Echipament moto", "value": "echipament-moto"},
+                {"label": "GPS & Accesorii", "value": "gps"},
+                {"label": "Multimedia auto", "value": "audio-video-auto"},
+                {"label": "Piese auto", "value": "piese-auto"},
+                {"label": "Piese si accesorii moto", "value": "piese-si-accesorii-moto"},
+                {"label": "Scule si echipamente service", "value": "scule-echipamente-service"},
+                {"label": "Scutere si vehicule electrice", "value": "scutere-si-mopede"},
+                {"label": "Tuning", "value": "tuning"},
+                {"label": "Motociclete", "value": "motociclete"},
             ],
         },
     ],
@@ -355,33 +445,461 @@ PLATFORM_CATEGORIES = {
     ],
 
     "lajumate": [
-        # 1 level. URL format: https://www.lajumate.ro/anunturi/{value}/
-        {"label": "Electronice și IT", "value": "electronice-si-it"},  # VERIFY
-        {"label": "Auto și Piese", "value": "auto-moto"},  # VERIFY
-        {"label": "Modă și Accesorii", "value": "moda-accesorii"},  # VERIFY
-        {"label": "Casă și Grădina", "value": "casa-gradina"},  # VERIFY
-        {"label": "Sport și Timp Liber", "value": "sport-si-timp-liber"},  # VERIFY
-        {"label": "Copii și Bebe", "value": "copii-bebe"},  # VERIFY
-        {"label": "Animale de Companie", "value": "animale"},  # VERIFY
-        {"label": "Sănătate și Frumusete", "value": "sanatate-frumusete"},  # VERIFY
-        {"label": "Cărti, Muzică și Film", "value": "carti-muzica-film"},  # VERIFY
-        {"label": "Colectii și Artă", "value": "colectii-arta"},  # VERIFY
-        {"label": "Diverse", "value": None},
+        {
+            "label": "Agro si Industrie",
+            "value": "agro-si-industrie",
+            "subcategories": [
+                {"label": "Animale domestice si pasari", "value": "agro-si-industrie/animale-domestice-si-pasari"},
+                {"label": "Cereale - plante - pomi", "value": "agro-si-industrie/cereale-plante-pomi"},
+                {"label": "Echipamente si articole zootehnie", "value": "agro-si-industrie/echipamente-si-articole-zootehnie"},
+                {"label": "Produse piata - alimentatie", "value": "agro-si-industrie/produse-piata-alimentatie"},
+                {"label": "Utilaje agricole si industriale", "value": "agro-si-industrie/utilaje-agricole-si-industriale"},
+            ],
+        },
+        {
+            "label": "Animale de companie",
+            "value": "animale-de-companie",
+            "subcategories": [
+                {"label": "Accesorii pentru animale de companie", "value": "animale-de-companie/accesorii-pentru-animale-de-companie"},
+                {"label": "Adoptii", "value": "animale-de-companie/adoptii"},
+                {"label": "Alte animale de companie", "value": "animale-de-companie/alte-animale-de-companie"},
+                {"label": "Câini", "value": "animale-de-companie/caini"},
+                {"label": "Mâncare și gustări pentru animale de companie", "value": "animale-de-companie/mancare-si-gustari-pentru-animale-de-companie"},
+                {"label": "Pisici", "value": "animale-de-companie/pisici"},
+                {"label": "Servicii pentru animale de companie", "value": "animale-de-companie/servicii-pentru-animale-de-companie"},
+            ],
+        },
+        {
+            "label": "Auto, moto si ambarcatiuni",
+            "value": "auto-moto-si-ambarcatiuni",
+            "subcategories": [
+                {"label": "Ambarcatiuni", "value": "auto-moto-si-ambarcatiuni/ambarcatiuni"},
+                {"label": "Autoturisme", "value": "auto-moto-si-ambarcatiuni/autoturisme"},
+                {"label": "Autoutilitare", "value": "auto-moto-si-ambarcatiuni/autoutilitare"},
+                {"label": "Camioane - Rulote - Remorci", "value": "auto-moto-si-ambarcatiuni/camioane-rulote-remorci"},
+                {"label": "Motociclete", "value": "auto-moto-si-ambarcatiuni/motociclete"},
+                {"label": "Scutere - ATV - UTV", "value": "auto-moto-si-ambarcatiuni/scutere-atv-utv"},
+            ],
+        },
+        {
+            "label": "Casa si gradina",
+            "value": "casa-si-gradina",
+            "subcategories": [
+                {"label": "Articole menaj", "value": "casa-si-gradina/articole-menaj"},
+                {"label": "Constructii", "value": "casa-si-gradina/constructii-casa-si-gradina"},
+                {"label": "Decoratiuni pentru interior", "value": "casa-si-gradina/decoratiuni-pentru-interior"},
+                {"label": "Finisaj interior", "value": "casa-si-gradina/finisaj-interior"},
+                {"label": "Gradina", "value": "casa-si-gradina/gradina"},
+                {"label": "Hale metalice, structuri metalice si containere", "value": "casa-si-gradina/hale-metalice-structuri-metalice-si-containere"},
+                {"label": "Iluminat", "value": "casa-si-gradina/iluminat"},
+                {"label": "Instalatii electrice", "value": "casa-si-gradina/instalatii-electrice"},
+                {"label": "Instalatii sanitare", "value": "casa-si-gradina/instalatii-sanitare"},
+                {"label": "Instalatii termice", "value": "casa-si-gradina/instalatii-termice"},
+                {"label": "Mobila", "value": "casa-si-gradina/mobila"},
+                {"label": "Scule, unelte, feronerie", "value": "casa-si-gradina/scule-unelte-feronerie"},
+            ],
+        },
+        {
+            "label": "Afaceri și echipamente profesionale",
+            "value": "echipamente-profesionale-si-vanzare-companii",
+            "subcategories": [
+                {"label": "Alte echipamente profesionale", "value": "echipamente-profesionale-si-vanzare-companii/alte-echipamente-profesionale"},
+                {"label": "Echipamente de lucru și protecție", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-de-lucru-si-protectie"},
+                {"label": "Echipamente pentru evenimente", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-pentru-evenimente"},
+                {"label": "Echipamente pentru industria textilă", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-pentru-industria-textila"},
+                {"label": "Echipamente pentru magazine si birouri", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-pentru-magazine-si-birouri"},
+                {"label": "Echipamente pentru reparații auto și spălătorii auto", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-pentru-reparatii-auto-si-spalatorii-auto"},
+                {"label": "Echipamente profesionale de construcții", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-profesionale-de-constructii"},
+                {"label": "Echipamente profesionale de curățenie", "value": "echipamente-profesionale-si-vanzare-companii/echipamente-profesionale-de-curatenie"},
+                {"label": "Firme și licențe de vanzare", "value": "echipamente-profesionale-si-vanzare-companii/firme-si-licente-de-vanzare"},
+                {"label": "Horeca", "value": "echipamente-profesionale-si-vanzare-companii/horeca"},
+            ],
+        },
+        {
+            "label": "Electronice si electrocasnice",
+            "value": "electronice-si-electrocasnice",
+            "subcategories": [
+                {"label": "Accesorii telefoane & tablete", "value": "electronice-si-electrocasnice/accesorii-telefoane-tablete"},
+                {"label": "Aparate medicale & Wellness", "value": "electronice-si-electrocasnice/aparate-medicale-wellness"},
+                {"label": "Audio Hi Fi & Profesionale", "value": "electronice-si-electrocasnice/audio-hi-fi-profesionale"},
+                {"label": "Casa inteligenta - Smarthome", "value": "electronice-si-electrocasnice/casa-inteligenta-smarthome"},
+                {"label": "Casti Audio", "value": "electronice-si-electrocasnice/casti-audio"},
+                {"label": "Componente Laptop-PC", "value": "electronice-si-electrocasnice/componente-laptop-pc"},
+                {"label": "Drone & accesorii", "value": "electronice-si-electrocasnice/drone-accesorii"},
+                {"label": "Electrocasnice", "value": "electronice-si-electrocasnice/electrocasnice"},
+                {"label": "Gadgets, Wearables & Camere foto-video", "value": "electronice-si-electrocasnice/gadgets-wearables-camere-foto-video"},
+                {"label": "Home Cinema & Audio", "value": "electronice-si-electrocasnice/home-cinema-audio"},
+                {"label": "Imprimante, scannere", "value": "electronice-si-electrocasnice/imprimante-scannere"},
+                {"label": "Ingrijire Personala", "value": "electronice-si-electrocasnice/ingrijire-personala"},
+                {"label": "Laptop-Calculator-Gaming", "value": "electronice-si-electrocasnice/laptop-calculator-gaming"},
+                {"label": "Periferice & Accesorii Laptop-PC-Gaming", "value": "electronice-si-electrocasnice/periferice-accesorii-laptop-pc-gaming"},
+                {"label": "Piese telefoane & tablete", "value": "electronice-si-electrocasnice/piese-telefoane-tablete"},
+                {"label": "Retelistica & Servere", "value": "electronice-si-electrocasnice/retelistica-servere"},
+                {"label": "Tablete - eReadere", "value": "electronice-si-electrocasnice/tablete-ereadere"},
+                {"label": "Telefoane", "value": "electronice-si-electrocasnice/telefoane"},
+                {"label": "Televizoare si accesorii", "value": "electronice-si-electrocasnice/televizoare-si-accesorii"},
+                {"label": "Videoproiectoare & Accesorii", "value": "electronice-si-electrocasnice/videoproiectoare-accesorii"},
+            ],
+        },
+        {
+            "label": "Imobiliare",
+            "value": "imobiliare",
+            "subcategories": [
+                {"label": "Alte proprietati", "value": "imobiliare/alte-proprietati"},
+                {"label": "Apartamente de inchiriat", "value": "imobiliare/apartamente-de-inchiriat"},
+                {"label": "Apartamente de vanzare", "value": "imobiliare/apartamente-de-vanzare"},
+                {"label": "Birouri - Spatii comerciale", "value": "imobiliare/birouri-spatii-comerciale"},
+                {"label": "Case-Vile de inchiriat", "value": "imobiliare/case-vile-de-inchiriat"},
+                {"label": "Case-Vile de vanzare", "value": "imobiliare/case-vile-de-vanzare"},
+                {"label": "Caut coleg - Camere de inchiriat", "value": "imobiliare/caut-coleg-camere-de-inchiriat"},
+                {"label": "Cazare-Turism", "value": "imobiliare/cazare-turism-imobiliare"},
+                {"label": "Depozite si Hale de inchiriat", "value": "imobiliare/depozite-si-hale-de-inchiriat"},
+                {"label": "Depozite si Hale de vanzare", "value": "imobiliare/depozite-si-hale-de-vanzare"},
+                {"label": "Garsoniere de inchiriat", "value": "imobiliare/garsoniere-de-inchiriat"},
+                {"label": "Garsoniere de vanzare", "value": "imobiliare/garsoniere-de-vanzare"},
+                {"label": "Parcari si Garaje de inchiriat", "value": "imobiliare/parcari-si-garaje-de-inchiriat"},
+                {"label": "Parcari si Garaje de vanzare", "value": "imobiliare/parcari-si-garaje-de-vanzare"},
+                {"label": "Schimburi Imobiliare", "value": "imobiliare/schimburi-imobiliare"},
+                {"label": "Terenuri", "value": "imobiliare/terenuri"},
+            ],
+        },
+        {
+            "label": "Inchiriere Bunuri si Vehicule",
+            "value": "inchiriere-bunuri-si-vehicule",
+            "subcategories": [
+                {"label": "Închiriere Alte Articole", "value": "inchiriere-bunuri-si-vehicule/inchiriere-alte-articole"},
+                {"label": "Închiriere Articole Modă & Copii", "value": "inchiriere-bunuri-si-vehicule/inchiriere-articole-moda-copii"},
+                {"label": "Închiriere Articole Sport", "value": "inchiriere-bunuri-si-vehicule/inchiriere-articole-sport"},
+                {"label": "Închiriere Echipament de Construcții", "value": "inchiriere-bunuri-si-vehicule/inchiriere-echipament-de-constructii"},
+                {"label": "Închiriere Electronice & Jocuri", "value": "inchiriere-bunuri-si-vehicule/inchiriere-electronice-jocuri"},
+                {"label": "Închiriere Materiale pentru Evenimente", "value": "inchiriere-bunuri-si-vehicule/inchiriere-materiale-pentru-evenimente"},
+                {"label": "Închiriere Vehicule", "value": "inchiriere-bunuri-si-vehicule/inchiriere-vehicule"},
+            ],
+        },
+        {
+            "label": "Locuri de munca",
+            "value": "locuri-de-munca",
+            "subcategories": [
+                {"label": "Agenti - consultanti vanzari", "value": "locuri-de-munca/agenti-consultanti-vanzari"},
+                {"label": "Agricultura - Zootehnie", "value": "locuri-de-munca/agricultura-zootehnie"},
+                {"label": "Alte locuri de munca", "value": "locuri-de-munca/alte-locuri-de-munca"},
+                {"label": "Bone - Menajere", "value": "locuri-de-munca/bone-menajere"},
+                {"label": "Call center - Suport clienti", "value": "locuri-de-munca/call-center-suport-clienti"},
+                {"label": "Casieri - Lucratori comerciali", "value": "locuri-de-munca/casieri-lucratori-comerciali"},
+                {"label": "Confectii - Croitori", "value": "locuri-de-munca/confectii-croitori"},
+                {"label": "Cosmeticieni - Frizeri - Saloane", "value": "locuri-de-munca/cosmeticieni-frizeri-saloane"},
+                {"label": "Educatie - Training", "value": "locuri-de-munca/educatie-training"},
+                {"label": "Evenimente si divertisment", "value": "locuri-de-munca/evenimente-si-divertisment"},
+                {"label": "Finante - contabilitate", "value": "locuri-de-munca/finante-contabilitate"},
+                {"label": "Ingineri - Meseriasi - Constructori", "value": "locuri-de-munca/ingineri-meseriasi-constructori"},
+                {"label": "Internship - Munca temporara - sezoniera", "value": "locuri-de-munca/internship-munca-temporara-sezoniera"},
+                {"label": "IT - Telecomunicatii", "value": "locuri-de-munca/it-telecomunicatii"},
+                {"label": "Lucratori productie - depozit - logistica", "value": "locuri-de-munca/lucratori-productie-depozit-logistica"},
+                {"label": "Marketing - PR - Media", "value": "locuri-de-munca/marketing-pr-media"},
+                {"label": "Munca in strainatate", "value": "locuri-de-munca/munca-in-strainatate"},
+                {"label": "Paza si protectie", "value": "locuri-de-munca/paza-si-protectie"},
+                {"label": "Personal administrativ - secretariat", "value": "locuri-de-munca/personal-administrativ-secretariat"},
+                {"label": "Personal hotelier - restaurant", "value": "locuri-de-munca/personal-hotelier-restaurant"},
+                {"label": "Personal medical", "value": "locuri-de-munca/personal-medical-locuri-de-munca"},
+                {"label": "Resurse Umane", "value": "locuri-de-munca/resurse-umane"},
+                {"label": "Soferi - Servicii auto - Curierat", "value": "locuri-de-munca/soferi-servicii-auto-curierat"},
+                {"label": "Administrarea afacerii", "value": "locuri-de-munca/administrarea-afacerii"},
+            ],
+        },
+        {
+            "label": "Mama si copilul",
+            "value": "mama-si-copilul",
+            "subcategories": [
+                {"label": "Alimentatie - Ingrijire", "value": "mama-si-copilul/alimentatie-ingrijire"},
+                {"label": "Alte produse copii", "value": "mama-si-copilul/alte-produse-copii"},
+                {"label": "Articole scolare - papetarie", "value": "mama-si-copilul/articole-scolare-papetarie"},
+                {"label": "Camera copilului", "value": "mama-si-copilul/camera-copilului"},
+                {"label": "Haine - Incaltaminte copii si gravide", "value": "mama-si-copilul/haine-incaltaminte-copii-si-gravide"},
+                {"label": "Jocuri - Jucarii", "value": "mama-si-copilul/jocuri-jucarii"},
+                {"label": "La plimbare", "value": "mama-si-copilul/la-plimbare"},
+            ],
+        },
+        {
+            "label": "Moda si frumusete",
+            "value": "moda-si-frumusete",
+            "subcategories": [
+                {"label": "Accesorii", "value": "moda-si-frumusete/accesorii"},
+                {"label": "Alte accesorii de moda si frumusete", "value": "moda-si-frumusete/alte-accesorii-de-moda-si-frumusete"},
+                {"label": "Cadouri", "value": "moda-si-frumusete/cadouri"},
+                {"label": "Ceasuri", "value": "moda-si-frumusete/ceasuri"},
+                {"label": "Haine barbati", "value": "moda-si-frumusete/haine-barbati"},
+                {"label": "Haine dama", "value": "moda-si-frumusete/haine-dama"},
+                {"label": "Haine pentru gravide", "value": "moda-si-frumusete/haine-pentru-gravide"},
+                {"label": "Haine pentru nunta", "value": "moda-si-frumusete/haine-pentru-nunta"},
+                {"label": "Incaltaminte barbati", "value": "moda-si-frumusete/incaltaminte-barbati"},
+                {"label": "Incaltaminte dama", "value": "moda-si-frumusete/incaltaminte-dama"},
+                {"label": "Lenjerie si costume de baie dama", "value": "moda-si-frumusete/lenjerie-si-costume-de-baie-dama"},
+                {"label": "Lenjerie si costume de inot barbati", "value": "moda-si-frumusete/lenjerie-si-costume-de-inot-barbati"},
+                {"label": "Palarii, sepci si bandane", "value": "moda-si-frumusete/palarii-sepci-si-bandane"},
+                {"label": "Sanatate si frumusete", "value": "moda-si-frumusete/sanatate-si-frumusete"},
+            ],
+        },
+        {
+            "label": "Piese auto",
+            "value": "piese-auto",
+            "subcategories": [
+                {"label": "Alte piese", "value": "piese-auto/alte-piese"},
+                {"label": "Piese Ambarcatiuni", "value": "piese-auto/piese-ambarcatiuni-auto"},
+                {"label": "Piese Autoutilitare", "value": "piese-auto/piese-autoutilitare"},
+                {"label": "Piese Camioane - Rulote - Remorci", "value": "piese-auto/piese-camioane-rulote-remorci"},
+                {"label": "Piese Motociclete", "value": "piese-auto/piese-motociclete"},
+                {"label": "Piese Scutere - ATV - UTV", "value": "piese-auto/piese-scutere-atv-utv"},
+                {"label": "Caroserie - Interior", "value": "piese-auto/caroserie-interior"},
+                {"label": "Consumabile - accesorii", "value": "piese-auto/consumabile-accesorii"},
+                {"label": "Mecanica - electrica", "value": "piese-auto/mecanica-electrica"},
+                {"label": "Roti - Jante- Anvelope", "value": "piese-auto/roti-jante-anvelope"},
+                {"label": "Vehicule pentru dezmembrare", "value": "piese-auto/vehicule-pentru-dezmembrare"},
+            ],
+        },
+        {
+            "label": "Servicii",
+            "value": "servicii",
+            "subcategories": [
+                {"label": "Cursuri - Meditatii", "value": "servicii/cursuri-meditatii"},
+                {"label": "Evenimente", "value": "servicii/evenimente"},
+                {"label": "Meseriasi - Constructori", "value": "servicii/meseriasi-constructori"},
+                {"label": "Reparatii electrocasnice, electronice si telefoane", "value": "servicii/reparatii-electrocasnice-electronice-si-telefoane"},
+                {"label": "Servicii Auto - Transport", "value": "servicii/servicii-auto-transport"},
+                {"label": "Servicii de curatenie", "value": "servicii/servicii-de-curatenie"},
+                {"label": "Servicii de infrumusetare", "value": "servicii/servicii-de-infrumusetare"},
+                {"label": "Servicii diverse", "value": "servicii/servicii-diverse"},
+                {"label": "Servicii medicale - Servicii de ingrijire - Croitorie", "value": "servicii/servicii-medicale-servicii-de-ingrijire-croitorie"},
+                {"label": "Servicii specializate si servicii pentru afaceri", "value": "servicii/servicii-specializate-si-servicii-pentru-afaceri"},
+            ],
+        },
+        {
+            "label": "Sport, timp liber, arta",
+            "value": "sport-timp-liber-arta",
+            "subcategories": [
+                {"label": "Airsoft", "value": "sport-timp-liber-arta/airsoft"},
+                {"label": "Alergare", "value": "sport-timp-liber-arta/alergare"},
+                {"label": "Alpinism, escalada", "value": "sport-timp-liber-arta/alpinism-escalada"},
+                {"label": "Arta - Obiecte de colectie", "value": "sport-timp-liber-arta/arta-obiecte-de-colectie"},
+                {"label": "Baschet", "value": "sport-timp-liber-arta/baschet"},
+                {"label": "Basebal", "value": "sport-timp-liber-arta/basebal"},
+                {"label": "Biciclete – Fitness - Suplimente", "value": "sport-timp-liber-arta/biciclete-fitness-suplimente"},
+                {"label": "Biliard", "value": "sport-timp-liber-arta/biliard"},
+                {"label": "Box", "value": "sport-timp-liber-arta/box"},
+                {"label": "Camping", "value": "sport-timp-liber-arta/camping"},
+                {"label": "Carti - Muzica - Filme", "value": "sport-timp-liber-arta/carti-muzica-filme"},
+                {"label": "Dans, gimnastica", "value": "sport-timp-liber-arta/dans-gimnastica"},
+                {"label": "Drumetie", "value": "sport-timp-liber-arta/drumetie"},
+                {"label": "Echipamente sportive si de turism", "value": "sport-timp-liber-arta/echipamente-sportive-si-de-turism"},
+                {"label": "Echitatie", "value": "sport-timp-liber-arta/echitatie"},
+                {"label": "Evenimente - Divertisment", "value": "sport-timp-liber-arta/evenimente-divertisment"},
+                {"label": "Fotbal", "value": "sport-timp-liber-arta/fotbal"},
+                {"label": "Genti, trolere", "value": "sport-timp-liber-arta/genti-trolere"},
+                {"label": "Golf", "value": "sport-timp-liber-arta/golf"},
+                {"label": "Karate - Judo", "value": "sport-timp-liber-arta/karate-judo"},
+                {"label": "Moto, enduro, atv", "value": "sport-timp-liber-arta/moto-enduro-atv"},
+                {"label": "Parapante", "value": "sport-timp-liber-arta/parapante"},
+                {"label": "Pescuit", "value": "sport-timp-liber-arta/pescuit"},
+                {"label": "Sporturi de apa", "value": "sport-timp-liber-arta/sporturi-de-apa"},
+                {"label": "Sporturi de iarna", "value": "sport-timp-liber-arta/sporturi-de-iarna"},
+                {"label": "Tenis", "value": "sport-timp-liber-arta/tenis"},
+                {"label": "Tir cu arcul", "value": "sport-timp-liber-arta/tir-cu-arcul"},
+                {"label": "Trambuline", "value": "sport-timp-liber-arta/trambuline"},
+                {"label": "Trotinete, role, skateboard", "value": "sport-timp-liber-arta/trotinete-role-skateboard"},
+                {"label": "Vanatoare", "value": "sport-timp-liber-arta/vanatoare"},
+                {"label": "Volei", "value": "sport-timp-liber-arta/volei"},
+            ],
+        },
     ],
 
     "publi24": [
-        # 1 level. URL format: https://www.publi24.ro/anunturi/vanzari/{value}/
-        {"label": "Electronice și IT", "value": "electronice-si-it"},  # VERIFY
-        {"label": "Auto, Moto și Ambarcatiuni", "value": "auto-moto-ambarcatiuni"},  # VERIFY
-        {"label": "Modă și Accesorii", "value": "moda-accesorii"},  # VERIFY
-        {"label": "Casă și Grădina", "value": "casa-gradina"},  # VERIFY
-        {"label": "Sport și Hobby", "value": "sport-hobby"},  # VERIFY
-        {"label": "Copii și Bebe", "value": "copii-bebe"},  # VERIFY
-        {"label": "Animale de Companie", "value": "animale"},  # VERIFY
-        {"label": "Sănătate și Frumusete", "value": "sanatate-frumusete"},  # VERIFY
-        {"label": "Cărti, Muzică și Film", "value": "carti-muzica-film"},  # VERIFY
-        {"label": "Industrie și Utilaje", "value": "industrie-utilaje"},  # VERIFY
-        {"label": "Diverse", "value": None},
+        {
+            "label": "Imobiliare",
+            "value": "imobiliare",
+            "subcategories": [
+                {"label": "De vanzare", "value": "imobiliare/de-vanzare"},
+                {"label": "De inchiriat", "value": "imobiliare/de-inchiriat"},
+            ],
+        },
+        {
+            "label": "Auto moto",
+            "value": "auto-moto",
+            "subcategories": [
+                {"label": "Autoturisme", "value": "auto-moto/masini-second-hand"},
+                {"label": "Piese si accesorii", "value": "auto-moto/piese-accesorii"},
+                {"label": "Utilaje", "value": "auto-moto/utilaje"},
+                {"label": "Moto", "value": "auto-moto/motociclete-second-hand"},
+                {"label": "Transport", "value": "auto-moto/transport"},
+            ],
+        },
+        {
+            "label": "Locuri de muncă",
+            "value": "locuri-de-munca",
+            "subcategories": [
+                {"label": "Constructii - Arhitectura - Design", "value": "locuri-de-munca/constructii-arhitectura-design"},
+                {"label": "Soferi - Transporturi", "value": "locuri-de-munca/soferi-transporturi"},
+                {"label": "Muncitori productie - depozit - logistica", "value": "locuri-de-munca/muncitori-productie-depozit-logistica"},
+                {"label": "Horeca", "value": "locuri-de-munca/horeca"},
+                {"label": "Casieri si lucratori comerciali", "value": "locuri-de-munca/casieri-lucratori-comerciali"},
+                {"label": "Menaj si ingrijire persoane", "value": "locuri-de-munca/menaj-ingrijire-persoane"},
+                {"label": "Agenti - consultanti vanzari", "value": "locuri-de-munca/agenti-consultanti-vanzari"},
+                {"label": "Service si spalatorie auto", "value": "locuri-de-munca/service-spalatorie-auto"},
+                {"label": "Agent securitate", "value": "locuri-de-munca/agent-securitate"},
+                {"label": "Medicina umana", "value": "locuri-de-munca/medicina-umana"},
+                {"label": "Frizerie - Coafura - Cosmetica", "value": "locuri-de-munca/frizerie-coafura-cosmetica"},
+                {"label": "Salubrizare – Curatenie – Dezinsectie", "value": "locuri-de-munca/salubrizare-curatenie-dezinsectie"},
+                {"label": "Agricultura - Silvicultura - Zootehnie", "value": "locuri-de-munca/agricultura-silvicultura-zootehnie"},
+                {"label": "Administratie", "value": "locuri-de-munca/administratie"},
+                {"label": "Industrie alimentara", "value": "locuri-de-munca/industrie-alimentara"},
+                {"label": "Finante contabilitate", "value": "locuri-de-munca/finante-contabilitate"},
+                {"label": "Marketing Publicitate", "value": "locuri-de-munca/marketing-publicitate"},
+                {"label": "Confectii croitorie", "value": "locuri-de-munca/confectii-croitorie"},
+                {"label": "IT - Telecomunicatii", "value": "locuri-de-munca/it-telecomunicatii"},
+                {"label": "Profesori- Traineri", "value": "locuri-de-munca/profesori-traineri"},
+                {"label": "Divertisment evenimente", "value": "locuri-de-munca/divertisment-evenimente"},
+                {"label": "Medicina veterinara", "value": "locuri-de-munca/medicina-veterinara"},
+                {"label": "Traduceri", "value": "locuri-de-munca/traduceri"},
+            ],
+        },
+        {
+            "label": "Matrimoniale",
+            "value": "matrimoniale",
+            "subcategories": [
+                {"label": "Escorte", "value": "matrimoniale/escorte"},
+                {"label": "El pentru ea", "value": "matrimoniale/el-pentru-ea"},
+                {"label": "Webcam", "value": "matrimoniale/webcam"},
+                {"label": "Gay/Lesbi", "value": "matrimoniale/gay-lesbi"},
+                {"label": "Saloane masaj", "value": "matrimoniale/saloane-masaj"},
+                {"label": "Diverse", "value": "matrimoniale/diverse"},
+                {"label": "Hotline", "value": "matrimoniale/hotline"},
+                {"label": "Prietenii/Casatorii", "value": "matrimoniale/prietenii-casatorii"},
+            ],
+        },
+        {
+            "label": "Servicii",
+            "value": "servicii",
+            "subcategories": [
+                {"label": "Constructii-Amenajari", "value": "servicii/constructii-amenajari"},
+                {"label": "Alte servicii", "value": "servicii/alte-servicii"},
+                {"label": "Auto-Transporturi", "value": "servicii/auto-transporturi"},
+                {"label": "Firme / Echipamente profesionale", "value": "servicii/firme-echipamente-profesionale"},
+                {"label": "Cursuri - Meditatii", "value": "servicii/cursuri-meditatii"},
+                {"label": "Catering / Nunti / Evenimente", "value": "servicii/catering-nunti-evenimente"},
+                {"label": "Cosmetica-Wellness-Medicale", "value": "servicii/cosmetica-wellnes-medicale"},
+                {"label": "Reparatii Electronice / Electrocasnice / PC", "value": "servicii/reparatii-electronice-electrocasnice-pc"},
+                {"label": "Foto / Filmari / Muzica", "value": "servicii/foto-filmari-muzica"},
+                {"label": "Menaj - Ingrijire persoane", "value": "servicii/menaj-ingrijire-persoane"},
+                {"label": "Contabilitate / Juridic", "value": "servicii/contabilitate-juridic"},
+                {"label": "Servicii IT", "value": "servicii/servicii-it"},
+                {"label": "Publicitate", "value": "servicii/publicitate"},
+                {"label": "Achizitii", "value": "servicii/achizitii"},
+                {"label": "Transport persoane intern", "value": "servicii/transport-persoane-intern"},
+                {"label": "Traduceri", "value": "servicii/traduceri"},
+                {"label": "Transport persoane international", "value": "servicii/transport-persoane-international"},
+                {"label": "Asigurari", "value": "servicii/asigurari"},
+                {"label": "Tehnic - Mentenanta", "value": "servicii/tehnic-mentenanta"},
+                {"label": "Instalatori", "value": "servicii/instalatori"},
+                {"label": "Decodari / Modari", "value": "servicii/decodari-modari"},
+            ],
+        },
+        {
+            "label": "Electronice",
+            "value": "electronice",
+            "subcategories": [
+                {"label": "Alte aparate", "value": "electronice/altele"},
+                {"label": "Audio/Video", "value": "electronice/audio-video"},
+                {"label": "Televizoare", "value": "electronice/televizoare"},
+                {"label": "Electrocasnice", "value": "electronice/electrocasnice"},
+                {"label": "Calculatoare", "value": "electronice/calculatoare"},
+                {"label": "Telefoane mobile", "value": "electronice/telefoane-mobile"},
+                {"label": "Accesorii electronice", "value": "electronice/accesorii-electronice"},
+                {"label": "Laptop", "value": "electronice/laptop"},
+                {"label": "Console/Jocuri", "value": "electronice/console-jocuri"},
+                {"label": "Aparate foto", "value": "electronice/aparate-foto"},
+                {"label": "Aparate medicale", "value": "electronice/aparate-medicale"},
+                {"label": "Echipamente auto", "value": "electronice/echipamente-auto"},
+                {"label": "Smartwatch", "value": "electronice/smartwatch"},
+                {"label": "Tablete", "value": "electronice/tablete"},
+            ],
+        },
+        {
+            "label": "Modă și accesorii",
+            "value": "moda-accesorii",
+            "subcategories": [
+                {"label": "Haine", "value": "moda-accesorii/haine"},
+                {"label": "Accesorii", "value": "moda-accesorii/accesorii"},
+                {"label": "Incaltaminte", "value": "moda-accesorii/incaltaminte"},
+                {"label": "Cosmetice - Ingrijire", "value": "moda-accesorii/cosmetice-ingrijire"},
+            ],
+        },
+        {
+            "label": "Animale",
+            "value": "animale",
+            "subcategories": [
+                {"label": "Animale de ferma", "value": "animale/animale-de-ferma"},
+                {"label": "Caini", "value": "animale/caini"},
+                {"label": "Pisici", "value": "animale/pisici"},
+                {"label": "Pasari", "value": "animale/pasari"},
+                {"label": "Accesorii", "value": "animale/accesorii"},
+                {"label": "Adoptii", "value": "animale/adoptii"},
+                {"label": "Pesti", "value": "animale/pesti"},
+                {"label": "Servicii", "value": "animale/servicii"},
+                {"label": "Reptile", "value": "animale/reptile"},
+            ],
+        },
+        {
+            "label": "Casă și grădină",
+            "value": "casa-si-gradina",
+            "subcategories": [
+                {"label": "Constructii", "value": "casa-si-gradina/constructii"},
+                {"label": "Pentru casa", "value": "casa-si-gradina/pentru-casa"},
+                {"label": "Produse agricole", "value": "casa-si-gradina/produse-agricole"},
+                {"label": "Pentru gradina", "value": "casa-si-gradina/pentru-gradina"},
+            ],
+        },
+        {
+            "label": "Timp liber și sport",
+            "value": "timp-liber-sport",
+            "subcategories": [
+                {"label": "Arta si antichitati", "value": "timp-liber-sport/arta-si-antichitati"},
+                {"label": "Carti - Muzica - Filme", "value": "timp-liber-sport/carti-muzica-filme"},
+                {"label": "Biciclete - Accesorii", "value": "timp-liber-sport/biciclete-accesorii"},
+                {"label": "Trotinete role skateboard", "value": "timp-liber-sport/trotinete-role-skateboard"},
+                {"label": "Camping, Drumetie, Alpinism", "value": "timp-liber-sport/camping-drumetie-alpinism"},
+                {"label": "Alte echipamente sportive", "value": "timp-liber-sport/alte-echipamente-sportive"},
+                {"label": "Pescuit", "value": "timp-liber-sport/pescuit"},
+                {"label": "Echipament fitness", "value": "timp-liber-sport/echipament-fitness"},
+                {"label": "Ambarcatiuni", "value": "timp-liber-sport/ambarcatiuni"},
+                {"label": "Sporturi de iarna", "value": "timp-liber-sport/sporturi-de-iarna"},
+                {"label": "Fotbal", "value": "timp-liber-sport/fotbal"},
+                {"label": "Tenis", "value": "timp-liber-sport/tenis"},
+                {"label": "Sporturi de apa", "value": "timp-liber-sport/sporturi-de-apa"},
+                {"label": "Alergare", "value": "timp-liber-sport/alergare"},
+                {"label": "Trolere - echipament turistic", "value": "timp-liber-sport/trolere-echipament-turistic"},
+                {"label": "Imbracaminte si accesorii vanatoare", "value": "timp-liber-sport/imbracaminte-accesorii-vanatoare"},
+                {"label": "Trotinete electrice", "value": "timp-liber-sport/trotinete-electrice"},
+            ],
+        },
+        {
+            "label": "Mama și copilul",
+            "value": "mama-si-copilul",
+            "subcategories": [
+                {"label": "Jucarii", "value": "mama-si-copilul/jucarii"},
+                {"label": "Haine pentru copii", "value": "mama-si-copilul/haine-copii"},
+                {"label": "Alte produse pentru copii", "value": "mama-si-copilul/alte-produse-copii"},
+                {"label": "Plimbare", "value": "mama-si-copilul/plimbare"},
+                {"label": "Camera copilului", "value": "mama-si-copilul/camera-copilului"},
+                {"label": "Incaltaminte pentru copii", "value": "mama-si-copilul/incaltaminte-copii"},
+                {"label": "Ingrijire si alimentatie", "value": "mama-si-copilul/ingrijire-alimentatie"},
+                {"label": "Articole scolare educative", "value": "mama-si-copilul/articole-scolare-educative"},
+                {"label": "Haine pentru gravide", "value": "mama-si-copilul/haine-gravide"},
+            ],
+        },
+        {
+            "label": "Cazare turism",
+            "value": "cazare-turism",
+            "subcategories": [
+            ],
+        },
     ],
 }
 
