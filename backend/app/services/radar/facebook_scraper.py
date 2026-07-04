@@ -397,3 +397,83 @@ def search_facebook(
                 max_scrolls=max_scrolls, _retry=True,
             )
     return results
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Enrichment on-demand (descriere + galerie din pagina de detaliu)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _collect_key(root, key: str) -> list:
+    """Toate valorile pentru cheia `key` oriunde in structura JSON (recursiv)."""
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == key:
+                    found.append(v)
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(root)
+    return found
+
+
+def fetch_facebook_listing_detail(url: str, session_path: Optional[str]) -> dict:
+    """Enrichment on-demand pentru un anunt Facebook — descriere completa + toata
+    galeria de poze, din pagina de detaliu, prin curl_cffi (FARA Playwright).
+
+    Mirror pe stilul fetch_okazii_listing_details / get_vinted_item_detail. Cheile
+    exacte au fost confirmate live pe pagina de detaliu (diagnostic Partea A):
+      - descriere: cheia 'redacted_description' -> {"text": "<descrierea vanzatorului>"}
+      - galerie:   cheia 'listing_photos' -> [{"image": {"uri": "<...fbcdn...>"}}, ...]
+    Cautam STRUCTURAL dupa aceste doua chei (nu presupunem calea completa din JSON).
+
+    Returneaza {"description": str|None, "images": [urls]|None}. La orice eroare /
+    fetch esuat / login-wall -> {"description": None, "images": None} (fara exceptie).
+    """
+    if not url or not is_facebook_session_valid(session_path):
+        return {"description": None, "images": None}
+    try:
+        html, final_url = _fetch(url, _load_cookies(session_path))
+        if not html:
+            return {"description": None, "images": None}
+        low = (final_url or "").lower()
+        if "login" in low or "checkpoint" in low:
+            log_manager.emit("radar", "WARN",
+                "Facebook detail: redirect login/checkpoint — sesiune posibil expirata")
+            return {"description": None, "images": None}
+
+        description = None
+        images: list[str] = []
+        for block in _SCRIPT_JSON_RE.findall(html):
+            try:
+                data = json.loads(block)
+            except Exception:
+                continue
+            # descriere — pastram cea mai lunga valoare redacted_description.text
+            for rd in _collect_key(data, "redacted_description"):
+                txt = rd.get("text") if isinstance(rd, dict) else rd
+                if isinstance(txt, str) and txt.strip():
+                    txt = txt.strip()
+                    if description is None or len(txt) > len(description):
+                        description = txt
+            # galerie — pastram cea mai mare lista listing_photos (uri per element)
+            for lst in _collect_key(data, "listing_photos"):
+                if not isinstance(lst, list):
+                    continue
+                uris = []
+                for el in lst:
+                    if isinstance(el, dict):
+                        uri = (el.get("image") or {}).get("uri")
+                        if isinstance(uri, str) and uri:
+                            uris.append(uri)
+                if len(uris) > len(images):
+                    images = uris
+
+        return {"description": description, "images": images or None}
+    except Exception as exc:
+        log_manager.emit("radar", "WARN", f"Facebook detail esuat: {str(exc)[:100]}")
+        return {"description": None, "images": None}

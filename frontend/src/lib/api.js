@@ -385,6 +385,7 @@ export const radarAPI = {
   getListing: (id) => api.get(`/api/radar/listings/${id}`),
   generateListingAIReview: (id) => api.get(`/api/radar/listings/${id}/ai-review`),
   getVintedDetail: (id) => api.get(`/api/radar/listings/${id}/vinted-detail`),
+  getFacebookDetail: (id) => api.get(`/api/radar/listings/${id}/facebook-detail`),
   updateListingStatus: (id, status) =>
     api.patch(`/api/radar/listings/${id}/status`, { status }),
   deleteListing: (id) => api.delete(`/api/radar/listings/${id}`),

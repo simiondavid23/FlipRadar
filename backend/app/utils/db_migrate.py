@@ -265,6 +265,12 @@ def run_migrations():
                 _migrate(conn, "add_radar_listings_vinted_detail_fetched",
                          "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS "
                          "vinted_detail_fetched BOOLEAN NOT NULL DEFAULT FALSE")
+            # Facebook: la fel ca Vinted — flag ca detaliul (descriere/galerie) a fost
+            # adus on-demand o singura data (evita re-fetch la fiecare deschidere a panoului).
+            if not _column_exists(inspector, "radar_listings", "facebook_detail_fetched"):
+                _migrate(conn, "add_radar_listings_facebook_detail_fetched",
+                         "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS "
+                         "facebook_detail_fetched BOOLEAN NOT NULL DEFAULT FALSE")
 
         # Radar keywords: car_filters (JSON serializat) + extensii pentru scrapere auto
         if _table_exists(inspector, "radar_keywords"):

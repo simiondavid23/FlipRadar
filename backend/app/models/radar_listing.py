@@ -30,3 +30,5 @@ class RadarListing(Base):
     last_checked_at = Column(DateTime, nullable=True)
     # Vinted: detaliul complet (poze/descriere/data) a fost adus on-demand o singura data.
     vinted_detail_fetched = Column(Boolean, default=False, nullable=False)
+    # Facebook: detaliul complet (descriere/galerie) a fost adus on-demand o singura data.
+    facebook_detail_fetched = Column(Boolean, default=False, nullable=False)

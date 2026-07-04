@@ -275,6 +275,8 @@ def _listing_to_dict(listing: RadarListing, keyword: Optional[RadarKeyword] = No
         "url": listing.url,
         "images": _parse_json_list(listing.images),
         "description": listing.description,
+        "vinted_detail_fetched": listing.vinted_detail_fetched,
+        "facebook_detail_fetched": listing.facebook_detail_fetched,
         "seller_name": listing.seller_name,
         "seller_id": listing.seller_id,
         "score": listing.score,
@@ -713,6 +715,45 @@ def get_vinted_listing_detail(
             # pe endpoint-ul de detaliu se reseteaza (biblioteca insasi
             # documenteaza ca da 403 dupa putine folosiri per sesiune).
             listing.vinted_detail_fetched = True
+            db.commit()
+            db.refresh(listing)
+
+    keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
+    return _listing_to_dict(listing, keyword)
+
+
+@router.get("/listings/{listing_id}/facebook-detail")
+def get_facebook_listing_detail(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Îmbogățește on-demand un anunț Facebook cu descriere + galerie completă,
+    o singură dată per anunț (rezultat cache-uit în DB)."""
+    from app.services.radar.facebook_scraper import fetch_facebook_listing_detail
+    listing = (
+        db.query(RadarListing)
+        .filter(RadarListing.id == listing_id, RadarListing.user_id == current_user.id)
+        .first()
+    )
+    if not listing:
+        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    if listing.platform != "facebook":
+        keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
+        return _listing_to_dict(listing, keyword)
+
+    if not listing.facebook_detail_fetched:
+        settings = _get_or_create_settings(db, current_user.id)
+        detail = fetch_facebook_listing_detail(listing.url, settings.facebook_session_path)
+        if detail and (detail.get("description") or detail.get("images")):
+            if detail.get("images"):
+                listing.images = json.dumps(detail["images"], ensure_ascii=False)
+            if detail.get("description"):
+                listing.description = detail["description"]
+            # Marcam fetched=True DOAR la succes (am primit descriere si/sau galerie).
+            # La esec (fetch esuat/gol, detail fara continut) lasam flag-ul False
+            # intentionat, ca sa reincercam data viitoare cand redeschizi anuntul.
+            listing.facebook_detail_fetched = True
             db.commit()
             db.refresh(listing)
 

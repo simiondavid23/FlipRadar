@@ -305,8 +305,21 @@ export default function RadarFeedPage() {
     try {
       const r = await radarAPI.getVintedDetail(listingId);
       setSelected((prev) => (prev && prev.id === listingId ? { ...prev, ...r.data } : prev));
-    } catch {
-      // silențios — panoul rămâne cu datele existente (thumbnail unic)
+      return !!r.data.vinted_detail_fetched;
+    } catch (e) {
+      console.error("Eroare la încărcarea detaliilor Vinted:", e);
+      return false;
+    }
+  };
+
+  const loadFacebookDetail = async (listingId) => {
+    try {
+      const r = await radarAPI.getFacebookDetail(listingId);
+      setSelected((prev) => (prev && prev.id === listingId ? { ...prev, ...r.data } : prev));
+      return !!r.data.facebook_detail_fetched;
+    } catch (e) {
+      console.error("Eroare la încărcarea detaliilor Facebook:", e);
+      return false;
     }
   };
 
@@ -630,6 +643,7 @@ export default function RadarFeedPage() {
           onGenerateAI={() => generateAIReview(selected.id)}
           generatingAI={generatingAI}
           onLoadVintedDetail={loadVintedDetail}
+          onLoadFacebookDetail={loadFacebookDetail}
         />
       )}
 
@@ -1204,7 +1218,7 @@ function ManualResultCard({ listing }) {
   );
 }
 
-function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBlockSeller, onGenerateAI, generatingAI, onLoadVintedDetail }) {
+function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBlockSeller, onGenerateAI, generatingAI, onLoadVintedDetail, onLoadFacebookDetail }) {
   const { user } = useAuth();
   const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
   const scoreCfg = SCORE_COLORS[listing.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
@@ -1217,6 +1231,9 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlCategory, setMlCategory] = useState(null);
+  const [vintedDetailStatus, setVintedDetailStatus] = useState(null);
+  const [facebookDetailStatus, setFacebookDetailStatus] = useState(null);
+  // valori posibile: null (nu e nevoie) | "loading" | "success" | "failed"
 
   useEffect(() => {
     if (!listing) { setMlPrediction(null); return; }
@@ -1244,9 +1261,32 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
   // cand anuntul are doar thumbnail-ul unic din cautare. O singura data (cache DB).
   useEffect(() => {
     if (!listing || listing.platform !== "vinted") return;
+    if (listing.vinted_detail_fetched) return; // deja cache-uit, nu mai apelam
     const needsDetail = (listing.images || []).length <= 1 || !listing.description;
     if (!needsDetail) return;
-    onLoadVintedDetail?.(listing.id);
+    let cancelled = false;
+    setVintedDetailStatus("loading");
+    Promise.resolve(onLoadVintedDetail?.(listing.id)).then((ok) => {
+      if (cancelled) return;
+      setVintedDetailStatus(ok ? "success" : "failed");
+    });
+    return () => { cancelled = true; };
+  }, [listing.id]);
+
+  // Facebook — mirror pe Vinted: fetch on-demand descriere + galerie completa
+  // cand anuntul are doar thumbnail-ul unic din cautare. O singura data (cache DB).
+  useEffect(() => {
+    if (!listing || listing.platform !== "facebook") return;
+    if (listing.facebook_detail_fetched) return; // deja cache-uit, nu mai apelam
+    const needsDetail = (listing.images || []).length <= 1 || !listing.description;
+    if (!needsDetail) return;
+    let cancelled = false;
+    setFacebookDetailStatus("loading");
+    Promise.resolve(onLoadFacebookDetail?.(listing.id)).then((ok) => {
+      if (cancelled) return;
+      setFacebookDetailStatus(ok ? "success" : "failed");
+    });
+    return () => { cancelled = true; };
   }, [listing.id]);
 
   return (
@@ -1420,6 +1460,27 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
             </div>
           </div>
         </div>
+
+        {listing.platform === "vinted" && vintedDetailStatus === "loading" && (
+          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+            Se încarcă poze și descriere complete de pe Vinted...
+          </div>
+        )}
+        {listing.platform === "vinted" && vintedDetailStatus === "failed" && (
+          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+            Detalii suplimentare indisponibile momentan (limitare temporară Vinted) — vor fi reîncercate la următoarea deschidere.
+          </div>
+        )}
+        {listing.platform === "facebook" && facebookDetailStatus === "loading" && (
+          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+            Se încarcă descriere și galerie complete de pe Facebook...
+          </div>
+        )}
+        {listing.platform === "facebook" && facebookDetailStatus === "failed" && (
+          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+            Detalii suplimentare indisponibile momentan — vor fi reîncercate la următoarea deschidere.
+          </div>
+        )}
 
         {/* Descriere */}
         {listing.description && (
