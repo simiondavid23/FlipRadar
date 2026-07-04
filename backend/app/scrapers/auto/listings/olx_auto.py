@@ -8,6 +8,7 @@ from curl_cffi.requests import AsyncSession
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
 )
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.olx.ro"
@@ -36,8 +37,14 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
         params["search[filter_enum_make][0]"] = filters["make"]
     if filters.get("year_min") is not None:
         params["search[filter_float_year:from]"] = int(filters["year_min"])
-    if filters.get("km_max") is not None:
-        params["search[filter_float_enginesize_km:to]"] = int(filters["km_max"])
+    # NOTA: parametrul vechi search[filter_float_enginesize_km:to] pentru km_max a fost
+    # ELIMINAT — test live (azi) a aratat ca intoarce 0 rezultate (param neconfirmat de OLX,
+    # rupe cautarea). Candidatii milage/mileage au dat tot 0. Fara un param de km confirmat
+    # live nu punem un inlocuitor ghicit (regula: nu inventa).
+    # Campuri tehnice confirmate: fuel_type, engine_capacity_min/max, body_type, condition,
+    # seller_type. Scanner-ul trimite "fuel"/"body" pentru fuel_type/body_type.
+    apply_confirmed_filters("olx_auto", filters, params,
+                            aliases={"fuel_type": "fuel", "body_type": "body"})
 
     headers = build_headers({"Referer": _BASE + "/"})
     log_manager.emit("auto_listings", "SCAN", f"OLX Auto: cautare '{query or 'auto'}'")

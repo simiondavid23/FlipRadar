@@ -78,6 +78,11 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
         "body":      kw.body_type,
     }
     filters = {k: v for k, v in filters.items() if v is not None}
+    # Filtre tehnice confirmate salvate pe keyword (JSON) — cheile sunt numele campurilor
+    # (fuel_type, engine_capacity_min/max, condition, seller_type, engine_power_min,
+    # drivetrain, power_unit, ...). Scraperele le aplica prin apply_confirmed_filters.
+    if getattr(kw, "tech_filters", None):
+        filters.update({k: v for k, v in kw.tech_filters.items() if v not in (None, "")})
 
     try:
         if platform == "autovit":

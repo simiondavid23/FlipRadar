@@ -8,6 +8,7 @@ from curl_cffi.requests import AsyncSession
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
 )
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 
 _BASE = "https://www.kleinanzeigen.de"
 
@@ -35,6 +36,10 @@ async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: di
         params["locationCity"] = filters["plz"]
     if filters.get("radius_km"):
         params["locationRadius"] = filters["radius_km"]
+    # Campuri confirmate ca NUME de param (make->autos.marke_s, year->autos.ez_i).
+    # ATENTIE: sintaxa oficiala e colon-DSL "autos.{camp}_s:{valoare}" — NECONFIRMAT ca
+    # query param pe interfata publica; de verificat live. make e deja acoperit de slug.
+    apply_confirmed_filters("kleinanzeigen_auto", filters, params, aliases={"year": "year_min"})
 
     headers = build_headers({"Referer": _BASE + "/", "Accept-Language": "de-DE,de;q=0.9,en;q=0.8"})
     results = []

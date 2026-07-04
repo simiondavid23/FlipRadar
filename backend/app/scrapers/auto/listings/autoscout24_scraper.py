@@ -9,6 +9,7 @@ from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_ld_offers,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
 )
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 
 _BASE = "https://www.autoscout24.ro"
 
@@ -54,6 +55,9 @@ async def search_autoscout24(make: str = "", filters: dict = {}, page: int = 1) 
         params["priceto"] = int(float(filters["price_max"]))
     if filters.get("year_min") is not None:
         params["fregfrom"] = int(filters["year_min"])
+    # Campuri tehnice confirmate (autoscout24: mileage_max->kmto, power_unit->powertype).
+    # Scanner-ul trimite "km_max" pentru mileage_max. fuel/gearbox raman NECONFIRMATE (nu se adauga).
+    apply_confirmed_filters("autoscout24", filters, params, aliases={"mileage_max": "km_max"})
 
     headers = build_headers({"Referer": _BASE + "/"})
     results = []

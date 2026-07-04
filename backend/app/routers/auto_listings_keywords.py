@@ -36,6 +36,10 @@ class KeywordCreate(BaseModel):
     active_hours_start: Optional[int] = None
     active_hours_end: Optional[int] = None
     polling_interval_minutes: int = 10
+    # Categorie per-platforma + filtre tehnice confirmate (JSON), populate de formularul
+    # dinamic de keyword. Vezi AUTO_PLATFORM_CATEGORIES / AUTO_TECHNICAL_FIELDS.
+    category: Optional[str] = None
+    tech_filters: Optional[dict] = None
 
 class KeywordUpdate(KeywordCreate):
     pass
@@ -44,6 +48,15 @@ class KeywordUpdate(KeywordCreate):
 def _kw_dict(kw: AutoKeyword) -> dict:
     return {c.name: getattr(kw, c.name)
             for c in kw.__table__.columns}
+
+
+@router.get("/categories")
+def get_auto_categories():
+    """Categorii + campuri tehnice confirmate per platforma (pentru formularul dinamic
+    de keyword si tab-ul de cautare manuala). GET /api/auto-listings/categories."""
+    from app.scrapers.auto.listings.auto_categories import (
+        AUTO_PLATFORM_CATEGORIES, AUTO_TECHNICAL_FIELDS)
+    return {"categories": AUTO_PLATFORM_CATEGORIES, "technical_fields": AUTO_TECHNICAL_FIELDS}
 
 
 # ── Keywords CRUD ───────────────────────────────────────────────

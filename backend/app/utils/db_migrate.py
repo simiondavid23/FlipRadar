@@ -391,6 +391,16 @@ def run_migrations():
             )
         """)
 
+        # Auto keywords: categorie per-platforma + filtre tehnice confirmate (JSON).
+        # Populate de formularul dinamic de keyword; scanerul le trece la scrapere.
+        if _table_exists(inspector, "auto_keywords"):
+            if not _column_exists(inspector, "auto_keywords", "category"):
+                _migrate(conn, "add_auto_keywords_category",
+                         "ALTER TABLE auto_keywords ADD COLUMN category VARCHAR(100)")
+            if not _column_exists(inspector, "auto_keywords", "tech_filters"):
+                _migrate(conn, "add_auto_keywords_tech_filters",
+                         "ALTER TABLE auto_keywords ADD COLUMN tech_filters JSON")
+
         _migrate(conn, "create_auto_feed_listings", """
             CREATE TABLE IF NOT EXISTS auto_feed_listings (
                 id SERIAL PRIMARY KEY,

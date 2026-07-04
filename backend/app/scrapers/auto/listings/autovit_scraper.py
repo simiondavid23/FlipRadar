@@ -10,6 +10,7 @@ from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
 )
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.autovit.ro"
@@ -85,6 +86,8 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
         params["search[filter_float_price:to]"] = int(float(filters["price_max"]))
     if filters.get("year_min") is not None:
         params["search[filter_float_year:from]"] = int(filters["year_min"])
+    # Campuri tehnice confirmate (autovit: doar fuel_type). Scanner-ul trimite "fuel".
+    apply_confirmed_filters("autovit", filters, params, aliases={"fuel_type": "fuel"})
 
     headers = build_headers({"Referer": _BASE + "/"})
     log_manager.emit("auto_listings", "SCAN", f"Autovit: cautare {(make + ' ' + model).strip() or 'auto'}")

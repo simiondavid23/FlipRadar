@@ -1,4 +1,4 @@
-from sqlalchemy import (Boolean, Column, Integer, Numeric,
+from sqlalchemy import (Boolean, Column, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
 from app.database import Base
@@ -28,4 +28,7 @@ class AutoKeyword(Base):
     active_hours_start       = Column(Integer)
     active_hours_end         = Column(Integer)
     polling_interval_minutes = Column(Integer, default=10)
+    # Categorie per-platforma + filtre tehnice confirmate (populate de formularul dinamic).
+    category                 = Column(String(100))
+    tech_filters             = Column(JSON)
     created_at               = Column(TIMESTAMP, server_default=func.now())

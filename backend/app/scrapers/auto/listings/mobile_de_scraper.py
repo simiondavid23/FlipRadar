@@ -19,6 +19,7 @@ from app.scrapers.auto.listings._common import (
     MAX_LISTINGS, parse_price, extract_ld_offers,
     extract_year, extract_km, make_listing,
 )
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 from app.services.log_manager import log_manager
 
 _SEARCH_URL = "https://suchen.mobile.de/fahrzeuge/search.html"
@@ -86,6 +87,11 @@ def _build_params(make_id: str, filters: dict, page: int) -> dict:
         params["price.min"] = int(float(filters["price_min"]))
     if filters.get("year_min") is not None:
         params["minFirstRegistrationDate"] = int(filters["year_min"])
+    # Campuri tehnice confirmate (mobile_de: fuel, gearbox, power kW, drivetrain).
+    # NOTA: numele oficiale vin din Search API autentificat; pe interfata publica
+    # (suchen.mobile.de) pot diferi — de verificat live (vezi NOTA din auto_categories.py).
+    # Scanner-ul trimite "fuel" pentru fuel_type; "gearbox" coincide cu cheia campului.
+    apply_confirmed_filters("mobile_de", filters, params, aliases={"fuel_type": "fuel"})
     return params
 
 
