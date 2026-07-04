@@ -49,15 +49,14 @@ PLATFORM_CATEGORIES = {
         },
         {
             "label": "Auto, Moto și Ambarcatiuni",
-            "value": "auto-moto-si-ambarcatiuni",
+            "value": "auto-masini-moto-ambarcatiuni",
             "subcategories": [
-                {"label": "Autoturisme", "value": "auto-moto-si-ambarcatiuni/autoturisme"},  # VERIFY
-                {"label": "Motociclete, Scutere și ATV", "value": "auto-moto-si-ambarcatiuni/motociclete-scutere-si-atv"},  # VERIFY
-                {"label": "Autoutilitare și Camioane", "value": "auto-moto-si-ambarcatiuni/autoutilitare-si-camioane"},  # VERIFY
-                {"label": "Piese Auto", "value": "auto-moto-si-ambarcatiuni/piese-auto"},  # VERIFY
-                {"label": "Accesorii Auto-Moto", "value": "auto-moto-si-ambarcatiuni/accesorii-auto-si-moto"},  # VERIFY
-                {"label": "Rulote și Remorci", "value": "auto-moto-si-ambarcatiuni/rulote-si-remorci"},  # VERIFY
-                {"label": "Ambarcatiuni", "value": "auto-moto-si-ambarcatiuni/ambarcatiuni"},  # VERIFY
+                {"label": "Autoturisme", "value": "auto-masini-moto-ambarcatiuni/autoturisme"},
+                {"label": "Autoutilitare", "value": "auto-masini-moto-ambarcatiuni/autoutilitare"},
+                {"label": "Camioane, Utilaje, Rulote, Remorci", "value": "auto-masini-moto-ambarcatiuni/camioane-utilaje-rulote-remorci"},
+                {"label": "Motociclete", "value": "auto-masini-moto-ambarcatiuni/motociclete"},
+                {"label": "Scutere, ATV, UTV", "value": "auto-masini-moto-ambarcatiuni/scutere-atv-utv"},
+                {"label": "Ambarcațiuni", "value": "auto-masini-moto-ambarcatiuni/ambarcatiuni"},
             ],
         },
         {
