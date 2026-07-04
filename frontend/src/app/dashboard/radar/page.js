@@ -425,7 +425,20 @@ export default function RadarFeedPage() {
 
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-      {/* Faza 2 — scanare manuală + statistici (header, deasupra tab-urilor) */}
+      {/* Header permanent (vizibil pe ambele tab-uri) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Radar style={{ width: "22px", height: "22px", color: "#2563eb" }} />
+            Feed Anunțuri
+          </h1>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
+            Anunțuri găsite în timp real ({listings.length} active în vizualizare)
+          </p>
+        </div>
+      </div>
+
+      {/* Faza 2 — scanare manuală + statistici (deasupra tab-urilor) */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
         <ScanNowButton onScan={handleScanNow} scanning={scanning} />
       </div>
@@ -445,18 +458,6 @@ export default function RadarFeedPage() {
         </div>
       ) : (
       <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Radar style={{ width: "22px", height: "22px", color: "#2563eb" }} />
-            Feed Anunțuri
-          </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-            Anunțuri găsite în timp real ({listings.length} active în vizualizare)
-          </p>
-        </div>
-      </div>
-
       {/* Bară filtre */}
       <div style={{
         backgroundColor: "var(--bg-card)",

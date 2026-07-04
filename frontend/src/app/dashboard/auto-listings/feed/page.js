@@ -130,7 +130,17 @@ export default function AutoFeedPage() {
       <StatCardsRow cards={statCards} />
 
       {/* Filter bar */}
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.625rem", marginBottom: "1.25rem" }}>
+      <div style={{
+        backgroundColor: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: "0.75rem",
+        padding: "1rem",
+        marginBottom: "1.25rem",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "0.625rem",
+      }}>
         <StatusTabsBar tabs={STATUS_TABS} active={filters.status} onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
         <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate platformele</option>
