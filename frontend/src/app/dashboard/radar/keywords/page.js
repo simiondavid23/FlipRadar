@@ -637,10 +637,10 @@ export default function RadarKeywordsPage() {
     const cats = allCategories[platformVal] || [];
     let foundMain = "", foundSub = "";
     for (const cat of cats) {
-      if (cat.value === kw.category) { foundMain = cat.value; break; }
+      if (cat.value != null && cat.value === kw.category) { foundMain = catKey(cat); break; }
       let matched = false;
       for (const sub of (cat.subcategories || [])) {
-        if (sub.value === kw.category) { foundMain = cat.value; foundSub = sub.value; matched = true; break; }
+        if (sub.value === kw.category) { foundMain = catKey(cat); foundSub = sub.value; matched = true; break; }
       }
       if (matched) break;
     }
@@ -648,6 +648,12 @@ export default function RadarKeywordsPage() {
     setFormSubCat(foundSub || "");
     setShowForm(true);
   };
+
+  // Cheie de optiune pentru dropdown-ul de categorie principala. Unele platforme
+  // (Okazii) au departamente cu value=null (nu-s filtre reale pe site) — le dam o
+  // cheie sintetica stabila ca sa fie selectabile in <select>; valoarea reala
+  // (null) se rezolva inapoi la submit. Categoriile cu value real se cheie pe ele.
+  const catKey = (c) => (c.value != null ? c.value : `__d:${c.label}`);
 
   const togglePlatform = (p) => {
     setForm((prev) => ({
@@ -675,12 +681,18 @@ export default function RadarKeywordsPage() {
       }
     }
     const carFiltersForSend = Object.keys(cfCompact).length > 0 ? cfCompact : null;
+    // Categoria principala poate avea o cheie sintetica (__d:...) pentru
+    // departamentele Okazii cu value=null. Rezolvam valoarea reala inainte de submit
+    // ca sa NU trimitem cheia sintetica la backend (dept singur => category null).
+    const platCatsForSubmit = allCategories[formPlatform] || [];
+    const mainCatObjForSubmit = platCatsForSubmit.find((c) => catKey(c) === formMainCat);
+    const resolvedMainCatVal = mainCatObjForSubmit ? mainCatObjForSubmit.value : null;
     const payload = {
       name: form.name.trim(),
       max_price: parseFloat(form.max_price),
       min_price: minPriceVal,
       resale_price: parseFloat(form.resale_price),
-      category: formSubCat || formMainCat || null,
+      category: formSubCat || resolvedMainCatVal || null,
       platform: formPlatform,
       exclude_words: excludeChips,
       exclude_description_words: excludeDescChips,
@@ -1363,7 +1375,7 @@ export default function RadarKeywordsPage() {
 
               {formPlatform && (() => {
                 const currentPlatformCats = allCategories[formPlatform] || [];
-                const selectedMainCat = currentPlatformCats.find((c) => c.value === formMainCat);
+                const selectedMainCat = currentPlatformCats.find((c) => catKey(c) === formMainCat);
                 const hasSubs = selectedMainCat?.subcategories?.length > 0;
                 return (
                   <div style={{ display: "grid", gridTemplateColumns: hasSubs ? "1fr 1fr" : "1fr", gap: "0.75rem" }}>
@@ -1371,7 +1383,7 @@ export default function RadarKeywordsPage() {
                       <select value={formMainCat} onChange={(e) => { setFormMainCat(e.target.value); setFormSubCat(""); }} style={inputStyle}>
                         <option value="">Toate categoriile</option>
                         {currentPlatformCats.map((c) => (
-                          <option key={c.value ?? c.label} value={c.value ?? ""}>{c.label}</option>
+                          <option key={catKey(c)} value={catKey(c)}>{c.label}</option>
                         ))}
                       </select>
                     </Field>

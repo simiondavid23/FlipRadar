@@ -18,6 +18,7 @@ Structura confirmata prin fetch-uri reale:
   user, images[].path, listed_at). URL anunt = /ad/{slug}-{id}.
 - Imagini:   https://api-preprod.lajumate.ro/opt-image/{image.path}
 """
+import random
 import re
 import time
 import urllib.parse
@@ -296,6 +297,24 @@ def fetch_lajumate_listing_details(url: str) -> dict:
     }
 
 
+def _enrich_details(results: list[dict]) -> None:
+    """Imbogateste fiecare rezultat cu toate imaginile + descrierea completa din
+    pagina individuala a anuntului (adData), secvential cu delay aleator — la fel ca
+    OLX/Publi24/Okazii. Modifica lista pe loc; esecul unui anunt nu opreste restul."""
+    for idx, item in enumerate(results):
+        if idx > 0:
+            time.sleep(random.uniform(0.4, 0.8))
+        try:
+            details = fetch_lajumate_listing_details(item["url"])
+            if details.get("images"):
+                item["images"] = details["images"]
+            if details.get("description"):
+                item["description"] = details["description"]
+        except Exception as exc:
+            log_manager.emit("radar", "WARN", f"LaJumate details {item['external_id']}: {str(exc)[:100]}")
+            continue
+
+
 def search_lajumate(
     keyword: str,
     max_price: Optional[float] = None,
@@ -331,6 +350,7 @@ def search_lajumate(
     results = _post_filter(results, max_price, min_price, exclude_words)
 
     if results:
+        _enrich_details(results)
         log_manager.emit("radar", "OK", f'LaJumate: {len(results)} rezultate pentru "{keyword_clean}" (pag {page})')
         return results
 
@@ -343,6 +363,7 @@ def search_lajumate(
         cat_results = _fetch_ads(cat_url, "categorie")
         cat_results = _post_filter(cat_results, max_price, min_price, exclude_words)
         cat_results = _apply_keyword_filter(cat_results, keyword_clean)
+        _enrich_details(cat_results)
         log_manager.emit("radar", "OK",
                          f'LaJumate (categorie {cat_slug}): {len(cat_results)} rezultate pentru "{keyword_clean}"')
         return cat_results
