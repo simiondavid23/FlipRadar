@@ -5,6 +5,7 @@ Incercam intai un endpoint JSON, apoi parsam __NEXT_DATA__, apoi HTML simplu.
 """
 import json
 import re
+from typing import Optional
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -13,9 +14,31 @@ from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price,
     extract_rooms, extract_surface, make_re_listing,
 )
+from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.storia.ro"
+
+_ROOMS_ENUM = {1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR"}
+
+
+def _rooms_from_min(camere_min) -> Optional[str]:
+    """camere_min -> valoarea reala pt param roomsNumber, ex "[THREE,FOUR]".
+
+    Confirmat live 2026-07-05: storia filtreaza pe SET EXACT via forma cu paranteze
+    roomsNumber=[X,Y]; forma simpla "roomsNumber=THREE" e IGNORATA (aceeasi distributie
+    ca fara filtru). Pentru "minim N camere" trimitem enum-urile de la N in sus,
+    plafonat la FOUR (semantica "4+", conform specificatiei). None daca invalid.
+    """
+    try:
+        n = int(camere_min)
+    except (TypeError, ValueError):
+        return None
+    if n < 1:
+        return None
+    n = min(n, 4)
+    enums = [v for k, v in sorted(_ROOMS_ENUM.items()) if k >= n]
+    return "[" + ",".join(enums) + "]" if enums else None
 
 
 def _category_path(tip_anunt: str, tip_proprietate: str) -> str:
@@ -96,12 +119,12 @@ async def search_storia(filters: dict = {}) -> list:
     url = _BASE + _category_path(tip_anunt, tip_proprietate)
 
     params = {}
-    if filters.get("pret_min") is not None:
-        params["priceMin"] = int(float(filters["pret_min"]))
-    if filters.get("pret_max") is not None:
-        params["priceMax"] = int(float(filters["pret_max"]))
-    if filters.get("camere_min") is not None:
-        params["roomsNumber"] = "[ONE,TWO,THREE,FOUR]"
+    # Pret via campurile confirmate (priceMin/priceMax) — vezi re_categories["storia"].
+    apply_re_filters("storia", filters, params, aliases=RE_FILTER_ALIASES)
+    # Camere: format special cu paranteze [X,Y] (style "custom" in re_categories, aplicat aici).
+    rooms_val = _rooms_from_min(filters.get("camere_min"))
+    if rooms_val:
+        params["roomsNumber"] = rooms_val
 
     headers = build_headers({"Referer": _BASE + "/"})
     log_manager.emit("real_estate", "SCAN", f"Storia: {tip_proprietate} {tip_anunt}")

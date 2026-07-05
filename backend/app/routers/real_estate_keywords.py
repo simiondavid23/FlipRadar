@@ -19,9 +19,11 @@ class KeywordCreate(BaseModel):
     name: str
     platform: str
     property_type: Optional[str] = None
+    tip_anunt: Optional[str] = "vanzare"
     rooms: Optional[int] = None
     area_min: Optional[int] = None
     area_max: Optional[int] = None
+    price_min: Optional[float] = None
     price_max: Optional[float] = None
     price_currency: Optional[str] = "EUR"
     zone: Optional[str] = None
@@ -43,6 +45,20 @@ class KeywordUpdate(KeywordCreate):
 
 def _kw_dict(kw: RealEstateKeyword) -> dict:
     return {c.name: getattr(kw, c.name) for c in kw.__table__.columns}
+
+
+@router.get("/categories")
+def get_re_categories():
+    """Campuri tehnice confirmate per platforma (pentru formularul dinamic de keyword +
+    tab-ul de cautare manuala). GET /api/real-estate-monitor/categories.
+
+    Nu exista categorii per-platforma distincte ca la Auto — tip_proprietate/tip_anunt sunt
+    comune tuturor platformelor (frontend realEstateConstants.js), deci nu le duplicam aici.
+    Doar campurile cu confirmed:True sunt de conectat; frontend-ul le foloseste pentru a sti
+    ce filtre suporta fiecare platforma.
+    """
+    from app.scrapers.real_estate.re_categories import RE_TECHNICAL_FIELDS
+    return {"technical_fields": RE_TECHNICAL_FIELDS}
 
 
 # ── Keywords CRUD ───────────────────────────────────────────────

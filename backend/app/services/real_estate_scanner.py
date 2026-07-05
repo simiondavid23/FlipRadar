@@ -38,15 +38,20 @@ def _is_groq_enabled(db: Session, user_id: int) -> bool:
 def _call_scraper(kw: RealEstateKeyword) -> list:
     import asyncio
     platform = kw.platform
+    # Cheile TREBUIE sa fie cele CITITE de scrapere (tip_anunt/tip_proprietate/pret_*/
+    # camere_min/suprafata_*/locatie), NU numele coloanelor din model. Inainte scanner-ul
+    # trimitea property_type/rooms/price_max (nepotrivite) -> filtrele nu ajungeau niciodata
+    # la scrapere. tip_anunt/price_min sunt campuri noi pe keyword (vezi migrarea).
     filters = {
-        "property_type": kw.property_type,
-        "rooms": kw.rooms,
-        "area_min": kw.area_min,
-        "area_max": kw.area_max,
-        "price_max": float(kw.price_max) if kw.price_max else None,
-        "city": kw.city,
-        "zone": kw.zone,
-        "furnished": kw.furnished,
+        "tip_anunt": kw.tip_anunt or "vanzare",
+        "tip_proprietate": kw.property_type,
+        "pret_min": int(float(kw.price_min)) if kw.price_min else None,
+        "pret_max": int(float(kw.price_max)) if kw.price_max else None,
+        "camere_min": kw.rooms,
+        "suprafata_min": kw.area_min,
+        "suprafata_max": kw.area_max,
+        "locatie": kw.zone or kw.city,
+        "query": kw.query,
     }
     filters = {k: v for k, v in filters.items() if v is not None}
 

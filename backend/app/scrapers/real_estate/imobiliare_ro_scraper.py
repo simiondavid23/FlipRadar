@@ -8,6 +8,7 @@ from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price, parse_int,
     extract_rooms, extract_surface, detect_currency, make_re_listing,
 )
+from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.imobiliare.ro"
@@ -36,14 +37,8 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
     url = _BASE + path
 
     params = {}
-    if filters.get("pret_min") is not None:
-        params["pret_min"] = int(float(filters["pret_min"]))
-    if filters.get("pret_max") is not None:
-        params["pret_max"] = int(float(filters["pret_max"]))
-    if filters.get("camere_min") is not None:
-        params["nr_camere"] = int(filters["camere_min"])
-    if filters.get("suprafata_min") is not None:
-        params["suprafata_min"] = int(filters["suprafata_min"])
+    # Campuri confirmate: pret_min/pret_max/nr_camere/suprafata_min — vezi re_categories.
+    apply_re_filters("imobiliare_ro", filters, params, aliases=RE_FILTER_ALIASES)
 
     headers = build_headers({"Referer": _BASE + "/"})
     log_manager.emit("real_estate", "SCAN", f"Imobiliare.ro: {tip_proprietate} {tip_anunt}")

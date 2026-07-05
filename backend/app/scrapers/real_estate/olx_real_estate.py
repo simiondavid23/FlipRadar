@@ -1,5 +1,6 @@
 """OLX.ro — anunturi imobiliare. platform="olx"."""
 import re
+from typing import Optional
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -8,6 +9,7 @@ from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price,
     extract_rooms, extract_surface, detect_currency, make_re_listing,
 )
+from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.olx.ro"
@@ -16,6 +18,23 @@ _BASE = "https://www.olx.ro"
 def _olx_id(href: str):
     m = re.search(r"-ID([A-Za-z0-9]+)\.html", href or "")
     return m.group(1) if m else None
+
+
+def _olx_rooms_segment(camere_min) -> Optional[str]:
+    """camere_min -> segment de path "{N}-camere/" (N=1..4, /4-camere/ = 4+). None daca invalid.
+
+    CONFIRMAT LIVE 2026-07-05: filtrul de camere OLX merge ca PATH (/2-camere/ -> carduri SSR
+    doar cu 2 camere). Query-ul search[filter_enum_rooms][0]=two intoarce o pagina JS FARA
+    carduri SSR (0 rezultate) — cauza reala a filtrului "mort" din varianta veche. Match exact
+    pana la 3; /4-camere/ include 4+.
+    """
+    try:
+        n = int(camere_min)
+    except (TypeError, ValueError):
+        return None
+    if n < 1:
+        return None
+    return f"{min(n, 4)}-camere/"
 
 
 def _olx_path(tip_anunt: str, tip_proprietate: str) -> str:
@@ -39,15 +58,12 @@ async def search_olx_real_estate(filters: dict = {}) -> list:
     url = _BASE + _olx_path(tip_anunt, tip_proprietate)
 
     params = {"search[order]": "created_at:desc"}
-    if filters.get("pret_min") is not None:
-        params["search[filter_float_price:from]"] = int(float(filters["pret_min"]))
-    if filters.get("pret_max") is not None:
-        params["search[filter_float_price:to]"] = int(float(filters["pret_max"]))
-    rooms_map = {1: "one", 2: "two", 3: "three", 4: "four"}
-    if filters.get("camere_min") is not None:
-        val = rooms_map.get(int(filters["camere_min"]))
-        if val:
-            params["search[filter_enum_rooms][0]"] = val
+    # Pret via campuri confirmate (search[filter_float_price:from/to]) — vezi re_categories.
+    apply_re_filters("olx_real_estate", filters, params, aliases=RE_FILTER_ALIASES)
+    # Camere: PATH /{N}-camere/ (confirmat live), inserat dupa categoria de baza. NU query param.
+    rooms_seg = _olx_rooms_segment(filters.get("camere_min"))
+    if rooms_seg:
+        url = url.rstrip("/") + "/" + rooms_seg
     if filters.get("locatie"):
         url += f"q-{filters['locatie']}/"
 

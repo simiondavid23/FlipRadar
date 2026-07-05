@@ -2,10 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
 import { Home, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff } from "lucide-react";
-import { GRADE_COLORS, STATUS_TABS, selectStyle } from "@/lib/uiStyles";
+import { GRADE_COLORS, STATUS_TABS, selectStyle, tabPillStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import StatusTabsBar from "@/components/shared/StatusTabsBar";
 import ScanNowButton from "@/components/shared/ScanNowButton";
+import REManualSearch from "@/components/REManualSearch";
 
 const PLATFORM_LABELS = {
   olx: "OLX", storia: "Storia", imobiliare_ro: "Imobiliare.ro",
@@ -23,6 +24,7 @@ export default function REFeedPage() {
   const [filters, setFilters] = useState({ platform: "", grade: "", status: "active", rooms: "", zone: "", city: "", keyword_id: "" });
   const [selected, setSelected] = useState(null);
   const [scanning, setScanning] = useState(false);
+  const [tab, setTab] = useState("feed");   // "feed" | "manual" (Căutare Manuală)
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
@@ -102,9 +104,18 @@ export default function REFeedPage() {
             <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>Chirii scorate, cu zone normalizate și detecție duplicate</p>
           </div>
         </div>
-        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+        {tab === "feed" && <ScanNowButton onScan={handleScanNow} scanning={scanning} />}
       </div>
 
+      {/* Tab-uri: Feed automat / Căutare Manuală (pill-uri, ca la Auto/Radar) */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+        <button onClick={() => setTab("feed")} style={tabPillStyle(tab === "feed")}>Feed</button>
+        <button onClick={() => setTab("manual")} style={tabPillStyle(tab === "manual")}>Căutare Manuală</button>
+      </div>
+
+      {tab === "manual" && <REManualSearch />}
+
+      {tab === "feed" && (<>
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
           <span style={{ fontSize: "1.125rem" }}>⚠️</span>
@@ -171,6 +182,7 @@ export default function REFeedPage() {
           onSave={() => setStatus(selected.id, "saved")} onIgnore={() => setStatus(selected.id, "ignored")}
           onConfirmDup={handleConfirmDuplicate} onDismissDup={handleDismissDuplicate} onDelete={() => remove(selected.id)} />
       )}
+      </>)}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

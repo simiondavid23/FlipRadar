@@ -208,6 +208,7 @@ export const autoLotKeywordsAPI = {
 
 // Imobiliare Monitor — keyword-uri + feed scorat (zone, duplicate, price history)
 export const realEstateMonitorAPI = {
+  getCategories: ()         => api.get("/api/real-estate-monitor/categories"),
   getKeywords:   ()         => api.get("/api/real-estate-monitor/keywords"),
   createKeyword: (data)     => api.post("/api/real-estate-monitor/keywords", data),
   updateKeyword: (id, data) => api.put(`/api/real-estate-monitor/keywords/${id}`, data),

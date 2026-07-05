@@ -560,9 +560,11 @@ def run_migrations():
                 name VARCHAR(200) NOT NULL,
                 platform VARCHAR(50) NOT NULL,
                 property_type VARCHAR(50),
+                tip_anunt VARCHAR(50) DEFAULT 'vanzare',
                 rooms INTEGER,
                 area_min INTEGER,
                 area_max INTEGER,
+                price_min NUMERIC(10,2),
                 price_max NUMERIC(10,2),
                 price_currency VARCHAR(10) DEFAULT 'EUR',
                 zone VARCHAR(200),
@@ -580,6 +582,15 @@ def run_migrations():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Coloane adaugate ulterior (DB-uri existente): tip_anunt (vanzare/inchiriere) +
+        # price_min. Lipseau complet — keyword-ul nu putea distinge vanzare de inchiriere.
+        if _table_exists(inspector, "real_estate_keywords"):
+            if not _column_exists(inspector, "real_estate_keywords", "tip_anunt"):
+                _migrate(conn, "add_re_kw_tip_anunt",
+                    "ALTER TABLE real_estate_keywords ADD COLUMN tip_anunt VARCHAR(50) DEFAULT 'vanzare'")
+            if not _column_exists(inspector, "real_estate_keywords", "price_min"):
+                _migrate(conn, "add_re_kw_price_min",
+                    "ALTER TABLE real_estate_keywords ADD COLUMN price_min NUMERIC(10,2)")
         _migrate(conn, "create_real_estate_listings", """
             CREATE TABLE IF NOT EXISTS real_estate_listings (
                 id SERIAL PRIMARY KEY,

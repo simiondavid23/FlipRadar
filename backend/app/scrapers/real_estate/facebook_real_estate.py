@@ -10,6 +10,8 @@ import re
 import urllib.parse
 from typing import Optional
 
+from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
+
 _BASE_URL = "https://www.facebook.com/marketplace/category/propertyrentals/"
 
 
@@ -43,10 +45,9 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
     params = {}
     if query:
         params["query"] = query
-    if filters.get("price_min"):
-        params["minPrice"] = int(float(filters["price_min"]))
-    if filters.get("price_max"):
-        params["maxPrice"] = int(float(filters["price_max"]))
+    # Doar minPrice/maxPrice sunt confirmate (comportament existent). Filtrele de dormitoare/
+    # bai/suprafata exista in UI dar au NUMELE param neverificat -> NECONECTATE (re_categories).
+    apply_re_filters("facebook_real_estate", filters, params, aliases=RE_FILTER_ALIASES)
     url = _BASE_URL + ("?" + urllib.parse.urlencode(params) if params else "")
 
     log_manager.emit("real_estate", "SCAN", f"Facebook RE Playwright: {query!r}")

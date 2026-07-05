@@ -33,13 +33,21 @@ const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov",
 const POLL_OPTIONS = [15, 30, 60, 120];
 
 const EMPTY_FORM = {
-  name: "", property_type: "", rooms: "", area_min: "", area_max: "",
-  price_max: "", price_currency: "EUR", zone: "", city: "București",
+  name: "", property_type: "", tip_anunt: "vanzare", rooms: "", area_min: "", area_max: "",
+  price_min: "", price_max: "", price_currency: "EUR", zone: "", city: "București",
   floor_min: "", floor_max: "", furnished: "", query: "",
   is_active: true, notify_email: false, notify_discord: false,
   use_active_hours: false, active_hours_start: 8, active_hours_end: 22,
   polling_interval: 30,
 };
+
+// Platforma (valoarea din form) -> cheia din RE_TECHNICAL_FIELDS (endpoint /categories).
+const PLATFORM_TO_RE_KEY = {
+  olx: "olx_real_estate", storia: "storia", imobiliare_ro: "imobiliare_ro",
+  facebook_marketplace: "facebook_real_estate",
+};
+// Etichete RO pentru campurile tehnice confirmate (afisate ca "filtre la sursa").
+const TECH_LABELS = { price_min: "preț min", price_max: "preț max", rooms_min: "camere", area_min: "suprafață" };
 
 const inputStyle = {
   width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
@@ -63,6 +71,7 @@ export default function REKeywordsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [categories, setCategories] = useState({});   // technical_fields per platforma (/categories)
   // MODIFICARE 18 — modal confirmare stergere cu impact.
   const [deleteModal, setDeleteModal] = useState(null);
 
@@ -78,6 +87,11 @@ export default function REKeywordsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    realEstateMonitorAPI.getCategories()
+      .then((r) => setCategories(r.data?.technical_fields || {}))
+      .catch(() => {});
+  }, []);
 
   const handleScanNow = async () => {
     setScanning(true);
@@ -91,8 +105,9 @@ export default function REKeywordsPage() {
     setEditingId(kw.id);
     setPlatform(kw.platform || "olx");
     setForm({
-      name: kw.name || "", property_type: kw.property_type || "", rooms: kw.rooms ?? "",
-      area_min: kw.area_min ?? "", area_max: kw.area_max ?? "", price_max: kw.price_max ?? "",
+      name: kw.name || "", property_type: kw.property_type || "", tip_anunt: kw.tip_anunt || "vanzare",
+      rooms: kw.rooms ?? "", area_min: kw.area_min ?? "", area_max: kw.area_max ?? "",
+      price_min: kw.price_min ?? "", price_max: kw.price_max ?? "",
       price_currency: kw.price_currency || "EUR", zone: kw.zone || "", city: kw.city || "București",
       floor_min: kw.floor_min ?? "", floor_max: kw.floor_max ?? "",
       furnished: kw.furnished === null || kw.furnished === undefined ? "" : (kw.furnished ? "true" : "false"),
@@ -110,9 +125,11 @@ export default function REKeywordsPage() {
       name: form.name,
       platform,
       property_type: form.property_type || null,
+      tip_anunt: form.tip_anunt || "vanzare",
       rooms: form.rooms ? parseInt(form.rooms) : null,
       area_min: form.area_min ? parseInt(form.area_min) : null,
       area_max: form.area_max ? parseInt(form.area_max) : null,
+      price_min: form.price_min ? parseFloat(form.price_min) : null,
       price_max: form.price_max ? parseFloat(form.price_max) : null,
       price_currency: form.price_currency || "EUR",
       zone: form.zone || null,
@@ -144,8 +161,10 @@ export default function REKeywordsPage() {
   const toggle = async (kw) => {
     try {
       await realEstateMonitorAPI.updateKeyword(kw.id, {
-        name: kw.name, platform: kw.platform, property_type: kw.property_type, rooms: kw.rooms,
+        name: kw.name, platform: kw.platform, property_type: kw.property_type,
+        tip_anunt: kw.tip_anunt || "vanzare", rooms: kw.rooms,
         area_min: kw.area_min, area_max: kw.area_max,
+        price_min: kw.price_min != null ? parseFloat(kw.price_min) : null,
         price_max: kw.price_max != null ? parseFloat(kw.price_max) : null,
         price_currency: kw.price_currency, zone: kw.zone, city: kw.city,
         floor_min: kw.floor_min, floor_max: kw.floor_max, furnished: kw.furnished, query: kw.query,
@@ -262,7 +281,7 @@ export default function REKeywordsPage() {
 
       {showModal && (
         <KeywordModal editing={!!editingId} platform={platform} setPlatform={setPlatform}
-          form={form} setForm={setForm} saving={saving}
+          form={form} setForm={setForm} saving={saving} categories={categories}
           onClose={() => setShowModal(false)} onSubmit={submit} />
       )}
 
@@ -282,9 +301,15 @@ function Field({ label, children }) {
   return (<div><label style={labelStyle}>{label}</label>{children}</div>);
 }
 
-function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, onClose, onSubmit }) {
+function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, categories, onClose, onSubmit }) {
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
   const showFloors = ["olx", "storia", "imobiliare_ro"].includes(platform);
+  // Filtre confirmate la sursa pt platforma selectata (din /categories) — form dinamic.
+  const reKey = PLATFORM_TO_RE_KEY[platform];
+  const techForPlatform = (reKey && categories?.[reKey]) || {};
+  const confirmedLabels = Object.entries(techForPlatform)
+    .filter(([, spec]) => spec && spec.confirmed)
+    .map(([f]) => TECH_LABELS[f]).filter(Boolean);
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
@@ -317,6 +342,16 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
                 );
               })}
             </div>
+            {confirmedLabels.length > 0 ? (
+              <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: "0.5rem 0 0" }}>
+                Filtre aplicate la sursă pentru această platformă:{" "}
+                <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>{confirmedLabels.join(", ")}</span>. Restul se rafinează local.
+              </p>
+            ) : reKey ? (
+              <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: "0.5rem 0 0" }}>
+                Fără filtre structurate confirmate la sursă — doar căutare liberă + rafinare locală.
+              </p>
+            ) : null}
           </div>
 
           {platform === "facebook_groups" && (
@@ -331,6 +366,12 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <Field label="Tip anunț">
+              <select value={form.tip_anunt} onChange={(e) => set({ tip_anunt: e.target.value })} style={inputStyle}>
+                <option value="vanzare">Vânzare</option>
+                <option value="inchiriere">Închiriere</option>
+              </select>
+            </Field>
             <Field label="Tip proprietate">
               <select value={form.property_type} onChange={(e) => set({ property_type: e.target.value })} style={inputStyle}>
                 <option value="">Toate</option>
@@ -342,6 +383,9 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
             </Field>
             <Field label="Suprafață min (mp)"><input type="number" value={form.area_min} onChange={(e) => set({ area_min: e.target.value })} placeholder="40" style={inputStyle} /></Field>
             <Field label="Suprafață max (mp)"><input type="number" value={form.area_max} onChange={(e) => set({ area_max: e.target.value })} placeholder="80" style={inputStyle} /></Field>
+            <Field label="Preț min">
+              <input type="number" value={form.price_min} onChange={(e) => set({ price_min: e.target.value })} placeholder="300" style={inputStyle} />
+            </Field>
             <Field label="Preț max">
               <input type="number" value={form.price_max} onChange={(e) => set({ price_max: e.target.value })} placeholder="700" style={inputStyle} />
             </Field>
