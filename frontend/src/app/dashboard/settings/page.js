@@ -5,7 +5,7 @@ import {
   Settings as SettingsIcon, Radar, Save, Send, ToggleLeft, ToggleRight,
   CheckCircle2, AlertCircle, Activity,
   BellRing, BellOff, Link as LinkIcon, Sparkles, FileText, MessageCircle, FileBarChart,
-  Users, Plus, Pencil, Trash2, RefreshCw, X, ExternalLink
+  Users, Plus, Pencil, Trash2, RefreshCw, X, ExternalLink, Play, AlertTriangle, Clock
 } from "lucide-react";
 import {
   isPushSupported, registerPushNotifications, unregisterPushNotifications
@@ -790,6 +790,32 @@ const fgIconBtn = {
   backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.375rem",
   color: "var(--text-secondary)", cursor: "pointer",
 };
+const fgPrimaryBtn = {
+  display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
+  backgroundColor: "var(--blue-primary)", color: "white", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+};
+const fgSecondaryBtn = {
+  display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
+  backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+};
+const fgDangerBtn = {
+  display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
+  backgroundColor: "transparent", color: "#f87171", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+};
+
+// Status cookies pentru un grup (portat din vechea pagina standalone Grupuri Facebook).
+function cookieStatus(c) {
+  if (c.last_run_status === "cookies_expirate") return { label: "Cookies expirate — reînnoire necesară", color: "#f87171", icon: AlertTriangle };
+  if (!c.has_cookies || !c.cookies_saved_at) return { label: "Fără cookies", color: "var(--text-muted)", icon: AlertTriangle };
+  const days = (Date.now() - new Date(c.cookies_saved_at).getTime()) / 86400000;
+  if (days >= 53) return { label: "Cookies expiră în curând", color: "#fb923c", icon: Clock };
+  return { label: "Cookies active", color: "#4ade80", icon: CheckCircle2 };
+}
+function cookieDaysLeft(c) {
+  if (!c.cookies_saved_at) return null;
+  const days = 60 - Math.floor((Date.now() - new Date(c.cookies_saved_at).getTime()) / 86400000);
+  return Math.max(0, days);
+}
 function fgToList(v) {
   if (Array.isArray(v)) return v;
   try { const p = JSON.parse(v || "[]"); return Array.isArray(p) ? p : []; } catch { return []; }
@@ -961,6 +987,11 @@ function FacebookGroupsSection() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [cookiesInput, setCookiesInput] = useState("");
+  const [cookieBusy, setCookieBusy] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
 
   const loadConfigs = useCallback(async () => {
     setLoading(true);
@@ -984,6 +1015,35 @@ function FacebookGroupsSection() {
     try { await facebookGroupsAPI.deleteConfig(cfg.id); await loadConfigs(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
+  const openSettings = (cfg) => {
+    setExpandedId(expandedId === cfg.id ? null : cfg.id);
+    setCookiesInput(""); setTestResult(null);
+  };
+  const saveCookies = async (cfg) => {
+    if (!cookiesInput.trim()) { alert("Lipește JSON-ul cu cookies."); return; }
+    setCookieBusy(true);
+    try { await facebookGroupsAPI.saveCookies(cfg.id, cookiesInput.trim()); setCookiesInput(""); await loadConfigs(); }
+    catch (e) { alert(e.response?.data?.detail || "Eroare la salvarea cookies."); }
+    finally { setCookieBusy(false); }
+  };
+  const deleteCookies = async (cfg) => {
+    if (!confirm("Ștergi cookies-urile pentru acest grup?")) return;
+    setCookieBusy(true);
+    try { await facebookGroupsAPI.deleteCookies(cfg.id); await loadConfigs(); }
+    catch (e) { alert(e.response?.data?.detail || "Eroare."); }
+    finally { setCookieBusy(false); }
+  };
+  const testRun = async (cfg) => {
+    setTesting(true); setTestResult(null);
+    try {
+      const r = await facebookGroupsAPI.testRun(cfg.id);
+      const n = r.data?.new_posts ?? 0;
+      setTestResult({ ok: true, text: n > 0 ? `S-au găsit ${n} postări noi.` : "Nicio postare nouă." });
+      await loadConfigs();
+    } catch (e) {
+      setTestResult({ ok: false, text: e.response?.data?.detail || "Eroare la testare." });
+    } finally { setTesting(false); }
+  };
 
   return (
     <Section title="Grupuri Facebook — Chirii">
@@ -1006,6 +1066,7 @@ function FacebookGroupsSection() {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {configs.map((cfg) => {
             const kws = fgToList(cfg.keywords); const negs = fgToList(cfg.negative_keywords);
+            const cs = cookieStatus(cfg); const CsIcon = cs.icon; const expanded = expandedId === cfg.id;
             return (
               <div key={cfg.id} style={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", padding: "0.875rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -1026,19 +1087,47 @@ function FacebookGroupsSection() {
                   </div>
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
-                  <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                    Interval: {cfg.check_interval_hours}h · Ultima verificare: {cfg.last_run_at ? new Date(cfg.last_run_at).toLocaleString("ro-RO") : "niciodată"}
-                    {cfg.last_run_status ? ` · ${cfg.last_run_status}` : ""}
+                  <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                    <span>Interval: {cfg.check_interval_hours}h · Ultima verificare: {cfg.last_run_at ? new Date(cfg.last_run_at).toLocaleString("ro-RO") : "niciodată"}{cfg.last_run_status ? ` · ${cfg.last_run_status}` : ""}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", color: cs.color, fontWeight: 600 }}>
+                      <CsIcon style={{ width: "12px", height: "12px" }} /> {cs.label}
+                    </span>
                   </div>
                   <div style={{ display: "flex", gap: "0.375rem" }}>
                     <button onClick={() => { setEditing(cfg); setShowModal(true); }} title="Editează" style={fgIconBtn}><Pencil style={{ width: "14px", height: "14px" }} /></button>
                     <button onClick={() => verifyNow(cfg)} title="Verifică acum" style={fgIconBtn}><RefreshCw style={{ width: "14px", height: "14px" }} /></button>
+                    <button onClick={() => openSettings(cfg)} title="Cookies" style={{ ...fgIconBtn, color: expanded ? "#60a5fa" : "var(--text-secondary)" }}><SettingsIcon style={{ width: "14px", height: "14px" }} /></button>
                     <button onClick={() => toggleActive(cfg)} title={cfg.is_active ? "Dezactivează" : "Activează"} style={{ ...fgIconBtn, color: cfg.is_active ? "#4ade80" : "var(--text-muted)" }}>
                       {cfg.is_active ? <ToggleRight style={{ width: "16px", height: "16px" }} /> : <ToggleLeft style={{ width: "16px", height: "16px" }} />}
                     </button>
                     <button onClick={() => remove(cfg)} title="Șterge" style={{ ...fgIconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
                   </div>
                 </div>
+                {expanded && (
+                  <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border-color)" }}>
+                    <h4 style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", margin: "0 0 0.5rem" }}>Cum conectezi contul Facebook dedicat:</h4>
+                    <ol style={{ fontSize: "0.7rem", color: "var(--text-secondary)", margin: "0 0 0.75rem", paddingLeft: "1.1rem", lineHeight: 1.7 }}>
+                      <li>Instalează extensia <strong>Cookie-Editor</strong> în Chrome sau Firefox.</li>
+                      <li>Deschide facebook.com și loghează-te cu contul dedicat FlipRadar.</li>
+                      <li>Click pe extensia Cookie-Editor → Export → Export as JSON.</li>
+                      <li>Copiază tot textul JSON și lipește-l mai jos:</li>
+                    </ol>
+                    <textarea value={cookiesInput} onChange={(e) => setCookiesInput(e.target.value)} placeholder="Lipește aici JSON-ul cu cookies..." rows={4} style={{ ...fgInputStyle, resize: "vertical", fontFamily: "monospace", fontSize: "0.72rem" }} />
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                      <button onClick={() => saveCookies(cfg)} disabled={cookieBusy} style={fgPrimaryBtn}>{cookieBusy ? "Se salvează..." : "Salvează cookies"}</button>
+                      {cfg.has_cookies && (
+                        <button onClick={() => deleteCookies(cfg)} disabled={cookieBusy} style={fgDangerBtn}><Trash2 style={{ width: "13px", height: "13px" }} /> Șterge cookies</button>
+                      )}
+                      <button onClick={() => testRun(cfg)} disabled={testing || !cfg.has_cookies} style={{ ...fgSecondaryBtn, opacity: cfg.has_cookies ? 1 : 0.5 }}><Play style={{ width: "13px", height: "13px" }} /> {testing ? "Se testează..." : "Testează acum"}</button>
+                    </div>
+                    {cfg.has_cookies && cfg.cookies_saved_at && (
+                      <p style={{ fontSize: "0.72rem", color: "#4ade80", margin: "0.5rem 0 0" }}>Cookies active · Salvate pe {new Date(cfg.cookies_saved_at).toLocaleDateString("ro-RO")} · Valabile ~{cookieDaysLeft(cfg)} zile</p>
+                    )}
+                    {testResult && (
+                      <p style={{ fontSize: "0.78rem", margin: "0.5rem 0 0", color: testResult.ok ? "#4ade80" : "#f87171" }}>{testResult.text}</p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1055,7 +1144,6 @@ function FacebookGroupModal({ config, onClose, onSaved }) {
   const [kw, setKw] = useState(fgToList(config?.keywords));
   const [neg, setNeg] = useState(fgToList(config?.negative_keywords));
   const [interval, setIntervalV] = useState(config?.check_interval_hours ?? 2);
-  const [notify, setNotify] = useState(config?.notify_discord ?? false);
   const [kwInput, setKwInput] = useState("");
   const [negInput, setNegInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1071,7 +1159,7 @@ function FacebookGroupModal({ config, onClose, onSaved }) {
     const payload = {
       group_url: groupUrl, group_name: groupName,
       keywords: kw, negative_keywords: neg,
-      check_interval_hours: parseFloat(interval), notify_discord: notify,
+      check_interval_hours: parseFloat(interval),
     };
     setSaving(true);
     try {
@@ -1118,9 +1206,6 @@ function FacebookGroupModal({ config, onClose, onSaved }) {
               {FG_INTERVAL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-            <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} style={{ width: "auto" }} /> Notificări Discord
-          </label>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)" }}>
           <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>

@@ -207,25 +207,53 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
 
 
 def _notify(kw: AutoKeyword, saved_listing, db: Session):
-    """Trimite notificare Discord (A/B) prin coada globala discord_service."""
+    """Trimite notificari (Discord + email) pentru un anunt cu grad A/B."""
     if saved_listing.grade not in ("A", "B"):
         return
-    try:
-        from app.models.radar_settings import RadarSettings
-        from app.services.discord_service import send_auto_notification
-        settings = db.query(RadarSettings).filter(
-            RadarSettings.user_id == kw.user_id).first()
-        if not (kw.notify_discord and settings):
-            return
-        listing_dict = {c.name: getattr(saved_listing, c.name)
-                        for c in saved_listing.__table__.columns}
-        listing_dict["price"] = float(saved_listing.price or 0)
-        send_auto_notification(
-            listing_dict, saved_listing.grade, saved_listing.score,
-            kw.name, settings, f"auto_{saved_listing.id}", db)
-    except Exception as exc:
-        log_manager.emit("auto_listings", "WARN",
-            f"Notificare Discord auto esuata: {str(exc)[:80]}")
+
+    if kw.notify_discord:
+        try:
+            from app.models.radar_settings import RadarSettings
+            from app.services.discord_service import send_auto_notification
+            settings = db.query(RadarSettings).filter(
+                RadarSettings.user_id == kw.user_id).first()
+            if settings:
+                listing_dict = {c.name: getattr(saved_listing, c.name)
+                                for c in saved_listing.__table__.columns}
+                listing_dict["price"] = float(saved_listing.price or 0)
+                send_auto_notification(
+                    listing_dict, saved_listing.grade, saved_listing.score,
+                    kw.name, settings, f"auto_{saved_listing.id}", db)
+        except Exception as exc:
+            log_manager.emit("auto_listings", "WARN",
+                f"Notificare Discord auto esuata: {str(exc)[:80]}")
+
+    if kw.notify_email:
+        try:
+            from app.models.user import User
+            from app.services.email_service import is_configured as smtp_configured, send_email
+            user = db.query(User).filter(User.id == kw.user_id).first()
+            if user and user.email and smtp_configured():
+                _send_email_alert_auto(user, kw, saved_listing, send_email)
+        except Exception as exc:
+            log_manager.emit("auto_listings", "WARN",
+                f"Email auto esuat: {str(exc)[:80]}")
+
+
+def _send_email_alert_auto(user, kw, listing, send_email) -> None:
+    subject = f"[Auto] {listing.grade} — {(listing.title or '')[:60]}"
+    body = (
+        f"Salut!\n\n"
+        f"Un anunt cu grad {listing.grade} a fost detectat pe {listing.platform}.\n"
+        f"Keyword: {kw.name}\n"
+        f"Titlu: {listing.title}\n"
+        f"An: {listing.year or '—'} · Km: {listing.km or '—'}\n"
+        f"Pret cerut: {listing.price} {listing.currency or 'RON'}\n"
+        f"Marja: {listing.margin_value if listing.margin_value is not None else '—'}\n"
+        f"Link: {listing.url}\n"
+        f"\n-- FlipRadar Auto"
+    )
+    send_email(user.email, subject, body)
 
 
 def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:

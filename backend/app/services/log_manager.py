@@ -3,6 +3,7 @@ from datetime import datetime, date
 import os
 import time
 import json
+import threading
 import re as _re
 
 # MODIFICARE 12 — persistarea log-urilor in DB e optionala (env LOG_DB_PERSISTENCE).
@@ -14,6 +15,12 @@ class LogManager:
 
     def __init__(self):
         self.buffers: dict[str, deque] = {m: deque(maxlen=500) for m in self.MODULES}
+        # ID-urile trebuie sa fie unice si STRICT crescatoare, chiar daca emit()
+        # e apelat de mai multe ori in aceeasi milisecunda sau din thread-uri
+        # diferite (scannerele ruleaza concurent). int(time.time()*1000) singur
+        # nu garanteaza asta -> folosim un contor monoton protejat de un lock.
+        self._lock = threading.Lock()
+        self._last_id = 0
 
     def emit(self, module: str, level: str, message: str) -> None:
         if module not in self.buffers:
@@ -21,13 +28,21 @@ class LogManager:
         # Mesajele trebuie sa fie text simplu — eliminam orice tag HTML
         # ramas din greseala (highlight-ul se face in frontend cu regex).
         clean = _re.sub(r"<[^>]+>", "", str(message))
-        entry = {
-            "id": int(time.time() * 1000),
-            "ts": datetime.now().strftime("%H:%M:%S"),
-            "level": level.upper(),
-            "msg": clean,
-        }
-        self.buffers[module].append(entry)
+        # Generarea id-ului + append-ul in deque trebuie sa fie atomice sub lock,
+        # altfel doua thread-uri ar putea insera intrarile in ordine inversata
+        # fata de id-urile lor (id unic dar nu strict crescator in buffer).
+        with self._lock:
+            new_id = int(time.time() * 1000)
+            if new_id <= self._last_id:
+                new_id = self._last_id + 1
+            self._last_id = new_id
+            entry = {
+                "id": new_id,
+                "ts": datetime.now().strftime("%H:%M:%S"),
+                "level": level.upper(),
+                "msg": clean,
+            }
+            self.buffers[module].append(entry)
 
         # MODIFICARE 12 — persistare optionala in DB (nu afecteaza deque-ul SSE).
         if _DB_PERSISTENCE:

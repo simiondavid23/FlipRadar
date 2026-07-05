@@ -194,7 +194,11 @@ export default function REFeedPage() {
         </select>
         <select value={filters.keyword_id} onChange={(e) => setFilters((f) => ({ ...f, keyword_id: e.target.value }))} style={selectStyle}>
           <option value="">Toate keyword-urile</option>
-          {keywords.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+          {keywords.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.name}{k.platform ? ` (${PLATFORM_LABELS[k.platform] || k.platform})` : ""}
+            </option>
+          ))}
         </select>
 
         <SelectFiniteControl

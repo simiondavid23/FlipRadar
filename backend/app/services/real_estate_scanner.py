@@ -435,21 +435,49 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
 
 def _notify_re(listing: RealEstateListing, kw: RealEstateKeyword,
                settings, db: Session) -> None:
-    try:
-        from app.services.discord_service import send_imob_notification
-        from app.services.real_estate.scorer import get_zone_avg_ppm
-        zone_avg = get_zone_avg_ppm(
-            db, RealEstateListing, kw.user_id,
-            listing.city, listing.zone_normalized, listing.rooms)
-        listing_dict = {c.name: getattr(listing, c.name)
-                        for c in listing.__table__.columns}
-        listing_dict["price"] = float(listing.price or 0)
-        send_imob_notification(
-            listing_dict, listing.grade, listing.score,
-            kw.name, settings, f"re_{listing.id}", db, zone_avg)
-    except Exception as exc:
-        log_manager.emit("real_estate", "WARN",
-            f"Notificare imob esuata: {str(exc)[:60]}")
+    if kw.notify_discord:
+        try:
+            from app.services.discord_service import send_imob_notification
+            from app.services.real_estate.scorer import get_zone_avg_ppm
+            zone_avg = get_zone_avg_ppm(
+                db, RealEstateListing, kw.user_id,
+                listing.city, listing.zone_normalized, listing.rooms)
+            listing_dict = {c.name: getattr(listing, c.name)
+                            for c in listing.__table__.columns}
+            listing_dict["price"] = float(listing.price or 0)
+            send_imob_notification(
+                listing_dict, listing.grade, listing.score,
+                kw.name, settings, f"re_{listing.id}", db, zone_avg)
+        except Exception as exc:
+            log_manager.emit("real_estate", "WARN",
+                f"Notificare Discord imob esuata: {str(exc)[:60]}")
+
+    if listing.grade in ("A", "B") and kw.notify_email:
+        try:
+            from app.models.user import User
+            from app.services.email_service import is_configured as smtp_configured, send_email
+            user = db.query(User).filter(User.id == kw.user_id).first()
+            if user and user.email and smtp_configured():
+                _send_email_alert_re(user, kw, listing, send_email)
+        except Exception as exc:
+            log_manager.emit("real_estate", "WARN",
+                f"Email imob esuat: {str(exc)[:60]}")
+
+
+def _send_email_alert_re(user, kw, listing, send_email) -> None:
+    subject = f"[Imobiliare] {listing.grade} — {(listing.title or '')[:60]}"
+    body = (
+        f"Salut!\n\n"
+        f"Un anunt cu grad {listing.grade} a fost detectat pe {listing.platform}.\n"
+        f"Keyword: {kw.name}\n"
+        f"Titlu: {listing.title}\n"
+        f"Zona: {listing.zone_normalized or listing.city or '—'}\n"
+        f"Camere: {listing.rooms or '—'} · Suprafata: {listing.area_sqm or '—'} mp\n"
+        f"Pret: {listing.price} {listing.currency or 'EUR'}\n"
+        f"Link: {listing.url}\n"
+        f"\n-- FlipRadar Imobiliare"
+    )
+    send_email(user.email, subject, body)
 
 
 def run_cleanup(db: Session) -> int:

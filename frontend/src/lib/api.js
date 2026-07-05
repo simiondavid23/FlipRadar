@@ -289,8 +289,6 @@ export const facebookGroupsAPI = {
   saveCookies: (id, cookiesJson) =>
     api.post(`/api/facebook-groups/${id}/cookies`, { cookies_json: cookiesJson }),
   deleteCookies: (id) => api.delete(`/api/facebook-groups/${id}/cookies`),
-  getPosts: (id, params) => api.get(`/api/facebook-groups/${id}/posts`, { params }),
-  getAllPosts: (params) => api.get("/api/facebook-groups/posts/all", { params }),
   testRun: (id) => api.post(`/api/facebook-groups/${id}/test-run`),
 };
 

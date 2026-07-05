@@ -114,7 +114,11 @@ export default function AutoLotsFeedPage() {
         </select>
         <select value={filters.keyword_id} onChange={(e) => setFilters((f) => ({ ...f, keyword_id: e.target.value }))} style={selectStyle}>
           <option value="">Toate keyword-urile</option>
-          {keywords.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+          {keywords.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.name}{k.platform ? ` (${PLATFORM_LABELS[k.platform] || k.platform})` : ""}
+            </option>
+          ))}
         </select>
         <button onClick={() => { loadFeed(); loadStats(); }} style={{ ...selectStyle, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem", color: "var(--text-secondary)" }}>
           <RefreshCw style={{ width: "14px", height: "14px" }} /> Reîmprospătează

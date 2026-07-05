@@ -11,7 +11,7 @@ import {
   Heart, BellDot, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
   Radar, Target, Bookmark, Settings, MessageSquare,
-  Calculator, Car, Home, Users, Activity, Brain, TrendingUp, Rss, Tag
+  Calculator, Car, Home, Activity, Brain, TrendingUp, Rss, Tag
 } from "lucide-react";
 
 // Sidebar-ul ramane mereu dark — pattern UX standard (GitHub, VS Code, Notion).
@@ -73,7 +73,6 @@ const categories = [
       { name: "Feed Anunțuri", href: "/dashboard/real-estate-monitor/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/real-estate-monitor/keywords", icon: Tag },
       { name: "Salvate & Ignorate", href: "/dashboard/real-estate-monitor/saved", icon: Bookmark },
-      { name: "Grupuri Facebook", href: "/dashboard/real-estate/facebook-groups", icon: Users },
     ],
   },
   {

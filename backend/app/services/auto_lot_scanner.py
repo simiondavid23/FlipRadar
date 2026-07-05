@@ -152,52 +152,78 @@ def _notify_lot(db: Session, kw: AutoLotKeyword, raw: dict) -> None:
     send_auto_notification NU se potriveste pe loturi: are early-return pentru
     grade not in (A, B), iar loturile nu au scoring/grade. Construim deci un embed
     minimal si il punem direct in coada Discord (module="auto_lots")."""
-    if not kw.notify_discord:
-        return
-    try:
-        from app.models.radar_settings import RadarSettings
-        from app.services.discord_service import discord_service
-        settings = db.query(RadarSettings).filter(
-            RadarSettings.user_id == kw.user_id).first()
-        if not settings:
-            return
-        webhook = (getattr(settings, "discord_webhook_auto_all", None)
-                   or getattr(settings, "discord_webhook_auto", None))
-        if not webhook:
-            return
+    if kw.notify_discord:
+        try:
+            from app.models.radar_settings import RadarSettings
+            from app.services.discord_service import discord_service
+            settings = db.query(RadarSettings).filter(
+                RadarSettings.user_id == kw.user_id).first()
+            # NU folosim `return` aici: ar sari peste blocul de email de mai jos.
+            webhook = ((getattr(settings, "discord_webhook_auto_all", None)
+                        or getattr(settings, "discord_webhook_auto", None))
+                       if settings else None)
+            if webhook:
+                title = (raw.get("title")
+                         or " ".join(str(x) for x in [raw.get("year"), raw.get("make"), raw.get("model")] if x)
+                         or "Lot nou")
+                fields = []
+                if raw.get("current_bid") is not None:
+                    fields.append({"name": "💰 Bid curent", "value": f"${raw['current_bid']}", "inline": True})
+                if raw.get("damage_primary"):
+                    fields.append({"name": "🔧 Daună", "value": str(raw["damage_primary"]), "inline": True})
+                loc = " · ".join(x for x in [raw.get("location_city"), raw.get("location_state")] if x)
+                if loc:
+                    fields.append({"name": "📍 Locație", "value": loc, "inline": True})
+                fields.append({"name": "🏷️ Platformă", "value": (raw.get("platform") or "").upper(), "inline": True})
+                fields.append({"name": "🎯 Keyword", "value": kw.name, "inline": True})
 
-        title = (raw.get("title")
-                 or " ".join(str(x) for x in [raw.get("year"), raw.get("make"), raw.get("model")] if x)
-                 or "Lot nou")
-        fields = []
-        if raw.get("current_bid") is not None:
-            fields.append({"name": "💰 Bid curent", "value": f"${raw['current_bid']}", "inline": True})
-        if raw.get("damage_primary"):
-            fields.append({"name": "🔧 Daună", "value": str(raw["damage_primary"]), "inline": True})
-        loc = " · ".join(x for x in [raw.get("location_city"), raw.get("location_state")] if x)
-        if loc:
-            fields.append({"name": "📍 Locație", "value": loc, "inline": True})
-        fields.append({"name": "🏷️ Platformă", "value": (raw.get("platform") or "").upper(), "inline": True})
-        fields.append({"name": "🎯 Keyword", "value": kw.name, "inline": True})
+                embed = {
+                    "title": f"🚗 {title[:200]}",
+                    "color": 0x2563eb,
+                    "fields": fields,
+                    "footer": {"text": "FlipRadar · Loturi Auto"},
+                }
+                if raw.get("source_url"):
+                    embed["url"] = raw["source_url"]
 
-        embed = {
-            "title": f"🚗 {title[:200]}",
-            "color": 0x2563eb,
-            "fields": fields,
-            "footer": {"text": "FlipRadar · Loturi Auto"},
-        }
-        if raw.get("source_url"):
-            embed["url"] = raw["source_url"]
+                lot_id = raw.get("lot_number") or raw.get("source_url") or title
+                discord_service.enqueue(
+                    webhook_url=webhook, embed=embed,
+                    listing_id=f"autolot_{kw.platform}_{lot_id}",
+                    module="auto_lots", grade=None, mention_here=False,
+                    image_url=raw.get("thumbnail_url"),
+                )
+        except Exception as exc:
+            log_manager.emit("auto_lots", "WARN", f"Notificare Discord lot esuata: {str(exc)[:80]}")
 
-        lot_id = raw.get("lot_number") or raw.get("source_url") or title
-        discord_service.enqueue(
-            webhook_url=webhook, embed=embed,
-            listing_id=f"autolot_{kw.platform}_{lot_id}",
-            module="auto_lots", grade=None, mention_here=False,
-            image_url=raw.get("thumbnail_url"),
-        )
-    except Exception as exc:
-        log_manager.emit("auto_lots", "WARN", f"Notificare Discord lot esuata: {str(exc)[:80]}")
+    if kw.notify_email:
+        try:
+            from app.models.user import User
+            from app.services.email_service import is_configured as smtp_configured, send_email
+            user = db.query(User).filter(User.id == kw.user_id).first()
+            if user and user.email and smtp_configured():
+                _send_email_alert_lot(user, kw, raw, send_email)
+        except Exception as exc:
+            log_manager.emit("auto_lots", "WARN",
+                f"Email lot esuat: {str(exc)[:80]}")
+
+
+def _send_email_alert_lot(user, kw, raw, send_email) -> None:
+    title = (raw.get("title")
+             or " ".join(str(x) for x in [raw.get("year"), raw.get("make"), raw.get("model")] if x)
+             or "Lot nou")
+    subject = f"[Loturi Auto] {title[:60]}"
+    body = (
+        f"Salut!\n\n"
+        f"Un lot nou a fost detectat.\n"
+        f"Keyword: {kw.name}\n"
+        f"Titlu: {title}\n"
+        f"Bid curent: {raw.get('current_bid') or '—'}\n"
+        f"Daune: {raw.get('damage_primary') or '—'}\n"
+        f"Link: {raw.get('source_url') or '—'}\n"
+        f"\n-- FlipRadar Loturi"
+    )
+    send_email(user.email, subject, body)
 
 
 def run_auto_lot_scan_for_user(db: Session, user_id: int) -> dict:

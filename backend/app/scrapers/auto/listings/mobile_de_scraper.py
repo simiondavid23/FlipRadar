@@ -20,6 +20,7 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
+from app.services.radar.base_scraper import get_proxy_config
 
 _SEARCH_URL = "https://suchen.mobile.de/fahrzeuge/search.html"
 # vehicleClass confirmat pe interfata publica (vc=Car). Doar valorile confirmate (Car/Motorbike).
@@ -190,18 +191,37 @@ def _search_mobile_de_playwright(url: str, page: int) -> list:
     except Exception:
         _ctx = sync_playwright
 
+    proxy_cfg = get_proxy_config()
+    context_kwargs = {
+        "locale": "de-DE",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1280, "height": 800},
+    }
+    if proxy_cfg:
+        proxy_arg = {"server": f"http://{proxy_cfg['host']}:{proxy_cfg['port']}"}
+        if proxy_cfg["username"]:
+            proxy_arg["username"] = proxy_cfg["username"]
+            proxy_arg["password"] = proxy_cfg["password"]
+        context_kwargs["proxy"] = proxy_arg
+        log_manager.emit("auto_listings", "INFO", "Mobile.de Playwright: folosesc proxy configurat")
+
     try:
         with _ctx() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                locale="de-DE",
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1280, "height": 800},
-            )
+            # Chrome real (canal instalat separat) evadeaza mai bine detectia Incapsula
+            # a Chromium-ului headless bundled. Fallback pe Chromium daca Chrome nu e
+            # instalat (playwright install chrome) — nu crapa scanul.
+            try:
+                browser = p.chromium.launch(headless=True, channel="chrome")
+                log_manager.emit("auto_listings", "INFO", "Mobile.de: Playwright cu Chrome real")
+            except Exception:
+                browser = p.chromium.launch(headless=True)
+                log_manager.emit("auto_listings", "INFO",
+                    "Mobile.de: Chrome real indisponibil, fallback Chromium bundled")
+            context = browser.new_context(**context_kwargs)
             pw_page = context.new_page()
             try:
                 pw_page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -325,12 +345,14 @@ async def search_mobile_de(make_id: str = "", filters: dict = {}, page: int = 1)
 
     # 1) curl_cffi cu chrome124 + headere complete (rapid). Daca trece, gata.
     headers = {**MOBILE_DE_HEADERS, "Referer": "https://www.mobile.de/"}
+    proxy_cfg = get_proxy_config()
+    req_kwargs = {"params": params, "headers": headers, "impersonate": "chrome124", "timeout": 20}
+    if proxy_cfg:
+        req_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
+        log_manager.emit("auto_listings", "INFO", "Mobile.de: folosesc proxy configurat")
     try:
         async with AsyncSession() as session:
-            resp = await session.get(
-                _SEARCH_URL, params=params, headers=headers,
-                impersonate="chrome124", timeout=20,
-            )
+            resp = await session.get(_SEARCH_URL, **req_kwargs)
         if resp.status_code == 200:
             results = _parse_mobilede_html(resp.text)
             if results:

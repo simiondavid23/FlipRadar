@@ -479,7 +479,7 @@ export default function RadarFeedPage() {
               const platformLabel = platformValue ? (PLATFORMS.find((p) => p.value === platformValue)?.label || platformValue) : null;
               return (
                 <option key={k.id} value={k.id}>
-                  {k.name}{platformLabel ? ` — ${platformLabel}` : ""}
+                  {k.name}{platformLabel ? ` (${platformLabel})` : ""}
                 </option>
               );
             })}
