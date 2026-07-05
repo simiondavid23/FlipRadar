@@ -74,6 +74,10 @@ class KeywordCreate(BaseModel):
     is_active: bool = True
     preset_group: Optional[str] = None
     min_margin_pct: float = 10.0
+    # Praguri de grad ajustabile per-keyword (None = implicit 40/25/10).
+    grade_a_min: Optional[float] = None
+    grade_b_min: Optional[float] = None
+    grade_c_min: Optional[float] = None
     notify_email: bool = True
     notify_discord: bool = True
     car_filters: Optional[dict] = None
@@ -99,6 +103,9 @@ class KeywordUpdate(BaseModel):
     is_active: Optional[bool] = None
     preset_group: Optional[str] = None
     min_margin_pct: Optional[float] = None
+    grade_a_min: Optional[float] = None
+    grade_b_min: Optional[float] = None
+    grade_c_min: Optional[float] = None
     notify_email: Optional[bool] = None
     notify_discord: Optional[bool] = None
     car_filters: Optional[dict] = None
@@ -247,6 +254,9 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "is_active": kw.is_active,
         "preset_group": kw.preset_group,
         "min_margin_pct": kw.min_margin_pct,
+        "grade_a_min": getattr(kw, "grade_a_min", None),
+        "grade_b_min": getattr(kw, "grade_b_min", None),
+        "grade_c_min": getattr(kw, "grade_c_min", None),
         "notify_email": bool(getattr(kw, "notify_email", True)),
         "notify_discord": bool(getattr(kw, "notify_discord", True)),
         "car_filters": (json.loads(kw.car_filters) if getattr(kw, "car_filters", None) else None),
@@ -418,6 +428,9 @@ def create_keyword(
         is_active=bool(data.is_active),
         preset_group=data.preset_group,
         min_margin_pct=float(data.min_margin_pct or 10.0),
+        grade_a_min=data.grade_a_min,
+        grade_b_min=data.grade_b_min,
+        grade_c_min=data.grade_c_min,
         notify_email=bool(data.notify_email),
         notify_discord=bool(data.notify_discord),
         car_filters=(json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None),
@@ -480,6 +493,10 @@ def update_keyword(
         kw.preset_group = data.preset_group
     if data.min_margin_pct is not None:
         kw.min_margin_pct = float(data.min_margin_pct)
+    # Praguri de grad: setam doar daca au fost trimise explicit (inclusiv null = reset la implicit).
+    for _g in ("grade_a_min", "grade_b_min", "grade_c_min"):
+        if _g in data.model_fields_set:
+            setattr(kw, _g, getattr(data, _g))
     if data.notify_email is not None:
         kw.notify_email = bool(data.notify_email)
     if data.notify_discord is not None:

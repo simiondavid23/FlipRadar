@@ -11,11 +11,18 @@ def calculate_score(
     listing_price: float,
     resale_price: float,
     min_margin_pct: float = 10.0,
+    grade_a_min: Optional[float] = None,
+    grade_b_min: Optional[float] = None,
+    grade_c_min: Optional[float] = None,
 ) -> dict:
     """Returneaza scor A/B/C/D + marja calculata + flag filtered.
 
     Daca marja e negativa (listingul e mai scump decat pretul de revanzare),
     listingul nu primeste scor — filtered=True si nu apare in feed.
+
+    grade_a_min/grade_b_min/grade_c_min sunt pragurile (%) de la care se acorda
+    fiecare grad. Cand sunt None se folosesc valorile implicite 40/25/10, deci
+    comportamentul ramane IDENTIC cu cel dinainte daca nu sunt setate per-keyword.
     """
     try:
         listing_price_f = float(listing_price)
@@ -35,11 +42,15 @@ def calculate_score(
     if margin_pct < float(min_margin_pct or 0):
         return {"score": "D", "margin_pct": margin_pct, "margin_value": margin_value, "filtered": True}
 
-    if margin_pct >= 40:
+    a_min = grade_a_min if grade_a_min is not None else 40.0
+    b_min = grade_b_min if grade_b_min is not None else 25.0
+    c_min = grade_c_min if grade_c_min is not None else 10.0
+
+    if margin_pct >= a_min:
         score = "A"
-    elif margin_pct >= 25:
+    elif margin_pct >= b_min:
         score = "B"
-    elif margin_pct >= 10:
+    elif margin_pct >= c_min:
         score = "C"
     else:
         score = "D"

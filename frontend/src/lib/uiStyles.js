@@ -63,6 +63,20 @@ export function tabPillStyle(active) {
   };
 }
 
+// modalFooterStyle — footer sticky al modalelor de keyword (Radar + Auto identice).
+// Sursa: footer-ul din auto-listings/keywords (sticky jos, border-top, fundal card).
+// Importat in ambele pagini ca sa ramana IDENTIC (o singura sursa de adevar).
+export const modalFooterStyle = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: "0.5rem",
+  padding: "1rem 1.25rem",
+  borderTop: "1px solid var(--border-color)",
+  position: "sticky",
+  bottom: 0,
+  backgroundColor: "var(--bg-card)",
+};
+
 // STATUS_TABS — identice in auto-listings/feed si real-estate-monitor/feed.
 export const STATUS_TABS = [
   { value: "active", label: "Active" },

@@ -155,6 +155,30 @@ def _collect_key(node, key, out):
             _collect_key(v, key, out)
 
 
+def _html_to_text(raw) -> Optional[str]:
+    """Curata o descriere care poate veni cu HTML brut (AutoScout24 trimite descrierea
+    in JSON cu <br>, <ul><li>, <p>). PASTREAZA structura: fiecare <li> devine o linie cu
+    bullet, blocurile (<p>/<div>) devin linii separate — ca sa NU se lipeasca cuvintele
+    (simplul strip de tag-uri ar concatena "Klima" + "Textul urmator"). Fara HTML ->
+    doar strip. Returneaza None pentru gol.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    if "<" not in raw or ">" not in raw:
+        return raw.strip() or None
+    soup = safe_soup(raw)
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for li in soup.find_all("li"):
+        li.insert_before("\n• ")
+        li.insert_after("\n")
+    for block in soup.find_all(["p", "div", "ul", "ol", "tr", "h1", "h2", "h3", "h4"]):
+        block.insert_after("\n")
+    lines = [ln.strip() for ln in soup.get_text().splitlines()]
+    cleaned = "\n".join(ln for ln in lines if ln)
+    return cleaned or None
+
+
 def fetch_autoscout24_detail(url: str) -> dict:
     html = _fetch(url, "https://www.autoscout24.ro/")
     if not html:
@@ -181,7 +205,7 @@ def fetch_autoscout24_detail(url: str) -> dict:
         if len(uris) > len(images):
             images = uris
 
-    description = _first_str(data, ("description", "vehicleDescription", "sellerDescription"))
+    description = _html_to_text(_first_str(data, ("description", "vehicleDescription", "sellerDescription")))
     seller_name = _first_str(data, ("companyName", "sellerName", "dealerName"))
     listed_at = None
     for k in ("firstRegistrationDate", "firstRegistration"):

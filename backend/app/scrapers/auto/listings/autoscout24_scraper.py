@@ -66,9 +66,25 @@ def _autoscout24_offer_urls(soup) -> dict:
     return urls
 
 
-async def search_autoscout24(make: str = "", filters: dict = {}, page: int = 1) -> list:
+def _as24_slug(s: str) -> str:
+    """Slug AutoScout24: lowercase + spatiile -> cratime. Confirmat live: /lst/{make}/{model}
+    cu land-rover, alfa-romeo, golf-plus, range-rover. Un slug care nu exista da 404 ->
+    scraper-ul intoarce [] (fara rezultate gresite din alt model)."""
+    return "-".join((s or "").strip().lower().split())
+
+
+async def search_autoscout24(make: str = "", model: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
-    path = f"/lst/{urllib.parse.quote((make or '').strip().lower())}" if make else "/lst/"
+    # Path-ul include si modelul (/lst/{make}/{model}) — inainte era doar /lst/{make},
+    # deci modelul keyword-ului (ex. Passat) era ignorat si veneau toate modelele marcii.
+    make_slug = _as24_slug(make)
+    model_slug = _as24_slug(model)
+    if make_slug and model_slug:
+        path = f"/lst/{urllib.parse.quote(make_slug)}/{urllib.parse.quote(model_slug)}"
+    elif make_slug:
+        path = f"/lst/{urllib.parse.quote(make_slug)}"
+    else:
+        path = "/lst/"
     url = _BASE + path
 
     params = {"sort": "standard", "desc": "0", "ustate": "N,U", "atype": "C"}

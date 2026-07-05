@@ -168,13 +168,24 @@ def extract_year(text: Optional[str]) -> Optional[int]:
 
 
 def extract_km(text: Optional[str]) -> Optional[int]:
-    """Extrage kilometrajul ('123.000 km', '85 000 km') dintr-un text."""
+    """Extrage kilometrajul ('123.000 km', '85 000 km', '200000 km') dintr-un text.
+
+    Regex-ul e strans INTENTIONAT: un km e fie grupat cu UN singur delimitator la
+    fiecare 3 cifre ('123.000', '85 000', '1.234.567'), fie o secventa continua de
+    2-7 cifre. Vechiul `[\\d.\\s]{2,}` permitea spatii nelimitate si LIPEA doua numere
+    diferite din text (ex. ID anunt + km) intr-o valoare gigantica ce crapa INSERT-ul
+    (NumericValueOutOfRange, ex km=11202035000). In plus, orice rezultat > 1.500.000
+    (nerealist pentru un vehicul) e respins ca garbage -> None.
+    """
     if not text:
         return None
-    m = re.search(r"([\d.\s]{2,})\s*km", text, re.I)
+    m = re.search(r"(\d{1,3}(?:[.\s]\d{3})+|\d{2,7})\s*km", text, re.I)
     if not m:
         return None
-    return parse_int(m.group(1))
+    km = parse_int(m.group(1))
+    if km is not None and km > 1_500_000:
+        return None
+    return km
 
 
 def normalize_fuel(text: Optional[str]) -> Optional[str]:

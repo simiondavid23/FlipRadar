@@ -390,6 +390,14 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
             </div>
           )}
 
+          {/* Descriere — înaintea Import Score (mai relevantă la citit) */}
+          {enriched.description && (
+            <div style={{ marginTop: "1rem" }}>
+              <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem" }}>Descriere</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{enriched.description}</div>
+            </div>
+          )}
+
           {/* Import score */}
           {IMPORT_PLATFORMS.includes(listing.platform) && importData && (
             <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", marginTop: "1rem" }}>
@@ -475,13 +483,6 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
             </div>
           )}
 
-          {enriched.description && (
-            <div style={{ marginTop: "1rem" }}>
-              <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem" }}>Descriere</div>
-              <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{enriched.description}</div>
-            </div>
-          )}
-
           {/* Actions */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "1.25rem" }}>
             <button onClick={onSave} style={actBtn("#60a5fa")}><Bookmark style={{ width: "14px", height: "14px" }} /> Salvează</button>
@@ -544,15 +545,6 @@ const MANUAL_FIELD_LABELS = {
   mileage_max: "Km max", make: "Marcă", year: "An",
 };
 const mcap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-
-function ManualMobileDeWarning() {
-  return (
-    <span title="Funcționează doar de pe IP rezidential (pe server/datacenter: 403 Imperva)."
-      style={{ display: "inline-flex", alignItems: "center", gap: "0.2rem", marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px", background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle", cursor: "help", fontWeight: 500 }}>
-      <AlertTriangle style={{ width: "11px", height: "11px" }} /> IP local
-    </span>
-  );
-}
 
 function ManualSearchTab() {
   const [catData, setCatData] = useState({ categories: {}, technical_fields: {} });
@@ -637,7 +629,7 @@ function ManualSearchTab() {
                   border: active ? "2px solid #2563eb" : "1px solid var(--border-color)",
                   backgroundColor: active ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
                   color: active ? "#60a5fa" : "var(--text-secondary)",
-                }}>{p.label}{p.value === "mobile_de" && <ManualMobileDeWarning />}</button>
+                }}>{p.label}</button>
               );
             })}
           </div>

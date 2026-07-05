@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { radarAPI } from "@/lib/api";
+import { modalFooterStyle } from "@/lib/uiStyles";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import {
   Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp, Mail, MessageSquare
@@ -84,6 +85,9 @@ const EMPTY_FORM = {
   condition: "all",
   is_active: true,
   min_margin_pct: 10.0,
+  grade_a_min: "",
+  grade_b_min: "",
+  grade_c_min: "",
   notify_email: true,
   notify_discord: true,
   use_active_hours: false,
@@ -464,6 +468,8 @@ export default function RadarKeywordsPage() {
   const [trendData, setTrendData] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
   const [trendLoading, setTrendLoading] = useState(false);
+  // Sectiune colapsabila "Praguri de grad (optional)".
+  const [showGrades, setShowGrades] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -501,6 +507,7 @@ export default function RadarKeywordsPage() {
     setFormPlatform("");
     setFormMainCat("");
     setFormSubCat("");
+    setShowGrades(false);
     setShowForm(true);
   };
 
@@ -613,6 +620,9 @@ export default function RadarKeywordsPage() {
       condition: kw.condition,
       is_active: kw.is_active,
       min_margin_pct: kw.min_margin_pct,
+      grade_a_min: kw.grade_a_min ?? "",
+      grade_b_min: kw.grade_b_min ?? "",
+      grade_c_min: kw.grade_c_min ?? "",
       notify_email: kw.notify_email !== false,
       notify_discord: kw.notify_discord !== false,
       use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
@@ -646,6 +656,7 @@ export default function RadarKeywordsPage() {
     }
     setFormMainCat(foundMain || "");
     setFormSubCat(foundSub || "");
+    setShowGrades(kw.grade_a_min != null || kw.grade_b_min != null || kw.grade_c_min != null);
     setShowForm(true);
   };
 
@@ -703,6 +714,9 @@ export default function RadarKeywordsPage() {
       condition: form.condition,
       is_active: form.is_active,
       min_margin_pct: parseFloat(form.min_margin_pct) || 10.0,
+      grade_a_min: form.grade_a_min === "" || form.grade_a_min == null ? null : parseFloat(form.grade_a_min),
+      grade_b_min: form.grade_b_min === "" || form.grade_b_min == null ? null : parseFloat(form.grade_b_min),
+      grade_c_min: form.grade_c_min === "" || form.grade_c_min == null ? null : parseFloat(form.grade_c_min),
       notify_email: !!form.notify_email,
       notify_discord: !!form.notify_discord,
       active_hours_start: form.use_active_hours ? (form.active_hours_start ?? 8) : null,
@@ -1594,6 +1608,33 @@ export default function RadarKeywordsPage() {
                 </small>
               </Field>
 
+              {/* Praguri de grad (opțional) — gol ⇒ implicit A≥40% · B≥25% · C≥10% */}
+              <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", overflow: "hidden" }}>
+                <button type="button" onClick={() => setShowGrades((v) => !v)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)", border: "none", cursor: "pointer",
+                    color: "var(--text-secondary)", fontSize: "0.8125rem", fontWeight: 600 }}>
+                  <span>Praguri de grad (opțional)</span>
+                  <span style={{ fontSize: "1rem", lineHeight: 1 }}>{showGrades ? "−" : "+"}</span>
+                </button>
+                {showGrades && (
+                  <div style={{ padding: "0.75rem", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                    <Field label="Grad A minim (%)">
+                      <input type="number" value={form.grade_a_min} onChange={(e) => setForm({ ...form, grade_a_min: e.target.value })} placeholder="40" style={inputStyle} min="0" step="any" />
+                    </Field>
+                    <Field label="Grad B minim (%)">
+                      <input type="number" value={form.grade_b_min} onChange={(e) => setForm({ ...form, grade_b_min: e.target.value })} placeholder="25" style={inputStyle} min="0" step="any" />
+                    </Field>
+                    <Field label="Grad C minim (%)">
+                      <input type="number" value={form.grade_c_min} onChange={(e) => setForm({ ...form, grade_c_min: e.target.value })} placeholder="10" style={inputStyle} min="0" step="any" />
+                    </Field>
+                    <small style={{ gridColumn: "1 / -1", color: "var(--text-muted)", fontSize: "0.7rem" }}>
+                      Lasă gol pentru valorile implicite (A ≥ 40% · B ≥ 25% · C ≥ 10%). Marja unui anunț se compară cu aceste praguri pentru grad.
+                    </small>
+                  </div>
+                )}
+              </div>
+
               <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.375rem 0.5rem", color: "var(--text-primary)", fontSize: "0.8125rem", cursor: "pointer" }}>
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} style={{ width: "auto" }} />
                 Activ
@@ -1682,7 +1723,7 @@ export default function RadarKeywordsPage() {
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
+            <div style={modalFooterStyle}>
               <button type="button" onClick={() => setShowForm(false)} style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
                 Anulează
               </button>

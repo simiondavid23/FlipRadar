@@ -1,32 +1,20 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { autoListingsAPI } from "@/lib/api";
+import { modalFooterStyle } from "@/lib/uiStyles";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
-import { Car, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, AlertTriangle, Info } from "lucide-react";
+import { Car, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Info } from "lucide-react";
 
+// Prețul de referință e în EUR pentru TOATE platformele (inclusiv Facebook Auto) —
+// unitate unică ca să nu compari mere cu pere între platforme RON și EUR.
 const AUTO_PLATFORMS = [
-  { value: "autovit",            label: "Autovit",            currency: "RON" },
-  { value: "olx_auto",           label: "OLX Auto",           currency: "RON" },
+  { value: "autovit",            label: "Autovit",            currency: "EUR" },
+  { value: "olx_auto",           label: "OLX Auto",           currency: "EUR" },
   { value: "mobile_de",          label: "Mobile.de",          currency: "EUR" },
   { value: "autoscout24",        label: "AutoScout24",        currency: "EUR" },
-  { value: "facebook_auto",      label: "Facebook Auto",      currency: "RON" },
+  { value: "facebook_auto",      label: "Facebook Auto",      currency: "EUR" },
   { value: "kleinanzeigen_auto", label: "eBay Kleinanzeigen", currency: "EUR" },
 ];
-
-// MODIFICARE 14 — badge avertisment Mobile.de (functioneaza doar de pe IP rezidential).
-function MobileDeWarning() {
-  return (
-    <span
-      title="Funcționează doar de pe IP rezidential. Pe server sau datacenter returnează 403 (blocat Imperva). 0 rezultate pe server = comportament normal."
-      style={{
-        display: "inline-flex", alignItems: "center", gap: "0.2rem",
-        marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px",
-        background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle",
-        cursor: "help", fontWeight: 500,
-      }}
-    ><AlertTriangle style={{ width: "11px", height: "11px" }} /> IP local</span>
-  );
-}
 
 const POLL_OPTIONS = [5, 10, 15, 30, 60];
 
@@ -34,6 +22,9 @@ const EMPTY_FORM = {
   name: "", make: "", model: "", query: "",
   year_from: "", year_to: "", km_max: "", price_max: "",
   category: "", tech: {},
+  // Gradare (marja fata de pretul de revanzare, in EUR) — identic cu Radar.
+  resale_price: "", min_margin_pct: 10,
+  grade_a_min: "", grade_b_min: "", grade_c_min: "",
   is_active: true, notify_email: false, notify_discord: false,
   use_active_hours: false, active_hours_start: 8, active_hours_end: 22,
   polling_interval: 10,
@@ -52,9 +43,17 @@ const FIELD_LABELS = {
   fuel_type: "Combustibil", gearbox: "Cutie de viteze", body_type: "Caroserie", condition: "Stare",
   seller_type: "Vânzător", drivetrain: "Tracțiune", engine_capacity_min: "Capacitate motor min (cmc)",
   engine_capacity_max: "Capacitate motor max (cmc)", engine_power_min: "Putere min", power_unit: "Unitate putere",
-  mileage_max: "Km max", make: "Marcă (cod)", year: "An",
+  mileage_max: "Km max", make: "Marcă", year: "An", price_min: "Preț min",
 };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// Campuri tehnice ASCUNSE din formular fiindca duplica campurile GENERICE de sus
+// (An de la=year_min, An pana la=year_max, Km max=mileage_max) sau nu au sens singure
+// (power_unit=kW, fara un camp real de putere). "make" duplica campul generic "Marcă"
+// de sus (marca ajunge la autos.marke_s din campul generic — vezi fix-ul Kleinanzeigen).
+// Raman conectate in backend (auto_categories.py neatins) — valorile generice ajung la
+// scraper prin cheile make / year_min / year_max si aliasul mileage_max->km_max.
+const HIDDEN_TECH_FIELDS = new Set(["year_min", "year_max", "mileage_max", "power_unit", "make"]);
 
 export default function AutoKeywordsPage() {
   const [keywords, setKeywords] = useState([]);
@@ -89,6 +88,8 @@ export default function AutoKeywordsPage() {
       name: kw.name || "", make: kw.make || "", model: kw.model || "", query: kw.query || "",
       year_from: kw.year_from ?? "", year_to: kw.year_to ?? "", km_max: kw.km_max ?? "", price_max: kw.price_max ?? "",
       category: kw.category || "", tech: kw.tech_filters || {},
+      resale_price: kw.resale_price ?? "", min_margin_pct: kw.min_margin_pct ?? 10,
+      grade_a_min: kw.grade_a_min ?? "", grade_b_min: kw.grade_b_min ?? "", grade_c_min: kw.grade_c_min ?? "",
       is_active: kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
       use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
       active_hours_start: kw.active_hours_start ?? 8, active_hours_end: kw.active_hours_end ?? 22,
@@ -112,6 +113,12 @@ export default function AutoKeywordsPage() {
       price_currency: AUTO_PLATFORMS.find((p) => p.value === platform)?.currency || "RON",
       category: form.category || null,
       tech_filters: Object.keys(cleanTech).length ? cleanTech : null,
+      resale_price: form.resale_price === "" || form.resale_price == null ? null : parseFloat(form.resale_price),
+      resale_price_currency: "EUR",
+      min_margin_pct: form.min_margin_pct === "" || form.min_margin_pct == null ? 10 : parseFloat(form.min_margin_pct),
+      grade_a_min: form.grade_a_min === "" || form.grade_a_min == null ? null : parseFloat(form.grade_a_min),
+      grade_b_min: form.grade_b_min === "" || form.grade_b_min == null ? null : parseFloat(form.grade_b_min),
+      grade_c_min: form.grade_c_min === "" || form.grade_c_min == null ? null : parseFloat(form.grade_c_min),
       is_active: form.is_active, notify_email: form.notify_email, notify_discord: form.notify_discord,
       active_hours_start: form.use_active_hours ? form.active_hours_start : null,
       active_hours_end: form.use_active_hours ? form.active_hours_end : null,
@@ -213,7 +220,6 @@ export default function AutoKeywordsPage() {
                     <span style={{ fontSize: "0.6875rem", fontWeight: 600, color: "#60a5fa", backgroundColor: "rgba(37,99,235,0.15)", padding: "0.125rem 0.5rem", borderRadius: "999px" }}>
                       {platLabel(k.platform)}
                     </span>
-                    {k.platform === "mobile_de" && <MobileDeWarning />}
                   </td>
                   <td style={td}>{[k.make, k.model].filter(Boolean).join(" ") || k.query || "—"}</td>
                   <td style={td}>{k.price_max ? `${Math.round(k.price_max).toLocaleString("ro-RO")} ${k.price_currency}` : "—"}</td>
@@ -267,11 +273,16 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
   const setTech = (k, v) => set({ tech: { ...(form.tech || {}), [k]: v } });
   const cur = AUTO_PLATFORMS.find((p) => p.value === platform)?.currency || "RON";
+  // Sectiune colapsabila "Praguri de grad" — auto-deschisa daca keyword-ul editat are praguri.
+  const [showGrades, setShowGrades] = useState(
+    form.grade_a_min !== "" || form.grade_b_min !== "" || form.grade_c_min !== ""
+  );
 
   // Dinamic din /categories: doar categoriile cu value confirmat + doar campurile confirmed:true.
   const validCats = ((catData.categories || {})[platform] || []).filter((c) => c.value != null);
   const techFields = Object.entries((catData.technical_fields || {})[platform] || {})
-    .filter(([, spec]) => spec && typeof spec === "object" && spec.confirmed === true);
+    .filter(([key, spec]) => spec && typeof spec === "object" && spec.confirmed === true
+      && !HIDDEN_TECH_FIELDS.has(key));
 
   const changePlatform = (v) => { setPlatform(v); set({ category: "", tech: {} }); };
 
@@ -294,7 +305,6 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
             <select value={platform} onChange={(e) => changePlatform(e.target.value)} style={inputStyle}>
               {AUTO_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
-            {platform === "mobile_de" && <div style={{ marginTop: "0.375rem" }}>Mobile.de<MobileDeWarning /></div>}
           </Field>
 
           {platform === "facebook_auto" && (
@@ -328,11 +338,50 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
             <Field label="Km max"><input type="number" value={form.km_max} onChange={(e) => set({ km_max: e.target.value })} placeholder="200000" style={inputStyle} /></Field>
           </div>
 
+          {/* Gradare — marja fata de pretul de revanzare (identic cu Radar) */}
+          <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+              Gradare (marjă vs. preț de revânzare)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <Field label="Preț de revânzare estimat (EUR)">
+                <input type="number" value={form.resale_price} onChange={(e) => set({ resale_price: e.target.value })} placeholder="ex: 15000" style={inputStyle} min="0" step="any" />
+              </Field>
+              <Field label="Marjă minimă (%)">
+                <input type="number" value={form.min_margin_pct} onChange={(e) => set({ min_margin_pct: e.target.value })} placeholder="10" style={inputStyle} min="0" step="any" />
+              </Field>
+            </div>
+            <small style={{ color: "var(--text-muted)", fontSize: "0.7rem" }}>
+              Gol ⇒ anunțurile rămân fără grad. Prețul anunțului și cel de revânzare sunt convertite în RON (curs BNR) înainte de calcul.
+            </small>
+
+            {/* Praguri de grad (opțional) — colapsabil; gol ⇒ implicit A≥40% · B≥25% · C≥10% */}
+            <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", overflow: "hidden" }}>
+              <button type="button" onClick={() => setShowGrades((v) => !v)}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)", border: "none", cursor: "pointer",
+                  color: "var(--text-secondary)", fontSize: "0.8125rem", fontWeight: 600 }}>
+                <span>Praguri de grad (opțional)</span>
+                <span style={{ fontSize: "1rem", lineHeight: 1 }}>{showGrades ? "−" : "+"}</span>
+              </button>
+              {showGrades && (
+                <div style={{ padding: "0.75rem", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                  <Field label="Grad A minim (%)"><input type="number" value={form.grade_a_min} onChange={(e) => set({ grade_a_min: e.target.value })} placeholder="40" style={inputStyle} min="0" step="any" /></Field>
+                  <Field label="Grad B minim (%)"><input type="number" value={form.grade_b_min} onChange={(e) => set({ grade_b_min: e.target.value })} placeholder="25" style={inputStyle} min="0" step="any" /></Field>
+                  <Field label="Grad C minim (%)"><input type="number" value={form.grade_c_min} onChange={(e) => set({ grade_c_min: e.target.value })} placeholder="10" style={inputStyle} min="0" step="any" /></Field>
+                  <small style={{ gridColumn: "1 / -1", color: "var(--text-muted)", fontSize: "0.7rem" }}>
+                    Lasă gol pentru valorile implicite (A ≥ 40% · B ≥ 25% · C ≥ 10%).
+                  </small>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Campuri tehnice confirmate — DOAR daca platforma are (Facebook: nu apare) */}
           {techFields.length > 0 && (
             <div>
               <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "0.5rem" }}>
-                Filtre tehnice ({AUTO_PLATFORMS.find((p) => p.value === platform)?.label})
+                Filtre tehnice
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                 {techFields.map(([key, spec]) => (
@@ -394,7 +443,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", position: "sticky", bottom: 0, backgroundColor: "var(--bg-card)" }}>
+        <div style={modalFooterStyle}>
           <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
           <button onClick={onSubmit} disabled={saving} style={{ padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
             {saving ? "Se salvează..." : editing ? "Salvează" : "Adaugă"}

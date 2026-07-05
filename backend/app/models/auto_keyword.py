@@ -1,4 +1,4 @@
-from sqlalchemy import (Boolean, Column, Integer, JSON, Numeric,
+from sqlalchemy import (Boolean, Column, Float, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
 from app.database import Base
@@ -17,7 +17,7 @@ class AutoKeyword(Base):
     year_to                  = Column(Integer)
     km_max                   = Column(Integer)
     price_max                = Column(Numeric(10, 2))
-    price_currency           = Column(String(10), default="RON")
+    price_currency           = Column(String(10), default="EUR")
     fuel_type                = Column(String(50))
     transmission             = Column(String(50))
     body_type                = Column(String(50))
@@ -31,4 +31,11 @@ class AutoKeyword(Base):
     # Categorie per-platforma + filtre tehnice confirmate (populate de formularul dinamic).
     category                 = Column(String(100))
     tech_filters             = Column(JSON)
+    # Gradare (marja fata de pretul de revanzare introdus manual) — identic cu Radar.
+    resale_price             = Column(Numeric(10, 2), nullable=True)   # NULL = necompletat -> fara scor
+    resale_price_currency    = Column(String(10), default="EUR")
+    min_margin_pct           = Column(Float, default=10.0)
+    grade_a_min              = Column(Float, nullable=True)   # NULL = foloseste implicit (40)
+    grade_b_min              = Column(Float, nullable=True)   # NULL = foloseste implicit (25)
+    grade_c_min              = Column(Float, nullable=True)   # NULL = foloseste implicit (10)
     created_at               = Column(TIMESTAMP, server_default=func.now())

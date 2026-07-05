@@ -281,6 +281,11 @@ def run_migrations():
             if not _column_exists(inspector, "radar_keywords", "marketplace_config"):
                 _migrate(conn, "add_radar_keywords_marketplace_config",
                          "ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS marketplace_config TEXT")
+            # FlipRadar — praguri de grad ajustabile per-keyword (NULL = implicit 40/25/10).
+            for _col in ("grade_a_min", "grade_b_min", "grade_c_min"):
+                if not _column_exists(inspector, "radar_keywords", _col):
+                    _migrate(conn, f"add_radar_keywords_{_col}",
+                             f"ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS {_col} DOUBLE PRECISION")
 
             # FlipRadar — remapare catalog_id-uri Vinted pe keyword-urile old-form.
             # Dropdown-ul vechi (PLATFORM_CATEGORIES["vinted"]) stoca ID-uri gresite fata de
@@ -400,6 +405,20 @@ def run_migrations():
             if not _column_exists(inspector, "auto_keywords", "tech_filters"):
                 _migrate(conn, "add_auto_keywords_tech_filters",
                          "ALTER TABLE auto_keywords ADD COLUMN tech_filters JSON")
+            # Gradare Auto (marja fata de pretul de revanzare introdus manual) — identic cu Radar.
+            if not _column_exists(inspector, "auto_keywords", "resale_price"):
+                _migrate(conn, "add_auto_keywords_resale_price",
+                         "ALTER TABLE auto_keywords ADD COLUMN IF NOT EXISTS resale_price NUMERIC(10,2)")
+            if not _column_exists(inspector, "auto_keywords", "resale_price_currency"):
+                _migrate(conn, "add_auto_keywords_resale_price_currency",
+                         "ALTER TABLE auto_keywords ADD COLUMN IF NOT EXISTS resale_price_currency VARCHAR(10) DEFAULT 'EUR'")
+            if not _column_exists(inspector, "auto_keywords", "min_margin_pct"):
+                _migrate(conn, "add_auto_keywords_min_margin_pct",
+                         "ALTER TABLE auto_keywords ADD COLUMN IF NOT EXISTS min_margin_pct DOUBLE PRECISION DEFAULT 10.0")
+            for _col in ("grade_a_min", "grade_b_min", "grade_c_min"):
+                if not _column_exists(inspector, "auto_keywords", _col):
+                    _migrate(conn, f"add_auto_keywords_{_col}",
+                             f"ALTER TABLE auto_keywords ADD COLUMN IF NOT EXISTS {_col} DOUBLE PRECISION")
 
         _migrate(conn, "create_auto_feed_listings", """
             CREATE TABLE IF NOT EXISTS auto_feed_listings (

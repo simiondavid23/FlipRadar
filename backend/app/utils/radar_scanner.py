@@ -1993,6 +1993,9 @@ def _scan_user(db: Session, user: User) -> dict:
                         listing_price=listing.get("price") or 0,
                         resale_price=kw.resale_price,
                         min_margin_pct=kw.min_margin_pct or 10.0,
+                        grade_a_min=kw.grade_a_min,
+                        grade_b_min=kw.grade_b_min,
+                        grade_c_min=kw.grade_c_min,
                     )
                     if score_data["filtered"] and score_data["score"] is None:
                         # marja negativa — nici nu salvam, e zgomot

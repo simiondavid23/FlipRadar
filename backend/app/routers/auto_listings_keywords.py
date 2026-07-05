@@ -30,7 +30,7 @@ class KeywordCreate(BaseModel):
     year_to: Optional[int] = None
     km_max: Optional[int] = None
     price_max: Optional[float] = None
-    price_currency: Optional[str] = "RON"
+    price_currency: Optional[str] = "EUR"
     fuel_type: Optional[str] = None
     transmission: Optional[str] = None
     body_type: Optional[str] = None
@@ -45,6 +45,14 @@ class KeywordCreate(BaseModel):
     # dinamic de keyword. Vezi AUTO_PLATFORM_CATEGORIES / AUTO_TECHNICAL_FIELDS.
     category: Optional[str] = None
     tech_filters: Optional[dict] = None
+    # Gradare (marja fata de pretul de revanzare introdus manual) — identic cu Radar.
+    # resale_price None => listingurile raman fara scor/grad.
+    resale_price: Optional[float] = None
+    resale_price_currency: Optional[str] = "EUR"
+    min_margin_pct: Optional[float] = 10.0
+    grade_a_min: Optional[float] = None
+    grade_b_min: Optional[float] = None
+    grade_c_min: Optional[float] = None
 
 class KeywordUpdate(KeywordCreate):
     pass
@@ -101,7 +109,9 @@ def update_keyword(
     ).first()
     if not kw:
         raise HTTPException(404, "Keyword negăsit.")
-    for k, v in payload.model_dump().items():
+    # exclude_unset: update-urile partiale (ex. butonul de toggle activ/inactiv, care nu
+    # trimite resale_price / praguri de grad) NU trebuie sa reseteze campurile netrimise.
+    for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(kw, k, v)
     db.commit(); db.refresh(kw)
     return _kw_dict(kw)

@@ -13,10 +13,17 @@ from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 _BASE = "https://www.kleinanzeigen.de"
 
 
-async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: dict = {}, page: int = 1) -> list:
-    filters = filters or {}
-    # Categoria auto = c216. Keyword-ul (query/make) se prefixeaza in slug.
-    keyword = " ".join(x for x in [(make or "").strip(), (query or "").strip()] if x).strip()
+async def search_kleinanzeigen_auto(query: str = "", make: str = "", model: str = "",
+                                    filters: dict = {}, page: int = 1) -> list:
+    filters = dict(filters or {})
+    # Task 4 — marca ajunge la filtrul STRUCTURAT (autos.marke_s), nu doar in textul liber:
+    # cautarea full-text Kleinanzeigen NU filtreaza dupa marca (confirmat live — "volkswagen
+    # passat" ca text returna Renault/Opel/BMW/Fiat), pe cand marke_s garanteaza marca. Setam
+    # doar daca nu e deja explicit in filters (ca sa nu suprascriem ceva trimis intentionat).
+    if make and not filters.get("make"):
+        filters["make"] = make
+    # Categoria auto = c216. Keyword-ul (make + model + query) se prefixeaza in slug.
+    keyword = " ".join(x for x in [(make or "").strip(), (model or "").strip(), (query or "").strip()] if x).strip()
     if keyword:
         url = f"{_BASE}/s-autos/{urllib.parse.quote(keyword)}/c216"
     else:

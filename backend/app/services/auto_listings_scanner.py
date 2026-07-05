@@ -1,13 +1,17 @@
 """Periodic scanner for auto_keywords — similar to radar_scanner."""
 import random
 import time
+import traceback
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.auto_keyword import AutoKeyword
 from app.models.auto_feed_listing import AutoFeedListing
-from app.services.auto_scorer import (
-    compute_score, compute_import_costs, IMPORT_PLATFORMS, _fetch_market_avg)
+from app.services.auto_scorer import compute_import_costs, IMPORT_PLATFORMS
+from app.services.bnr_exchange import get_eur_ron
+# Gradare identica cu Radar: acelasi calculate_score (marja fata de pretul de
+# revanzare + praguri A/B/C). scorer.py nu importa nimic din app -> fara ciclu.
+from app.services.radar.scorer import calculate_score
 from app.services.log_manager import log_manager
 from app.services.ml.feed_ml_bridge import try_save_to_ml
 
@@ -40,27 +44,17 @@ def _within_hours(kw: AutoKeyword) -> bool:
     return (s <= h < e) if s <= e else (h >= s or h < e)
 
 
-def _market_avg(db: Session, user_id: int, make: str,
-                year_from: int, year_to: int) -> Optional[float]:
-    """Compute average RON price for similar listings already in DB."""
-    try:
-        rows = db.query(AutoFeedListing).filter(
-            AutoFeedListing.user_id == user_id,
-            AutoFeedListing.platform == "autovit",
-            AutoFeedListing.price.isnot(None),
-        ).all()
-        vals = []
-        for r in rows:
-            if r.year and year_from <= r.year <= year_to:
-                p = float(r.price or 0)
-                if r.currency == "EUR":
-                    from app.services.bnr_exchange import get_eur_ron
-                    p *= get_eur_ron()
-                if p > 500:
-                    vals.append(p)
-        return sum(vals) / len(vals) if len(vals) >= 5 else None
-    except Exception:
+def _resale_price_ron(kw: AutoKeyword) -> Optional[float]:
+    """Pretul de revanzare al keyword-ului convertit in RON (sau None daca necompletat).
+
+    resale_price_currency e implicit "EUR"; conversia foloseste cursul BNR (get_eur_ron)
+    ca sa fie comparabil cu preturile listingurilor tot in RON. Vezi [[flipradar-layout]].
+    """
+    if kw.resale_price is None:
         return None
+    rp = float(kw.resale_price)
+    cur = (getattr(kw, "resale_price_currency", None) or "EUR").upper()
+    return rp * get_eur_ron() if cur == "EUR" else rp
 
 
 def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
@@ -106,7 +100,7 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
         elif platform == "autoscout24":
             from app.scrapers.auto.listings.autoscout24_scraper import search_autoscout24
             return asyncio.run(search_autoscout24(
-                make=kw.make or "", filters=filters, page=page))
+                make=kw.make or "", model=kw.model or "", filters=filters, page=page))
 
         elif platform == "facebook_auto":
             # Scraper SINCRON (sync_playwright) — apelat direct, NU prin asyncio.run
@@ -118,7 +112,8 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
         elif platform == "kleinanzeigen_auto":
             from app.scrapers.auto.listings.kleinanzeigen_auto import search_kleinanzeigen_auto
             return asyncio.run(search_kleinanzeigen_auto(
-                query=kw.query or "", make=kw.make or "", filters=filters, page=page))
+                query=kw.query or "", make=kw.make or "", model=kw.model or "",
+                filters=filters, page=page))
 
     except Exception as exc:
         log_manager.emit("auto_listings", "ERR",
@@ -126,12 +121,16 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
     return []
 
 
-def _save_listing(db: Session, user_id: int, keyword_id: int,
-                  raw: dict, platform: str,
-                  market_avg_ron: Optional[float],
-                  make: Optional[str] = None,
-                  model: Optional[str] = None) -> bool:
-    """Persist new listing. Returns True if new (not seen before)."""
+def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
+                  resale_price_ron: Optional[float]) -> bool:
+    """Persist new listing. Returns True if new (not seen before).
+
+    Gradare identica cu Radar: marja fata de pretul de revanzare (RON) al
+    keyword-ului. Fara resale_price setat -> listing salvat FARA scor/grad
+    (score=grade=None), nu cu un default gresit ("C").
+    """
+    user_id = kw.user_id
+    platform = kw.platform
     ext_id = (raw.get("external_id") or raw.get("platform_id") or "").strip()
     if not ext_id:
         return False
@@ -152,25 +151,32 @@ def _save_listing(db: Session, user_id: int, keyword_id: int,
     km     = raw.get("km")
     title  = raw.get("title") or raw.get("titlu") or ""
 
-    # MODIFICARE 8 — daca nu avem o medie de piata keyword-level, o calculam dinamic
-    # per-listing (marca din titlu, an ±2) ca referinta de scoring.
-    if market_avg_ron is None and db is not None:
-        market_avg_ron = _fetch_market_avg(
-            make=raw.get("make") or make,
-            model=raw.get("model") or model,
-            year=year,
-            db=db,
+    # Scor/grad = marja fata de pretul de revanzare al keyword-ului (ambele in RON).
+    score = None
+    grade = None
+    if resale_price_ron is not None:
+        price_ron = (price or 0) * (get_eur_ron() if cur == "EUR" else 1.0)
+        sd = calculate_score(
+            listing_price=price_ron,
+            resale_price=resale_price_ron,
+            min_margin_pct=kw.min_margin_pct if kw.min_margin_pct is not None else 10.0,
+            grade_a_min=kw.grade_a_min,
+            grade_b_min=kw.grade_b_min,
+            grade_c_min=kw.grade_c_min,
         )
+        grade = sd["score"]                                 # litera A/B/C/D (None la marja negativa)
+        mp = sd["margin_pct"]
+        score = int(round(mp)) if mp is not None else None  # marja % ca scor numeric
 
-    score, grade = compute_score(price, cur, year, km, title, market_avg_ron)
-
+    # Calculator cost import: referinta reala de revanzare (RON) in loc de media generica
+    # din DB (fix bug — "autovit_avg_ron" era o medie de piata, nu pretul de revanzare).
     import_json = None
     if platform in IMPORT_PLATFORMS and price and cur == "EUR":
-        import_json = compute_import_costs(price, market_avg_ron)
+        import_json = compute_import_costs(price, resale_price_ron)
 
     listing = AutoFeedListing(
         user_id      = user_id,
-        keyword_id   = keyword_id,
+        keyword_id   = kw.id,
         platform     = platform,
         external_id  = ext_id,
         title        = title,
@@ -234,78 +240,87 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
         f"Auto scan pornit: {len(keywords)} keyword-uri active")
 
     for kw in keywords:
+        # TASK 1 — logging REAL in consola (log_manager.emit NU apare in consola) la
+        # inceputul procesarii FIECARUI keyword, ca sa nu existe tacere neexplicata.
+        print(f"[AutoScan] procesez keyword {kw.id} platforma={kw.platform} "
+              f"activ_ore={_within_hours(kw)}")
         if not _within_hours(kw):
             log_manager.emit("auto_listings", "INFO",
                 f"Skip {kw.name!r} — interval orar inactiv")
+            print(f"[AutoScan] keyword {kw.id} SKIP — interval orar inactiv")
             continue
 
-        log_manager.emit("auto_listings", "SCAN",
-            f"Keyword {kw.name!r} · {kw.platform}")
+        # Izolare erori per-keyword: o eroare la UN keyword nu opreste tot scanul; se
+        # printeaza explicit (cu traceback) si se trece la urmatorul keyword.
+        try:
+            log_manager.emit("auto_listings", "SCAN",
+                f"Keyword {kw.name!r} · {kw.platform}")
 
-        market_avg = _market_avg(
-            db, kw.user_id,
-            kw.make or "",
-            kw.year_from or 1990,
-            kw.year_to or _CURRENT_YEAR,
-        )
+            # Pretul de revanzare (RON) al keyword-ului — referinta de gradare, constant
+            # peste toate listingurile keyword-ului. None => listingurile raman fara grad.
+            resale_price_ron = _resale_price_ron(kw)
 
-        # MODULE 3 — paginare: aduna pagini pana cand una nu mai aduce anunturi noi.
-        page = 1
-        total_new = 0
-        total_seen = 0
-        while True:
-            results = _call_scraper(kw, page=page)
-            if not results:
-                break
-            total_seen += len(results)
-            new_on_page = 0
-            for r in results:
-                is_new = _save_listing(
-                    db, kw.user_id, kw.id, r, kw.platform, market_avg,
-                    make=kw.make, model=kw.model)
-                if is_new:
-                    new_on_page += 1
-                    total_new += 1
-                    # Reload to get computed grade
-                    ext = (r.get("external_id") or r.get("platform_id") or "")
-                    saved = db.query(AutoFeedListing).filter(
-                        AutoFeedListing.user_id == kw.user_id,
-                        AutoFeedListing.platform == kw.platform,
-                        AutoFeedListing.external_id == ext,
-                    ).first()
-                    if saved:
-                        _notify(kw, saved, db)
-                        # MODULE 5b — bridge ML: salveaza in market_listings daca
-                        # titlul matchuieste o categorie. Erorile nu rup scanul auto.
-                        try:
-                            try_save_to_ml(
-                                db=db,
-                                title=saved.title or "",
-                                price=float(saved.price or 0),
-                                currency=getattr(saved, "currency", "EUR") or "EUR",
-                                external_id=saved.external_id or str(saved.id),
-                                platform=saved.platform,
-                                source_url=getattr(saved, "url", "") or "",
-                                thumbnail_url=getattr(saved, "image_url", "") or "",
-                                description=getattr(saved, "description", "") or "",
-                                year=getattr(saved, "year", None),
-                                km=getattr(saved, "km", None),
-                                fuel_type=getattr(saved, "fuel_type", None),
-                                transmission=getattr(saved, "transmission", None),
-                            )
-                        except Exception:
-                            pass
+            # MODULE 3 — paginare: aduna pagini pana cand una nu mai aduce anunturi noi.
+            page = 1
+            total_new = 0
+            total_seen = 0
+            while True:
+                results = _call_scraper(kw, page=page)
+                if not results:
+                    break
+                total_seen += len(results)
+                new_on_page = 0
+                for r in results:
+                    is_new = _save_listing(db, kw, r, resale_price_ron)
+                    if is_new:
+                        new_on_page += 1
+                        total_new += 1
+                        # Reload to get computed grade
+                        ext = (r.get("external_id") or r.get("platform_id") or "")
+                        saved = db.query(AutoFeedListing).filter(
+                            AutoFeedListing.user_id == kw.user_id,
+                            AutoFeedListing.platform == kw.platform,
+                            AutoFeedListing.external_id == ext,
+                        ).first()
+                        if saved:
+                            _notify(kw, saved, db)
+                            # MODULE 5b — bridge ML: salveaza in market_listings daca
+                            # titlul matchuieste o categorie. Erorile nu rup scanul auto.
+                            try:
+                                try_save_to_ml(
+                                    db=db,
+                                    title=saved.title or "",
+                                    price=float(saved.price or 0),
+                                    currency=getattr(saved, "currency", "EUR") or "EUR",
+                                    external_id=saved.external_id or str(saved.id),
+                                    platform=saved.platform,
+                                    source_url=getattr(saved, "url", "") or "",
+                                    thumbnail_url=getattr(saved, "image_url", "") or "",
+                                    description=getattr(saved, "description", "") or "",
+                                    year=getattr(saved, "year", None),
+                                    km=getattr(saved, "km", None),
+                                    fuel_type=getattr(saved, "fuel_type", None),
+                                    transmission=getattr(saved, "transmission", None),
+                                )
+                            except Exception:
+                                pass
 
-            log_manager.emit("auto_listings", "INFO",
-                f"{kw.platform} pagina {page}: {len(results)} rezultate · {new_on_page} noi")
-            # Facebook Auto deruleaza intern (infinite scroll) → o singura pagina.
-            if kw.platform == "facebook_auto":
-                break
-            if new_on_page == 0:
-                break
-            page += 1
-            # MODIFICARE 6 — delay aleator proaspăt la fiecare pagină (nu fix).
-            time.sleep(_auto_platform_delay(kw.platform))
+                log_manager.emit("auto_listings", "INFO",
+                    f"{kw.platform} pagina {page}: {len(results)} rezultate · {new_on_page} noi")
+                # Facebook Auto deruleaza intern (infinite scroll) → o singura pagina.
+                if kw.platform == "facebook_auto":
+                    break
+                if new_on_page == 0:
+                    break
+                page += 1
+                # MODIFICARE 6 — delay aleator proaspăt la fiecare pagină (nu fix).
+                time.sleep(_auto_platform_delay(kw.platform))
 
-        log_manager.emit("auto_listings", "OK",
-            f"{kw.platform}: {total_seen} rezultate · {total_new} noi")
+            log_manager.emit("auto_listings", "OK",
+                f"{kw.platform}: {total_seen} rezultate · {total_new} noi")
+            print(f"[AutoScan] keyword {kw.id} ({kw.platform}) OK: "
+                  f"{total_seen} rezultate, {total_new} noi")
+        except Exception as exc:
+            print(f"[AutoScan] EROARE la keyword {kw.id} ({kw.platform}): {exc}\n"
+                  f"{traceback.format_exc()}")
+            continue

@@ -29,6 +29,10 @@ class RadarKeyword(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     preset_group = Column(String, nullable=True)
     min_margin_pct = Column(Float, default=10.0, nullable=False)
+    # Praguri de grad ajustabile per-keyword (NULL = foloseste implicit 40/25/10).
+    grade_a_min = Column(Float, nullable=True)
+    grade_b_min = Column(Float, nullable=True)
+    grade_c_min = Column(Float, nullable=True)
     notify_email = Column(Boolean, default=True, nullable=False)
     notify_discord = Column(Boolean, default=True, nullable=False)
     car_filters = Column(Text, nullable=True)
