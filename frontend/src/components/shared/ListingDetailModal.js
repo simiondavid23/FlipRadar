@@ -23,6 +23,8 @@ export default function ListingDetailModal({
   platformBadge,
   platformUpper,
   openLabel,
+  priceNode = null,
+  specsNode = null,
   onClose,
   onSave,
   onIgnore,
@@ -156,9 +158,12 @@ export default function ListingDetailModal({
             <div>
               <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț cerut</div>
               <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                {Math.round(listing.price)} {listing.currency}
+                {priceNode || <>{Math.round(listing.price)} {listing.currency}</>}
               </div>
             </div>
+
+            {/* Slot opțional specificații (ex. an/km/combustibil/cutie la Auto). Radar nu-l pasează. */}
+            {specsNode}
 
             {listing.resale_price && (
               <div>

@@ -12,7 +12,7 @@ import { marginColor, formatListedDate, timeAgo } from "./listingHelpers";
 
 export default function ListingFeedCard({
   listing, scoreCfg, scoreBadge, platformCfg, platformBadge, image, openLabel,
-  showMarginLine = true,
+  showMarginLine = true, imageOverlaySlot = null, priceNode = null, specsNode = null,
   onOpen, onSave, onIgnore, compareSelected, bulkSelected, isSelected,
   onToggleSelect, onToggleCompare, onToggleBulk, onDelete,
   confirmingDelete, onConfirmDelete, onCancelDelete,
@@ -118,6 +118,10 @@ export default function ListingFeedCard({
         }}>
           {platformBadge}
         </div>
+
+        {/* Slot opțional pentru overlay-uri peste imagine (ex. badge "Import"/duplicate la Auto).
+            Radar nu-l pasează → nimic randat → card identic. */}
+        {imageOverlaySlot}
       </div>
 
       {/* Conținut card */}
@@ -139,7 +143,7 @@ export default function ListingFeedCard({
         </h3>
 
         <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>
-          {Math.round(listing.price)} {listing.currency}
+          {priceNode || <>{Math.round(listing.price)} {listing.currency}</>}
         </div>
 
         {showMarginLine && (
@@ -150,6 +154,9 @@ export default function ListingFeedCard({
             )}
           </div>
         )}
+
+        {/* Slot opțional specificații (ex. an/km/combustibil/cutie la Auto). Radar nu-l pasează. */}
+        {specsNode}
 
         {listing.fee_ceiling !== null && listing.fee_ceiling !== undefined && (
           <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>

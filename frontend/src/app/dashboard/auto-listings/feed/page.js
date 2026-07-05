@@ -1,13 +1,16 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { autoListingsAPI, autoAPI, mlAPI } from "@/lib/api";
-import { Car, RefreshCw, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff, Loader2, AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
+import { autoListingsAPI, autoAPI, mlAPI, radarAPI } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { Car, RefreshCw, Loader2, AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
 import { GRADE_COLORS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import SearchResultCard from "@/components/AutoListingCard";
 import AutoAiModal from "@/components/AutoAiModal";
+import ListingFeedCard from "@/components/shared/ListingFeedCard";
+import ListingDetailModal from "@/components/shared/ListingDetailModal";
 
 const PLATFORM_LABELS = {
   autovit: "Autovit", olx_auto: "OLX Auto", mobile_de: "Mobile.de",
@@ -30,13 +33,6 @@ function eurRonOf(listing) {
 // Doar URL-uri http reale sunt imagini valide; placeholderele (relative/"no_thumbnail" OLX)
 // sau valorile goale -> null, ca sa se afiseze fallback-ul ImageOff. Garda generica (toate platformele).
 const validImg = (u) => (typeof u === "string" && u.startsWith("http")) ? u : null;
-// Culoare marja — identic cu Radar (>=25% verde, >=10% galben, sub -> portocaliu).
-function marginColor(pct) {
-  if (pct === null || pct === undefined) return "var(--text-secondary)";
-  if (pct >= 25) return "#4ade80";
-  if (pct >= 10) return "#facc15";
-  return "#fb923c";
-}
 // Explicatie grad — adaptat din Radar (D nu mai zice "AI"; Auto foloseste pragul de marja setat).
 const SCORE_EXPLANATIONS = {
   A: "Marjă excelentă — deal prioritar",
@@ -46,14 +42,18 @@ const SCORE_EXPLANATIONS = {
 };
 
 export default function AutoFeedPage() {
+  const { user } = useAuth();
+  const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
   const [listings, setListings] = useState([]);
   const [keywords, setKeywords] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ platform: "", grade: "", status: "active", keyword_id: "" });
   const [selected, setSelected] = useState(null);
   const [activeTab, setActiveTab] = useState("auto");
   const [selectedBulk, setSelectedBulk] = useState(new Set());
+  const toggleBulk = (id) => setSelectedBulk((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
@@ -78,6 +78,7 @@ export default function AutoFeedPage() {
 
   useEffect(() => {
     autoListingsAPI.getKeywords().then((r) => setKeywords(r.data || [])).catch(() => {});
+    radarAPI.getTemplates().then((r) => setTemplates(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { loadFeed(); loadStats(); }, [loadFeed, loadStats]);
 
@@ -268,7 +269,18 @@ export default function AutoFeedPage() {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
-          {listings.map((l) => <AutoListingCard key={l.id} listing={l} onClick={() => setSelected(l)} />)}
+          {listings.map((l) => (
+            <AutoListingCard
+              key={l.id}
+              listing={l}
+              onOpen={() => setSelected(l)}
+              onSave={() => setStatus(l.id, "saved")}
+              onIgnore={() => setStatus(l.id, "ignored")}
+              onDelete={() => remove(l.id)}
+              isSelected={selectedBulk.has(l.id)}
+              onToggleSelect={() => toggleBulk(l.id)}
+            />
+          ))}
         </div>
       )}
 
@@ -278,9 +290,10 @@ export default function AutoFeedPage() {
           onClose={() => setSelected(null)}
           onSave={() => setStatus(selected.id, "saved")}
           onIgnore={() => setStatus(selected.id, "ignored")}
-          onDelete={() => remove(selected.id)}
           onConfirmDup={handleConfirmDuplicate}
           onDismissDup={handleDismissDuplicate}
+          templates={templates}
+          reviewEnabled={reviewEnabled}
         />
       )}
       </>
@@ -308,83 +321,67 @@ function priceLine(listing, big = false) {
   return main;
 }
 
-function AutoListingCard({ listing, onClick }) {
-  const g = gradeCfg(listing.grade);
-  const img = validImg(listing.image_url) || validImg(Array.isArray(listing.images_json) ? listing.images_json[0] : null);
+const AUTO_PLATFORM_CFG = { bg: "var(--bg-dark)", border: "var(--border-color)", text: "var(--text-secondary)" };
+
+// Overlay peste imaginea cardului: badge Import + badge-uri duplicate (mutat 1:1 din vechiul card).
+function AutoCardOverlay({ listing }) {
   const isImport = IMPORT_PLATFORMS.includes(listing.platform);
   return (
-    <div onClick={onClick} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column" }}>
-      <div style={{ position: "relative", height: "160px", backgroundColor: "var(--bg-dark)" }}>
-        {img ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={img} alt={listing.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
-            <ImageOff style={{ width: "28px", height: "28px" }} />
-          </div>
-        )}
-        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", fontSize: "0.6875rem", fontWeight: 700, color: g.text, backgroundColor: g.bg, padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
-          {listing.grade}
+    <>
+      {isImport && (
+        <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.2)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
+          Import
         </span>
-        <span style={{ position: "absolute", top: "0.5rem", right: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "white", backgroundColor: "rgba(0,0,0,0.6)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
-          {PLATFORM_LABELS[listing.platform] || listing.platform}
-        </span>
-        {isImport && (
-          <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.2)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
-            Import
-          </span>
-        )}
-        {listing.duplicate_level === 3 && (
-          <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
-        )}
-        {listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2 && (
-          <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Grup duplicate</span>
-        )}
-      </div>
-      <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.375rem", flex: 1 }}>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-primary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {listing.title || "—"}
-        </div>
-        <div style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing)}</div>
-        {/* Marja sub pret — EXACT ca la Radar; doar cand keyword-ul are resale_price (margin_value != null). */}
-        {listing.margin_value !== null && listing.margin_value !== undefined && (
-          <div style={{ fontSize: "0.7rem", color: marginColor(listing.margin_pct) }}>
-            → {Math.round(listing.resale_price || 0).toLocaleString("ro-RO")} RON revânzare
-            {" | "}Marjă: <strong>{Math.round(listing.margin_value).toLocaleString("ro-RO")} RON ({Math.round(listing.margin_pct || 0)}%)</strong>
-          </div>
-        )}
-        <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-          {[listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
-            listing.fuel_type && `${listing.fuel_type}`, listing.transmission && `${listing.transmission}`]
-            .filter(Boolean).join(" · ")}
-        </div>
-        {listing.location && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{listing.location}</div>}
-      </div>
-    </div>
+      )}
+      {listing.duplicate_level === 3 && (
+        <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
+      )}
+      {listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2 && (
+        <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Grup duplicate</span>
+      )}
+    </>
   );
 }
 
-function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete, onConfirmDup, onDismissDup }) {
-  const [importMode, setImportMode] = useState("pe_platforma");
+// Specificatii auto (an/km/combustibil/cutie) — pentru card si modal.
+function AutoSpecs({ listing, size = "0.7rem", mt }) {
+  const parts = [listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
+    listing.fuel_type && `${listing.fuel_type}`, listing.transmission && `${listing.transmission}`].filter(Boolean);
+  if (!parts.length) return null;
+  return <div style={{ fontSize: size, color: "var(--text-secondary)", marginTop: mt }}>{parts.join(" · ")}</div>;
+}
+
+function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect }) {
+  const img = validImg(listing.image_url) || validImg(Array.isArray(listing.images_json) ? listing.images_json[0] : null);
+  const label = PLATFORM_LABELS[listing.platform] || listing.platform;
+  return (
+    <ListingFeedCard
+      listing={listing}
+      scoreCfg={gradeCfg(listing.grade)}
+      scoreBadge={listing.grade}
+      platformCfg={AUTO_PLATFORM_CFG}
+      platformBadge={label}
+      image={img}
+      openLabel={`Deschide pe ${label}`}
+      showMarginLine={listing.margin_value !== null && listing.margin_value !== undefined}
+      priceNode={priceLine(listing)}
+      specsNode={<AutoSpecs listing={listing} />}
+      imageOverlaySlot={<AutoCardOverlay listing={listing} />}
+      isSelected={isSelected}
+      onToggleSelect={onToggleSelect}
+      onOpen={onOpen}
+      onSave={onSave}
+      onIgnore={onIgnore}
+      onDelete={onDelete}
+    />
+  );
+}
+
+// Slot ML BMW (mutat 1:1 din vechiul modal Auto).
+function AutoMLSection({ listing }) {
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
-  // Imbogatire on-demand (poze/descriere/vanzator/data), o data per anunt (cache in DB).
-  const [detail, setDetail] = useState(null);
-  const [imgIndex, setImgIndex] = useState(0);
-  const enriched = detail || listing;
-  const g = gradeCfg(listing.grade);
-  const gallery = ((Array.isArray(enriched.images_json) && enriched.images_json.length)
-    ? enriched.images_json
-    : (listing.image_url ? [listing.image_url] : [])).filter(validImg);
-  const img = gallery[Math.min(imgIndex, Math.max(gallery.length - 1, 0))] || null;
-  const importData = listing.import_score_json;
   const isBmw = /\bbmw\b/i.test(listing.title || "");
-
-  useEffect(() => {
-    setDetail(null); setImgIndex(0);
-    autoListingsAPI.getListingDetail(listing.id).then((r) => setDetail(r.data)).catch(() => {});
-  }, [listing.id]);
-
   useEffect(() => {
     if (!isBmw) { setMlPrediction(null); return; }
     setMlLoading(true);
@@ -400,225 +397,190 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete, onConf
       })
       .finally(() => setMlLoading(false));
   }, [listing.id, isBmw, listing.price, listing.year, listing.km, listing.platform]);
-
+  if (!isBmw) return null;
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "900px", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        {/* Antet: grad + platformă + titlu pe un rând + X (mirror pe ListingModal din Radar) */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.25rem", borderBottom: "1px solid var(--border-color)", gap: "0.75rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: 0 }}>
-            {listing.grade && (
-              <span style={{ padding: "0.25rem 0.625rem", backgroundColor: g.bg, border: `1px solid ${g.border}`, borderRadius: "0.375rem", color: g.text, fontSize: "0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Grad {listing.grade} · {listing.score}</span>
-            )}
-            <span style={{ padding: "0.2rem 0.5rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", color: "var(--text-secondary)", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", whiteSpace: "nowrap" }}>{PLATFORM_LABELS[listing.platform] || listing.platform}</span>
-            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{listing.title || "—"}</h2>
-          </div>
-          <button onClick={onClose} style={{ backgroundColor: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "0.25rem" }}><X style={{ width: "20px", height: "20px" }} /></button>
-        </div>
+    <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", margin: "0 1.25rem 1rem" }}>
+      <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.5rem" }}>PREDICȚIE ML</div>
+      {mlLoading && <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Se calculează...</p>}
+      {!mlLoading && mlPrediction && !mlPrediction.error && (
+        <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+          Estimat ML: {mlPrediction.price?.toLocaleString("ro-RO")} RON
+          {mlPrediction.days && <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>· ~{mlPrediction.days} zile</span>}
+        </p>
+      )}
+      {!mlLoading && mlPrediction?.error === "model_not_trained" && (
+        <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
+          Date insuficiente.{" "}<a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>Vezi progresul →</a>
+        </p>
+      )}
+      {!mlLoading && (mlPrediction?.error === "features_incomplete" || mlPrediction?.error === "unavailable") && (
+        <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Date insuficiente pentru predicție.</p>
+      )}
+    </div>
+  );
+}
 
-        {/* Corp: grid 2 coloane — stânga galerie mare + thumbnail-uri, dreapta tot conținutul */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)", gap: "1.25rem", padding: "1.25rem" }}>
-          {/* Stânga: imagine principală (aspectRatio 1) + fâșie de thumbnail-uri clickabile */}
+// Import Score (breakdown RAR/ITP/transport) — mutat 1:1 din vechiul modal Auto. La FINAL (children).
+function AutoImportScore({ listing }) {
+  const [importMode, setImportMode] = useState("pe_platforma");
+  const importData = listing.import_score_json;
+  if (!IMPORT_PLATFORMS.includes(listing.platform) || !importData) return null;
+  return (
+    <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", margin: "0 1.25rem 1.25rem" }}>
+      <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.625rem" }}>IMPORT SCORE</div>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        {["pe_platforma", "pe_roti"].map((mode) => (
+          <button key={mode} onClick={() => setImportMode(mode)} style={{
+            padding: "0.25rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
+            backgroundColor: importMode === mode ? "rgba(124,58,237,0.2)" : "var(--bg-dark)",
+            color: importMode === mode ? "#a78bfa" : "var(--text-secondary)",
+            border: importMode === mode ? "1px solid rgba(124,58,237,0.4)" : "1px solid var(--border-color)",
+          }}>
+            {mode === "pe_platforma" ? "Pe platformă" : "Pe roți"}
+          </button>
+        ))}
+      </div>
+      {(() => {
+        const d = importData[importMode];
+        if (!d) return null;
+        const rows = importMode === "pe_roti" ? [
+          ["Preț mașină", d.price_ron, "RON"],
+          ["Numere Zoll + asig.", d.breakdown_ron.zoll_eur, "RON", "~est."],
+          ["Combustibil + viniete", d.breakdown_ron.combustibil_eur, "RON", "~est."],
+          ["RAR", d.breakdown_ron.rar_ron, "RON"],
+          ["ITP", d.breakdown_ron.itp_ron, "RON"],
+          ["Înmatriculare", d.breakdown_ron.inmatriculare_ron, "RON"],
+        ] : [
+          ["Preț mașină", d.price_ron, "RON"],
+          ["Transport platformă", d.breakdown_ron.transport_eur, "RON", "~est."],
+          ["RAR", d.breakdown_ron.rar_ron, "RON"],
+          ["ITP", d.breakdown_ron.itp_ron, "RON"],
+          ["Înmatriculare", d.breakdown_ron.inmatriculare_ron, "RON"],
+        ];
+        return (
           <div>
-            <div style={{ width: "100%", aspectRatio: "1", backgroundColor: "var(--bg-dark)", borderRadius: "0.625rem", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border-color)" }}>
-              {img ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={img} alt={listing.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <ImageOff style={{ width: "48px", height: "48px", color: "var(--text-muted)" }} />
-              )}
+            {rows.map(([label, val, unit, note]) => (
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", marginBottom: "0.25rem" }}>
+                <span style={{ color: "var(--text-secondary)" }}>
+                  {label} {note && <span style={{ fontSize: "0.7rem", color: "#a78bfa" }}>{note}</span>}
+                </span>
+                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{Math.round(val).toLocaleString("ro-RO")} {unit}</span>
+              </div>
+            ))}
+            <div style={{ borderTop: "0.5px solid rgba(124,58,237,0.2)", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Total România</span>
+              <span style={{ fontWeight: 700, color: "#a78bfa" }}>{Math.round(d.total_ron).toLocaleString("ro-RO")} RON</span>
             </div>
-            {gallery.length > 1 && (
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                {gallery.slice(0, 6).map((im, idx) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={idx} src={im} alt="" onClick={() => setImgIndex(idx)} style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "0.375rem", cursor: "pointer", border: idx === imgIndex ? "2px solid var(--blue-primary)" : "1px solid var(--border-color)" }} />
-                ))}
+            {d.saving_ron !== null && d.saving_ron !== undefined && (
+              <div style={{ marginTop: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, color: d.is_profitable ? "#4ade80" : "#f87171" }}>
+                {d.is_profitable
+                  ? `Import rentabil — economie estimată ${Math.round(d.saving_ron).toLocaleString("ro-RO")} RON față de Autovit`
+                  : `Import mai scump față de piața locală cu ${Math.abs(Math.round(d.saving_ron)).toLocaleString("ro-RO")} RON`}
               </div>
             )}
+            <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
+              Curs BNR: 1 EUR = {d.eur_ron_rate} RON · Estimări marcate cu ~ pot varia
+            </div>
           </div>
+        );
+      })()}
+    </div>
+  );
+}
 
-          {/* Dreapta: preț/specs/vânzător/descriere/import/ML/duplicate/acțiuni */}
-          <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing, true)}</div>
-          <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
-            {[listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
-              listing.fuel_type && `${listing.fuel_type}`, listing.transmission && `${listing.transmission}`,
-              listing.location && `${listing.location}`].filter(Boolean).join(" · ")}
-          </div>
-          {(enriched.seller_name || enriched.listed_at) && (
-            <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-              {[enriched.seller_name && `${enriched.seller_name}`, enriched.listed_at && `Postat ${formatListedDate(enriched.listed_at)}`].filter(Boolean).join(" · ")}
-            </div>
-          )}
-
-          {/* Profitabilitate — paritate cu ListingModal Radar (Preț cerut / revânzare / Marjă +
-              badge grad). FĂRĂ "Preț maxim recomandat" (fee_ceiling): fără echivalent clar la
-              mașini — Auto are Import Score pentru rolul conceptual similar. Doar când keyword-ul
-              are resale_price (margin_value != null); altfel nu se afișează nimic despre marjă. */}
-          {listing.margin_value !== null && listing.margin_value !== undefined && (
-            <div style={{ marginTop: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.75rem", backgroundColor: "var(--bg-dark)", borderRadius: "0.625rem", border: "1px solid var(--border-color)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț cerut</span>
-                <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing)}</span>
-              </div>
-              {listing.resale_price !== null && listing.resale_price !== undefined && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț estimat revânzare</span>
-                  <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)" }}>{Math.round(listing.resale_price).toLocaleString("ro-RO")} RON</span>
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Marjă</span>
-                <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: marginColor(listing.margin_pct) }}>
-                  {Math.round(listing.margin_value).toLocaleString("ro-RO")} RON ({Math.round(listing.margin_pct || 0)}%)
-                </span>
-              </div>
-              {listing.grade && (
-                <div style={{ padding: "0.5rem 0.625rem", backgroundColor: g.bg, border: `1px solid ${g.border}`, borderRadius: "0.5rem" }}>
-                  <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: g.text }}>
-                    Grad {listing.grade} — {SCORE_EXPLANATIONS[listing.grade] || ""}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Detaliu în curs de completare — valabil pt ORICE platformă cu detail_fetched=False */}
-          {!enriched.detail_fetched && (
-            <div style={{ marginTop: "0.5rem", display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-              <Info style={{ width: "12px", height: "12px", flexShrink: 0 }} />
-              Unele detalii (poze, descriere, vânzător) se pot completa la prima deschidere.
-            </div>
-          )}
-
-          {/* Descriere — înaintea Import Score (mai relevantă la citit) */}
-          {enriched.description && (
-            <div style={{ marginTop: "1rem" }}>
-              <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem" }}>Descriere</div>
-              <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{enriched.description}</div>
-            </div>
-          )}
-
-          {/* Import score */}
-          {IMPORT_PLATFORMS.includes(listing.platform) && importData && (
-            <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", marginTop: "1rem" }}>
-              <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.625rem" }}>IMPORT SCORE</div>
-              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                {["pe_platforma", "pe_roti"].map((mode) => (
-                  <button key={mode} onClick={() => setImportMode(mode)} style={{
-                    padding: "0.25rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
-                    backgroundColor: importMode === mode ? "rgba(124,58,237,0.2)" : "var(--bg-dark)",
-                    color: importMode === mode ? "#a78bfa" : "var(--text-secondary)",
-                    border: importMode === mode ? "1px solid rgba(124,58,237,0.4)" : "1px solid var(--border-color)",
-                  }}>
-                    {mode === "pe_platforma" ? "Pe platformă" : "Pe roți"}
-                  </button>
-                ))}
-              </div>
-              {(() => {
-                const d = importData[importMode];
-                if (!d) return null;
-                const rows = importMode === "pe_roti" ? [
-                  ["Preț mașină", d.price_ron, "RON"],
-                  ["Numere Zoll + asig.", d.breakdown_ron.zoll_eur, "RON", "~est."],
-                  ["Combustibil + viniete", d.breakdown_ron.combustibil_eur, "RON", "~est."],
-                  ["RAR", d.breakdown_ron.rar_ron, "RON"],
-                  ["ITP", d.breakdown_ron.itp_ron, "RON"],
-                  ["Înmatriculare", d.breakdown_ron.inmatriculare_ron, "RON"],
-                ] : [
-                  ["Preț mașină", d.price_ron, "RON"],
-                  ["Transport platformă", d.breakdown_ron.transport_eur, "RON", "~est."],
-                  ["RAR", d.breakdown_ron.rar_ron, "RON"],
-                  ["ITP", d.breakdown_ron.itp_ron, "RON"],
-                  ["Înmatriculare", d.breakdown_ron.inmatriculare_ron, "RON"],
-                ];
-                return (
-                  <div>
-                    {rows.map(([label, val, unit, note]) => (
-                      <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", marginBottom: "0.25rem" }}>
-                        <span style={{ color: "var(--text-secondary)" }}>
-                          {label} {note && <span style={{ fontSize: "0.7rem", color: "#a78bfa" }}>{note}</span>}
-                        </span>
-                        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{Math.round(val).toLocaleString("ro-RO")} {unit}</span>
-                      </div>
-                    ))}
-                    <div style={{ borderTop: "0.5px solid rgba(124,58,237,0.2)", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Total România</span>
-                      <span style={{ fontWeight: 700, color: "#a78bfa" }}>{Math.round(d.total_ron).toLocaleString("ro-RO")} RON</span>
-                    </div>
-                    {d.saving_ron !== null && d.saving_ron !== undefined && (
-                      <div style={{ marginTop: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, color: d.is_profitable ? "#4ade80" : "#f87171" }}>
-                        {d.is_profitable
-                          ? `Import rentabil — economie estimată ${Math.round(d.saving_ron).toLocaleString("ro-RO")} RON față de Autovit`
-                          : `Import mai scump față de piața locală cu ${Math.abs(Math.round(d.saving_ron)).toLocaleString("ro-RO")} RON`}
-                      </div>
-                    )}
-                    <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
-                      Curs BNR: 1 EUR = {d.eur_ron_rate} RON · Estimări marcate cu ~ pot varia
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* ML prediction (BMW) */}
-          {isBmw && (
-            <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", marginTop: "1rem" }}>
-              <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.5rem" }}>PREDICȚIE ML</div>
-              {mlLoading && <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Se calculează...</p>}
-              {!mlLoading && mlPrediction && !mlPrediction.error && (
-                <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-                  Estimat ML: {mlPrediction.price?.toLocaleString("ro-RO")} RON
-                  {mlPrediction.days && <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>· ~{mlPrediction.days} zile</span>}
-                </p>
-              )}
-              {!mlLoading && mlPrediction?.error === "model_not_trained" && (
-                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
-                  Date insuficiente.{" "}<a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>Vezi progresul →</a>
-                </p>
-              )}
-              {!mlLoading && (mlPrediction?.error === "features_incomplete" || mlPrediction?.error === "unavailable") && (
-                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Date insuficiente pentru predicție.</p>
-              )}
-            </div>
-          )}
-
-          {/* Duplicate — auto-populat cu match-ul detectat de sistem (cross-post OLX/Autovit) */}
-          {listing.duplicate_level === 3 && listing.duplicate_match_id && (
-            <div style={{ marginTop: "1rem", padding: "0.75rem 1rem", backgroundColor: "rgba(37,99,235,0.06)", border: "0.5px solid rgba(37,99,235,0.25)", borderRadius: "0.625rem" }}>
-              <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.625rem" }}>
-                Sistemul a detectat un anunț similar (posibil cross-post OLX Auto / Autovit).
-              </p>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button onClick={() => onConfirmDup(listing.id, listing.duplicate_match_id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "rgba(37,99,235,0.12)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
-                  Confirmă duplicat
-                </button>
-                <button onClick={() => onDismissDup(listing.id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "0.5px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
-                  Nu e duplicat
-                </button>
-              </div>
-            </div>
-          )}
-          {(listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2) && (
-            <div style={{ marginTop: "1rem", fontSize: "0.8125rem", color: "#a78bfa", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
-              <span style={{ background: "rgba(124,58,237,0.2)", padding: "2px 8px", borderRadius: "4px" }}>Grup duplicate</span>
-              anunțul face parte dintr-un grup de duplicate confirmate.
-            </div>
-          )}
-
-          {/* Actions */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "1.25rem" }}>
-            <button onClick={onSave} style={actBtn("#60a5fa")}><Bookmark style={{ width: "14px", height: "14px" }} /> Salvează</button>
-            <button onClick={onIgnore} style={actBtn("var(--text-secondary)")}><EyeOff style={{ width: "14px", height: "14px" }} /> Ignoră</button>
-            {listing.url && <a href={listing.url} target="_blank" rel="noopener noreferrer" style={{ ...actBtn("#4ade80"), textDecoration: "none" }}><ExternalLink style={{ width: "14px", height: "14px" }} /> Deschide pe {PLATFORM_LABELS[listing.platform] || listing.platform}</a>}
-            <button onClick={onDelete} style={{ ...actBtn("#f87171"), marginLeft: "auto" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
-          </div>
-          </div>
+// Bloc duplicate (confirmă/respinge / grup) — mutat 1:1 din vechiul modal Auto.
+function AutoDuplicateBlock({ listing, onConfirmDup, onDismissDup }) {
+  if (listing.duplicate_level === 3 && listing.duplicate_match_id) {
+    return (
+      <div style={{ margin: "0 1.25rem 1rem", padding: "0.75rem 1rem", backgroundColor: "rgba(37,99,235,0.06)", border: "0.5px solid rgba(37,99,235,0.25)", borderRadius: "0.625rem" }}>
+        <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.625rem" }}>
+          Sistemul a detectat un anunț similar (posibil cross-post OLX Auto / Autovit).
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button onClick={() => onConfirmDup(listing.id, listing.duplicate_match_id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "rgba(37,99,235,0.12)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
+            Confirmă duplicat
+          </button>
+          <button onClick={() => onDismissDup(listing.id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "0.5px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
+            Nu e duplicat
+          </button>
         </div>
       </div>
-    </div>
+    );
+  }
+  if (listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2) {
+    return (
+      <div style={{ margin: "0 1.25rem 1rem", fontSize: "0.8125rem", color: "#a78bfa", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+        <span style={{ background: "rgba(124,58,237,0.2)", padding: "2px 8px", borderRadius: "4px" }}>Grup duplicate</span>
+        anunțul face parte dintr-un grup de duplicate confirmate.
+      </div>
+    );
+  }
+  return null;
+}
+
+function AutoListingModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDup, templates, reviewEnabled }) {
+  const [detail, setDetail] = useState(null);
+  const [generatingAI, setGeneratingAI] = useState(false);
+  // Imbogatire on-demand (poze/descriere/vanzator/data). Merge cu base ca sa pastram campurile
+  // derivate din feed (_d): resale_price/margin_pct — pe care detail-ul (dump de coloane) NU le are.
+  useEffect(() => {
+    setDetail(null);
+    autoListingsAPI.getListingDetail(listing.id).then((r) => setDetail(r.data)).catch(() => {});
+  }, [listing.id]);
+  const enriched = detail ? { ...listing, ...detail } : listing;
+  const gallery = ((Array.isArray(enriched.images_json) && enriched.images_json.length)
+    ? enriched.images_json
+    : (enriched.image_url ? [enriched.image_url] : [])).filter(validImg);
+  const label = PLATFORM_LABELS[enriched.platform] || enriched.platform;
+
+  const generateAI = async () => {
+    setGeneratingAI(true);
+    try {
+      const r = await autoListingsAPI.generateReview(listing.id);
+      setDetail((d) => ({ ...(d || listing), ai_review: r.data.ai_review }));
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la generarea review-ului.");
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
+
+  return (
+    <ListingDetailModal
+      listing={enriched}
+      images={gallery}
+      scoreCfg={gradeCfg(enriched.grade)}
+      scoreBadge={enriched.grade}
+      scoreExplanation={SCORE_EXPLANATIONS[enriched.grade]}
+      platformCfg={AUTO_PLATFORM_CFG}
+      platformBadge={label}
+      platformUpper={label}
+      openLabel={`Deschide pe ${label}`}
+      priceNode={priceLine(enriched, true)}
+      specsNode={<AutoSpecs listing={enriched} size="0.8125rem" mt="0.375rem" />}
+      onClose={onClose}
+      onSave={onSave}
+      onIgnore={onIgnore}
+      showReview
+      reviewEnabled={reviewEnabled}
+      onGenerateAI={generateAI}
+      generatingAI={generatingAI}
+      reviewSettingsHref="/dashboard/settings"
+      showTemplates
+      templates={templates}
+      onRenderTemplate={(tid, body) => autoListingsAPI.renderTemplate(body.listing_id, { template_id: tid, pret_oferit: body.pret_oferit })}
+      templatesHref="/dashboard/settings"
+      detailBannerSlot={!enriched.detail_fetched ? (
+        <div style={{ padding: "0 1.25rem", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+          <Info style={{ width: "12px", height: "12px", flexShrink: 0 }} />
+          Unele detalii (poze, descriere, vânzător) se pot completa la prima deschidere.
+        </div>
+      ) : null}
+      mlSlot={<AutoMLSection listing={enriched} />}
+    >
+      <AutoDuplicateBlock listing={listing} onConfirmDup={onConfirmDup} onDismissDup={onDismissDup} />
+      <AutoImportScore listing={listing} />
+    </ListingDetailModal>
   );
 }
 

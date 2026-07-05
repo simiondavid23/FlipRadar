@@ -15,6 +15,7 @@ from app.models.auto_feed_listing import AutoFeedListing
 from app.services.auto_listings.excel_exporter import build_auto_xlsx
 from app.services.bnr_exchange import get_eur_ron
 from app.services.radar.ai_reviewer import generate_ai_review
+from app.models.radar_message_template import RadarMessageTemplate
 from app.utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/auto-listings", tags=["auto-listings"])
@@ -313,12 +314,22 @@ def generate_auto_ai_review(
     if (current_user.ai_features_config or {}).get("ai_radar_review") is False:
         raise HTTPException(status_code=403, detail="Review-ul AI este dezactivat din Setări (Review AI în feed).")
     keyword = db.query(AutoKeyword).filter(AutoKeyword.id == listing.keyword_id).first()
-    resale = keyword.resale_price if keyword else 0
+    # Convertim AMBELE valori in RON (monede posibil diferite: listing.currency vs
+    # keyword.resale_price_currency) INAINTE de review. generate_ai_review afiseaza "RON"
+    # hardcodat, deci valorile trimise trebuie sa fie cu adevarat in RON. Functia ramane neatinsa.
+    eur_ron = get_eur_ron()
+    price = float(listing.price) if listing.price is not None else 0.0
+    price_ron = price * eur_ron if (listing.currency or "RON").upper() == "EUR" else price
+    resale_ron = 0.0
+    if keyword and keyword.resale_price is not None:
+        rp = float(keyword.resale_price)
+        rp_cur = (getattr(keyword, "resale_price_currency", None) or "EUR").upper()
+        resale_ron = rp * eur_ron if rp_cur == "EUR" else rp
     review = generate_ai_review(
         title=listing.title,
         description=listing.description,
-        price=float(listing.price) if listing.price is not None else 0,
-        resale_price=float(resale) if resale is not None else 0,
+        price=price_ron,
+        resale_price=resale_ron,
         platform=listing.platform,
         score=listing.grade,
         location=listing.location,
@@ -328,6 +339,62 @@ def generate_auto_ai_review(
     listing.ai_review = review
     db.commit()
     return {"ai_review": review}
+
+
+_AUTO_PLATFORM_NICE = {
+    "autovit": "Autovit", "olx_auto": "OLX", "mobile_de": "Mobile.de",
+    "autoscout24": "AutoScout24", "facebook_auto": "Facebook Marketplace",
+    "kleinanzeigen_auto": "Kleinanzeigen",
+}
+
+
+class AutoTemplateRender(BaseModel):
+    template_id: int
+    pret_oferit: Optional[float] = None
+
+
+@router.post("/feed/{listing_id}/render-template")
+def render_auto_template(
+    listing_id: int,
+    payload: AutoTemplateRender,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Randare sablon mesaj pentru un anunt Auto — mirror pe radar.py::render_template,
+    dar interogheaza AutoFeedListing in loc de RadarListing (sabloanele sunt partajate)."""
+    t = db.query(RadarMessageTemplate).filter(
+        RadarMessageTemplate.id == payload.template_id,
+        RadarMessageTemplate.user_id == current_user.id,
+    ).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Șablonul nu a fost găsit.")
+    listing = db.query(AutoFeedListing).filter(
+        AutoFeedListing.id == listing_id,
+        AutoFeedListing.user_id == current_user.id,
+    ).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    keyword = db.query(AutoKeyword).filter(AutoKeyword.id == listing.keyword_id).first()
+
+    price = float(listing.price) if listing.price is not None else 0.0
+    if payload.pret_oferit is not None and payload.pret_oferit > 0:
+        pret_oferit = float(payload.pret_oferit)
+    elif keyword and keyword.price_max:
+        pret_oferit = float(keyword.price_max)
+    else:
+        pret_oferit = round(price * 0.9, 2)
+
+    rendered = t.template_text
+    rendered = rendered.replace("{titlu}", listing.title or "")
+    rendered = rendered.replace("{pret_cerut}", f"{int(round(price))}")
+    rendered = rendered.replace("{pret_oferit}", f"{int(round(pret_oferit))}")
+    rendered = rendered.replace("{platforma}", _AUTO_PLATFORM_NICE.get(listing.platform, listing.platform or ""))
+    return {
+        "template_id": t.id,
+        "listing_id": listing.id,
+        "rendered_text": rendered,
+        "pret_oferit": pret_oferit,
+    }
 
 
 @router.delete("/feed/{listing_id}")
