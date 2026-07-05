@@ -31,6 +31,8 @@ class AutoFeedListing(Base):
     # NULL cand keyword-ul nu are resale_price setat (listing fara scor/grad).
     margin_value      = Column(Numeric(10, 2), nullable=True)
     import_score_json = Column(JSON)
+    # Review AI on-demand (paritate cu RadarListing.ai_review) — generat din generate_ai_review.
+    ai_review         = Column(Text, nullable=True)
     status            = Column(String(20), default="active")
     found_at          = Column(TIMESTAMP, server_default=func.now())
     last_checked_at   = Column(TIMESTAMP)

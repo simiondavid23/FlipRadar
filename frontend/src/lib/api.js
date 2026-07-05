@@ -188,6 +188,7 @@ export const autoListingsAPI = {
   flagDuplicate:  (id, dupId) => api.post(`/api/auto-listings/feed/${id}/flag-duplicate`, { duplicate_of_id: dupId }),
   // Imbogatire on-demand a detaliului (poze/descriere/vanzator/data), o data per anunt
   getListingDetail: (id)     => api.get(`/api/auto-listings/feed/${id}/detail`),
+  generateReview: (id)       => api.post(`/api/auto-listings/feed/${id}/generate-review`),
   getStats:       ()         => api.get("/api/auto-listings/stats"),
   scanNow:        ()         => api.post("/api/auto-listings/scan-now"),
   // Categorii + campuri tehnice confirmate per platforma (formular dinamic + cautare manuala)

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { radarAPI, usersAPI, facebookGroupsAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Radar, Save, Send, ToggleLeft, ToggleRight,
@@ -394,6 +394,9 @@ export default function SettingsPage() {
 
                 {/* Grupuri Facebook — Chirii (mutat din pagina standalone real-estate-monitor/groups) */}
                 <FacebookGroupsSection />
+
+                {/* Șabloane Mesaje (mutat din pagina standalone radar/templates; generalizat pe toate modulele) */}
+                <MessageTemplatesSection />
 
                 {/* Cookie LaJumate */}
                 <Section title="Cookie LaJumate">
@@ -790,6 +793,167 @@ const fgIconBtn = {
 function fgToList(v) {
   if (Array.isArray(v)) return v;
   try { const p = JSON.parse(v || "[]"); return Array.isArray(p) ? p : []; } catch { return []; }
+}
+
+// ── Șabloane Mesaje (migrat din pagina standalone radar/templates) ──────────────
+// Generalizat: platforma acoperă TOATE cele 3 module (Radar + Imobiliare + Auto) + "all".
+const TEMPLATE_PLATFORM_OPTIONS = [
+  { value: "all", label: "Universal (toate platformele)" },
+  { value: "olx", label: "OLX" },
+  { value: "vinted", label: "Vinted" },
+  { value: "okazii", label: "Okazii" },
+  { value: "facebook", label: "Facebook" },
+  { value: "lajumate", label: "LaJumate" },
+  { value: "publi24", label: "Publi24" },
+  { value: "storia", label: "Storia (imobiliare)" },
+  { value: "imobiliare_ro", label: "Imobiliare.ro" },
+  { value: "autovit", label: "Autovit" },
+  { value: "olx_auto", label: "OLX Auto" },
+  { value: "mobile_de", label: "Mobile.de" },
+  { value: "autoscout24", label: "AutoScout24" },
+  { value: "facebook_auto", label: "Facebook Auto" },
+  { value: "kleinanzeigen_auto", label: "Kleinanzeigen" },
+];
+const TEMPLATE_PLACEHOLDERS = ["{titlu}", "{pret_cerut}", "{pret_oferit}", "{platforma}"];
+const EMPTY_TEMPLATE_FORM = { name: "", platform: "all", template_text: "", is_default: false };
+
+function MessageTemplatesSection() {
+  const [items, setItems] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_TEMPLATE_FORM);
+  const textareaRef = useRef(null);
+
+  const load = useCallback(async () => {
+    try { const r = await radarAPI.getTemplates(); setItems(r.data || []); }
+    catch (e) { console.error("[Templates]", e); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const openCreate = () => { setEditingId(null); setForm(EMPTY_TEMPLATE_FORM); setShowForm(true); };
+  const openEdit = (t) => {
+    setEditingId(t.id);
+    setForm({ name: t.name, platform: t.platform, template_text: t.template_text, is_default: t.is_default });
+    setShowForm(true);
+  };
+
+  const submit = async (e) => {
+    e?.preventDefault();
+    if (!form.name.trim() || !form.template_text.trim()) { alert("Numele și textul sunt obligatorii."); return; }
+    try {
+      if (editingId) await radarAPI.updateTemplate(editingId, form);
+      else await radarAPI.createTemplate(form);
+      setShowForm(false); load();
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la salvare."); }
+  };
+
+  const remove = async (id) => {
+    if (!confirm("Ștergi acest șablon?")) return;
+    try { await radarAPI.deleteTemplate(id); load(); }
+    catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere."); }
+  };
+
+  const insertPlaceholder = (ph) => {
+    const ta = textareaRef.current;
+    if (!ta) { setForm({ ...form, template_text: form.template_text + ph }); return; }
+    const start = ta.selectionStart || 0;
+    const end = ta.selectionEnd || 0;
+    const newText = form.template_text.slice(0, start) + ph + form.template_text.slice(end);
+    setForm({ ...form, template_text: newText });
+    requestAnimationFrame(() => { ta.focus(); const pos = start + ph.length; ta.setSelectionRange(pos, pos); });
+  };
+
+  const tInput = {
+    width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
+    borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
+    fontSize: "0.875rem", outline: "none",
+  };
+
+  return (
+    <Section title="Șabloane Mesaje">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", margin: 0 }}>
+          Mesaje pre-formulate pe care le poți copia rapid când contactezi vânzătorul, în orice modul ({items.length} șabloane).
+        </p>
+        <button onClick={openCreate} style={{
+          display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem",
+          backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem",
+          fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", flexShrink: 0,
+        }}>
+          <Plus style={{ width: "16px", height: "16px" }} /> Șablon nou
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "1.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
+          Nu ai niciun șablon. Creează unul cu butonul de mai sus.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "0.75rem" }}>
+          {items.map((t) => (
+            <div key={t.id} style={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)" }}>{t.name}</h3>
+                <span style={{ padding: "0.125rem 0.5rem", backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase" }}>{t.platform}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{t.template_text}</p>
+              <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
+                <button onClick={() => openEdit(t)} style={tmplSmallBtn("#60a5fa")}><Pencil style={{ width: "12px", height: "12px", marginRight: "0.25rem", display: "inline" }} />Editează</button>
+                <button onClick={() => remove(t.id)} style={tmplSmallBtn("#f87171")}><Trash2 style={{ width: "12px", height: "12px", marginRight: "0.25rem", display: "inline" }} />Șterge</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div onClick={() => setShowForm(false)} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+          <form onClick={(e) => e.stopPropagation()} onSubmit={submit} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", maxWidth: "560px", width: "100%", maxHeight: "90vh", overflowY: "auto", padding: "1.25rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.875rem" }}>
+              <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)" }}>{editingId ? "Editează șablon" : "Șablon nou"}</h2>
+              <button type="button" onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}><X style={{ width: "20px", height: "20px" }} /></button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <label>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Nume</div>
+                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={tInput} placeholder="ex: Interes general OLX" required />
+              </label>
+              <label>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Platformă</div>
+                <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} style={tInput}>
+                  {TEMPLATE_PLATFORM_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </label>
+              <label>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Text șablon</div>
+                <textarea ref={textareaRef} value={form.template_text} onChange={(e) => setForm({ ...form, template_text: e.target.value })} rows={6} style={{ ...tInput, resize: "vertical", fontFamily: "inherit" }} placeholder="Bună ziua, sunt interesat de {titlu}..." required />
+              </label>
+              <div>
+                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.375rem" }}>Click pe un placeholder pentru a-l insera la poziția cursorului:</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+                  {TEMPLATE_PLACEHOLDERS.map((ph) => (
+                    <button key={ph} type="button" onClick={() => insertPlaceholder(ph)} style={{ padding: "0.25rem 0.5rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", color: "var(--blue-light)", fontFamily: "monospace", fontSize: "0.75rem", cursor: "pointer" }}>{ph}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
+              <button type="button" onClick={() => setShowForm(false)} style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>Anulează</button>
+              <button type="submit" style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}><Save style={{ width: "14px", height: "14px" }} />Salvează</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function tmplSmallBtn(color) {
+  return {
+    padding: "0.3rem 0.625rem", backgroundColor: "var(--bg-card)", color,
+    border: `1px solid ${color}55`, borderRadius: "0.375rem", fontSize: "0.75rem",
+    fontWeight: 500, cursor: "pointer", display: "inline-flex", alignItems: "center",
+  };
 }
 
 function FacebookGroupsSection() {

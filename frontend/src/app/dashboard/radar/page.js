@@ -4,12 +4,13 @@ import { radarAPI, mlAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   Radar, RefreshCw, ImageOff, ExternalLink, Bookmark, EyeOff,
-  X, Sparkles, ShieldOff, Tag, MapPin, Calendar, FileSpreadsheet,
-  GitCompareArrows, MessageSquare, Copy, Check, Trash2, Scale
+  X, FileSpreadsheet, GitCompareArrows, Check
 } from "lucide-react";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
+import ListingFeedCard from "@/components/shared/ListingFeedCard";
+import ListingDetailModal from "@/components/shared/ListingDetailModal";
 
 // ── ML Predictor: detectie categorie + construire features din anunt ──
 function detectMLCategory(title = "") {
@@ -156,6 +157,8 @@ function marginColor(pct) {
 const FEED_PER_PAGE = 100;
 
 export default function RadarFeedPage() {
+  const { user } = useAuth();
+  const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
   const [listings, setListings] = useState([]);
   const [feedTotal, setFeedTotal] = useState(0);
   const [feedPage, setFeedPage] = useState(1);
@@ -638,9 +641,15 @@ export default function RadarFeedPage() {
           }}
         >
           {listings.map((l) => (
-            <ListingCard
+            <ListingFeedCard
               key={l.id}
               listing={l}
+              scoreCfg={SCORE_COLORS[l.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" }}
+              scoreBadge={l.score}
+              platformCfg={PLATFORM_COLORS[l.platform] || PLATFORM_COLORS.olx}
+              platformBadge={l.platform}
+              image={l.images?.[0]}
+              openLabel={PLATFORM_LABELS[l.platform?.toLowerCase()] || "Deschide anunțul"}
               onOpen={() => setSelected(l)}
               onSave={() => updateStatus(l.id, "saved")}
               onIgnore={() => updateStatus(l.id, "ignored")}
@@ -684,17 +693,31 @@ export default function RadarFeedPage() {
 
       {/* Fereastră detalii */}
       {selected && (
-        <ListingModal
+        <ListingDetailModal
           listing={selected}
-          templates={templates}
+          images={selected.images || []}
+          scoreCfg={SCORE_COLORS[selected.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" }}
+          scoreBadge={selected.score}
+          scoreExplanation={SCORE_EXPLANATIONS[selected.score]}
+          platformCfg={PLATFORM_COLORS[selected.platform] || PLATFORM_COLORS.olx}
+          platformBadge={selected.platform}
+          platformUpper={selected.platform.toUpperCase()}
+          openLabel={PLATFORM_LABELS[selected.platform?.toLowerCase()] || "Deschide anunțul"}
           onClose={() => setSelected(null)}
           onSave={() => updateStatus(selected.id, "saved")}
           onIgnore={() => updateStatus(selected.id, "ignored")}
           onBlockSeller={() => blockSeller(selected.id)}
+          showReview
+          reviewEnabled={reviewEnabled}
           onGenerateAI={() => generateAIReview(selected.id)}
           generatingAI={generatingAI}
-          onLoadVintedDetail={loadVintedDetail}
-          onLoadFacebookDetail={loadFacebookDetail}
+          reviewSettingsHref="/dashboard/settings"
+          showTemplates
+          templates={templates}
+          onRenderTemplate={radarAPI.renderTemplate}
+          templatesHref="/dashboard/settings"
+          detailBannerSlot={<RadarDetailBanner listing={selected} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
+          mlSlot={<RadarMLSection listing={selected} />}
         />
       )}
 
@@ -721,259 +744,6 @@ export default function RadarFeedPage() {
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
-function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkSelected, isSelected, onToggleSelect, onToggleCompare, onToggleBulk, onDelete, confirmingDelete, onConfirmDelete, onCancelDelete }) {
-  const scoreCfg = SCORE_COLORS[listing.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
-  const platformCfg = PLATFORM_COLORS[listing.platform] || PLATFORM_COLORS.olx;
-  const margin = listing.margin_pct;
-  const marginValue = listing.margin_value;
-  const image = listing.images?.[0];
-
-  const baseBorder = compareSelected ? "var(--blue-primary)" : bulkSelected ? "#94a3b8" : "var(--border-color)";
-
-  return (
-    <div
-      onClick={onOpen}
-      style={{
-        backgroundColor: bulkSelected ? "rgba(148,163,184,0.05)" : "var(--bg-card)",
-        border: `1px solid ${baseBorder}`,
-        borderRadius: "0.75rem",
-        overflow: "hidden",
-        cursor: "pointer",
-        transition: "all 0.15s ease",
-        display: "flex",
-        flexDirection: "column",
-        position: "relative",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = scoreCfg.border;
-        e.currentTarget.style.boxShadow = `0 4px 14px ${scoreCfg.bg}`;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = baseBorder;
-        e.currentTarget.style.boxShadow = "none";
-      }}
-    >
-      {/* MODULE 2 — strip de selecție deasupra imaginii */}
-      <div
-        onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-        style={{
-          display: "flex", alignItems: "center", gap: "0.5rem",
-          padding: "0.3rem 0.625rem",
-          borderBottom: "0.5px solid var(--border-color)",
-          borderRadius: "0.75rem 0.75rem 0 0",
-          backgroundColor: isSelected ? "rgba(37,99,235,0.08)" : "transparent",
-          cursor: "pointer",
-          transition: "background-color 0.12s",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{
-          width: "14px", height: "14px", borderRadius: "3px", flexShrink: 0,
-          border: isSelected ? "2px solid #2563eb" : "1.5px solid rgba(100,116,139,0.45)",
-          backgroundColor: isSelected ? "#2563eb" : "transparent",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.1s",
-        }}>
-          {isSelected && <Check style={{ width: "10px", height: "10px", color: "white" }} strokeWidth={3} />}
-        </div>
-        <span style={{ fontSize: "0.6875rem", color: isSelected ? "#60a5fa" : "var(--text-secondary)", userSelect: "none" }}>
-          {isSelected ? "Selectat" : "Selectează"}
-        </span>
-      </div>
-
-      {/* Imagine */}
-      <div style={{ position: "relative", height: "180px", backgroundColor: "var(--bg-dark)" }}>
-        {image ? (
-          <img
-            src={image}
-            alt={listing.title}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
-          />
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}>
-            <ImageOff style={{ width: "36px", height: "36px" }} />
-          </div>
-        )}
-
-        {/* Insignă scor */}
-        {listing.score && (
-          <div style={{
-            position: "absolute", top: "0.5rem", left: "0.5rem",
-            padding: "0.25rem 0.625rem",
-            backgroundColor: scoreCfg.bg,
-            border: `1px solid ${scoreCfg.border}`,
-            borderRadius: "0.375rem",
-            color: scoreCfg.text,
-            fontSize: "0.75rem",
-            fontWeight: 700,
-          }}>
-            {listing.score}
-          </div>
-        )}
-
-        {/* Insignă platformă */}
-        <div style={{
-          position: "absolute", top: "0.5rem", right: "0.5rem",
-          padding: "0.25rem 0.625rem",
-          backgroundColor: platformCfg.bg,
-          border: `1px solid ${platformCfg.border}`,
-          borderRadius: "0.375rem",
-          color: platformCfg.text,
-          fontSize: "0.6875rem",
-          fontWeight: 600,
-          textTransform: "uppercase",
-        }}>
-          {listing.platform}
-        </div>
-      </div>
-
-      {/* Conținut card */}
-      <div style={{ padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1 }}>
-        <h3 style={{
-          fontSize: "0.875rem",
-          fontWeight: 600,
-          color: "var(--text-primary)",
-          margin: 0,
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          minHeight: "2.6em",
-          lineHeight: "1.3",
-        }}>
-          {listing.title}
-        </h3>
-
-        <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>
-          {Math.round(listing.price)} {listing.currency}
-        </div>
-
-        <div style={{ fontSize: "0.75rem", color: marginColor(margin) }}>
-          → {Math.round(listing.resale_price || 0)} RON revânzare
-          {marginValue !== null && marginValue !== undefined && (
-            <span> | Marjă: <strong>{Math.round(marginValue)} RON ({Math.round(margin || 0)}%)</strong></span>
-          )}
-        </div>
-
-        {listing.fee_ceiling !== null && listing.fee_ceiling !== undefined && (
-          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-            Preț maxim recomandat: {Math.round(listing.fee_ceiling)} RON
-          </div>
-        )}
-
-        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "0.125rem" }}>
-          {listing.location && <span>{listing.location}</span>}
-          <span>
-            {listing.listed_at && formatListedDate(listing.listed_at) ? (
-              <>Postat: {formatListedDate(listing.listed_at)} · Găsit: {formatListedDate(listing.found_at) || timeAgo(listing.found_at)}</>
-            ) : (
-              <>Găsit: {formatListedDate(listing.found_at) || timeAgo(listing.found_at)}</>
-            )}
-          </span>
-        </div>
-
-        {confirmingDelete ? (
-          <div onClick={(e) => e.stopPropagation()} style={{
-            display: "flex", alignItems: "center", gap: "0.5rem",
-            marginTop: "auto",
-            padding: "0.5rem 0.75rem",
-            borderTop: "1px solid rgba(239,68,68,0.3)",
-            backgroundColor: "rgba(239,68,68,0.05)",
-          }}>
-            <span style={{ fontSize: "0.75rem", color: "#fca5a5", flex: 1 }}>
-              Ștergi acest anunț definitiv?
-            </span>
-            <button onClick={onConfirmDelete} style={{ padding: "0.25rem 0.625rem", backgroundColor: "rgba(239,68,68,0.2)", color: "#f87171", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}>
-              Confirmă
-            </button>
-            <button onClick={onCancelDelete} style={{ padding: "0.25rem 0.625rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.75rem", cursor: "pointer" }}>
-              Anulează
-            </button>
-          </div>
-        ) : (
-        <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem", alignItems: "center" }}>
-          <button
-            onClick={(e) => { e.stopPropagation(); if (listing.status !== "saved") onSave(); }}
-            disabled={listing.status === "saved"}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: "0.25rem",
-              padding: "0.375rem 0.75rem",
-              backgroundColor: listing.status === "saved" ? "rgba(22,163,74,0.2)" : "rgba(22,163,74,0.08)",
-              color: "#4ade80",
-              border: "1px solid rgba(22,163,74,0.35)",
-              borderRadius: "0.375rem",
-              fontSize: "0.75rem", fontWeight: 600,
-              cursor: listing.status === "saved" ? "default" : "pointer",
-            }}
-          >
-            <Bookmark style={{ width: "12px", height: "12px" }} />
-            {listing.status === "saved" ? "Salvat" : "Salvează"}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); if (listing.status !== "ignored") onIgnore(); }}
-            disabled={listing.status === "ignored"}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: "0.25rem",
-              padding: "0.375rem 0.75rem",
-              backgroundColor: listing.status === "ignored" ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.08)",
-              color: "var(--text-secondary)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "0.375rem",
-              fontSize: "0.75rem", fontWeight: 600,
-              cursor: listing.status === "ignored" ? "default" : "pointer",
-            }}
-          >
-            <EyeOff style={{ width: "12px", height: "12px" }} />
-            {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); window.open(listing.url, "_blank", "noopener,noreferrer"); }}
-            style={{ flex: 1, padding: "0.4rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
-            title={PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
-          >
-            <ExternalLink style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
-            {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleCompare(); }}
-            title={compareSelected ? "Scoate din comparare" : "Adaugă la comparare"}
-            style={{
-              background: "transparent", border: "none", cursor: "pointer",
-              padding: "0.25rem", borderRadius: "0.375rem",
-              color: compareSelected ? "#60a5fa" : "var(--text-secondary)",
-              backgroundColor: compareSelected ? "rgba(37,99,235,0.12)" : "transparent",
-              display: "inline-flex", alignItems: "center",
-              transition: "all 0.12s",
-            }}
-          >
-            <Scale style={{ width: "14px", height: "14px" }} />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            title="Șterge anunțul"
-            style={{
-              marginLeft: "auto",
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              color: "#f87171",
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "0.25rem",
-              borderRadius: "0.375rem",
-            }}
-          >
-            <Trash2 style={{ width: "14px", height: "14px" }} />
-          </button>
-        </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -1266,22 +1036,11 @@ function ManualResultCard({ listing }) {
   );
 }
 
-function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBlockSeller, onGenerateAI, generatingAI, onLoadVintedDetail, onLoadFacebookDetail }) {
-  const { user } = useAuth();
-  const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
-  const scoreCfg = SCORE_COLORS[listing.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
-  const platformCfg = PLATFORM_COLORS[listing.platform] || PLATFORM_COLORS.olx;
-  const images = listing.images || [];
-  const [mainImg, setMainImg] = useState(images[0] || null);
-  useEffect(() => { setMainImg(images[0] || null); }, [listing.id]);
-
-  // ── Predictie ML (separata de pretul de revanzare manual) ──
+// Slot ML pentru modalul partajat — mutat 1:1 din ListingModal (hooks + JSX identice).
+function RadarMLSection({ listing }) {
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlCategory, setMlCategory] = useState(null);
-  const [vintedDetailStatus, setVintedDetailStatus] = useState(null);
-  const [facebookDetailStatus, setFacebookDetailStatus] = useState(null);
-  // valori posibile: null (nu e nevoie) | "loading" | "success" | "failed"
 
   useEffect(() => {
     if (!listing) { setMlPrediction(null); return; }
@@ -1305,11 +1064,70 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
       .finally(() => setMlLoading(false));
   }, [listing?.id]);
 
-  // PARTEA A — fetch on-demand al detaliului Vinted complet (poze/descriere/data)
-  // cand anuntul are doar thumbnail-ul unic din cautare. O singura data (cache DB).
+  if (!mlCategory) return null;
+  return (
+    <div style={{ margin: "0 1.25rem 1rem" }}>
+      <div style={{
+        padding: "0.875rem 1rem",
+        backgroundColor: "rgba(124,58,237,0.07)",
+        border: "0.5px solid rgba(124,58,237,0.25)",
+        borderRadius: "0.625rem",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+          <span style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, letterSpacing: "0.04em" }}>
+            PREDICȚIE ML
+          </span>
+        </div>
+
+        {mlLoading && (
+          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+            Se calculează...
+          </p>
+        )}
+
+        {!mlLoading && mlPrediction && !mlPrediction.error && (
+          <div>
+            <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+              Estimat: {mlPrediction.price?.toLocaleString("ro-RO")} RON
+              {mlPrediction.days && (
+                <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>
+                  · vândut în ~{mlPrediction.days} zile
+                </span>
+              )}
+            </p>
+            <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+              Predicție separată de prețul de revânzare introdus manual.
+            </p>
+          </div>
+        )}
+
+        {!mlLoading && mlPrediction?.error === "model_not_trained" && (
+          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+            Model neantrenat — date insuficiente.{" "}
+            <a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>
+              Vezi progresul →
+            </a>
+          </p>
+        )}
+
+        {!mlLoading && mlPrediction?.error === "features_incomplete" && (
+          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+            Features insuficiente pentru predicție (titlu prea vag).
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Slot bannere detaliu on-demand Vinted/Facebook — mutat 1:1 din ListingModal.
+function RadarDetailBanner({ listing, onLoadVintedDetail, onLoadFacebookDetail }) {
+  const [vintedDetailStatus, setVintedDetailStatus] = useState(null);
+  const [facebookDetailStatus, setFacebookDetailStatus] = useState(null);
+
   useEffect(() => {
     if (!listing || listing.platform !== "vinted") return;
-    if (listing.vinted_detail_fetched) return; // deja cache-uit, nu mai apelam
+    if (listing.vinted_detail_fetched) return;
     const needsDetail = (listing.images || []).length <= 1 || !listing.description;
     if (!needsDetail) return;
     let cancelled = false;
@@ -1321,11 +1139,9 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
     return () => { cancelled = true; };
   }, [listing.id]);
 
-  // Facebook — mirror pe Vinted: fetch on-demand descriere + galerie completa
-  // cand anuntul are doar thumbnail-ul unic din cautare. O singura data (cache DB).
   useEffect(() => {
     if (!listing || listing.platform !== "facebook") return;
-    if (listing.facebook_detail_fetched) return; // deja cache-uit, nu mai apelam
+    if (listing.facebook_detail_fetched) return;
     const needsDetail = (listing.images || []).length <= 1 || !listing.description;
     if (!needsDetail) return;
     let cancelled = false;
@@ -1338,360 +1154,29 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
   }, [listing.id]);
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 100, padding: "1.5rem",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.875rem",
-          maxWidth: "900px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {/* Antet modal */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "1rem 1.25rem", borderBottom: "1px solid var(--border-color)",
-          gap: "0.75rem",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: 0 }}>
-            {listing.score && (
-              <span style={{
-                padding: "0.25rem 0.625rem",
-                backgroundColor: scoreCfg.bg,
-                border: `1px solid ${scoreCfg.border}`,
-                borderRadius: "0.375rem",
-                color: scoreCfg.text,
-                fontSize: "0.75rem",
-                fontWeight: 700,
-              }}>{listing.score}</span>
-            )}
-            <span style={{
-              padding: "0.2rem 0.5rem",
-              backgroundColor: platformCfg.bg,
-              border: `1px solid ${platformCfg.border}`,
-              borderRadius: "0.375rem",
-              color: platformCfg.text,
-              fontSize: "0.7rem",
-              fontWeight: 600,
-              textTransform: "uppercase",
-            }}>{listing.platform}</span>
-            <h2 style={{
-              fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)",
-              margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>{listing.title}</h2>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              backgroundColor: "transparent", border: "none", color: "var(--text-secondary)",
-              cursor: "pointer", padding: "0.25rem",
-            }}
-          >
-            <X style={{ width: "20px", height: "20px" }} />
-          </button>
+    <>
+      {listing.platform === "vinted" && vintedDetailStatus === "loading" && (
+        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+          Se încarcă poze și descriere complete de pe Vinted...
         </div>
-
-        {/* Corp modal */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
-          gap: "1.25rem",
-          padding: "1.25rem",
-        }}>
-          {/* Stânga: galerie imagini */}
-          <div>
-            <div style={{
-              width: "100%", aspectRatio: "1",
-              backgroundColor: "var(--bg-dark)",
-              borderRadius: "0.625rem",
-              overflow: "hidden",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              border: "1px solid var(--border-color)",
-            }}>
-              {mainImg ? (
-                <img src={mainImg} alt={listing.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <ImageOff style={{ width: "48px", height: "48px", color: "var(--text-muted)" }} />
-              )}
-            </div>
-            {images.length > 1 && (
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                {images.slice(0, 6).map((img, idx) => (
-                  <img
-                    key={idx}
-                    src={img}
-                    onClick={() => setMainImg(img)}
-                    style={{
-                      width: "64px", height: "64px", objectFit: "cover",
-                      borderRadius: "0.375rem", cursor: "pointer",
-                      border: mainImg === img ? "2px solid var(--blue-primary)" : "1px solid var(--border-color)",
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Dreapta: detalii */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
-            <div>
-              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț cerut</div>
-              <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                {Math.round(listing.price)} {listing.currency}
-              </div>
-            </div>
-
-            {listing.resale_price && (
-              <div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț estimat revânzare</div>
-                <div style={{ fontSize: "1.125rem", fontWeight: 600, color: "var(--text-primary)" }}>
-                  {Math.round(listing.resale_price)} RON
-                </div>
-              </div>
-            )}
-
-            {listing.margin_pct !== null && listing.margin_pct !== undefined && (
-              <div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Marjă</div>
-                <div style={{ fontSize: "1rem", fontWeight: 600, color: marginColor(listing.margin_pct) }}>
-                  {Math.round(listing.margin_value || 0)} RON ({Math.round(listing.margin_pct)}%)
-                </div>
-              </div>
-            )}
-
-            {listing.fee_ceiling !== null && listing.fee_ceiling !== undefined && (
-              <div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț maxim recomandat</div>
-                <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--text-primary)" }}>
-                  {Math.round(listing.fee_ceiling)} RON
-                </div>
-              </div>
-            )}
-
-            {listing.score && (
-              <div style={{ padding: "0.625rem", backgroundColor: scoreCfg.bg, border: `1px solid ${scoreCfg.border}`, borderRadius: "0.5rem" }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: scoreCfg.text }}>Scor {listing.score}</div>
-                <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{SCORE_EXPLANATIONS[listing.score]}</div>
-              </div>
-            )}
-
-            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              <div><Tag style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} /> {listing.platform.toUpperCase()}</div>
-              {listing.location && <div><MapPin style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} /> {listing.location}</div>}
-              {listing.condition && <div>Condiție: {listing.condition}</div>}
-              {listing.seller_name && <div>Vânzător: {listing.seller_name}</div>}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem", marginTop: "0.25rem" }}>
-                <span>
-                  <Calendar style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
-                  <strong>Postat pe platformă:</strong>{" "}
-                  {formatListedDate(listing.listed_at) || "Necunoscut"}
-                </span>
-                <span>
-                  <Calendar style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
-                  <strong>Găsit de FlipRadar:</strong>{" "}
-                  {formatListedDate(listing.found_at) || timeAgo(listing.found_at)}
-                </span>
-              </div>
-            </div>
-          </div>
+      )}
+      {listing.platform === "vinted" && vintedDetailStatus === "failed" && (
+        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+          Detalii suplimentare indisponibile momentan (limitare temporară Vinted) — vor fi reîncercate la următoarea deschidere.
         </div>
-
-        {listing.platform === "vinted" && vintedDetailStatus === "loading" && (
-          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-            Se încarcă poze și descriere complete de pe Vinted...
-          </div>
-        )}
-        {listing.platform === "vinted" && vintedDetailStatus === "failed" && (
-          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-            Detalii suplimentare indisponibile momentan (limitare temporară Vinted) — vor fi reîncercate la următoarea deschidere.
-          </div>
-        )}
-        {listing.platform === "facebook" && facebookDetailStatus === "loading" && (
-          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-            Se încarcă descriere și galerie complete de pe Facebook...
-          </div>
-        )}
-        {listing.platform === "facebook" && facebookDetailStatus === "failed" && (
-          <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-            Detalii suplimentare indisponibile momentan — vor fi reîncercate la următoarea deschidere.
-          </div>
-        )}
-
-        {/* Descriere */}
-        {listing.description && (
-          <div style={{ padding: "0 1.25rem 1rem" }}>
-            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem" }}>Descriere</div>
-            <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{listing.description}</div>
-          </div>
-        )}
-
-        {/* Predictie ML — apare intre informatiile de pret si Review AI */}
-        {mlCategory && (
-          <div style={{ margin: "0 1.25rem 1rem" }}>
-            <div style={{
-              padding: "0.875rem 1rem",
-              backgroundColor: "rgba(124,58,237,0.07)",
-              border: "0.5px solid rgba(124,58,237,0.25)",
-              borderRadius: "0.625rem",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                <span style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, letterSpacing: "0.04em" }}>
-                  PREDICȚIE ML
-                </span>
-              </div>
-
-              {mlLoading && (
-                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-                  Se calculează...
-                </p>
-              )}
-
-              {!mlLoading && mlPrediction && !mlPrediction.error && (
-                <div>
-                  <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-                    Estimat: {mlPrediction.price?.toLocaleString("ro-RO")} RON
-                    {mlPrediction.days && (
-                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>
-                        · vândut în ~{mlPrediction.days} zile
-                      </span>
-                    )}
-                  </p>
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                    Predicție separată de prețul de revânzare introdus manual.
-                  </p>
-                </div>
-              )}
-
-              {!mlLoading && mlPrediction?.error === "model_not_trained" && (
-                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-                  Model neantrenat — date insuficiente.{" "}
-                  <a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>
-                    Vezi progresul →
-                  </a>
-                </p>
-              )}
-
-              {!mlLoading && mlPrediction?.error === "features_incomplete" && (
-                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-                  Features insuficiente pentru predicție (titlu prea vag).
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Review AI */}
-        <div style={{ padding: "0 1.25rem 1.25rem" }}>
-          <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-            <Sparkles style={{ width: "14px", height: "14px", color: "#a78bfa" }} />
-            Review AI
-          </div>
-          {listing.ai_review ? (
-            <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", fontStyle: "italic", lineHeight: 1.5, padding: "0.625rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem" }}>
-              {listing.ai_review}
-            </div>
-          ) : (
-            <>
-            <button
-              onClick={reviewEnabled ? onGenerateAI : undefined}
-              disabled={generatingAI}
-              style={{
-                padding: "0.5rem 0.875rem",
-                backgroundColor: "rgba(147,51,234,0.15)",
-                color: "#c4b5fd",
-                border: "1px solid rgba(147,51,234,0.3)",
-                borderRadius: "0.5rem",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                cursor: reviewEnabled ? (generatingAI ? "wait" : "pointer") : "default",
-                opacity: reviewEnabled ? 1 : 0.4,
-              }}
-            >
-              {generatingAI ? "Se generează..." : "Generează review AI"}
-            </button>
-            {!reviewEnabled && (
-              <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                Feature dezactivat · <a href="/dashboard/settings" style={{ color: "#60a5fa" }}>Activează din Setări</a>
-              </p>
-            )}
-            </>
-          )}
+      )}
+      {listing.platform === "facebook" && facebookDetailStatus === "loading" && (
+        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+          Se încarcă descriere și galerie complete de pe Facebook...
         </div>
-
-        {/* Mesaje rapide */}
-        <MessageTemplateBlock listing={listing} templates={templates} />
-
-        {/* Acțiuni */}
-        <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <button
-            onClick={listing.status !== "saved" ? onSave : undefined}
-            disabled={listing.status === "saved"}
-            style={btn(
-              listing.status === "saved" ? "#4ade80" : "#4ade80",
-              listing.status === "saved" ? "rgba(22,163,74,0.25)" : "rgba(22,163,74,0.15)",
-              "rgba(22,163,74,0.3)"
-            )}
-          >
-            <Bookmark style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            {listing.status === "saved" ? "Salvat" : "Salvează"}
-          </button>
-          <button
-            onClick={listing.status !== "ignored" ? onIgnore : undefined}
-            disabled={listing.status === "ignored"}
-            style={btn(
-              "var(--text-secondary)",
-              listing.status === "ignored" ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.15)",
-              "var(--border-color)"
-            )}
-          >
-            <EyeOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
-          </button>
-          <button onClick={onBlockSeller} style={btn("#fb923c", "rgba(249,115,22,0.15)", "rgba(249,115,22,0.3)")}>
-            <ShieldOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            Blochează vânzătorul
-          </button>
-          <a
-            href={listing.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ ...btn("white", "var(--blue-primary)", "var(--blue-primary)"), textDecoration: "none", marginLeft: "auto" }}
-          >
-            <ExternalLink style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
-          </a>
+      )}
+      {listing.platform === "facebook" && facebookDetailStatus === "failed" && (
+        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+          Detalii suplimentare indisponibile momentan — vor fi reîncercate la următoarea deschidere.
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
-}
-
-function btn(color, bg, border) {
-  return {
-    padding: "0.5rem 0.875rem",
-    backgroundColor: bg,
-    color: color,
-    border: `1px solid ${border}`,
-    borderRadius: "0.5rem",
-    fontSize: "0.8125rem",
-    fontWeight: 600,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-  };
 }
 
 
@@ -1913,131 +1398,3 @@ function smallActionBtn(color, bg, border) {
   };
 }
 
-
-function MessageTemplateBlock({ listing, templates }) {
-  const compat = templates.filter((t) => t.platform === "all" || t.platform === listing.platform);
-  const [templateId, setTemplateId] = useState(compat[0]?.id || "");
-  const defaultPretOferit = Math.round(listing.fee_ceiling || listing.price * 0.9);
-  const [pret, setPret] = useState(defaultPretOferit);
-  const [rendered, setRendered] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (compat[0]?.id && !templateId) setTemplateId(compat[0].id);
-    setPret(Math.round(listing.fee_ceiling || listing.price * 0.9));
-  }, [listing.id]);
-
-  if (templates.length === 0) {
-    return (
-      <div style={{ padding: "0 1.25rem 1rem" }}>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-          <MessageSquare style={{ width: "14px", height: "14px", color: "#60a5fa" }} />
-          Mesaje rapide
-        </div>
-        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-          Configurează șabloane în <a href="/dashboard/radar/templates" style={{ color: "var(--blue-light)" }}>Șabloane Mesaje</a>.
-        </div>
-      </div>
-    );
-  }
-
-  const render = async () => {
-    if (!templateId) return;
-    setBusy(true);
-    try {
-      const r = await radarAPI.renderTemplate(templateId, {
-        listing_id: listing.id,
-        pret_oferit: parseFloat(pret) || null,
-      });
-      setRendered(r.data?.rendered_text || "");
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la randare șablon.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copy = async () => {
-    if (!rendered) return;
-    try {
-      await navigator.clipboard.writeText(rendered);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      alert("Nu am putut copia. Selectează manual textul.");
-    }
-  };
-
-  const ctlStyle = {
-    backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-    borderRadius: "0.375rem", padding: "0.4rem 0.5rem",
-    color: "var(--text-primary)", fontSize: "0.75rem", outline: "none",
-  };
-
-  return (
-    <div style={{ padding: "0 1.25rem 1rem" }}>
-      <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-        <MessageSquare style={{ width: "14px", height: "14px", color: "#60a5fa" }} />
-        Mesaje rapide
-      </div>
-      <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
-        <select
-          value={templateId}
-          onChange={(e) => setTemplateId(parseInt(e.target.value) || "")}
-          style={{ ...ctlStyle, minWidth: "200px" }}
-        >
-          {compat.length === 0 && <option value="">Niciun șablon pentru această platformă</option>}
-          {compat.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          value={pret}
-          onChange={(e) => setPret(e.target.value)}
-          style={{ ...ctlStyle, width: "120px" }}
-          placeholder="Preț oferit"
-        />
-        <button onClick={render} disabled={busy || !templateId} style={{
-          padding: "0.4rem 0.625rem",
-          backgroundColor: "var(--blue-primary)", color: "white",
-          border: "none", borderRadius: "0.375rem",
-          fontSize: "0.75rem", fontWeight: 600,
-          cursor: busy ? "wait" : "pointer", opacity: busy ? 0.7 : 1,
-        }}>
-          {busy ? "..." : "Generează"}
-        </button>
-      </div>
-      {rendered && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-          <textarea
-            readOnly
-            value={rendered}
-            rows={4}
-            style={{
-              width: "100%",
-              backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-              borderRadius: "0.375rem", padding: "0.5rem 0.625rem",
-              color: "var(--text-primary)", fontSize: "0.8125rem",
-              fontFamily: "inherit", resize: "vertical",
-            }}
-          />
-          <div style={{ display: "flex", gap: "0.375rem" }}>
-            <button onClick={copy} style={{
-              padding: "0.375rem 0.625rem",
-              backgroundColor: copied ? "rgba(22,163,74,0.15)" : "var(--bg-dark)",
-              color: copied ? "#4ade80" : "var(--text-primary)",
-              border: `1px solid ${copied ? "rgba(22,163,74,0.3)" : "var(--border-color)"}`,
-              borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 600,
-              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.25rem",
-            }}>
-              {copied ? <Check style={{ width: "12px", height: "12px" }} /> : <Copy style={{ width: "12px", height: "12px" }} />}
-              {copied ? "Copiat!" : "Copiază"}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}

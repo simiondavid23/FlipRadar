@@ -41,7 +41,6 @@ const categories = [
     items: [
       { name: "Feed Anunturi", href: "/dashboard/radar", icon: Radar },
       { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
-      { name: "Sabloane Mesaje", href: "/dashboard/radar/templates", icon: MessageSquare },
       { name: "Vanzatori Blocati", href: "/dashboard/radar/blocked", icon: ShieldOff },
     ],
   },

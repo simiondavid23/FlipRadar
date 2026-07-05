@@ -490,6 +490,10 @@ def run_migrations():
             if not _column_exists(inspector, "auto_feed_listings", "margin_value"):
                 _migrate(conn, "add_auto_feed_margin_value",
                          "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS margin_value NUMERIC(10,2)")
+            # Review AI on-demand (paritate cu radar_listings.ai_review).
+            if not _column_exists(inspector, "auto_feed_listings", "ai_review"):
+                _migrate(conn, "add_auto_feed_ai_review",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS ai_review TEXT")
 
         # ── Loturi Auto: keyword-uri monitorizate + coloane noi pe auto_lot ──
         _migrate(conn, "create_auto_lot_keywords", """

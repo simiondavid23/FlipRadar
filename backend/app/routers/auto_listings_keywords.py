@@ -14,6 +14,7 @@ from app.models.auto_keyword import AutoKeyword
 from app.models.auto_feed_listing import AutoFeedListing
 from app.services.auto_listings.excel_exporter import build_auto_xlsx
 from app.services.bnr_exchange import get_eur_ron
+from app.services.radar.ai_reviewer import generate_ai_review
 from app.utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/auto-listings", tags=["auto-listings"])
@@ -293,6 +294,40 @@ def get_listing_detail(
     d = {c.name: getattr(listing, c.name) for c in listing.__table__.columns}
     d["price"] = float(d["price"]) if d["price"] else None
     return d
+
+
+@router.post("/feed/{listing_id}/generate-review")
+def generate_auto_ai_review(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Review AI on-demand pentru un anunt Auto — mirror pe radar.py::generate_listing_ai_review.
+    Foloseste aceeasi functie generica generate_ai_review (kw.resale_price + listing.grade)."""
+    listing = db.query(AutoFeedListing).filter(
+        AutoFeedListing.id == listing_id,
+        AutoFeedListing.user_id == current_user.id,
+    ).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    if (current_user.ai_features_config or {}).get("ai_radar_review") is False:
+        raise HTTPException(status_code=403, detail="Review-ul AI este dezactivat din Setări (Review AI în feed).")
+    keyword = db.query(AutoKeyword).filter(AutoKeyword.id == listing.keyword_id).first()
+    resale = keyword.resale_price if keyword else 0
+    review = generate_ai_review(
+        title=listing.title,
+        description=listing.description,
+        price=float(listing.price) if listing.price is not None else 0,
+        resale_price=float(resale) if resale is not None else 0,
+        platform=listing.platform,
+        score=listing.grade,
+        location=listing.location,
+    )
+    if not review:
+        raise HTTPException(status_code=502, detail="Nu am putut genera review-ul AI. Încearcă din nou.")
+    listing.ai_review = review
+    db.commit()
+    return {"ai_review": review}
 
 
 @router.delete("/feed/{listing_id}")
