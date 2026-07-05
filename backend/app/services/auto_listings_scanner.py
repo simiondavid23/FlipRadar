@@ -12,6 +12,7 @@ from app.services.bnr_exchange import get_eur_ron
 # Gradare identica cu Radar: acelasi calculate_score (marja fata de pretul de
 # revanzare + praguri A/B/C). scorer.py nu importa nimic din app -> fara ciclu.
 from app.services.radar.scorer import calculate_score
+from app.services.auto_listings.duplicate_detector import check_auto_duplicates
 from app.services.log_manager import log_manager
 from app.services.ml.feed_ml_bridge import try_save_to_ml
 
@@ -103,8 +104,8 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
                 make=kw.make or "", model=kw.model or "", filters=filters, page=page))
 
         elif platform == "facebook_auto":
-            # Scraper SINCRON (sync_playwright) — apelat direct, NU prin asyncio.run
-            # (sync_playwright nu poate rula intr-un event loop asyncio).
+            # Scraper SINCRON (curl_cffi + JSON structurat, ca la Radar Piata — fara
+            # Playwright/asyncio). Apelat direct, nu prin asyncio.run.
             from app.scrapers.auto.listings.facebook_auto_scraper import search_facebook_auto
             query = " ".join(x for x in [kw.make, kw.model, kw.query] if x)
             return search_facebook_auto(query=query, filters=filters, page=page)
@@ -154,6 +155,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     # Scor/grad = marja fata de pretul de revanzare al keyword-ului (ambele in RON).
     score = None
     grade = None
+    margin_value = None
     if resale_price_ron is not None:
         price_ron = (price or 0) * (get_eur_ron() if cur == "EUR" else 1.0)
         sd = calculate_score(
@@ -167,6 +169,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         grade = sd["score"]                                 # litera A/B/C/D (None la marja negativa)
         mp = sd["margin_pct"]
         score = int(round(mp)) if mp is not None else None  # marja % ca scor numeric
+        margin_value = sd["margin_value"]                   # marja absoluta RON (paritate Radar)
 
     # Calculator cost import: referinta reala de revanzare (RON) in loc de media generica
     # din DB (fix bug — "autovit_avg_ron" era o medie de piata, nu pretul de revanzare).
@@ -194,6 +197,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         description  = raw.get("description", ""),
         score        = score,
         grade        = grade,
+        margin_value = margin_value,
         import_score_json = import_json,
         found_at     = datetime.now(timezone.utc),
         last_checked_at = datetime.now(timezone.utc),
@@ -284,6 +288,25 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
                         ).first()
                         if saved:
                             _notify(kw, saved, db)
+                            # Detectare duplicate (cross-post OLX Auto <-> Autovit). pHash-ul
+                            # se calculeaza de jobul orar, deci aici prind doar nivelele 1a/1b/3
+                            # (text) — exact ca la real_estate_scanner. Nivel 1/2 -> auto-grup;
+                            # nivel 3 -> doar semnalat (match_id, fara group_id).
+                            try:
+                                lvl, gid, matched = check_auto_duplicates(saved, db, kw.user_id)
+                                if lvl in (1, 2) and gid:
+                                    saved.duplicate_group_id = gid
+                                    saved.duplicate_level = lvl
+                                    if matched:
+                                        saved.duplicate_match_id = matched.id
+                                    db.commit()
+                                elif lvl == 3 and matched:
+                                    saved.duplicate_level = 3
+                                    saved.duplicate_match_id = matched.id
+                                    db.commit()
+                            except Exception as exc:
+                                print(f"[AutoScan] duplicate check keyword {kw.id}: {exc}")
+                                db.rollback()
                             # MODULE 5b — bridge ML: salveaza in market_listings daca
                             # titlul matchuieste o categorie. Erorile nu rup scanul auto.
                             try:

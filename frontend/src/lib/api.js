@@ -184,6 +184,8 @@ export const autoListingsAPI = {
   getFeed:        (params)   => api.get("/api/auto-listings/feed", { params }),
   updateStatus:   (id, st)   => api.patch(`/api/auto-listings/feed/${id}/status`, { status: st }),
   deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
+  // Confirmare manuala duplicat (cross-post OLX Auto <-> Autovit) — mirror pe Imobiliare
+  flagDuplicate:  (id, dupId) => api.post(`/api/auto-listings/feed/${id}/flag-duplicate`, { duplicate_of_id: dupId }),
   // Imbogatire on-demand a detaliului (poze/descriere/vanzator/data), o data per anunt
   getListingDetail: (id)     => api.get(`/api/auto-listings/feed/${id}/detail`),
   getStats:       ()         => api.get("/api/auto-listings/stats"),

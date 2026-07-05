@@ -41,10 +41,18 @@ const td = { padding: "0.625rem 0.75rem", fontSize: "0.8125rem", color: "var(--t
 // Etichete RO pentru campurile tehnice dinamice (fallback pe cheia bruta).
 const FIELD_LABELS = {
   fuel_type: "Combustibil", gearbox: "Cutie de viteze", body_type: "Caroserie", condition: "Stare",
-  seller_type: "Vânzător", drivetrain: "Tracțiune", engine_capacity_min: "Capacitate motor min (cmc)",
-  engine_capacity_max: "Capacitate motor max (cmc)", engine_power_min: "Putere min", power_unit: "Unitate putere",
-  mileage_max: "Km max", make: "Marcă", year: "An", price_min: "Preț min",
+  seller_type: "Vânzător", drivetrain: "Tracțiune", door_count: "Număr uși",
+  door_count_min: "Nr. uși min", door_count_max: "Nr. uși max", color: "Culoare",
+  emission_standard: "Normă poluare", vat_invoice: "Factură TVA",
+  engine_capacity_min: "Capacitate motor min (cmc)", engine_capacity_max: "Capacitate motor max (cmc)",
+  engine_power_min: "Putere min", engine_power_max: "Putere max", power_unit: "Unitate putere",
+  seats_min: "Nr. locuri min", seats_max: "Nr. locuri max",
+  year_min: "An min", year_max: "An max", mileage_max: "Km max", make: "Marcă", year: "An", price_min: "Preț min",
 };
+// Text descriptiv pentru checkbox-urile boolean (o singura valoare cu sens = "1").
+const BOOL_LABELS = { seller_type: "Doar dealeri autorizați", vat_invoice: "Cu factură TVA" };
+// Filtre "principale" afisate direct; restul intra in sectiunea colapsabila "Filtre avansate".
+const MAIN_TECH_FIELDS = new Set(["fuel_type", "gearbox", "body_type"]);
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // Campuri tehnice ASCUNSE din formular fiindca duplica campurile GENERICE de sus
@@ -273,16 +281,46 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
   const setTech = (k, v) => set({ tech: { ...(form.tech || {}), [k]: v } });
   const cur = AUTO_PLATFORMS.find((p) => p.value === platform)?.currency || "RON";
-  // Sectiune colapsabila "Praguri de grad" — auto-deschisa daca keyword-ul editat are praguri.
-  const [showGrades, setShowGrades] = useState(
-    form.grade_a_min !== "" || form.grade_b_min !== "" || form.grade_c_min !== ""
-  );
-
   // Dinamic din /categories: doar categoriile cu value confirmat + doar campurile confirmed:true.
   const validCats = ((catData.categories || {})[platform] || []).filter((c) => c.value != null);
   const techFields = Object.entries((catData.technical_fields || {})[platform] || {})
     .filter(([key, spec]) => spec && typeof spec === "object" && spec.confirmed === true
       && !HIDDEN_TECH_FIELDS.has(key));
+  // Principale (combustibil/cutie/caroserie) afisate direct; restul in "Filtre avansate".
+  const mainTech = techFields.filter(([key]) => MAIN_TECH_FIELDS.has(key));
+  const advTech = techFields.filter(([key]) => !MAIN_TECH_FIELDS.has(key));
+
+  // Sectiuni colapsabile — auto-deschise daca keyword-ul editat are deja valori acolo.
+  const [showGrades, setShowGrades] = useState(
+    form.grade_a_min !== "" || form.grade_b_min !== "" || form.grade_c_min !== ""
+  );
+  const [showAdvanced, setShowAdvanced] = useState(
+    advTech.some(([key]) => (form.tech?.[key] ?? "") !== "")
+  );
+
+  // Randare unui camp tehnic: checkbox (boolean), dropdown (are values) sau numeric.
+  const renderTech = ([key, spec]) => (
+    spec.type === "boolean" ? (
+      <label key={key} style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: "0.5rem",
+        fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
+        <input type="checkbox" checked={(form.tech?.[key] || "") === "1"}
+          onChange={(e) => setTech(key, e.target.checked ? "1" : "")}
+          style={{ width: "1rem", height: "1rem", cursor: "pointer" }} />
+        {BOOL_LABELS[key] || FIELD_LABELS[key] || key}
+      </label>
+    ) : (
+      <Field key={key} label={FIELD_LABELS[key] || key}>
+        {spec.values ? (
+          <select value={form.tech?.[key] || ""} onChange={(e) => setTech(key, e.target.value)} style={inputStyle}>
+            <option value="">Toate</option>
+            {Object.keys(spec.values).map((k) => <option key={k} value={k}>{cap(k)}</option>)}
+          </select>
+        ) : (
+          <input type="number" value={form.tech?.[key] || ""} onChange={(e) => setTech(key, e.target.value)} placeholder="—" style={inputStyle} />
+        )}
+      </Field>
+    )
+  );
 
   const changePlatform = (v) => { setPlatform(v); set({ category: "", tech: {} }); };
 
@@ -383,20 +421,27 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
               <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "0.5rem" }}>
                 Filtre tehnice
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                {techFields.map(([key, spec]) => (
-                  <Field key={key} label={FIELD_LABELS[key] || key}>
-                    {spec.values ? (
-                      <select value={form.tech?.[key] || ""} onChange={(e) => setTech(key, e.target.value)} style={inputStyle}>
-                        <option value="">Toate</option>
-                        {Object.keys(spec.values).map((k) => <option key={k} value={k}>{cap(k)}</option>)}
-                      </select>
-                    ) : (
-                      <input type="number" value={form.tech?.[key] || ""} onChange={(e) => setTech(key, e.target.value)} placeholder="—" style={inputStyle} />
-                    )}
-                  </Field>
-                ))}
-              </div>
+              {mainTech.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  {mainTech.map(renderTech)}
+                </div>
+              )}
+              {advTech.length > 0 && (
+                <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", overflow: "hidden", marginTop: mainTech.length > 0 ? "0.75rem" : 0 }}>
+                  <button type="button" onClick={() => setShowAdvanced((v) => !v)}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)", border: "none", cursor: "pointer",
+                      color: "var(--text-secondary)", fontSize: "0.8125rem", fontWeight: 600 }}>
+                    <span>Filtre avansate ({advTech.length})</span>
+                    <span style={{ fontSize: "1rem", lineHeight: 1 }}>{showAdvanced ? "−" : "+"}</span>
+                  </button>
+                  {showAdvanced && (
+                    <div style={{ padding: "0.75rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                      {advTech.map(renderTech)}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

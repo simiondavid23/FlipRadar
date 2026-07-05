@@ -93,7 +93,16 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
                 locatie = raw.split("-")[0].strip() if "-" in raw else raw.strip()
 
             img = card.find("img")
-            thumb = (img.get("src") or img.get("data-src")) if img else None
+            # OLX lazy-load: `src` e adesea placeholderul ("no_thumbnail"/data-URI/relativ),
+            # iar URL-ul real sta in `data-src`. Alegem primul candidat care e un URL http
+            # real; daca niciunul (doar placeholder) -> "" ca feed-ul sa arate fallback-ul
+            # ImageOff in loc de o imagine rupta.
+            thumb = ""
+            if img:
+                for cand in (img.get("src"), img.get("data-src")):
+                    if cand and cand.startswith("http") and "no_thumbnail" not in cand:
+                        thumb = cand
+                        break
 
             results.append(make_listing(
                 platform="olx_auto", external_id=_olx_id(href), titlu=titlu,

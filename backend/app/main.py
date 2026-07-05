@@ -183,6 +183,25 @@ async def lifespan(app: FastAPI):
         print(f"[Scheduler] pHash setup failed: {exc}")
 
     try:
+        from app.services.auto_listings.phash_job import run_auto_phash_job
+
+        def _run_auto_phash():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_auto_phash_job(_db)
+            except Exception as exc:
+                print(f"[pHash auto] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(_run_auto_phash, "interval", hours=1,
+            id="auto_phash_job", replace_existing=True)
+        print("[Scheduler] pHash job auto (1h) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] pHash auto setup failed: {exc}")
+
+    try:
         from app.services.real_estate_scanner import run_cleanup
 
         def _run_re_cleanup():

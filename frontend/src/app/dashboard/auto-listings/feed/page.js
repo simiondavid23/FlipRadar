@@ -27,6 +27,23 @@ function eurRonOf(listing) {
   return listing.import_score_json?.pe_roti?.eur_ron_rate
     || listing.import_score_json?.pe_platforma?.eur_ron_rate || 5.0;
 }
+// Doar URL-uri http reale sunt imagini valide; placeholderele (relative/"no_thumbnail" OLX)
+// sau valorile goale -> null, ca sa se afiseze fallback-ul ImageOff. Garda generica (toate platformele).
+const validImg = (u) => (typeof u === "string" && u.startsWith("http")) ? u : null;
+// Culoare marja — identic cu Radar (>=25% verde, >=10% galben, sub -> portocaliu).
+function marginColor(pct) {
+  if (pct === null || pct === undefined) return "var(--text-secondary)";
+  if (pct >= 25) return "#4ade80";
+  if (pct >= 10) return "#facc15";
+  return "#fb923c";
+}
+// Explicatie grad — adaptat din Radar (D nu mai zice "AI"; Auto foloseste pragul de marja setat).
+const SCORE_EXPLANATIONS = {
+  A: "Marjă excelentă — deal prioritar",
+  B: "Marjă bună — merită urmărit",
+  C: "Marjă acceptabilă — analizează cu atenție",
+  D: "Marjă slabă — sub pragul tău minim",
+};
 
 export default function AutoFeedPage() {
   const [listings, setListings] = useState([]);
@@ -73,6 +90,20 @@ export default function AutoFeedPage() {
     try { await autoListingsAPI.deleteListing(id); setSelected(null); await loadFeed(); await loadStats(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
+  // Duplicate — confirmă (backend flag-duplicate) / respinge (doar client, ascunde badge-ul).
+  const handleConfirmDuplicate = async (listingId, matchId) => {
+    try {
+      await autoListingsAPI.flagDuplicate(listingId, matchId);
+      setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, duplicate_level: 2 } : l)));
+      if (selected?.id === listingId) setSelected((prev) => (prev ? { ...prev, duplicate_level: 2 } : null));
+    } catch {
+      alert("Eroare la confirmare duplicat.");
+    }
+  };
+  const handleDismissDuplicate = (listingId) => {
+    setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, duplicate_level: null, duplicate_match_id: null } : l)));
+    if (selected?.id === listingId) setSelected((prev) => (prev ? { ...prev, duplicate_level: null, duplicate_match_id: null } : null));
+  };
 
   const downloadExcel = async () => {
     try {
@@ -118,7 +149,7 @@ export default function AutoFeedPage() {
     { label: "Anunțuri găsite", value: stats.total_listings ?? 0, color: "#60a5fa" },
     { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
     { label: "Grade A", value: byGrade.A || 0, color: "#4ade80" },
-    { label: "Grade B", value: byGrade.B || 0, color: "#60a5fa" },
+    { label: "Grupuri duplicate", value: stats.duplicate_groups ?? 0, color: "#fbbf24" },
   ];
 
   return (
@@ -248,6 +279,8 @@ export default function AutoFeedPage() {
           onSave={() => setStatus(selected.id, "saved")}
           onIgnore={() => setStatus(selected.id, "ignored")}
           onDelete={() => remove(selected.id)}
+          onConfirmDup={handleConfirmDuplicate}
+          onDismissDup={handleDismissDuplicate}
         />
       )}
       </>
@@ -277,7 +310,7 @@ function priceLine(listing, big = false) {
 
 function AutoListingCard({ listing, onClick }) {
   const g = gradeCfg(listing.grade);
-  const img = listing.image_url || (Array.isArray(listing.images_json) ? listing.images_json[0] : null);
+  const img = validImg(listing.image_url) || validImg(Array.isArray(listing.images_json) ? listing.images_json[0] : null);
   const isImport = IMPORT_PLATFORMS.includes(listing.platform);
   return (
     <div onClick={onClick} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column" }}>
@@ -301,12 +334,25 @@ function AutoListingCard({ listing, onClick }) {
             Import
           </span>
         )}
+        {listing.duplicate_level === 3 && (
+          <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
+        )}
+        {listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2 && (
+          <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Grup duplicate</span>
+        )}
       </div>
       <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.375rem", flex: 1 }}>
         <div style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-primary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
           {listing.title || "—"}
         </div>
         <div style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing)}</div>
+        {/* Marja sub pret — EXACT ca la Radar; doar cand keyword-ul are resale_price (margin_value != null). */}
+        {listing.margin_value !== null && listing.margin_value !== undefined && (
+          <div style={{ fontSize: "0.7rem", color: marginColor(listing.margin_pct) }}>
+            → {Math.round(listing.resale_price || 0).toLocaleString("ro-RO")} RON revânzare
+            {" | "}Marjă: <strong>{Math.round(listing.margin_value).toLocaleString("ro-RO")} RON ({Math.round(listing.margin_pct || 0)}%)</strong>
+          </div>
+        )}
         <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
           {[listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
             listing.fuel_type && `${listing.fuel_type}`, listing.transmission && `${listing.transmission}`]
@@ -318,7 +364,7 @@ function AutoListingCard({ listing, onClick }) {
   );
 }
 
-function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
+function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete, onConfirmDup, onDismissDup }) {
   const [importMode, setImportMode] = useState("pe_platforma");
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
@@ -327,9 +373,9 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
   const [imgIndex, setImgIndex] = useState(0);
   const enriched = detail || listing;
   const g = gradeCfg(listing.grade);
-  const gallery = (Array.isArray(enriched.images_json) && enriched.images_json.length)
+  const gallery = ((Array.isArray(enriched.images_json) && enriched.images_json.length)
     ? enriched.images_json
-    : (listing.image_url ? [listing.image_url] : []);
+    : (listing.image_url ? [listing.image_url] : [])).filter(validImg);
   const img = gallery[Math.min(imgIndex, Math.max(gallery.length - 1, 0))] || null;
   const importData = listing.import_score_json;
   const isBmw = /\bbmw\b/i.test(listing.title || "");
@@ -357,27 +403,43 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ position: "relative", height: "240px", backgroundColor: "var(--bg-dark)" }}>
-          {img ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={img} alt={listing.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}><ImageOff style={{ width: "32px", height: "32px" }} /></div>
-          )}
-          {gallery.length > 1 && (
-            <>
-              <button onClick={() => setImgIndex((i) => (i - 1 + gallery.length) % gallery.length)} style={galleryNav(true)} aria-label="Poza anterioară">‹</button>
-              <button onClick={() => setImgIndex((i) => (i + 1) % gallery.length)} style={galleryNav(false)} aria-label="Poza următoare">›</button>
-              <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(0,0,0,0.6)", color: "white", fontSize: "0.6875rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{imgIndex + 1}/{gallery.length}</span>
-            </>
-          )}
-          <button onClick={onClose} style={{ position: "absolute", top: "0.625rem", right: "0.625rem", background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "0.375rem", padding: "0.25rem", cursor: "pointer", color: "white", display: "flex" }}><X style={{ width: "18px", height: "18px" }} /></button>
-          <span style={{ position: "absolute", top: "0.625rem", left: "0.625rem", fontSize: "0.75rem", fontWeight: 700, color: g.text, backgroundColor: g.bg, padding: "0.125rem 0.625rem", borderRadius: "0.375rem" }}>Grad {listing.grade} · {listing.score}</span>
+      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "900px", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column" }}>
+        {/* Antet: grad + platformă + titlu pe un rând + X (mirror pe ListingModal din Radar) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.25rem", borderBottom: "1px solid var(--border-color)", gap: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: 0 }}>
+            {listing.grade && (
+              <span style={{ padding: "0.25rem 0.625rem", backgroundColor: g.bg, border: `1px solid ${g.border}`, borderRadius: "0.375rem", color: g.text, fontSize: "0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Grad {listing.grade} · {listing.score}</span>
+            )}
+            <span style={{ padding: "0.2rem 0.5rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", color: "var(--text-secondary)", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", whiteSpace: "nowrap" }}>{PLATFORM_LABELS[listing.platform] || listing.platform}</span>
+            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{listing.title || "—"}</h2>
+          </div>
+          <button onClick={onClose} style={{ backgroundColor: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "0.25rem" }}><X style={{ width: "20px", height: "20px" }} /></button>
         </div>
 
-        <div style={{ padding: "1.25rem" }}>
-          <div style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "0.5rem" }}>{listing.title || "—"}</div>
+        {/* Corp: grid 2 coloane — stânga galerie mare + thumbnail-uri, dreapta tot conținutul */}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)", gap: "1.25rem", padding: "1.25rem" }}>
+          {/* Stânga: imagine principală (aspectRatio 1) + fâșie de thumbnail-uri clickabile */}
+          <div>
+            <div style={{ width: "100%", aspectRatio: "1", backgroundColor: "var(--bg-dark)", borderRadius: "0.625rem", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border-color)" }}>
+              {img ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={img} alt={listing.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <ImageOff style={{ width: "48px", height: "48px", color: "var(--text-muted)" }} />
+              )}
+            </div>
+            {gallery.length > 1 && (
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                {gallery.slice(0, 6).map((im, idx) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={idx} src={im} alt="" onClick={() => setImgIndex(idx)} style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "0.375rem", cursor: "pointer", border: idx === imgIndex ? "2px solid var(--blue-primary)" : "1px solid var(--border-color)" }} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Dreapta: preț/specs/vânzător/descriere/import/ML/duplicate/acțiuni */}
+          <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing, true)}</div>
           <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
             {[listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
@@ -387,6 +449,46 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
           {(enriched.seller_name || enriched.listed_at) && (
             <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
               {[enriched.seller_name && `${enriched.seller_name}`, enriched.listed_at && `Postat ${formatListedDate(enriched.listed_at)}`].filter(Boolean).join(" · ")}
+            </div>
+          )}
+
+          {/* Profitabilitate — paritate cu ListingModal Radar (Preț cerut / revânzare / Marjă +
+              badge grad). FĂRĂ "Preț maxim recomandat" (fee_ceiling): fără echivalent clar la
+              mașini — Auto are Import Score pentru rolul conceptual similar. Doar când keyword-ul
+              are resale_price (margin_value != null); altfel nu se afișează nimic despre marjă. */}
+          {listing.margin_value !== null && listing.margin_value !== undefined && (
+            <div style={{ marginTop: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.75rem", backgroundColor: "var(--bg-dark)", borderRadius: "0.625rem", border: "1px solid var(--border-color)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț cerut</span>
+                <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing)}</span>
+              </div>
+              {listing.resale_price !== null && listing.resale_price !== undefined && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preț estimat revânzare</span>
+                  <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)" }}>{Math.round(listing.resale_price).toLocaleString("ro-RO")} RON</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Marjă</span>
+                <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: marginColor(listing.margin_pct) }}>
+                  {Math.round(listing.margin_value).toLocaleString("ro-RO")} RON ({Math.round(listing.margin_pct || 0)}%)
+                </span>
+              </div>
+              {listing.grade && (
+                <div style={{ padding: "0.5rem 0.625rem", backgroundColor: g.bg, border: `1px solid ${g.border}`, borderRadius: "0.5rem" }}>
+                  <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: g.text }}>
+                    Grad {listing.grade} — {SCORE_EXPLANATIONS[listing.grade] || ""}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Detaliu în curs de completare — valabil pt ORICE platformă cu detail_fetched=False */}
+          {!enriched.detail_fetched && (
+            <div style={{ marginTop: "0.5rem", display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+              <Info style={{ width: "12px", height: "12px", flexShrink: 0 }} />
+              Unele detalii (poze, descriere, vânzător) se pot completa la prima deschidere.
             </div>
           )}
 
@@ -483,12 +585,36 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
             </div>
           )}
 
+          {/* Duplicate — auto-populat cu match-ul detectat de sistem (cross-post OLX/Autovit) */}
+          {listing.duplicate_level === 3 && listing.duplicate_match_id && (
+            <div style={{ marginTop: "1rem", padding: "0.75rem 1rem", backgroundColor: "rgba(37,99,235,0.06)", border: "0.5px solid rgba(37,99,235,0.25)", borderRadius: "0.625rem" }}>
+              <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.625rem" }}>
+                Sistemul a detectat un anunț similar (posibil cross-post OLX Auto / Autovit).
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button onClick={() => onConfirmDup(listing.id, listing.duplicate_match_id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "rgba(37,99,235,0.12)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
+                  Confirmă duplicat
+                </button>
+                <button onClick={() => onDismissDup(listing.id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "0.5px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
+                  Nu e duplicat
+                </button>
+              </div>
+            </div>
+          )}
+          {(listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2) && (
+            <div style={{ marginTop: "1rem", fontSize: "0.8125rem", color: "#a78bfa", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+              <span style={{ background: "rgba(124,58,237,0.2)", padding: "2px 8px", borderRadius: "4px" }}>Grup duplicate</span>
+              anunțul face parte dintr-un grup de duplicate confirmate.
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "1.25rem" }}>
             <button onClick={onSave} style={actBtn("#60a5fa")}><Bookmark style={{ width: "14px", height: "14px" }} /> Salvează</button>
             <button onClick={onIgnore} style={actBtn("var(--text-secondary)")}><EyeOff style={{ width: "14px", height: "14px" }} /> Ignoră</button>
             {listing.url && <a href={listing.url} target="_blank" rel="noopener noreferrer" style={{ ...actBtn("#4ade80"), textDecoration: "none" }}><ExternalLink style={{ width: "14px", height: "14px" }} /> Deschide pe {PLATFORM_LABELS[listing.platform] || listing.platform}</a>}
             <button onClick={onDelete} style={{ ...actBtn("#f87171"), marginLeft: "auto" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
+          </div>
           </div>
         </div>
       </div>
@@ -501,16 +627,6 @@ function actBtn(color) {
     display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
     backgroundColor: "var(--bg-dark)", color, border: `1px solid ${color === "var(--text-secondary)" ? "var(--border-color)" : color + "55"}`,
     borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
-  };
-}
-
-function galleryNav(left) {
-  return {
-    position: "absolute", top: "50%", transform: "translateY(-50%)",
-    [left ? "left" : "right"]: "0.5rem",
-    background: "rgba(0,0,0,0.55)", color: "white", border: "none", borderRadius: "50%",
-    width: "28px", height: "28px", cursor: "pointer", fontSize: "1.1rem", lineHeight: 1,
-    display: "flex", alignItems: "center", justifyContent: "center",
   };
 }
 

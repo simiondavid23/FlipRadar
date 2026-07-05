@@ -469,6 +469,27 @@ def run_migrations():
             if not _column_exists(inspector, "auto_feed_listings", "detail_fetched"):
                 _migrate(conn, "add_auto_feed_detail_fetched",
                          "ALTER TABLE auto_feed_listings ADD COLUMN detail_fetched BOOLEAN DEFAULT FALSE")
+            # Detectare duplicate (mirror pe real_estate_listings): phash/color_hist +
+            # duplicate_group_id/duplicate_level/duplicate_match_id.
+            if not _column_exists(inspector, "auto_feed_listings", "phash"):
+                _migrate(conn, "add_auto_feed_phash",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS phash VARCHAR(64)")
+            if not _column_exists(inspector, "auto_feed_listings", "color_hist"):
+                _migrate(conn, "add_auto_feed_color_hist",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS color_hist JSON")
+            if not _column_exists(inspector, "auto_feed_listings", "duplicate_group_id"):
+                _migrate(conn, "add_auto_feed_duplicate_group_id",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS duplicate_group_id VARCHAR(100)")
+            if not _column_exists(inspector, "auto_feed_listings", "duplicate_level"):
+                _migrate(conn, "add_auto_feed_duplicate_level",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS duplicate_level INTEGER")
+            if not _column_exists(inspector, "auto_feed_listings", "duplicate_match_id"):
+                _migrate(conn, "add_auto_feed_duplicate_match_id",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS duplicate_match_id INTEGER")
+            # Paritate marja Auto vs Radar: marja absoluta (RON) fata de pretul de revanzare.
+            if not _column_exists(inspector, "auto_feed_listings", "margin_value"):
+                _migrate(conn, "add_auto_feed_margin_value",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN IF NOT EXISTS margin_value NUMERIC(10,2)")
 
         # ── Loturi Auto: keyword-uri monitorizate + coloane noi pe auto_lot ──
         _migrate(conn, "create_auto_lot_keywords", """

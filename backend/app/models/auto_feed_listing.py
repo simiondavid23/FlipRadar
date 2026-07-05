@@ -27,6 +27,9 @@ class AutoFeedListing(Base):
     description       = Column(Text)
     score             = Column(Integer, default=50)
     grade             = Column(String(5), default="C")
+    # Marja absoluta (RON) fata de pretul de revanzare al keyword-ului — paritate cu Radar.
+    # NULL cand keyword-ul nu are resale_price setat (listing fara scor/grad).
+    margin_value      = Column(Numeric(10, 2), nullable=True)
     import_score_json = Column(JSON)
     status            = Column(String(20), default="active")
     found_at          = Column(TIMESTAMP, server_default=func.now())
@@ -35,3 +38,10 @@ class AutoFeedListing(Base):
     seller_name       = Column(String(200), nullable=True)
     listed_at         = Column(TIMESTAMP, nullable=True)
     detail_fetched    = Column(Boolean, default=False)
+    # Detectare duplicate (mirror exact pe RealEstateMonitorListing) — cazul OLX Auto
+    # vs Autovit cross-postat automat de OLX Group intre cele 2 platforme.
+    phash              = Column(String(64))
+    color_hist         = Column(JSON)
+    duplicate_group_id = Column(String(100))
+    duplicate_level    = Column(Integer)
+    duplicate_match_id = Column(Integer)
