@@ -19,7 +19,7 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
-from app.scrapers.auto.listings._common import IMPERSONATE, build_headers
+from app.scrapers.auto.listings._common import IMPERSONATE, build_headers, safe_soup
 
 _EMPTY = {"images": [], "description": None, "seller_name": None, "listed_at": None}
 
@@ -40,11 +40,6 @@ def _fetch(url: str, referer: str) -> Optional[str]:
     except Exception as exc:
         print(f"[auto detail] fetch eroare {url[:60]}: {str(exc)[:80]}")
         return None
-
-
-def _soup(html: str) -> BeautifulSoup:
-    # Python 3.14 html.parser crapa pe charref-uri malformate (ex &#8203 fara ;) — le reparam.
-    return BeautifulSoup(re.sub(r"&#(\d+)(?![\d;])", r"&#\1;", html), "html.parser")
 
 
 def _parse_ro_date(text: str) -> Optional[datetime]:
@@ -96,7 +91,7 @@ def _autovit_common(soup: BeautifulSoup) -> dict:
 
 def fetch_autovit_detail(url: str) -> dict:
     html = _fetch(url, "https://www.autovit.ro/")
-    return _autovit_common(_soup(html)) if html else dict(_EMPTY)
+    return _autovit_common(safe_soup(html)) if html else dict(_EMPTY)
 
 
 # ── OLX Auto ─────────────────────────────────────────────────────────────────
@@ -108,7 +103,7 @@ def fetch_olx_auto_detail(url: str) -> dict:
     html = _fetch(url, "https://www.olx.ro/")
     if not html:
         return dict(_EMPTY)
-    soup = _soup(html)
+    soup = safe_soup(html)
     out = _autovit_common(soup)  # acopera cazul (frecvent) de pagina autovit agregata
     if not out["images"]:  # pagina OLX nativa: imagini pe olxcdn.com generic
         imgs, seen = [], set()
@@ -131,7 +126,7 @@ def fetch_mobilede_detail(url: str) -> dict:
     html = _fetch(url, "https://www.mobile.de/")
     if not html:
         return dict(_EMPTY)
-    soup = _soup(html)
+    soup = safe_soup(html)
     imgs, seen = [], set()
     for img in soup.select("img"):
         src = img.get("data-src") or img.get("src") or ""
@@ -164,7 +159,7 @@ def fetch_autoscout24_detail(url: str) -> dict:
     html = _fetch(url, "https://www.autoscout24.ro/")
     if not html:
         return dict(_EMPTY)
-    soup = _soup(html)
+    soup = safe_soup(html)
     nd = soup.select_one("script#__NEXT_DATA__")
     if not nd or not nd.string:
         return dict(_EMPTY)
@@ -227,7 +222,7 @@ def fetch_kleinanzeigen_detail(url: str) -> dict:
     html = _fetch(url, "https://www.kleinanzeigen.de/")
     if not html:
         return dict(_EMPTY)
-    soup = _soup(html)
+    soup = safe_soup(html)
     imgs, seen = [], set()
     for img in soup.select("#viewad-image, .galleryimage-element img, img[data-imgsrc], img"):
         src = img.get("src") or img.get("data-imgsrc") or img.get("data-src") or ""

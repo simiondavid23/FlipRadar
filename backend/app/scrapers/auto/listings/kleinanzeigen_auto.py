@@ -2,11 +2,11 @@
 import re
 import urllib.parse
 
-from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
+    safe_soup,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 
@@ -53,7 +53,7 @@ async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: di
             if resp.status_code != 200:
                 print(f"[kleinanzeigen_auto] HTTP {resp.status_code}")
                 return []
-            soup = BeautifulSoup(resp.text, "html.parser")
+            soup = safe_soup(resp.text)
     except Exception as exc:
         print(f"[kleinanzeigen_auto] error: {exc}")
         return []

@@ -3,12 +3,12 @@ import json
 import re
 import urllib.parse
 
-from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
+    safe_soup,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
@@ -103,7 +103,7 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
                 print(f"[autovit] HTTP {resp.status_code}")
                 log_manager.emit("auto_listings", "ERR", f"Autovit: HTTP {resp.status_code}")
                 return []
-            soup = BeautifulSoup(resp.text, "html.parser")
+            soup = safe_soup(resp.text)
     except Exception as exc:
         print(f"[autovit] error: {exc}")
         log_manager.emit("auto_listings", "ERR", f"Autovit eroare: {str(exc)[:80]}")

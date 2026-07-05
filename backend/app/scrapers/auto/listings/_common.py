@@ -6,6 +6,8 @@ import random
 import re
 from typing import Optional
 
+from bs4 import BeautifulSoup
+
 IMPERSONATE = "chrome131"
 MAX_LISTINGS = 30
 
@@ -27,6 +29,18 @@ def build_headers(extra: Optional[dict] = None) -> dict:
     if extra:
         headers.update(extra)
     return headers
+
+
+def safe_soup(html: str) -> BeautifulSoup:
+    """BeautifulSoup(html.parser) cu reparare de charref-uri malformate.
+
+    Python 3.14 html.parser crapa cu ValueError pe un charref fara ';' (ex "&#8203"
+    lipit de urmatorul caracter). E o problema de versiune Python, NU specifica unui
+    site — orice platforma poate emite acelasi pattern. De aceea reparam preventiv,
+    la TOATE scraperele auto: adaugam ';'-ul lipsa inainte de parsare. Nu schimba
+    nimic pe HTML valid; doar salveaza HTML-ul invalid care altfel ar crapa parserul.
+    """
+    return BeautifulSoup(re.sub(r"&#(\d+)(?![\d;])", r"&#\1;", html or ""), "html.parser")
 
 
 # Limite realiste de pret pentru masini. Un singur prag superior generos acopera

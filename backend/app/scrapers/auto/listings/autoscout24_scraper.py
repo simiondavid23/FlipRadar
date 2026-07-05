@@ -1,13 +1,14 @@
 """AutoScout24.ro — anunturi auto. platform="autoscout24"."""
+import json
 import re
 import urllib.parse
 
-from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_ld_offers,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
+    safe_soup,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 
@@ -41,6 +42,30 @@ def _extract_price_autoscout24(card, ld_offers=None, card_idx=0) -> tuple:
     return None, "EUR"
 
 
+def _autoscout24_offer_urls(soup) -> dict:
+    """{listing_id: URL absolut de anunt} din __NEXT_DATA__.
+
+    AutoScout24.ro e client-rendered (Next.js): HTML-ul static are pe fiecare card DOAR
+    un link /dealerinfo/ (spre pagina dealerului), NU spre anunt. URL-urile reale de anunt
+    sunt in props.pageProps.listings[].url ("/oferte/<slug>-<uuid>"), iar listings[].id ==
+    atributul data-guid al cardului (confirmat live 20/20). Intoarce {} daca structura lipseste,
+    caz in care scraper-ul nu produce URL-uri de anunt (mai bine nimic decat link de dealer).
+    """
+    nd = soup.select_one("script#__NEXT_DATA__")
+    if not nd or not nd.string:
+        return {}
+    try:
+        listings = json.loads(nd.string)["props"]["pageProps"]["listings"]
+    except (ValueError, KeyError, TypeError):
+        return {}
+    urls = {}
+    for lst in listings if isinstance(listings, list) else []:
+        lid, path = (lst or {}).get("id"), (lst or {}).get("url")
+        if lid and isinstance(path, str) and path:
+            urls[lid] = path if path.startswith("http") else _BASE + path
+    return urls
+
+
 async def search_autoscout24(make: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     path = f"/lst/{urllib.parse.quote((make or '').strip().lower())}" if make else "/lst/"
@@ -67,7 +92,7 @@ async def search_autoscout24(make: str = "", filters: dict = {}, page: int = 1) 
             if resp.status_code != 200:
                 print(f"[autoscout24] HTTP {resp.status_code}")
                 return []
-            soup = BeautifulSoup(resp.text, "html.parser")
+            soup = safe_soup(resp.text)
     except Exception as exc:
         print(f"[autoscout24] error: {exc}")
         return []
@@ -78,14 +103,17 @@ async def search_autoscout24(make: str = "", filters: dict = {}, page: int = 1) 
         or soup.select("article")
     )
     ld_offers = extract_ld_offers(soup)  # rezerva pentru data-price
+    nd_urls = _autoscout24_offer_urls(soup)  # {id: URL anunt} din __NEXT_DATA__ (vezi bug dealerinfo)
     for idx, card in enumerate(cards):
         try:
             link = card.find("a", href=True)
-            if not link:
+            # URL-ul de anunt vine EXCLUSIV din __NEXT_DATA__ (join pe data-guid == listings[].id):
+            # linkul <a> din card duce la /dealerinfo/ (dealer), nu la anunt. Fara potrivire ->
+            # sarim cardul (nu stocam un link de dealer ca si cum ar fi anuntul).
+            guid = card.get("data-guid") or card.get("id")
+            href = nd_urls.get(guid)
+            if not href:
                 continue
-            href = link["href"]
-            if href.startswith("/"):
-                href = _BASE + href
 
             title_el = card.find(["h2", "h3"]) or link
             titlu = title_el.get_text(strip=True) if title_el else ""

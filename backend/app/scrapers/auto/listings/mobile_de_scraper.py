@@ -12,12 +12,11 @@ import asyncio
 import re
 import urllib.parse
 
-from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
     MAX_LISTINGS, parse_price, extract_ld_offers,
-    extract_year, extract_km, make_listing,
+    extract_year, extract_km, make_listing, safe_soup,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
@@ -124,7 +123,7 @@ def _extract_price_mobile_de(card, ld_offers=None, card_idx=0) -> tuple:
 def _parse_mobilede_html(html: str) -> list:
     """Parseaza HTML-ul de cautare (calea curl) -> dict-uri make_listing.
     Intoarce [] daca pagina e o pagina-challenge (fara carduri)."""
-    soup = BeautifulSoup(html, "html.parser")
+    soup = safe_soup(html)
     cards = (
         soup.select(".cBox-body--resultitem")
         or soup.select('[data-testid="result-list-item"]')
