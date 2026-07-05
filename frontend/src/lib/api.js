@@ -184,8 +184,6 @@ export const autoListingsAPI = {
   getFeed:        (params)   => api.get("/api/auto-listings/feed", { params }),
   updateStatus:   (id, st)   => api.patch(`/api/auto-listings/feed/${id}/status`, { status: st }),
   deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
-  // Confirmare manuala duplicat (cross-post OLX Auto <-> Autovit) — mirror pe Imobiliare
-  flagDuplicate:  (id, dupId) => api.post(`/api/auto-listings/feed/${id}/flag-duplicate`, { duplicate_of_id: dupId }),
   // Imbogatire on-demand a detaliului (poze/descriere/vanzator/data), o data per anunt
   getListingDetail: (id)     => api.get(`/api/auto-listings/feed/${id}/detail`),
   generateReview: (id)       => api.post(`/api/auto-listings/feed/${id}/generate-review`),
@@ -212,7 +210,7 @@ export const autoLotKeywordsAPI = {
   scanNow:       ()         => api.post("/api/auto-lots/scan-now"),
 };
 
-// Imobiliare Monitor — keyword-uri + feed scorat (zone, duplicate, price history)
+// Imobiliare Monitor — keyword-uri + feed scorat (zone, price history)
 export const realEstateMonitorAPI = {
   getCategories: ()         => api.get("/api/real-estate-monitor/categories"),
   getKeywords:   ()         => api.get("/api/real-estate-monitor/keywords"),
@@ -222,7 +220,6 @@ export const realEstateMonitorAPI = {
   getFeed:       (params)   => api.get("/api/real-estate-monitor/feed", { params }),
   updateStatus:  (id, st)   => api.patch(`/api/real-estate-monitor/feed/${id}/status`, { status: st }),
   deleteListing: (id)       => api.delete(`/api/real-estate-monitor/feed/${id}`),
-  flagDuplicate: (id, dupId) => api.post(`/api/real-estate-monitor/feed/${id}/flag-duplicate`, { duplicate_of_id: dupId }),
   getStats:      ()         => api.get("/api/real-estate-monitor/stats"),
   scanNow:       ()         => api.post("/api/real-estate-monitor/scan-now"),
   // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)

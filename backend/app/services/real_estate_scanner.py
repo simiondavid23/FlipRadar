@@ -14,7 +14,6 @@ from app.models.real_estate_monitor_listing import RealEstateMonitorListing as R
 from app.services.real_estate.extractor import extract_all, groq_extract
 from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
-from app.services.real_estate.duplicate_detector import check_duplicates
 from app.services.log_manager import log_manager
 
 
@@ -181,7 +180,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         image_url       = raw.get("thumbnail_url") or raw.get("image_url") or "",
         images_json     = raw.get("images", []),
         url             = raw.get("source_url") or raw.get("url") or "",
-        # MODIFICARE 10 — vanzator (cand scraperul il ofera) pentru dedup Level 1b.
+        # Vanzator (cand scraperul il ofera) — folosit pentru afisare in feed/export.
         seller_id       = raw.get("seller_id") or raw.get("owner_id") or None,
         description     = desc[:2000],
         score           = score,
@@ -192,20 +191,6 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     db.add(listing)
     db.commit()
     db.refresh(listing)
-
-    # Level 3 duplicate check (text only, pHash done by hourly job)
-    level, group_id, matched = check_duplicates(
-        listing, db, RealEstateListing, kw.user_id)
-    if level in (1, 2) and group_id:
-        listing.duplicate_group_id = group_id
-        listing.duplicate_level = level
-        if matched:
-            listing.duplicate_match_id = matched.id
-        db.commit()
-    elif level == 3 and matched:
-        listing.duplicate_level = 3
-        listing.duplicate_match_id = matched.id
-        db.commit()
 
     return listing
 

@@ -730,6 +730,27 @@ def run_migrations():
                 "CREATE INDEX IF NOT EXISTS ix_log_entries_module_created "
                 "ON log_entries (module, created_at)")
 
+        # Eliminare feature detectie duplicate (pHash / color_hist / grupuri de
+        # duplicate). Deduplicarea simpla la scanare (external_id / url / sku) NU e
+        # afectata. DROP idempotent pe ambele tabele.
+        _migrate(conn, "drop_auto_feed_duplicate_columns", """
+            ALTER TABLE auto_feed_listings
+                DROP COLUMN IF EXISTS phash,
+                DROP COLUMN IF EXISTS color_hist,
+                DROP COLUMN IF EXISTS duplicate_group_id,
+                DROP COLUMN IF EXISTS duplicate_level,
+                DROP COLUMN IF EXISTS duplicate_match_id
+        """)
+        _migrate(conn, "drop_re_duplicate_columns", """
+            ALTER TABLE real_estate_listings
+                DROP COLUMN IF EXISTS phash,
+                DROP COLUMN IF EXISTS color_hist,
+                DROP COLUMN IF EXISTS duplicate_group_id,
+                DROP COLUMN IF EXISTS duplicate_level,
+                DROP COLUMN IF EXISTS user_flagged_duplicate_id,
+                DROP COLUMN IF EXISTS duplicate_match_id
+        """)
+
     _backfill_product_sources()
 
 

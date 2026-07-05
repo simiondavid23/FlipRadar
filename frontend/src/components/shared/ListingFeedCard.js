@@ -119,7 +119,7 @@ export default function ListingFeedCard({
           {platformBadge}
         </div>
 
-        {/* Slot opțional pentru overlay-uri peste imagine (ex. badge "Import"/duplicate la Auto).
+        {/* Slot opțional pentru overlay-uri peste imagine (ex. badge "Import" la Auto).
             Radar nu-l pasează → nimic randat → card identic. */}
         {imageOverlaySlot}
       </div>

@@ -496,52 +496,10 @@ def get_stats(
         except Exception:
             fb_session_valid = False
 
-    # Numarul de grupuri de duplicate distincte (mirror pe Imobiliare Monitor).
-    dup_groups = db.query(func.count(func.distinct(AutoFeedListing.duplicate_group_id))).filter(
-        AutoFeedListing.user_id == current_user.id,
-        AutoFeedListing.duplicate_group_id.isnot(None),
-    ).scalar() or 0
-
     return {
         "total_listings": total,
         "active_keywords": kw_count,
         "by_grade": {g: c for g, c in by_grade},
-        "duplicate_groups": dup_groups,
         "facebook_session_valid": fb_session_valid,
         "has_facebook_keywords": has_fb_keyword,
     }
-
-
-@router.post("/feed/{listing_id}/flag-duplicate")
-def flag_duplicate(
-    listing_id: int,
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Confirmă manual că două anunțuri auto sunt același vehicul (cross-post OLX/Autovit).
-    Mirror pe /api/real-estate-monitor/feed/{id}/flag-duplicate."""
-    import uuid
-    listing = db.query(AutoFeedListing).filter(
-        AutoFeedListing.id == listing_id,
-        AutoFeedListing.user_id == current_user.id,
-    ).first()
-    if not listing:
-        raise HTTPException(404, "Listing negăsit.")
-    dup_id = payload.get("duplicate_of_id")
-    other = db.query(AutoFeedListing).filter(
-        AutoFeedListing.id == dup_id,
-        AutoFeedListing.user_id == current_user.id,
-    ).first()
-    if not other:
-        raise HTTPException(404, "Anunțul duplicat negăsit.")
-
-    group_id = listing.duplicate_group_id or other.duplicate_group_id or str(uuid.uuid4())
-    listing.duplicate_match_id = dup_id
-    listing.duplicate_level = 2
-    listing.duplicate_group_id = group_id
-    other.duplicate_group_id = group_id
-    if other.duplicate_level is None or other.duplicate_level > 2:
-        other.duplicate_level = 2
-    db.commit()
-    return {"ok": True, "duplicate_group_id": group_id}

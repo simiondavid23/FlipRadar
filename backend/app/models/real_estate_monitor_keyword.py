@@ -1,7 +1,7 @@
 """Keyword de monitorizare imobiliare (tabel real_estate_keywords).
 
 Distinct de modelul RealEstateAlert/RealEstateListing existent — acesta e pentru
-noul modul "Imobiliare Monitor" (feed scorat + duplicate + zone normalizate).
+noul modul "Imobiliare Monitor" (feed scorat + zone normalizate).
 """
 from sqlalchemy import (Boolean, Column, Integer, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)

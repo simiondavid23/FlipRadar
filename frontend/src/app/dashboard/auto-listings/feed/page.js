@@ -91,21 +91,6 @@ export default function AutoFeedPage() {
     try { await autoListingsAPI.deleteListing(id); setSelected(null); await loadFeed(); await loadStats(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
-  // Duplicate — confirmă (backend flag-duplicate) / respinge (doar client, ascunde badge-ul).
-  const handleConfirmDuplicate = async (listingId, matchId) => {
-    try {
-      await autoListingsAPI.flagDuplicate(listingId, matchId);
-      setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, duplicate_level: 2 } : l)));
-      if (selected?.id === listingId) setSelected((prev) => (prev ? { ...prev, duplicate_level: 2 } : null));
-    } catch {
-      alert("Eroare la confirmare duplicat.");
-    }
-  };
-  const handleDismissDuplicate = (listingId) => {
-    setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, duplicate_level: null, duplicate_match_id: null } : l)));
-    if (selected?.id === listingId) setSelected((prev) => (prev ? { ...prev, duplicate_level: null, duplicate_match_id: null } : null));
-  };
-
   const downloadExcel = async () => {
     try {
       const params = {};
@@ -150,7 +135,6 @@ export default function AutoFeedPage() {
     { label: "Anunțuri găsite", value: stats.total_listings ?? 0, color: "#60a5fa" },
     { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
     { label: "Grade A", value: byGrade.A || 0, color: "#4ade80" },
-    { label: "Grupuri duplicate", value: stats.duplicate_groups ?? 0, color: "#fbbf24" },
   ];
 
   return (
@@ -290,8 +274,6 @@ export default function AutoFeedPage() {
           onClose={() => setSelected(null)}
           onSave={() => setStatus(selected.id, "saved")}
           onIgnore={() => setStatus(selected.id, "ignored")}
-          onConfirmDup={handleConfirmDuplicate}
-          onDismissDup={handleDismissDuplicate}
           templates={templates}
           reviewEnabled={reviewEnabled}
         />
@@ -323,7 +305,7 @@ function priceLine(listing, big = false) {
 
 const AUTO_PLATFORM_CFG = { bg: "var(--bg-dark)", border: "var(--border-color)", text: "var(--text-secondary)" };
 
-// Overlay peste imaginea cardului: badge Import + badge-uri duplicate (mutat 1:1 din vechiul card).
+// Overlay peste imaginea cardului: badge Import (mutat 1:1 din vechiul card).
 function AutoCardOverlay({ listing }) {
   const isImport = IMPORT_PLATFORMS.includes(listing.platform);
   return (
@@ -332,12 +314,6 @@ function AutoCardOverlay({ listing }) {
         <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.2)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
           Import
         </span>
-      )}
-      {listing.duplicate_level === 3 && (
-        <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
-      )}
-      {listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2 && (
-        <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Grup duplicate</span>
       )}
     </>
   );
@@ -488,37 +464,7 @@ function AutoImportScore({ listing }) {
   );
 }
 
-// Bloc duplicate (confirmă/respinge / grup) — mutat 1:1 din vechiul modal Auto.
-function AutoDuplicateBlock({ listing, onConfirmDup, onDismissDup }) {
-  if (listing.duplicate_level === 3 && listing.duplicate_match_id) {
-    return (
-      <div style={{ margin: "0 1.25rem 1rem", padding: "0.75rem 1rem", backgroundColor: "rgba(37,99,235,0.06)", border: "0.5px solid rgba(37,99,235,0.25)", borderRadius: "0.625rem" }}>
-        <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.625rem" }}>
-          Sistemul a detectat un anunț similar (posibil cross-post OLX Auto / Autovit).
-        </p>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button onClick={() => onConfirmDup(listing.id, listing.duplicate_match_id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "rgba(37,99,235,0.12)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
-            Confirmă duplicat
-          </button>
-          <button onClick={() => onDismissDup(listing.id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "0.5px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
-            Nu e duplicat
-          </button>
-        </div>
-      </div>
-    );
-  }
-  if (listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2) {
-    return (
-      <div style={{ margin: "0 1.25rem 1rem", fontSize: "0.8125rem", color: "#a78bfa", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
-        <span style={{ background: "rgba(124,58,237,0.2)", padding: "2px 8px", borderRadius: "4px" }}>Grup duplicate</span>
-        anunțul face parte dintr-un grup de duplicate confirmate.
-      </div>
-    );
-  }
-  return null;
-}
-
-function AutoListingModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDup, templates, reviewEnabled }) {
+function AutoListingModal({ listing, onClose, onSave, onIgnore, templates, reviewEnabled }) {
   const [detail, setDetail] = useState(null);
   const [generatingAI, setGeneratingAI] = useState(false);
   // Imbogatire on-demand (poze/descriere/vanzator/data). Merge cu base ca sa pastram campurile
@@ -578,7 +524,6 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onConfirmDup, on
       ) : null}
       mlSlot={<AutoMLSection listing={enriched} />}
     >
-      <AutoDuplicateBlock listing={listing} onConfirmDup={onConfirmDup} onDismissDup={onDismissDup} />
       <AutoImportScore listing={listing} />
     </ListingDetailModal>
   );

@@ -34,19 +34,13 @@ class RealEstateMonitorListing(Base):
     image_url                 = Column(Text)
     images_json               = Column(JSON, default=list)
     url                       = Column(Text)
-    # MODIFICARE 10 — identificator vanzator (pentru deduplicare Level 1b
-    # seller+price). Populat din datele scraperului cand sunt disponibile.
+    # Identificator vanzator — folosit pentru afisare in feed/export.
+    # Populat din datele scraperului cand sunt disponibile.
     seller_id                 = Column(String(200))
     description               = Column(Text)
     score                     = Column(Integer, default=50)
     grade                     = Column(String(5), default="C")
     price_history             = Column(JSON, default=list)
-    phash                     = Column(String(64))
-    color_hist                = Column(JSON)
-    duplicate_group_id        = Column(String(100))
-    duplicate_level           = Column(Integer)
-    user_flagged_duplicate_id = Column(Integer)
-    duplicate_match_id        = Column(Integer)
     status                    = Column(String(20), default="active")
     found_at                  = Column(TIMESTAMP, server_default=func.now())
     last_checked_at           = Column(TIMESTAMP)

@@ -6,7 +6,7 @@ Status, URL.
 
 Ajustări față de lista generică cerută, impuse de câmpurile REALE ale modelului:
   * NU există câmp de dată-postare (modelul are doar `found_at`) → "Data postării" omisă.
-  * NU există nume vânzător, doar `seller_id` (identificator folosit la deduplicare, populat
+  * NU există nume vânzător, doar `seller_id` (identificator vânzător, populat
     când scraperul îl oferă) → coloana "Vânzător" mapează pe `seller_id`.
 """
 from typing import Iterable

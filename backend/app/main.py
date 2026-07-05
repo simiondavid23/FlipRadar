@@ -143,7 +143,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] Auto lots scan setup failed: {exc}")
 
-    # FlipRadar — Imobiliare Monitor: scan (30m) + pHash (1h) + cleanup (12:30).
+    # FlipRadar — Imobiliare Monitor: scan (30m) + cleanup (12:30).
     try:
         from app.services.real_estate_scanner import run_real_estate_scan
 
@@ -162,44 +162,6 @@ async def lifespan(app: FastAPI):
         print("[Scheduler] Real estate scan (30m) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] RE scan setup failed: {exc}")
-
-    try:
-        from app.services.real_estate.phash_job import run_phash_job
-
-        def _run_phash():
-            from app.database import SessionLocal
-            _db = SessionLocal()
-            try:
-                run_phash_job(_db)
-            except Exception as exc:
-                print(f"[pHash] eroare: {exc}")
-            finally:
-                _db.close()
-
-        scheduler.add_job(_run_phash, "interval", hours=1,
-            id="re_phash_job", replace_existing=True)
-        print("[Scheduler] pHash job (1h) inregistrat.")
-    except Exception as exc:
-        print(f"[Scheduler] pHash setup failed: {exc}")
-
-    try:
-        from app.services.auto_listings.phash_job import run_auto_phash_job
-
-        def _run_auto_phash():
-            from app.database import SessionLocal
-            _db = SessionLocal()
-            try:
-                run_auto_phash_job(_db)
-            except Exception as exc:
-                print(f"[pHash auto] eroare: {exc}")
-            finally:
-                _db.close()
-
-        scheduler.add_job(_run_auto_phash, "interval", hours=1,
-            id="auto_phash_job", replace_existing=True)
-        print("[Scheduler] pHash job auto (1h) inregistrat.")
-    except Exception as exc:
-        print(f"[Scheduler] pHash auto setup failed: {exc}")
 
     try:
         from app.services.real_estate_scanner import run_cleanup

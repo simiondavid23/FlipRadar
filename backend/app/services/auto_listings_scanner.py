@@ -12,7 +12,6 @@ from app.services.bnr_exchange import get_eur_ron
 # Gradare identica cu Radar: acelasi calculate_score (marja fata de pretul de
 # revanzare + praguri A/B/C). scorer.py nu importa nimic din app -> fara ciclu.
 from app.services.radar.scorer import calculate_score
-from app.services.auto_listings.duplicate_detector import check_auto_duplicates
 from app.services.log_manager import log_manager
 from app.services.ml.feed_ml_bridge import try_save_to_ml
 
@@ -288,25 +287,6 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
                         ).first()
                         if saved:
                             _notify(kw, saved, db)
-                            # Detectare duplicate (cross-post OLX Auto <-> Autovit). pHash-ul
-                            # se calculeaza de jobul orar, deci aici prind doar nivelele 1a/1b/3
-                            # (text) — exact ca la real_estate_scanner. Nivel 1/2 -> auto-grup;
-                            # nivel 3 -> doar semnalat (match_id, fara group_id).
-                            try:
-                                lvl, gid, matched = check_auto_duplicates(saved, db, kw.user_id)
-                                if lvl in (1, 2) and gid:
-                                    saved.duplicate_group_id = gid
-                                    saved.duplicate_level = lvl
-                                    if matched:
-                                        saved.duplicate_match_id = matched.id
-                                    db.commit()
-                                elif lvl == 3 and matched:
-                                    saved.duplicate_level = 3
-                                    saved.duplicate_match_id = matched.id
-                                    db.commit()
-                            except Exception as exc:
-                                print(f"[AutoScan] duplicate check keyword {kw.id}: {exc}")
-                                db.rollback()
                             # MODULE 5b — bridge ML: salveaza in market_listings daca
                             # titlul matchuieste o categorie. Erorile nu rup scanul auto.
                             try:

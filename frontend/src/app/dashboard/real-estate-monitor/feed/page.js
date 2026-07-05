@@ -68,24 +68,6 @@ export default function REFeedPage() {
     try { await realEstateMonitorAPI.deleteListing(id); setSelected(null); await loadFeed(); await loadStats(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
-  const handleConfirmDuplicate = async (listingId, matchId) => {
-    try {
-      await realEstateMonitorAPI.flagDuplicate(listingId, matchId);
-      setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, duplicate_level: 2 } : l)));
-      if (selected?.id === listingId) setSelected((prev) => (prev ? { ...prev, duplicate_level: 2 } : null));
-    } catch {
-      alert("Eroare la confirmare duplicat.");
-    }
-  };
-
-  const handleDismissDuplicate = async (listingId) => {
-    try {
-      setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, duplicate_level: null, duplicate_match_id: null } : l)));
-      if (selected?.id === listingId) setSelected((prev) => (prev ? { ...prev, duplicate_level: null, duplicate_match_id: null } : null));
-    } catch {
-      alert("Eroare.");
-    }
-  };
   const handleScanNow = async () => {
     setScanning(true);
     try { await realEstateMonitorAPI.scanNow(); setTimeout(() => { loadFeed(); setScanning(false); }, 15000); }
@@ -118,7 +100,6 @@ export default function REFeedPage() {
     { label: "Total listinguri", value: stats.total_listings ?? 0, color: "#60a5fa" },
     { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
     { label: "Grade A", value: byGrade.A || 0, color: "#4ade80" },
-    { label: "Grupuri duplicate", value: stats.duplicate_groups ?? 0, color: "#fbbf24" },
   ];
 
   return (
@@ -130,7 +111,7 @@ export default function REFeedPage() {
             <Home style={{ width: "22px", height: "22px", color: "#2563eb" }} />
             Feed Imobiliare
           </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>Chirii scorate, cu zone normalizate și detecție duplicate</p>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>Chirii scorate, cu zone normalizate</p>
         </div>
       </div>
 
@@ -240,7 +221,7 @@ export default function REFeedPage() {
       {selected && (
         <REModal listing={selected} onClose={() => setSelected(null)}
           onSave={() => setStatus(selected.id, "saved")} onIgnore={() => setStatus(selected.id, "ignored")}
-          onConfirmDup={handleConfirmDuplicate} onDismissDup={handleDismissDuplicate} onDelete={() => remove(selected.id)} />
+          onDelete={() => remove(selected.id)} />
       )}
       </>)}
 
@@ -276,12 +257,6 @@ function RECard({ listing, onClick }) {
         )}
         <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", fontSize: "0.6875rem", fontWeight: 700, color: g.text, backgroundColor: g.bg, padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{listing.grade}</span>
         <span style={{ position: "absolute", top: "0.5rem", right: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "white", backgroundColor: "rgba(0,0,0,0.6)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{PLATFORM_LABELS[listing.platform] || listing.platform}</span>
-        {listing.duplicate_level === 3 && (
-          <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
-        )}
-        {listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2 && (
-          <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Grup duplicate</span>
-        )}
       </div>
       <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.375rem", flex: 1 }}>
         <div style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-primary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{listing.title || "—"}</div>
@@ -310,7 +285,7 @@ function RECard({ listing, onClick }) {
   );
 }
 
-function REModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDup, onDelete }) {
+function REModal({ listing, onClose, onSave, onIgnore, onDelete }) {
   const g = gradeCfg(listing.grade);
   const img = listing.image_url || (Array.isArray(listing.images_json) ? listing.images_json[0] : null);
   const history = Array.isArray(listing.price_history) ? listing.price_history : [];
@@ -353,23 +328,6 @@ function REModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDu
                   {h.date ? new Date(h.date).toLocaleDateString("ro-RO") : "—"}: {Math.round(h.price).toLocaleString("ro-RO")} {h.currency}
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Duplicate — auto-populat cu match-ul detectat de sistem */}
-          {listing.duplicate_level === 3 && listing.duplicate_match_id && (
-            <div style={{ marginTop: "1rem", padding: "0.75rem 1rem", backgroundColor: "rgba(37,99,235,0.06)", border: "0.5px solid rgba(37,99,235,0.25)", borderRadius: "0.625rem" }}>
-              <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.625rem" }}>
-                Sistemul a detectat un anunț similar.
-              </p>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button onClick={() => onConfirmDup(listing.id, listing.duplicate_match_id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "rgba(37,99,235,0.12)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
-                  Confirmă duplicat
-                </button>
-                <button onClick={() => onDismissDup(listing.id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "0.5px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
-                  Nu e duplicat
-                </button>
-              </div>
             </div>
           )}
 

@@ -40,10 +40,3 @@ class AutoFeedListing(Base):
     seller_name       = Column(String(200), nullable=True)
     listed_at         = Column(TIMESTAMP, nullable=True)
     detail_fetched    = Column(Boolean, default=False)
-    # Detectare duplicate (mirror exact pe RealEstateMonitorListing) — cazul OLX Auto
-    # vs Autovit cross-postat automat de OLX Group intre cele 2 platforme.
-    phash              = Column(String(64))
-    color_hist         = Column(JSON)
-    duplicate_group_id = Column(String(100))
-    duplicate_level    = Column(Integer)
-    duplicate_match_id = Column(Integer)

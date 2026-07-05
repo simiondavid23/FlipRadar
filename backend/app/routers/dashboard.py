@@ -25,7 +25,6 @@ def scheduler_status(current_user: User = Depends(get_current_user)):
         "radar_scan": "Radar Piață",
         "auto_listings_scan": "Auto Anunțuri",
         "real_estate_scan": "Imobiliare",
-        "re_phash_job": "pHash imagini",
         "re_daily_cleanup": "Cleanup imobiliare",
         "discord_queue_cleanup": "Cleanup Discord queue",
         "log_entries_cleanup": "Cleanup logs DB",
