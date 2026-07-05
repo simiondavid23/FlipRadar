@@ -4,6 +4,7 @@ Modelele noi sunt importate aliasate (RealEstateKeyword / RealEstateListing) cat
 clasele distincte RealEstateMonitorKeyword / RealEstateMonitorListing, ca sa nu
 existe coliziune cu modelul existent RealEstateListing (tabel real_estate_listing).
 """
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -209,17 +210,114 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     return listing
 
 
-def _save_fb_group_post(db: Session, post: dict, user_id: int,
-                        keyword_id: int, groq_enabled: bool,
-                        custom_aliases: dict,
-                        city: str) -> Optional[RealEstateListing]:
-    """Convert facebook_group_post to real_estate_listing."""
+def _parse_floor(val) -> Optional[int]:
+    """Parseaza etajul extras (string liber) intr-un int comparabil; None daca nu se poate.
+
+    "parter"/"demisol" -> 0, "3" -> 3, "3/10" -> 3. "mansarda"/"ultim"/altele necunoscute
+    -> None (nu putem compara, deci nu respingem pe baza etajului)."""
+    if val is None:
+        return None
+    s = str(val).strip().lower()
+    if not s:
+        return None
+    if s.startswith("parter") or s.startswith("demisol"):
+        return 0
+    m = re.match(r"(\d{1,2})", s)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword) -> bool:
+    """True daca valorile extrase NU contrazic criteriile keyword-ului.
+
+    TOLERANTA: un criteriu setat pe kw dar cu valoare extrasa necunoscuta (None) e tratat
+    ca "nu se poate verifica" -> NU respinge. Respinge DOAR cand ambele valori exista si se
+    contrazic clar. `property_type`, `tip_anunt` si `city` nu sunt produse de extractor, deci
+    nu pot fi verificate din text (raman necontrolate).
+    """
+    # Pret — doar cand monedele coincid (altfel comparatia numerica ar fi eronata).
+    price = extracted.get("price")
+    if price is not None:
+        ext_cur = (extracted.get("currency") or "EUR").upper()
+        kw_cur = (kw.price_currency or "EUR").upper()
+        if ext_cur == kw_cur:
+            try:
+                p = float(price)
+                if kw.price_min is not None and p < float(kw.price_min):
+                    return False
+                if kw.price_max is not None and p > float(kw.price_max):
+                    return False
+            except (TypeError, ValueError):
+                pass
+
+    # Camere — kw.rooms e MINIM (la fel ca filtrul trimis scraperelor: camere_min).
+    rooms = extracted.get("rooms")
+    if rooms is not None and kw.rooms is not None:
+        try:
+            if int(rooms) < int(kw.rooms):
+                return False
+        except (TypeError, ValueError):
+            pass
+
+    # Suprafata (min/max).
+    area = extracted.get("area_sqm")
+    if area is not None:
+        try:
+            a = float(area)
+            if kw.area_min is not None and a < float(kw.area_min):
+                return False
+            if kw.area_max is not None and a > float(kw.area_max):
+                return False
+        except (TypeError, ValueError):
+            pass
+
+    # Etaj (min/max) — doar cand etajul extras e parsabil intr-un numar.
+    floor = _parse_floor(extracted.get("floor"))
+    if floor is not None:
+        if kw.floor_min is not None and floor < kw.floor_min:
+            return False
+        if kw.floor_max is not None and floor > kw.floor_max:
+            return False
+
+    # Mobilat (bool) — ambele cunoscute si diferite -> respinge.
+    furnished = extracted.get("furnished")
+    if kw.furnished is not None and furnished is not None:
+        if bool(kw.furnished) != bool(furnished):
+            return False
+
+    # Zona (substring, lax) — respinge doar cand ambele exista si nu se suprapun deloc.
+    kw_zone = (kw.zone or "").strip().lower()
+    zn = (extracted.get("zone_normalized") or "").strip().lower()
+    if kw_zone and zn and kw_zone not in zn and zn not in kw_zone:
+        return False
+
+    return True
+
+
+def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
+                        groq_enabled: bool,
+                        custom_aliases: dict) -> Optional[RealEstateListing]:
+    """Convert facebook_group_post -> real_estate_listing pentru un keyword anume.
+
+    FIX confiscare: postarea se salveaza DOAR daca datele extrase se POTRIVESC criteriilor
+    keyword-ului (_matches_re_keyword, cu toleranta). Inainte, primul keyword care rula
+    salva ORICE postare si o "confisca"; acum o postare pe care kw1 n-o potriveste ramane
+    disponibila pentru kw2 s.a.m.d.
+
+    O postare fizica se salveaza O SINGURA DATA per user — exista o constrangere DB unica
+    pe (user_id, platform, external_id) (idx_re_listings_external), deci NU o putem stoca de
+    mai multe ori (cate una per keyword). O prinde primul keyword care O POTRIVESTE; feed-ul
+    nu arata duplicate ale aceleiasi postari sub keyword-uri diferite (cerinta de verificare).
+    """
     ext_id = f"fbgroup_{post.get('id') or post.get('post_id','')}"
     if not ext_id or ext_id == "fbgroup_":
         return None
 
+    # Deja salvata (de orice keyword al acestui user)? Constrangerea DB e pe user+platform+
+    # external_id, deci verificam la fel — evitam un INSERT care ar crapa pe unicitate.
     existing = db.query(RealEstateListing).filter(
-        RealEstateListing.user_id == user_id,
+        RealEstateListing.user_id == kw.user_id,
         RealEstateListing.external_id == ext_id,
     ).first()
     if existing:
@@ -230,22 +328,28 @@ def _save_fb_group_post(db: Session, post: dict, user_id: int,
     extracted = groq_extract(text, extracted, groq_enabled)
 
     zone_raw = extracted.get("zone_raw") or post.get("zona") or ""
-    zone_norm = normalize_zone(zone_raw, city, custom_aliases)
+    zone_norm = normalize_zone(zone_raw, kw.city, custom_aliases)
+
+    # Filtru criterii — postarea se asociaza cu acest keyword DOAR daca valorile extrase
+    # nu contrazic criteriile lui (zona normalizata e injectata pentru comparatie).
+    extracted["zone_normalized"] = zone_norm
+    if not _matches_re_keyword(extracted, kw):
+        return None
 
     price = extracted.get("price") or (float(post.get("pret") or 0) or None)
     currency = extracted.get("currency", "EUR")
     score, grade = 50, "C"
     if price and extracted.get("area_sqm"):
         zone_avg = get_zone_avg_ppm(
-            db, RealEstateListing, user_id, city, zone_norm,
+            db, RealEstateListing, kw.user_id, kw.city, zone_norm,
             extracted.get("rooms"))
         score, grade = compute_re_score(
             price, currency, extracted["area_sqm"],
-            extracted.get("rooms"), zone_norm, city, zone_avg)
+            extracted.get("rooms"), zone_norm, kw.city, zone_avg)
 
     listing = RealEstateListing(
-        user_id         = user_id,
-        keyword_id      = keyword_id,
+        user_id         = kw.user_id,
+        keyword_id      = kw.id,
         platform        = "facebook_groups",
         external_id     = ext_id,
         source          = "facebook_groups",
@@ -258,7 +362,7 @@ def _save_fb_group_post(db: Session, post: dict, user_id: int,
         floor           = extracted.get("floor"),
         zone_raw        = zone_raw[:200] if zone_raw else None,
         zone_normalized = zone_norm,
-        city            = city,
+        city            = kw.city,
         furnished       = extracted.get("furnished"),
         url             = post.get("group_url") or "",
         description     = text[:2000],
@@ -325,8 +429,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
                         post_dict = {c.name: getattr(post, c.name)
                                      for c in post.__table__.columns}
                         saved = _save_fb_group_post(
-                            db, post_dict, kw.user_id, kw.id,
-                            groq_enabled, custom_aliases, kw.city)
+                            db, post_dict, kw, groq_enabled, custom_aliases)
                         if saved:
                             new_count += 1
                             _notify_re(saved, kw, settings, db)

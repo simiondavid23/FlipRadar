@@ -1,10 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { radarAPI, usersAPI } from "@/lib/api";
+import { radarAPI, usersAPI, facebookGroupsAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Radar, Save, Send, ToggleLeft, ToggleRight,
   CheckCircle2, AlertCircle, Activity,
-  BellRing, BellOff, Link as LinkIcon, Sparkles, FileText, MessageCircle, FileBarChart
+  BellRing, BellOff, Link as LinkIcon, Sparkles, FileText, MessageCircle, FileBarChart,
+  Users, Plus, Pencil, Trash2, RefreshCw, X, ExternalLink
 } from "lucide-react";
 import {
   isPushSupported, registerPushNotifications, unregisterPushNotifications
@@ -391,6 +392,9 @@ export default function SettingsPage() {
                   </div>
                 </Section>
 
+                {/* Grupuri Facebook — Chirii (mutat din pagina standalone real-estate-monitor/groups) */}
+                <FacebookGroupsSection />
+
                 {/* Cookie LaJumate */}
                 <Section title="Cookie LaJumate">
                   <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
@@ -763,6 +767,205 @@ function Section({ title, children }) {
         {children}
       </div>
     </section>
+  );
+}
+
+// ── Grupuri Facebook — Chirii (migrat din real-estate-monitor/groups; tab "posts" eliminat,
+//    redundant cu Feed Imobiliare filtrat pe platforma facebook_groups) ─────────────────────
+// Doar valorile acceptate de validatorul backend (FacebookGroupCreate: 1/2/4 ore).
+// Pagina standalone veche oferea si 0.5/6, dar backend-ul le respingea la salvare (bug preexistent).
+const FG_INTERVAL_OPTIONS = [
+  { value: 1, label: "1 oră" }, { value: 2, label: "2 ore" }, { value: 4, label: "4 ore" },
+];
+const fgInputStyle = {
+  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
+  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
+};
+const fgLabelStyle = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
+const fgIconBtn = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0.375rem",
+  backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.375rem",
+  color: "var(--text-secondary)", cursor: "pointer",
+};
+function fgToList(v) {
+  if (Array.isArray(v)) return v;
+  try { const p = JSON.parse(v || "[]"); return Array.isArray(p) ? p : []; } catch { return []; }
+}
+
+function FacebookGroupsSection() {
+  const [configs, setConfigs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const loadConfigs = useCallback(async () => {
+    setLoading(true);
+    try { const r = await facebookGroupsAPI.getConfigs(); setConfigs(r.data || []); }
+    catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadConfigs(); }, [loadConfigs]);
+
+  const toggleActive = async (cfg) => {
+    try { await facebookGroupsAPI.updateConfig(cfg.id, { is_active: !cfg.is_active }); await loadConfigs(); }
+    catch (e) { alert(e.response?.data?.detail || "Eroare."); }
+  };
+  const verifyNow = async (cfg) => {
+    try { await facebookGroupsAPI.testRun(cfg.id); alert("Verificare pornită."); }
+    catch (e) { alert(e.response?.data?.detail || "Eroare."); }
+  };
+  const remove = async (cfg) => {
+    if (!confirm(`Ștergi grupul „${cfg.group_name}”?`)) return;
+    try { await facebookGroupsAPI.deleteConfig(cfg.id); await loadConfigs(); }
+    catch (e) { alert(e.response?.data?.detail || "Eroare."); }
+  };
+
+  return (
+    <Section title="Grupuri Facebook — Chirii">
+      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>
+        Grupuri de închirieri monitorizate. Postările care se potrivesc criteriilor keyword-urilor
+        tale de tip „Grupuri Facebook” apar automat în Feed Imobiliare.
+      </p>
+      <div>
+        <button onClick={() => { setEditing(null); setShowModal(true); }} style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}>
+          <Plus style={{ width: "16px", height: "16px" }} /> Adaugă grup
+        </button>
+      </div>
+      {loading ? (
+        <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem" }}>Se încarcă...</div>
+      ) : configs.length === 0 ? (
+        <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem" }}>
+          Niciun grup configurat. Apasă „Adaugă grup”.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {configs.map((cfg) => {
+            const kws = fgToList(cfg.keywords); const negs = fgToList(cfg.negative_keywords);
+            return (
+              <div key={cfg.id} style={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", padding: "0.875rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)" }}>{cfg.group_name}</div>
+                    <a href={cfg.group_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.75rem", color: "#60a5fa", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+                      {String(cfg.group_url).slice(0, 50)} <ExternalLink style={{ width: "11px", height: "11px" }} />
+                    </a>
+                  </div>
+                  <span style={{ fontSize: "0.6875rem", fontWeight: 600, padding: "0.125rem 0.5rem", borderRadius: "999px", color: cfg.is_active ? "#4ade80" : "var(--text-muted)", backgroundColor: cfg.is_active ? "rgba(34,197,94,0.15)" : "var(--bg-card)" }}>
+                    {cfg.is_active ? "Activ" : "Inactiv"}
+                  </span>
+                </div>
+                {(kws.length > 0 || negs.length > 0) && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginTop: "0.5rem" }}>
+                    {kws.map((w) => <span key={`k${w}`} style={{ fontSize: "0.6875rem", padding: "0.125rem 0.4rem", borderRadius: "0.25rem", backgroundColor: "rgba(34,197,94,0.12)", color: "#86efac" }}>{w}</span>)}
+                    {negs.map((w) => <span key={`n${w}`} style={{ fontSize: "0.6875rem", padding: "0.125rem 0.4rem", borderRadius: "0.25rem", backgroundColor: "rgba(239,68,68,0.12)", color: "#fca5a5" }}>−{w}</span>)}
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                    Interval: {cfg.check_interval_hours}h · Ultima verificare: {cfg.last_run_at ? new Date(cfg.last_run_at).toLocaleString("ro-RO") : "niciodată"}
+                    {cfg.last_run_status ? ` · ${cfg.last_run_status}` : ""}
+                  </div>
+                  <div style={{ display: "flex", gap: "0.375rem" }}>
+                    <button onClick={() => { setEditing(cfg); setShowModal(true); }} title="Editează" style={fgIconBtn}><Pencil style={{ width: "14px", height: "14px" }} /></button>
+                    <button onClick={() => verifyNow(cfg)} title="Verifică acum" style={fgIconBtn}><RefreshCw style={{ width: "14px", height: "14px" }} /></button>
+                    <button onClick={() => toggleActive(cfg)} title={cfg.is_active ? "Dezactivează" : "Activează"} style={{ ...fgIconBtn, color: cfg.is_active ? "#4ade80" : "var(--text-muted)" }}>
+                      {cfg.is_active ? <ToggleRight style={{ width: "16px", height: "16px" }} /> : <ToggleLeft style={{ width: "16px", height: "16px" }} />}
+                    </button>
+                    <button onClick={() => remove(cfg)} title="Șterge" style={{ ...fgIconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {showModal && <FacebookGroupModal config={editing} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadConfigs(); }} />}
+    </Section>
+  );
+}
+
+function FacebookGroupModal({ config, onClose, onSaved }) {
+  const [groupUrl, setGroupUrl] = useState(config?.group_url || "");
+  const [groupName, setGroupName] = useState(config?.group_name || "");
+  const [kw, setKw] = useState(fgToList(config?.keywords));
+  const [neg, setNeg] = useState(fgToList(config?.negative_keywords));
+  const [interval, setIntervalV] = useState(config?.check_interval_hours ?? 2);
+  const [notify, setNotify] = useState(config?.notify_discord ?? false);
+  const [kwInput, setKwInput] = useState("");
+  const [negInput, setNegInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const addChip = (val, list, setList, setInput) => {
+    const v = (val || "").trim();
+    if (v && !list.includes(v)) setList([...list, v]);
+    setInput("");
+  };
+
+  const submit = async () => {
+    if (!groupUrl.trim() || !groupName.trim()) { alert("URL și nume sunt obligatorii."); return; }
+    const payload = {
+      group_url: groupUrl, group_name: groupName,
+      keywords: kw, negative_keywords: neg,
+      check_interval_hours: parseFloat(interval), notify_discord: notify,
+    };
+    setSaving(true);
+    try {
+      if (config) await facebookGroupsAPI.updateConfig(config.id, payload);
+      else await facebookGroupsAPI.createConfig(payload);
+      onSaved();
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la salvare."); }
+    finally { setSaving(false); }
+  };
+
+  const chipBox = (list, setList) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginTop: "0.375rem" }}>
+      {list.map((w) => (
+        <span key={w} style={{ fontSize: "0.6875rem", padding: "0.125rem 0.4rem", borderRadius: "0.25rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+          {w}<button onClick={() => setList(list.filter((x) => x !== w))} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: 0 }}>×</button>
+        </span>
+      ))}
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem", borderBottom: "1px solid var(--border-color)" }}>
+          <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{config ? "Editează grup" : "Adaugă grup"}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><X style={{ width: "20px", height: "20px" }} /></button>
+        </div>
+        <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div><label style={fgLabelStyle}>URL grup *</label><input value={groupUrl} onChange={(e) => setGroupUrl(e.target.value)} placeholder="https://www.facebook.com/groups/..." style={fgInputStyle} /></div>
+          <div><label style={fgLabelStyle}>Nume afișat *</label><input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="ex: Chirii București" style={fgInputStyle} /></div>
+          <div>
+            <label style={fgLabelStyle}>Keyword-uri incluse</label>
+            <input value={kwInput} onChange={(e) => setKwInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addChip(kwInput, kw, setKw, setKwInput); } }} placeholder="Scrie și Enter" style={fgInputStyle} />
+            {chipBox(kw, setKw)}
+          </div>
+          <div>
+            <label style={fgLabelStyle}>Keyword-uri excluse</label>
+            <input value={negInput} onChange={(e) => setNegInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addChip(negInput, neg, setNeg, setNegInput); } }} placeholder="Scrie și Enter" style={fgInputStyle} />
+            {chipBox(neg, setNeg)}
+          </div>
+          <div>
+            <label style={fgLabelStyle}>Interval verificare</label>
+            <select value={interval} onChange={(e) => setIntervalV(e.target.value)} style={fgInputStyle}>
+              {FG_INTERVAL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} style={{ width: "auto" }} /> Notificări Discord
+          </label>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)" }}>
+          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
+          <button onClick={submit} disabled={saving} style={{ padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Se salvează..." : config ? "Salvează" : "Adaugă"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
