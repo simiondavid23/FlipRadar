@@ -31,3 +31,7 @@ class AutoFeedListing(Base):
     status            = Column(String(20), default="active")
     found_at          = Column(TIMESTAMP, server_default=func.now())
     last_checked_at   = Column(TIMESTAMP)
+    # Imbogatire on-demand a detaliului (poze/descriere/vanzator/data) — pattern Radar.
+    seller_name       = Column(String(200), nullable=True)
+    listed_at         = Column(TIMESTAMP, nullable=True)
+    detail_fetched    = Column(Boolean, default=False)

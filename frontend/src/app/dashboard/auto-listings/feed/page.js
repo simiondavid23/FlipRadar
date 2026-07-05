@@ -266,10 +266,22 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
   const [importMode, setImportMode] = useState("pe_platforma");
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
+  // Imbogatire on-demand (poze/descriere/vanzator/data), o data per anunt (cache in DB).
+  const [detail, setDetail] = useState(null);
+  const [imgIndex, setImgIndex] = useState(0);
+  const enriched = detail || listing;
   const g = gradeCfg(listing.grade);
-  const img = listing.image_url || (Array.isArray(listing.images_json) ? listing.images_json[0] : null);
+  const gallery = (Array.isArray(enriched.images_json) && enriched.images_json.length)
+    ? enriched.images_json
+    : (listing.image_url ? [listing.image_url] : []);
+  const img = gallery[Math.min(imgIndex, Math.max(gallery.length - 1, 0))] || null;
   const importData = listing.import_score_json;
   const isBmw = /\bbmw\b/i.test(listing.title || "");
+
+  useEffect(() => {
+    setDetail(null); setImgIndex(0);
+    autoListingsAPI.getListingDetail(listing.id).then((r) => setDetail(r.data)).catch(() => {});
+  }, [listing.id]);
 
   useEffect(() => {
     if (!isBmw) { setMlPrediction(null); return; }
@@ -297,6 +309,13 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
           ) : (
             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}><ImageOff style={{ width: "32px", height: "32px" }} /></div>
           )}
+          {gallery.length > 1 && (
+            <>
+              <button onClick={() => setImgIndex((i) => (i - 1 + gallery.length) % gallery.length)} style={galleryNav(true)} aria-label="Poza anterioară">‹</button>
+              <button onClick={() => setImgIndex((i) => (i + 1) % gallery.length)} style={galleryNav(false)} aria-label="Poza următoare">›</button>
+              <span style={{ position: "absolute", bottom: "0.5rem", right: "0.5rem", background: "rgba(0,0,0,0.6)", color: "white", fontSize: "0.6875rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{imgIndex + 1}/{gallery.length}</span>
+            </>
+          )}
           <button onClick={onClose} style={{ position: "absolute", top: "0.625rem", right: "0.625rem", background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "0.375rem", padding: "0.25rem", cursor: "pointer", color: "white", display: "flex" }}><X style={{ width: "18px", height: "18px" }} /></button>
           <span style={{ position: "absolute", top: "0.625rem", left: "0.625rem", fontSize: "0.75rem", fontWeight: 700, color: g.text, backgroundColor: g.bg, padding: "0.125rem 0.625rem", borderRadius: "0.375rem" }}>Grad {listing.grade} · {listing.score}</span>
         </div>
@@ -309,6 +328,11 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
               listing.fuel_type && `⛽ ${listing.fuel_type}`, listing.transmission && `⚙️ ${listing.transmission}`,
               listing.location && `📍 ${listing.location}`].filter(Boolean).join(" · ")}
           </div>
+          {(enriched.seller_name || enriched.listed_at) && (
+            <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+              {[enriched.seller_name && `👤 ${enriched.seller_name}`, enriched.listed_at && `🕐 Postat ${formatListedDate(enriched.listed_at)}`].filter(Boolean).join(" · ")}
+            </div>
+          )}
 
           {/* Import score */}
           {IMPORT_PLATFORMS.includes(listing.platform) && importData && (
@@ -395,10 +419,10 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
             </div>
           )}
 
-          {listing.description && (
+          {enriched.description && (
             <div style={{ marginTop: "1rem" }}>
               <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.375rem" }}>Descriere</div>
-              <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{listing.description}</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{enriched.description}</div>
             </div>
           )}
 
@@ -421,6 +445,34 @@ function actBtn(color) {
     backgroundColor: "var(--bg-dark)", color, border: `1px solid ${color === "var(--text-secondary)" ? "var(--border-color)" : color + "55"}`,
     borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
   };
+}
+
+function galleryNav(left) {
+  return {
+    position: "absolute", top: "50%", transform: "translateY(-50%)",
+    [left ? "left" : "right"]: "0.5rem",
+    background: "rgba(0,0,0,0.55)", color: "white", border: "none", borderRadius: "50%",
+    width: "28px", height: "28px", cursor: "pointer", fontSize: "1.1rem", lineHeight: 1,
+    display: "flex", alignItems: "center", justifyContent: "center",
+  };
+}
+
+// Formatare data postarii — aceeasi logica ca formatListedDate din radar/page.js (reuse).
+function formatListedDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const yest = new Date(now.getTime() - 86400000);
+  const isYesterday = d.getFullYear() === yest.getFullYear() && d.getMonth() === yest.getMonth() && d.getDate() === yest.getDate();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  if (sameDay) return `azi ${hh}:${mm}`;
+  if (isYesterday) return `ieri ${hh}:${mm}`;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mo}.${d.getFullYear()} ${hh}:${mm}`;
 }
 
 // ── Tab "Căutare Manuală" (înlocuiește pagina separată "Piața Auto") ─────────────

@@ -166,6 +166,61 @@ def update_listing_status(
     return {"ok": True}
 
 
+def _latest_facebook_session():
+    """Cea mai recenta sesiune Facebook salvata (acelasi pattern ca /stats)."""
+    try:
+        import glob, os
+        files = glob.glob("data/facebook_session_*.json")
+        return max(files, key=os.path.getmtime) if files else None
+    except Exception:
+        return None
+
+
+@router.get("/feed/{listing_id}/detail")
+def get_listing_detail(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Îmbogățește on-demand un anunț auto cu poze/descriere/vânzător/dată, o singură
+    dată per anunț (rezultat cache-uit în DB). Mirror pe /listings/{id}/vinted-detail."""
+    listing = db.query(AutoFeedListing).filter(
+        AutoFeedListing.id == listing_id,
+        AutoFeedListing.user_id == current_user.id,
+    ).first()
+    if not listing:
+        raise HTTPException(404, "Anunțul nu a fost găsit.")
+
+    if not listing.detail_fetched:
+        from app.scrapers.auto.listings.detail import DETAIL_FETCHERS
+        fn = DETAIL_FETCHERS.get(listing.platform)
+        detail = None
+        if fn and listing.url:
+            try:
+                detail = (fn(listing.url, _latest_facebook_session())
+                          if listing.platform == "facebook_auto" else fn(listing.url))
+            except Exception as exc:
+                print(f"[auto detail] {listing.platform} eroare: {exc}")
+        # Succes = macar un camp util. Populam DOAR campurile nenule (nu suprascriem cu
+        # None ce exista deja). detail_fetched=True DOAR la succes -> retry la esec (ca Vinted).
+        if detail and any(detail.get(k) for k in ("images", "description", "seller_name", "listed_at")):
+            if detail.get("images"):
+                listing.images_json = detail["images"]
+            if detail.get("description"):
+                listing.description = detail["description"]
+            if detail.get("seller_name"):
+                listing.seller_name = detail["seller_name"]
+            if detail.get("listed_at"):
+                listing.listed_at = detail["listed_at"]
+            listing.detail_fetched = True
+            db.commit()
+            db.refresh(listing)
+
+    d = {c.name: getattr(listing, c.name) for c in listing.__table__.columns}
+    d["price"] = float(d["price"]) if d["price"] else None
+    return d
+
+
 @router.delete("/feed/{listing_id}")
 def delete_listing(
     listing_id: int,

@@ -439,6 +439,18 @@ def run_migrations():
             "ON auto_feed_listings(user_id, platform, external_id) "
             "WHERE external_id IS NOT NULL")
 
+        # Auto feed: imbogatire on-demand a detaliului (vanzator/data/flag) — pattern Radar.
+        if _table_exists(inspector, "auto_feed_listings"):
+            if not _column_exists(inspector, "auto_feed_listings", "seller_name"):
+                _migrate(conn, "add_auto_feed_seller_name",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN seller_name VARCHAR(200)")
+            if not _column_exists(inspector, "auto_feed_listings", "listed_at"):
+                _migrate(conn, "add_auto_feed_listed_at",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN listed_at TIMESTAMP")
+            if not _column_exists(inspector, "auto_feed_listings", "detail_fetched"):
+                _migrate(conn, "add_auto_feed_detail_fetched",
+                         "ALTER TABLE auto_feed_listings ADD COLUMN detail_fetched BOOLEAN DEFAULT FALSE")
+
         # ── Loturi Auto: keyword-uri monitorizate + coloane noi pe auto_lot ──
         _migrate(conn, "create_auto_lot_keywords", """
             CREATE TABLE IF NOT EXISTS auto_lot_keywords (

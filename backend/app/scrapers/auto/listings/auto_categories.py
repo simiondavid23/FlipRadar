@@ -49,15 +49,19 @@ AUTO_PLATFORM_CATEGORIES = {
 
 AUTO_TECHNICAL_FIELDS = {
     "autovit": {
-        # doar "petrol" a fost confirmat direct; hybrid/electric/lpg sunt presupunere
-        # rezonabila de enum — marcate # VERIFY, de testat live inainte de a te baza pe ele.
+        # Toate 6 valorile de combustibil confirmate direct pe autovit.ro azi (nu mai sunt VERIFY).
         "fuel_type": {"confirmed": True, "param": "search[filter_enum_fuel_type]",
-                      "values": {"benzina": "petrol", "diesel": "diesel", "hibrid": "hybrid",  # hibrid # VERIFY
-                                 "electric": "electric", "gpl": "lpg"}},  # electric # VERIFY, gpl # VERIFY
-        # confirmat pe otomoto.pl (aceeasi platforma), NEtestat direct pe autovit.ro
-        "gearbox": {"confirmed": False, "param": "search[filter_enum_gearbox]",
+                      "values": {"benzina": "petrol", "diesel": "diesel", "hibrid": "hybrid",
+                                 "hibrid_plugin": "plugin-hybrid", "electric": "electric",
+                                 "gpl": "petrol-lpg"}},
+        # confirmat direct pe autovit.ro (3 URL-uri reale), nu doar pe otomoto.pl
+        "gearbox": {"confirmed": True, "param": "search[filter_enum_gearbox]",
                     "values": {"manuala": "manual", "automata": "automatic"}},
-        # idem, confirmat pe otomoto.pl, NEtestat pe autovit.ro
+        # camp nou, confirmat direct pe autovit.ro; restul caroseriilor (hatchback, combi,
+        # coupe, monovolum) NECONFIRMATE — nu le adauga
+        "body_type": {"confirmed": True, "param": "search[filter_enum_body_type]",
+                      "values": {"sedan": "sedan", "suv": "suv", "cabrio": "cabrio"}},
+        # ramane neschimbat — inca doar pe otomoto.pl, nu pe .ro direct
         "engine_power_min": {"confirmed": False, "param": "search[filter_float_engine_power:from]"},
     },
     "olx_auto": {

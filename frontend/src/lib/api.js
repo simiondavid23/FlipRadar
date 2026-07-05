@@ -184,6 +184,8 @@ export const autoListingsAPI = {
   getFeed:        (params)   => api.get("/api/auto-listings/feed", { params }),
   updateStatus:   (id, st)   => api.patch(`/api/auto-listings/feed/${id}/status`, { status: st }),
   deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
+  // Imbogatire on-demand a detaliului (poze/descriere/vanzator/data), o data per anunt
+  getListingDetail: (id)     => api.get(`/api/auto-listings/feed/${id}/detail`),
   getStats:       ()         => api.get("/api/auto-listings/stats"),
   scanNow:        ()         => api.post("/api/auto-listings/scan-now"),
   // Categorii + campuri tehnice confirmate per platforma (formular dinamic + cautare manuala)
