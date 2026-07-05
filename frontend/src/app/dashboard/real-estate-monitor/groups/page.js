@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { facebookGroupsAPI, realEstateMonitorAPI } from "@/lib/api";
-import { Users, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, RefreshCw, X, ExternalLink } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, RefreshCw, X, ExternalLink, AlertTriangle } from "lucide-react";
 
 const INTERVAL_OPTIONS = [
   { value: 0.5, label: "30 min" }, { value: 1, label: "1 oră" },
@@ -86,7 +86,7 @@ export default function REGroupsPage() {
 
       {fbInvalid && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
-          <span style={{ fontSize: "1.125rem" }}>⚠️</span>
+          <AlertTriangle style={{ width: "18px", height: "18px", color: "#fbbf24", flexShrink: 0 }} />
           <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
             Sesiunea Facebook a expirat. Reautentifică-te din <a href="/dashboard/settings" style={{ color: "#fbbf24", fontWeight: 500 }}>Setări → Facebook</a>.
           </p>

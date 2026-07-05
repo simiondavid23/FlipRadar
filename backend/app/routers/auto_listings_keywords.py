@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+import io
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -8,6 +12,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.auto_keyword import AutoKeyword
 from app.models.auto_feed_listing import AutoFeedListing
+from app.services.auto_listings.excel_exporter import build_auto_xlsx
 from app.utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/auto-listings", tags=["auto-listings"])
@@ -146,6 +151,50 @@ def get_feed(
         d["price"] = float(d["price"]) if d["price"] else None
         return d
     return {"total": total, "items": [_d(i) for i in items]}
+
+
+# Definit ÎNAINTE de /feed/{listing_id}/... ca "export" să nu fie prins de rutele cu param.
+@router.get("/feed/export")
+def export_feed(
+    platform: Optional[str] = Query(None),
+    grade: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    keyword_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export .xlsx al feed-ului Auto — aceleași filtre ca lista (platform/grad/status/keyword)."""
+    q = db.query(AutoFeedListing).filter(AutoFeedListing.user_id == current_user.id)
+    if platform:
+        q = q.filter(AutoFeedListing.platform == platform)
+    if grade:
+        q = q.filter(AutoFeedListing.grade == grade)
+    if status and status != "all":
+        q = q.filter(AutoFeedListing.status == status)
+    if keyword_id:
+        q = q.filter(AutoFeedListing.keyword_id == keyword_id)
+    items = q.order_by(AutoFeedListing.found_at.desc()).limit(5000).all()
+
+    kw_ids = {i.keyword_id for i in items if i.keyword_id}
+    kw_map = (
+        {k.id: k.name for k in db.query(AutoKeyword).filter(AutoKeyword.id.in_(kw_ids)).all()}
+        if kw_ids else {}
+    )
+    rows = [{
+        "title": i.title, "platform": i.platform, "grade": i.grade,
+        "price": float(i.price) if i.price is not None else None, "currency": i.currency,
+        "year": i.year, "km": i.km, "fuel_type": i.fuel_type, "location": i.location,
+        "seller_name": i.seller_name, "keyword_name": kw_map.get(i.keyword_id),
+        "listed_at": i.listed_at, "found_at": i.found_at, "status": i.status, "url": i.url,
+    } for i in items]
+
+    xlsx_bytes = build_auto_xlsx(rows)
+    filename = f"auto_anunturi_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/feed/{listing_id}/status")

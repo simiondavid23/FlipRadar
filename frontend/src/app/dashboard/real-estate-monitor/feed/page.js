@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
-import { Home, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff } from "lucide-react";
-import { GRADE_COLORS, STATUS_TABS, selectStyle, tabPillStyle } from "@/lib/uiStyles";
+import { Home, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff, AlertTriangle, RefreshCw, FileSpreadsheet } from "lucide-react";
+import { GRADE_COLORS, selectStyle, tabPillStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
-import StatusTabsBar from "@/components/shared/StatusTabsBar";
 import ScanNowButton from "@/components/shared/ScanNowButton";
+import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import REManualSearch from "@/components/REManualSearch";
 
 const PLATFORM_LABELS = {
@@ -16,6 +16,13 @@ const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov", "
 
 const gradeCfg = (g) => GRADE_COLORS[g] || GRADE_COLORS.C;
 
+// Opțiuni status pentru <select> (identic cu Radar — valorile active/saved/ignored).
+const STATUS_OPTIONS = [
+  { label: "Active", value: "active" },
+  { label: "Salvate", value: "saved" },
+  { label: "Ignorate", value: "ignored" },
+];
+
 export default function REFeedPage() {
   const [listings, setListings] = useState([]);
   const [keywords, setKeywords] = useState([]);
@@ -25,6 +32,7 @@ export default function REFeedPage() {
   const [selected, setSelected] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [tab, setTab] = useState("feed");   // "feed" | "manual" (Căutare Manuală)
+  const [selectedBulk, setSelectedBulk] = useState(new Set());
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
@@ -84,6 +92,27 @@ export default function REFeedPage() {
     catch { setScanning(false); }
   };
 
+  const downloadExcel = async () => {
+    try {
+      const params = {};
+      if (filters.platform) params.platform = filters.platform;
+      if (filters.grade) params.grade = filters.grade;
+      if (filters.status) params.status = filters.status;
+      if (filters.keyword_id) params.keyword_id = filters.keyword_id;
+      const r = await realEstateMonitorAPI.exportListings(params);
+      const url = URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `imobiliare_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la export Excel.");
+    }
+  };
+
   const byGrade = stats.by_grade || {};
   const statCards = [
     { label: "Total listinguri", value: stats.total_listings ?? 0, color: "#60a5fa" },
@@ -94,17 +123,15 @@ export default function REFeedPage() {
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <Home style={{ width: "20px", height: "20px", color: "white" }} />
-          </div>
-          <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Feed Imobiliare</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>Chirii scorate, cu zone normalizate și detecție duplicate</p>
-          </div>
+      {/* Header — structură identică cu Radar (iconiță simplă în h1, fără badge colorat) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Home style={{ width: "22px", height: "22px", color: "#2563eb" }} />
+            Feed Imobiliare
+          </h1>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>Chirii scorate, cu zone normalizate și detecție duplicate</p>
         </div>
-        {tab === "feed" && <ScanNowButton onScan={handleScanNow} scanning={scanning} />}
       </div>
 
       {/* Tab-uri: Feed automat / Căutare Manuală (pill-uri, ca la Auto/Radar) */}
@@ -116,9 +143,14 @@ export default function REFeedPage() {
       {tab === "manual" && <REManualSearch />}
 
       {tab === "feed" && (<>
+      {/* Scanare manuală — rând dedicat aliniat dreapta (ca la Radar) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
+        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+      </div>
+
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
-          <span style={{ fontSize: "1.125rem" }}>⚠️</span>
+          <AlertTriangle style={{ width: "18px", height: "18px", color: "#fbbf24", flexShrink: 0 }} />
           <div>
             <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "#fbbf24", margin: 0 }}>Sesiunea Facebook a expirat</p>
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.125rem 0 0" }}>
@@ -141,7 +173,9 @@ export default function REFeedPage() {
         alignItems: "center",
         gap: "0.625rem",
       }}>
-        <StatusTabsBar tabs={STATUS_TABS} active={filters.status} onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
+        <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} style={selectStyle}>
+          {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
         <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate sursele</option>
           {Object.entries(PLATFORM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -163,6 +197,32 @@ export default function REFeedPage() {
           <option value="">Toate keyword-urile</option>
           {keywords.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
+
+        <SelectFiniteControl
+          totalVisible={listings.length}
+          selectedCount={selectedBulk.size}
+          onSelect={(count) => {
+            if (count === 0) { setSelectedBulk(new Set()); return; }
+            setSelectedBulk(new Set(listings.slice(0, count).map((l) => l.id)));
+          }}
+        />
+
+        <button
+          onClick={() => { loadFeed(); loadStats(); }}
+          disabled={loading}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}
+        >
+          <RefreshCw style={{ width: "14px", height: "14px", animation: loading ? "spin 1s linear infinite" : undefined }} />
+          Actualizează
+        </button>
+
+        <button
+          onClick={downloadExcel}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+        >
+          <FileSpreadsheet style={{ width: "14px", height: "14px" }} />
+          Export Excel
+        </button>
       </div>
 
       {loading ? (
@@ -220,7 +280,7 @@ function RECard({ listing, onClick }) {
           <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", background: "rgba(37,99,235,0.15)", color: "#60a5fa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Anunț similar detectat →</span>
         )}
         {listing.duplicate_group_id && listing.duplicate_level && listing.duplicate_level <= 2 && (
-          <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>🔗 Grup duplicate</span>
+          <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", background: "rgba(124,58,237,0.2)", color: "#a78bfa", fontSize: "9.5px", padding: "2px 6px", borderRadius: "4px" }}>Grup duplicate</span>
         )}
       </div>
       <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.375rem", flex: 1 }}>
@@ -239,7 +299,7 @@ function RECard({ listing, onClick }) {
           {drop !== null && <span style={{ fontSize: "0.7rem", color: "#fb923c", marginLeft: "0.375rem" }}>↓ {drop}%</span>}
         </div>
         <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-          {[listing.rooms && `🛏 ${listing.rooms} cam`, listing.area_sqm && `📐 ${listing.area_sqm} mp`, listing.floor && `🏢 Etaj ${listing.floor}`].filter(Boolean).join(" · ")}
+          {[listing.rooms && `${listing.rooms} cam`, listing.area_sqm && `${listing.area_sqm} mp`, listing.floor && `Etaj ${listing.floor}`].filter(Boolean).join(" · ")}
         </div>
         <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
           {[listing.zone_normalized || listing.zone_raw, listing.city].filter(Boolean).join(" · ")}
@@ -273,7 +333,7 @@ function REModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDu
           <div style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "0.5rem" }}>{listing.title || "—"}</div>
           <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing)}</div>
           <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
-            {[listing.rooms && `🛏 ${listing.rooms} cam`, listing.area_sqm && `📐 ${listing.area_sqm} mp`, listing.floor && `🏢 Etaj ${listing.floor}`,
+            {[listing.rooms && `${listing.rooms} cam`, listing.area_sqm && `${listing.area_sqm} mp`, listing.floor && `Etaj ${listing.floor}`,
               (listing.zone_normalized || listing.zone_raw), listing.city].filter(Boolean).join(" · ")}
           </div>
 
@@ -304,7 +364,7 @@ function REModal({ listing, onClose, onSave, onIgnore, onConfirmDup, onDismissDu
               </p>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button onClick={() => onConfirmDup(listing.id, listing.duplicate_match_id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "rgba(37,99,235,0.12)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
-                  ✓ Confirmă duplicat
+                  Confirmă duplicat
                 </button>
                 <button onClick={() => onDismissDup(listing.id)} style={{ padding: "0.375rem 0.875rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "0.5px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
                   Nu e duplicat

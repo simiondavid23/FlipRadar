@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
+import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 
 // ── ML Predictor: detectie categorie + construire features din anunt ──
 function detectMLCategory(title = "") {
@@ -777,7 +778,7 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
           display: "flex", alignItems: "center", justifyContent: "center",
           transition: "all 0.1s",
         }}>
-          {isSelected && <span style={{ color: "white", fontSize: "9px", fontWeight: 700 }}>✓</span>}
+          {isSelected && <Check style={{ width: "10px", height: "10px", color: "white" }} strokeWidth={3} />}
         </div>
         <span style={{ fontSize: "0.6875rem", color: isSelected ? "#60a5fa" : "var(--text-secondary)", userSelect: "none" }}>
           {isSelected ? "Selectat" : "Selectează"}
@@ -912,7 +913,7 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
             }}
           >
             <Bookmark style={{ width: "12px", height: "12px" }} />
-            {listing.status === "saved" ? "✓ Salvat" : "Salvează"}
+            {listing.status === "saved" ? "Salvat" : "Salvează"}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); if (listing.status !== "ignored") onIgnore(); }}
@@ -929,7 +930,7 @@ function ListingCard({ listing, onOpen, onSave, onIgnore, compareSelected, bulkS
             }}
           >
             <EyeOff style={{ width: "12px", height: "12px" }} />
-            {listing.status === "ignored" ? "✓ Ignorat" : "Ignoră"}
+            {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); window.open(listing.url, "_blank", "noopener,noreferrer"); }}
@@ -1645,7 +1646,7 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
             )}
           >
             <Bookmark style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            {listing.status === "saved" ? "✓ Salvat" : "Salvează"}
+            {listing.status === "saved" ? "Salvat" : "Salvează"}
           </button>
           <button
             onClick={listing.status !== "ignored" ? onIgnore : undefined}
@@ -1657,7 +1658,7 @@ function ListingModal({ listing, templates = [], onClose, onSave, onIgnore, onBl
             )}
           >
             <EyeOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-            {listing.status === "ignored" ? "✓ Ignorat" : "Ignoră"}
+            {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
           </button>
           <button onClick={onBlockSeller} style={btn("#fb923c", "rgba(249,115,22,0.15)", "rgba(249,115,22,0.3)")}>
             <ShieldOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
@@ -1691,78 +1692,6 @@ function btn(color, bg, border) {
     display: "inline-flex",
     alignItems: "center",
   };
-}
-
-
-function SelectFiniteControl({ totalVisible, selectedCount, onSelect }) {
-  const [customOpen, setCustomOpen] = useState(false);
-  const [customN, setCustomN] = useState("");
-  const quickBtn = (label, n) => (
-    <button
-      type="button"
-      onClick={() => onSelect(Math.min(n, totalVisible))}
-      style={{
-        padding: "0.3rem 0.5rem",
-        backgroundColor: "var(--bg-dark)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.375rem",
-        color: "var(--text-primary)",
-        fontSize: "0.7rem", fontWeight: 500, cursor: "pointer",
-      }}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <div style={{
-      marginLeft: "auto",
-      display: "inline-flex", alignItems: "center", gap: "0.375rem",
-      padding: "0.375rem 0.625rem",
-      border: "1px solid var(--border-color)", borderRadius: "0.5rem",
-      backgroundColor: "var(--bg-card)",
-      flexWrap: "wrap",
-    }}>
-      <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", fontWeight: 600 }}>Selectează:</span>
-      {quickBtn("Toate", totalVisible)}
-      {quickBtn("Primele 10", 10)}
-      {quickBtn("Primele 25", 25)}
-      {quickBtn("Primele 50", 50)}
-      <button type="button" onClick={() => setCustomOpen(!customOpen)} style={{
-        padding: "0.3rem 0.5rem", backgroundColor: customOpen ? "var(--blue-primary)" : "var(--bg-dark)",
-        color: customOpen ? "white" : "var(--text-primary)",
-        border: "1px solid var(--border-color)", borderRadius: "0.375rem",
-        fontSize: "0.7rem", fontWeight: 500, cursor: "pointer",
-      }}>Custom</button>
-      {customOpen && (
-        <input
-          type="number" min="1" max={totalVisible}
-          value={customN}
-          onChange={(e) => setCustomN(e.target.value)}
-          onBlur={() => {
-            const n = parseInt(customN);
-            if (!Number.isNaN(n) && n > 0) onSelect(Math.min(n, totalVisible));
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              const n = parseInt(customN);
-              if (!Number.isNaN(n) && n > 0) onSelect(Math.min(n, totalVisible));
-            }
-          }}
-          style={{
-            width: "70px", padding: "0.3rem 0.5rem",
-            backgroundColor: "var(--bg-dark)", color: "var(--text-primary)",
-            border: "1px solid var(--border-color)", borderRadius: "0.375rem",
-            fontSize: "0.7rem",
-          }}
-          placeholder="N"
-          autoFocus
-        />
-      )}
-      <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginLeft: "0.25rem" }}>
-        {selectedCount} / {totalVisible} selectate
-      </span>
-    </div>
-  );
 }
 
 
@@ -1817,11 +1746,11 @@ function ActionBanner({
             </>
           ) : (
             <>
-              <button onClick={onBulkSave} style={primaryBannerBtn}>💾 Salvează</button>
-              <button onClick={onBulkIgnore} style={ghostBtn}>👁 Ignoră</button>
-              <button onClick={() => setConfirmDelete(true)} style={dangerBtn}>🗑 Șterge</button>
-              <button onClick={onBulkExport} style={ghostBtn}>📋 Exportă selecția</button>
-              <button onClick={onBulkClear} style={ghostBtn}>✕ Golește selecția</button>
+              <button onClick={onBulkSave} style={primaryBannerBtn}>Salvează</button>
+              <button onClick={onBulkIgnore} style={ghostBtn}>Ignoră</button>
+              <button onClick={() => setConfirmDelete(true)} style={dangerBtn}>Șterge</button>
+              <button onClick={onBulkExport} style={ghostBtn}>Exportă selecția</button>
+              <button onClick={onBulkClear} style={ghostBtn}>Golește selecția</button>
             </>
           )}
         </div>
@@ -1938,7 +1867,9 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
                     title="Salvează"
                     style={smallActionBtn("#4ade80", l.status === "saved" ? "rgba(22,163,74,0.3)" : "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}
                   >
-                    {l.status === "saved" ? "✓ Salvat" : "💾"}
+                    {l.status === "saved"
+                      ? <><Check style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />Salvat</>
+                      : <Bookmark style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
                   </button>
                   <button
                     onClick={() => { if (l.status !== "ignored") onIgnore(l.id); }}
@@ -1946,7 +1877,9 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
                     title="Ignoră"
                     style={smallActionBtn("var(--text-secondary)", l.status === "ignored" ? "rgba(100,116,139,0.3)" : "var(--bg-card)", "var(--border-color)")}
                   >
-                    {l.status === "ignored" ? "✓ Ignorat" : "👁"}
+                    {l.status === "ignored"
+                      ? <><Check style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />Ignorat</>
+                      : <EyeOff style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
                   </button>
                   <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ ...smallActionBtn("white", "var(--blue-primary)", "var(--blue-primary)"), textDecoration: "none", marginLeft: "auto" }}>↗ Deschide</a>
                 </div>

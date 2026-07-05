@@ -192,6 +192,8 @@ export const autoListingsAPI = {
   getCategories:  ()         => api.get("/api/auto-listings/categories"),
   // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
   getKeywordImpact: (id)     => api.get(`/api/auto-listings/keywords/${id}/impact`),
+  // Export Excel al feed-ului (aceleasi filtre ca lista) — descarcat ca blob.
+  exportListings: (params)   => api.get("/api/auto-listings/feed/export", { params, responseType: "blob" }),
 };
 
 // Loturi Auto — keyword-uri monitorizate + feed de loturi (Copart/IAAI/SCA/OpenLane)
@@ -221,6 +223,8 @@ export const realEstateMonitorAPI = {
   scanNow:       ()         => api.post("/api/real-estate-monitor/scan-now"),
   // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
   getKeywordImpact: (id)    => api.get(`/api/real-estate-monitor/keywords/${id}/impact`),
+  // Export Excel al feed-ului (aceleasi filtre ca lista) — descarcat ca blob.
+  exportListings: (params)  => api.get("/api/real-estate-monitor/feed/export", { params, responseType: "blob" }),
 };
 
 // Modulul 1 Marketplace — cautare live pe platforme (OLX, Vinted, etc.).
@@ -273,10 +277,6 @@ export const realEstateAPI = {
   saveListing: (data) => api.post("/api/real-estate/listings/save", data),
   getSavedListings: () => api.get("/api/real-estate/listings/saved"),
   deleteSavedListing: (id) => api.delete(`/api/real-estate/listings/saved/${id}`),
-  getAlerts: () => api.get("/api/real-estate/alerts"),
-  createAlert: (data) => api.post("/api/real-estate/alerts", data),
-  updateAlert: (id, data) => api.put(`/api/real-estate/alerts/${id}`, data),
-  deleteAlert: (id) => api.delete(`/api/real-estate/alerts/${id}`),
 };
 
 // Grupuri Facebook (monitorizare imobiliare)

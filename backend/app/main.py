@@ -44,8 +44,6 @@ from app.models import market_listing  # FlipRadar — date reale de piata pentr
 from app.models import real_estate_listing, auto_lot, auto_listing
 # FlipRadar — Modulul 1 Marketplace: anunturi salvate + alerte keyword
 from app.models import marketplace_saved, marketplace_keyword_alert
-# FlipRadar — Modul Imobiliare: alerte keyword
-from app.models import real_estate_alert
 # FlipRadar — Grupuri Facebook (config + postari)
 from app.models import facebook_group_config, facebook_group_post
 # MODIFICARE 7 — coada Discord persistenta (tabel discord_queue)
@@ -62,7 +60,6 @@ run_migrations()
 
 from app.utils.alert_checker import check_alerts
 from app.utils.radar_scanner import run_radar_scan
-from app.utils.real_estate_scanner import check_real_estate_alerts
 
 scheduler = BackgroundScheduler(timezone="Europe/Bucharest")
 
@@ -203,16 +200,6 @@ async def lifespan(app: FastAPI):
         print("[Scheduler] RE cleanup (12:30) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] RE cleanup setup failed: {exc}")
-
-    # FlipRadar — Imobiliare: scaneaza alertele la fiecare 30 minute (prima rulare
-    # nu e imediata, ca sa nu scrapeze la fiecare restart).
-    scheduler.add_job(
-        check_real_estate_alerts,
-        "interval",
-        minutes=30,
-        id="real_estate_alerts",
-        replace_existing=True,
-    )
 
     # FlipRadar — cleanup zilnic (04:00): sterge definitiv anunturile disparute
     # de pe marketplace (404 / sold/removed), inclusiv cele salvate/ignorate.
@@ -393,7 +380,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
     print(
-        "[Scheduler] Started - check_alerts (15m) + radar_scan (5m) + real_estate_alerts (30m)"
+        "[Scheduler] Started - check_alerts (15m) + radar_scan (5m)"
         + (" + ML collectors (6h/12h) + retrain (luni 03:00)" if _ml_jobs_ok else "")
         + (" + facebook_group_checks (30m) + cookie_expiry (09:00)." if _fb_jobs_ok else ".")
     )

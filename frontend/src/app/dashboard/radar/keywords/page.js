@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { radarAPI } from "@/lib/api";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import {
-  Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp
+  Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp, Mail, MessageSquare
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -938,7 +938,7 @@ export default function RadarKeywordsPage() {
                               color: "var(--text-secondary)",
                               marginTop: "0.2rem",
                             }}>
-                              🕐 {String(k.active_hours_start).padStart(2, "0")}:00
+                              {String(k.active_hours_start).padStart(2, "0")}:00
                               {" – "}
                               {String(k.active_hours_end).padStart(2, "0")}:00
                             </span>
@@ -996,8 +996,8 @@ export default function RadarKeywordsPage() {
                       <td style={td}>{k.poll_interval_minutes} min</td>
                       <td style={td}>
                         <span style={{ display: "inline-flex", gap: "0.25rem", fontSize: "0.95rem" }}>
-                          <span title="Email" style={{ opacity: k.notify_email ? 1 : 0.25 }}>📧</span>
-                          <span title="Discord" style={{ opacity: k.notify_discord ? 1 : 0.25 }}>💬</span>
+                          <span title="Email" style={{ opacity: k.notify_email ? 1 : 0.25, display: "inline-flex" }}><Mail style={{ width: "14px", height: "14px" }} /></span>
+                          <span title="Discord" style={{ opacity: k.notify_discord ? 1 : 0.25, display: "inline-flex" }}><MessageSquare style={{ width: "14px", height: "14px" }} /></span>
                         </span>
                       </td>
                       <td style={td}>
@@ -1922,7 +1922,7 @@ function CarFiltersSection({ value, onChange, inputStyle }) {
     }}>
       <div>
         <div style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-          🚗 Filtre specifice platformelor auto
+          Filtre specifice platformelor auto
         </div>
         <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>
           Aceste filtre se aplică doar pentru Autovit și Mobile.de.

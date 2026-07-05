@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
-import { Home, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw } from "lucide-react";
+import { Home, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw, Info } from "lucide-react";
 
 const RE_PLATFORMS = [
   { value: "olx",                  label: "OLX Imobiliare" },
@@ -250,7 +250,7 @@ export default function REKeywordsPage() {
                     <div style={{ fontWeight: 500 }}>{k.name}</div>
                     {(k.active_hours_start != null && k.active_hours_end != null) && (
                       <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                        🕐 {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
+                        {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
                       </span>
                     )}
                   </td>
@@ -356,12 +356,12 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
 
           {platform === "facebook_groups" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-              ℹ️ Postările din grupurile configurate în tab-ul „Grupuri Facebook” vor fi incluse automat în feed pentru acest keyword.
+              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Postările din grupurile configurate în tab-ul „Grupuri Facebook” vor fi incluse automat în feed pentru acest keyword.
             </div>
           )}
           {platform === "facebook_marketplace" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-              ℹ️ Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>.
+              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>.
             </div>
           )}
 

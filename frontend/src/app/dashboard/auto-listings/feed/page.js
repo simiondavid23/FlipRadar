@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { autoListingsAPI, autoAPI, mlAPI } from "@/lib/api";
-import { Car, RefreshCw, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff, Loader2 } from "lucide-react";
-import { GRADE_COLORS, STATUS_TABS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
+import { Car, RefreshCw, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff, Loader2, AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
+import { GRADE_COLORS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
-import StatusTabsBar from "@/components/shared/StatusTabsBar";
 import ScanNowButton from "@/components/shared/ScanNowButton";
+import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import SearchResultCard from "@/components/AutoListingCard";
 import AutoAiModal from "@/components/AutoAiModal";
 
@@ -14,6 +14,13 @@ const PLATFORM_LABELS = {
   autoscout24: "AutoScout24", facebook_auto: "Facebook Auto", kleinanzeigen_auto: "Kleinanzeigen",
 };
 const IMPORT_PLATFORMS = ["mobile_de", "autoscout24", "kleinanzeigen_auto"];
+
+// Opțiuni status pentru <select> (identic cu Radar — valorile active/saved/ignored).
+const STATUS_OPTIONS = [
+  { label: "Active", value: "active" },
+  { label: "Salvate", value: "saved" },
+  { label: "Ignorate", value: "ignored" },
+];
 
 function gradeCfg(g) { return GRADE_COLORS[g] || GRADE_COLORS.C; }
 function eurRonOf(listing) {
@@ -29,6 +36,7 @@ export default function AutoFeedPage() {
   const [filters, setFilters] = useState({ platform: "", grade: "", status: "active", keyword_id: "" });
   const [selected, setSelected] = useState(null);
   const [activeTab, setActiveTab] = useState("auto");
+  const [selectedBulk, setSelectedBulk] = useState(new Set());
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
@@ -66,6 +74,27 @@ export default function AutoFeedPage() {
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
 
+  const downloadExcel = async () => {
+    try {
+      const params = {};
+      if (filters.platform) params.platform = filters.platform;
+      if (filters.grade) params.grade = filters.grade;
+      if (filters.status) params.status = filters.status;
+      if (filters.keyword_id) params.keyword_id = filters.keyword_id;
+      const r = await autoListingsAPI.exportListings(params);
+      const url = URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `auto_anunturi_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la export Excel.");
+    }
+  };
+
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState(null);
 
@@ -94,18 +123,15 @@ export default function AutoFeedPage() {
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <Car style={{ width: "20px", height: "20px", color: "white" }} />
-          </div>
-          <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Feed Anunțuri Auto</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>Anunțuri monitorizate, scorate și cu calcul de import</p>
-          </div>
+      {/* Header — structură identică cu Radar (iconiță simplă în h1, fără badge colorat) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Car style={{ width: "22px", height: "22px", color: "#2563eb" }} />
+            Feed Anunțuri Auto
+          </h1>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>Anunțuri monitorizate, scorate și cu calcul de import</p>
         </div>
-        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
       </div>
 
       {/* Tab-uri Feed Automat / Căutare Manuală (stil identic cu Radar) */}
@@ -118,10 +144,15 @@ export default function AutoFeedPage() {
 
       {activeTab === "auto" && (
       <>
+      {/* Scanare manuală — rând dedicat aliniat dreapta (ca la Radar) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
+        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+      </div>
+
       {/* Facebook session expired banner */}
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
-          <span style={{ fontSize: "1.125rem" }}>⚠️</span>
+          <AlertTriangle style={{ width: "18px", height: "18px", color: "#fbbf24", flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "#fbbf24", margin: 0 }}>Sesiunea Facebook a expirat</p>
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.125rem 0 0" }}>
@@ -135,7 +166,7 @@ export default function AutoFeedPage() {
 
       {scanMsg && (
         <p style={{ fontSize: "0.8125rem", color: "#60a5fa", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-          <span>ℹ️</span> {scanMsg}
+          <Info style={{ width: "15px", height: "15px", flexShrink: 0 }} /> {scanMsg}
         </p>
       )}
 
@@ -154,7 +185,9 @@ export default function AutoFeedPage() {
         alignItems: "center",
         gap: "0.625rem",
       }}>
-        <StatusTabsBar tabs={STATUS_TABS} active={filters.status} onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
+        <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} style={selectStyle}>
+          {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
         <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate platformele</option>
           {Object.entries(PLATFORM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -167,8 +200,31 @@ export default function AutoFeedPage() {
           <option value="">Toate keyword-urile</option>
           {keywords.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
-        <button onClick={() => { loadFeed(); loadStats(); }} style={{ ...selectStyle, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem", color: "var(--text-secondary)" }}>
-          <RefreshCw style={{ width: "14px", height: "14px" }} /> Reîmprospătează
+
+        <SelectFiniteControl
+          totalVisible={listings.length}
+          selectedCount={selectedBulk.size}
+          onSelect={(count) => {
+            if (count === 0) { setSelectedBulk(new Set()); return; }
+            setSelectedBulk(new Set(listings.slice(0, count).map((l) => l.id)));
+          }}
+        />
+
+        <button
+          onClick={() => { loadFeed(); loadStats(); }}
+          disabled={loading}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}
+        >
+          <RefreshCw style={{ width: "14px", height: "14px", animation: loading ? "spin 1s linear infinite" : undefined }} />
+          Actualizează
+        </button>
+
+        <button
+          onClick={downloadExcel}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+        >
+          <FileSpreadsheet style={{ width: "14px", height: "14px" }} />
+          Export Excel
         </button>
       </div>
 
@@ -242,7 +298,7 @@ function AutoListingCard({ listing, onClick }) {
         </span>
         {isImport && (
           <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.2)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
-            📦 Import
+            Import
           </span>
         )}
       </div>
@@ -252,11 +308,11 @@ function AutoListingCard({ listing, onClick }) {
         </div>
         <div style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing)}</div>
         <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-          {[listing.year && `📅 ${listing.year}`, listing.km != null && `🛣️ ${listing.km.toLocaleString("ro-RO")} km`,
-            listing.fuel_type && `⛽ ${listing.fuel_type}`, listing.transmission && `⚙️ ${listing.transmission}`]
+          {[listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
+            listing.fuel_type && `${listing.fuel_type}`, listing.transmission && `${listing.transmission}`]
             .filter(Boolean).join(" · ")}
         </div>
-        {listing.location && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>📍 {listing.location}</div>}
+        {listing.location && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{listing.location}</div>}
       </div>
     </div>
   );
@@ -324,13 +380,13 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
           <div style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "0.5rem" }}>{listing.title || "—"}</div>
           <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>{priceLine(listing, true)}</div>
           <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
-            {[listing.year && `📅 ${listing.year}`, listing.km != null && `🛣️ ${listing.km.toLocaleString("ro-RO")} km`,
-              listing.fuel_type && `⛽ ${listing.fuel_type}`, listing.transmission && `⚙️ ${listing.transmission}`,
-              listing.location && `📍 ${listing.location}`].filter(Boolean).join(" · ")}
+            {[listing.year && `${listing.year}`, listing.km != null && `${listing.km.toLocaleString("ro-RO")} km`,
+              listing.fuel_type && `${listing.fuel_type}`, listing.transmission && `${listing.transmission}`,
+              listing.location && `${listing.location}`].filter(Boolean).join(" · ")}
           </div>
           {(enriched.seller_name || enriched.listed_at) && (
             <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-              {[enriched.seller_name && `👤 ${enriched.seller_name}`, enriched.listed_at && `🕐 Postat ${formatListedDate(enriched.listed_at)}`].filter(Boolean).join(" · ")}
+              {[enriched.seller_name && `${enriched.seller_name}`, enriched.listed_at && `Postat ${formatListedDate(enriched.listed_at)}`].filter(Boolean).join(" · ")}
             </div>
           )}
 
@@ -346,7 +402,7 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
                     color: importMode === mode ? "#a78bfa" : "var(--text-secondary)",
                     border: importMode === mode ? "1px solid rgba(124,58,237,0.4)" : "1px solid var(--border-color)",
                   }}>
-                    {mode === "pe_platforma" ? "📦 Pe platformă" : "🚗 Pe roți"}
+                    {mode === "pe_platforma" ? "Pe platformă" : "Pe roți"}
                   </button>
                 ))}
               </div>
@@ -384,8 +440,8 @@ function AutoListingModal({ listing, onClose, onSave, onIgnore, onDelete }) {
                     {d.saving_ron !== null && d.saving_ron !== undefined && (
                       <div style={{ marginTop: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, color: d.is_profitable ? "#4ade80" : "#f87171" }}>
                         {d.is_profitable
-                          ? `✓ Import rentabil — economie estimată ${Math.round(d.saving_ron).toLocaleString("ro-RO")} RON față de Autovit`
-                          : `✗ Import mai scump față de piața locală cu ${Math.abs(Math.round(d.saving_ron)).toLocaleString("ro-RO")} RON`}
+                          ? `Import rentabil — economie estimată ${Math.round(d.saving_ron).toLocaleString("ro-RO")} RON față de Autovit`
+                          : `Import mai scump față de piața locală cu ${Math.abs(Math.round(d.saving_ron)).toLocaleString("ro-RO")} RON`}
                       </div>
                     )}
                     <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.375rem" }}>
@@ -492,8 +548,8 @@ const mcap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 function ManualMobileDeWarning() {
   return (
     <span title="Funcționează doar de pe IP rezidential (pe server/datacenter: 403 Imperva)."
-      style={{ marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px", background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle", cursor: "help", fontWeight: 500 }}>
-      ⚠ IP local
+      style={{ display: "inline-flex", alignItems: "center", gap: "0.2rem", marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px", background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle", cursor: "help", fontWeight: 500 }}>
+      <AlertTriangle style={{ width: "11px", height: "11px" }} /> IP local
     </span>
   );
 }

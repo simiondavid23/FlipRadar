@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+import io
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -8,6 +12,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword as RealEstateKeyword
 from app.models.real_estate_monitor_listing import RealEstateMonitorListing as RealEstateListing
+from app.services.real_estate.excel_exporter import build_re_xlsx
 from app.utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/real-estate-monitor", tags=["real-estate-monitor"])
@@ -155,6 +160,52 @@ def get_feed(
     items = q.order_by(RealEstateListing.found_at.desc())\
              .offset(offset).limit(limit).all()
     return {"total": total, "items": [_listing_dict(i) for i in items]}
+
+
+# Definit ÎNAINTE de /feed/{listing_id}/... ca "export" să nu fie prins de rutele cu param.
+@router.get("/feed/export")
+def export_feed(
+    platform: Optional[str] = Query(None),
+    grade: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    keyword_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export .xlsx al feed-ului Imobiliare — filtre platform/grad/status/keyword ca lista."""
+    q = db.query(RealEstateListing).filter(RealEstateListing.user_id == current_user.id)
+    if platform:
+        q = q.filter(RealEstateListing.platform == platform)
+    if grade:
+        q = q.filter(RealEstateListing.grade == grade)
+    if status and status != "all":
+        q = q.filter(RealEstateListing.status == status)
+    if keyword_id:
+        q = q.filter(RealEstateListing.keyword_id == keyword_id)
+    items = q.order_by(RealEstateListing.found_at.desc()).limit(5000).all()
+
+    kw_ids = {i.keyword_id for i in items if i.keyword_id}
+    kw_map = (
+        {k.id: k.name for k in db.query(RealEstateKeyword).filter(RealEstateKeyword.id.in_(kw_ids)).all()}
+        if kw_ids else {}
+    )
+    rows = [{
+        "title": i.title, "platform": i.platform, "grade": i.grade,
+        "price": float(i.price) if i.price is not None else None, "currency": i.currency,
+        "price_per_sqm": float(i.price_per_sqm) if i.price_per_sqm is not None else None,
+        "rooms": i.rooms, "area_sqm": i.area_sqm,
+        "zone_normalized": i.zone_normalized, "zone_raw": i.zone_raw, "floor": i.floor,
+        "seller_id": i.seller_id, "keyword_name": kw_map.get(i.keyword_id),
+        "found_at": i.found_at, "status": i.status, "url": i.url,
+    } for i in items]
+
+    xlsx_bytes = build_re_xlsx(rows)
+    filename = f"imobiliare_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/feed/{listing_id}/status")

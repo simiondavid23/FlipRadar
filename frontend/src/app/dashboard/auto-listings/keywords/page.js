@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { autoListingsAPI } from "@/lib/api";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
-import { Car, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw } from "lucide-react";
+import { Car, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, AlertTriangle, Info } from "lucide-react";
 
 const AUTO_PLATFORMS = [
   { value: "autovit",            label: "Autovit",            currency: "RON" },
@@ -19,11 +19,12 @@ function MobileDeWarning() {
     <span
       title="Funcționează doar de pe IP rezidential. Pe server sau datacenter returnează 403 (blocat Imperva). 0 rezultate pe server = comportament normal."
       style={{
+        display: "inline-flex", alignItems: "center", gap: "0.2rem",
         marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px",
         background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle",
         cursor: "help", fontWeight: 500,
       }}
-    >⚠ IP local</span>
+    ><AlertTriangle style={{ width: "11px", height: "11px" }} /> IP local</span>
   );
 }
 
@@ -64,14 +65,7 @@ export default function AutoKeywordsPage() {
   const [platform, setPlatform] = useState("autovit");
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [deleteModal, setDeleteModal] = useState(null);
-
-  const handleScanNow = async () => {
-    setScanning(true);
-    try { await autoListingsAPI.scanNow(); setTimeout(() => setScanning(false), 3000); }
-    catch { setScanning(false); }
-  };
 
   const load = useCallback(async () => {
     try { const r = await autoListingsAPI.getKeywords(); setKeywords(r.data || []); }
@@ -176,15 +170,6 @@ export default function AutoKeywordsPage() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <button onClick={handleScanNow} disabled={scanning} title="Declanșează scanare imediată pentru toate keyword-urile active" style={{
-            display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-            backgroundColor: "var(--bg-dark)", color: scanning ? "#60a5fa" : "var(--text-secondary)",
-            border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem",
-            fontWeight: 500, cursor: scanning ? "default" : "pointer", transition: "all 0.15s",
-          }}>
-            <RefreshCw style={{ width: "14px", height: "14px", animation: scanning ? "spin 1s linear infinite" : "none" }} />
-            {scanning ? "Scanare pornită..." : "Scanează acum"}
-          </button>
           <button onClick={openAdd} style={{
             display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem",
             backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem",
@@ -220,7 +205,7 @@ export default function AutoKeywordsPage() {
                     {k.category && <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{k.category}</span>}
                     {(k.active_hours_start != null && k.active_hours_end != null) && (
                       <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "block" }}>
-                        🕐 {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
+                        {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
                       </span>
                     )}
                   </td>
@@ -264,8 +249,6 @@ export default function AutoKeywordsPage() {
         onCancel={() => setDeleteModal(null)}
         onConfirm={() => { performDelete(deleteModal.keywordId); setDeleteModal(null); }}
       />
-
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -316,7 +299,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
 
           {platform === "facebook_auto" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)", display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
-              <span style={{ flexShrink: 0 }}>ℹ️</span>
+              <Info style={{ width: "16px", height: "16px", flexShrink: 0, marginTop: "0.1rem" }} />
               <span>
                 Facebook Auto folosește sesiunea autentificată din{" "}
                 <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Nu suportă filtre tehnice structurate.

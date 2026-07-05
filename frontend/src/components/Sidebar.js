@@ -75,7 +75,6 @@ const categories = [
       { name: "Keyword-uri", href: "/dashboard/real-estate-monitor/keywords", icon: Tag },
       { name: "Grupuri FB — Chirii", href: "/dashboard/real-estate-monitor/groups", icon: Users },
       { name: "Anunturi Salvate", href: "/dashboard/real-estate/saved", icon: Heart },
-      { name: "Alerte Imobiliare", href: "/dashboard/real-estate/alerts", icon: Bell },
       { name: "Grupuri Facebook", href: "/dashboard/real-estate/facebook-groups", icon: Users },
     ],
   },
