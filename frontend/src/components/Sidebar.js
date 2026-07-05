@@ -10,7 +10,7 @@ import {
   MessageCircle, Sparkles, FileText, FileBarChart, Shield,
   Heart, BellDot, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
-  Radar, Target, ShieldOff, Settings, MessageSquare,
+  Radar, Target, Bookmark, Settings, MessageSquare,
   Calculator, Car, Home, Users, Activity, Brain, TrendingUp, Rss, Tag
 } from "lucide-react";
 
@@ -41,7 +41,7 @@ const categories = [
     items: [
       { name: "Feed Anunturi", href: "/dashboard/radar", icon: Radar },
       { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
-      { name: "Vanzatori Blocati", href: "/dashboard/radar/blocked", icon: ShieldOff },
+      { name: "Salvate & Ignorate", href: "/dashboard/radar/saved", icon: Bookmark },
     ],
   },
   {
@@ -62,7 +62,7 @@ const categories = [
     items: [
       { name: "Feed Anunțuri", href: "/dashboard/auto-listings/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/auto-listings/keywords", icon: Tag },
-      { name: "Anunturi Auto Salvate", href: "/dashboard/auto/listings/saved", icon: Heart },
+      { name: "Salvate & Ignorate", href: "/dashboard/auto-listings/saved", icon: Bookmark },
     ],
   },
   {
@@ -72,7 +72,7 @@ const categories = [
     items: [
       { name: "Feed Anunțuri", href: "/dashboard/real-estate-monitor/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/real-estate-monitor/keywords", icon: Tag },
-      { name: "Anunturi Salvate", href: "/dashboard/real-estate/saved", icon: Heart },
+      { name: "Salvate & Ignorate", href: "/dashboard/real-estate-monitor/saved", icon: Bookmark },
       { name: "Grupuri Facebook", href: "/dashboard/real-estate/facebook-groups", icon: Users },
     ],
   },

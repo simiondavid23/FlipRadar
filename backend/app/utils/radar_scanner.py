@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.notification import Notification
-from app.models.radar_blocked_seller import RadarBlockedSeller
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing
 from app.models.radar_seen_id import RadarSeenId
@@ -1790,21 +1789,6 @@ def _run_scraper(
     return []
 
 
-def _is_blocked_seller(db: Session, user_id: int, platform: str, seller_id: Optional[str]) -> bool:
-    if not seller_id:
-        return False
-    blocked = (
-        db.query(RadarBlockedSeller)
-        .filter(
-            RadarBlockedSeller.user_id == user_id,
-            RadarBlockedSeller.platform == platform,
-            RadarBlockedSeller.seller_id == str(seller_id),
-        )
-        .first()
-    )
-    return blocked is not None
-
-
 def _already_seen(db: Session, user_id: int, platform: str, external_id: str) -> bool:
     seen = (
         db.query(RadarSeenId)
@@ -1985,8 +1969,6 @@ def _scan_user(db: Session, user: User) -> dict:
                     if not ext_id:
                         continue
                     if _already_seen(db, user.id, platform, ext_id):
-                        continue
-                    if _is_blocked_seller(db, user.id, platform, listing.get("seller_id")):
                         continue
 
                     score_data = calculate_score(

@@ -1,6 +1,6 @@
 """Router HTTP pentru modulul Radar Marketplace.
 
-Endpoint-urile sunt grupate logic: keywords, listings, blocked sellers,
+Endpoint-urile sunt grupate logic: keywords, listings,
 settings, facebook auth, stats. Toate cer un user autentificat
 si filtreaza pe user_id-ul curent (un user nu poate vedea/edita datele altuia).
 
@@ -26,7 +26,6 @@ from app.database import get_db
 from app.services.crypto_service import encrypt_cookie, decrypt_cookie
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
-from app.models.radar_blocked_seller import RadarBlockedSeller
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing
 from app.models.radar_message_template import RadarMessageTemplate
@@ -853,44 +852,6 @@ def delete_listing(
     return {"message": "Anunț șters.", "id": listing_id}
 
 
-@router.post("/listings/{listing_id}/block-seller")
-def block_listing_seller(
-    listing_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    listing = (
-        db.query(RadarListing)
-        .filter(RadarListing.id == listing_id, RadarListing.user_id == current_user.id)
-        .first()
-    )
-    if not listing:
-        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
-    if not listing.seller_id:
-        raise HTTPException(status_code=400, detail="Anunțul nu are un vânzător identificabil.")
-    existing = (
-        db.query(RadarBlockedSeller)
-        .filter(
-            RadarBlockedSeller.user_id == current_user.id,
-            RadarBlockedSeller.platform == listing.platform,
-            RadarBlockedSeller.seller_id == listing.seller_id,
-        )
-        .first()
-    )
-    if existing:
-        return {"message": "Vânzătorul este deja blocat.", "id": existing.id}
-    blocked = RadarBlockedSeller(
-        user_id=current_user.id,
-        platform=listing.platform,
-        seller_id=listing.seller_id,
-        seller_name=listing.seller_name,
-    )
-    db.add(blocked)
-    db.commit()
-    db.refresh(blocked)
-    return {"message": "Vânzător blocat.", "id": blocked.id}
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # MANUAL SEARCH (cautare live, fara salvare in DB)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1017,52 +978,6 @@ def search_manual(
                 })
 
     return combined
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# BLOCKED SELLERS
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@router.get("/blocked-sellers")
-def list_blocked_sellers(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    rows = (
-        db.query(RadarBlockedSeller)
-        .filter(RadarBlockedSeller.user_id == current_user.id)
-        .order_by(RadarBlockedSeller.blocked_at.desc())
-        .all()
-    )
-    return [
-        {
-            "id": r.id,
-            "platform": r.platform,
-            "seller_id": r.seller_id,
-            "seller_name": r.seller_name,
-            "blocked_at": r.blocked_at.isoformat() if r.blocked_at else None,
-        }
-        for r in rows
-    ]
-
-
-@router.delete("/blocked-sellers/{blocked_id}")
-def unblock_seller(
-    blocked_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    row = (
-        db.query(RadarBlockedSeller)
-        .filter(RadarBlockedSeller.id == blocked_id, RadarBlockedSeller.user_id == current_user.id)
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Vânzătorul blocat nu a fost găsit.")
-    db.delete(row)
-    db.commit()
-    return {"message": "Vânzător deblocat."}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

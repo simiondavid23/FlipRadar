@@ -56,13 +56,7 @@ const SCORES = [
   { value: "D", label: "D — Slab" },
 ];
 
-const STATUS_OPTIONS = [
-  { label: "Active", value: "active" },
-  { label: "Salvate", value: "saved" },
-  { label: "Ignorate", value: "ignored" },
-];
-
-const PLATFORM_COLORS = {
+export const PLATFORM_COLORS = {
   olx: { bg: "rgba(37,99,235,0.15)", border: "#2563eb", text: "#60a5fa" },
   vinted: { bg: "rgba(147,51,234,0.15)", border: "#9333ea", text: "#c4b5fd" },
   okazii: { bg: "rgba(22,163,74,0.15)", border: "#16a34a", text: "#4ade80" },
@@ -72,7 +66,7 @@ const PLATFORM_COLORS = {
 };
 
 // FIX 7 — eticheta dinamica pentru butonul "Deschide" in functie de platforma.
-const PLATFORM_LABELS = {
+export const PLATFORM_LABELS = {
   olx: "Deschide pe OLX",
   vinted: "Deschide pe Vinted",
   okazii: "Deschide pe Okazii",
@@ -106,14 +100,14 @@ const SEARCH_PLATFORMS = [
   { value: "publi24", label: "Publi24" },
 ];
 
-const SCORE_COLORS = {
+export const SCORE_COLORS = {
   A: { bg: "rgba(22,163,74,0.18)", border: "#16a34a", text: "#4ade80" },
   B: { bg: "rgba(59,130,246,0.18)", border: "#3b82f6", text: "#60a5fa" },
   C: { bg: "rgba(250,204,21,0.18)", border: "#facc15", text: "#fde047" },
   D: { bg: "rgba(249,115,22,0.18)", border: "#f97316", text: "#fb923c" },
 };
 
-const SCORE_EXPLANATIONS = {
+export const SCORE_EXPLANATIONS = {
   A: "Marjă excelentă — deal prioritar",
   B: "Marjă bună — merită urmărit",
   C: "Marjă acceptabilă — analizează cu atenție",
@@ -302,16 +296,6 @@ export default function RadarFeedPage() {
     }
   };
 
-  const blockSeller = async (listingId) => {
-    if (!confirm("Blochezi acest vânzător pentru toate viitoarele anunțuri?")) return;
-    try {
-      await radarAPI.blockSeller(listingId);
-      alert("Vânzător blocat.");
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la blocare.");
-    }
-  };
-
   const generateAIReview = async (listingId) => {
     setGeneratingAI(true);
     try {
@@ -444,7 +428,15 @@ export default function RadarFeedPage() {
         </div>
       </div>
 
-      {/* Faza 2 — scanare manuală + statistici (doar pe tab-ul auto) */}
+      {/* FIX 2 — Tab-uri: Feed Automat / Căutare Manuală */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+        <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
+        <button onClick={() => setActiveTab("manual")} style={tabPillStyle(activeTab === "manual")}>Căutare Manuală</button>
+      </div>
+
+      {activeTab === "manual" && <ManualSearchTab />}
+
+      {/* Faza 2 — scanare manuală + statistici (sub tab-uri, mirror Auto/Imobiliare) */}
       {activeTab === "auto" && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
@@ -453,14 +445,6 @@ export default function RadarFeedPage() {
           <StatCardsRow cards={statCards} />
         </>
       )}
-
-      {/* FIX 2 — Tab-uri: Feed Automat / Căutare Manuală */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
-        <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
-        <button onClick={() => setActiveTab("manual")} style={tabPillStyle(activeTab === "manual")}>Căutare Manuală</button>
-      </div>
-
-      {activeTab === "manual" && <ManualSearchTab />}
 
       {activeTab === "auto" && (loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
@@ -500,10 +484,6 @@ export default function RadarFeedPage() {
               );
             })}
         </select>
-        <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} style={selectStyle}>
-          {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-
         <label style={{
           display: "inline-flex",
           alignItems: "center",
@@ -651,8 +631,8 @@ export default function RadarFeedPage() {
               image={l.images?.[0]}
               openLabel={PLATFORM_LABELS[l.platform?.toLowerCase()] || "Deschide anunțul"}
               onOpen={() => setSelected(l)}
-              onSave={() => updateStatus(l.id, "saved")}
-              onIgnore={() => updateStatus(l.id, "ignored")}
+              onSave={() => updateStatus(l.id, l.status === "saved" ? "active" : "saved")}
+              onIgnore={() => updateStatus(l.id, l.status === "ignored" ? "active" : "ignored")}
               compareSelected={!!selectedForComparison.find((x) => x.id === l.id)}
               bulkSelected={selectedBulk.has(l.id)}
               isSelected={selectedBulk.has(l.id)}
@@ -704,9 +684,8 @@ export default function RadarFeedPage() {
           platformUpper={selected.platform.toUpperCase()}
           openLabel={PLATFORM_LABELS[selected.platform?.toLowerCase()] || "Deschide anunțul"}
           onClose={() => setSelected(null)}
-          onSave={() => updateStatus(selected.id, "saved")}
-          onIgnore={() => updateStatus(selected.id, "ignored")}
-          onBlockSeller={() => blockSeller(selected.id)}
+          onSave={() => updateStatus(selected.id, selected.status === "saved" ? "active" : "saved")}
+          onIgnore={() => updateStatus(selected.id, selected.status === "ignored" ? "active" : "ignored")}
           showReview
           reviewEnabled={reviewEnabled}
           onGenerateAI={() => generateAIReview(selected.id)}
@@ -726,8 +705,8 @@ export default function RadarFeedPage() {
         <CompareModal
           listings={selectedForComparison}
           onClose={() => setShowCompare(false)}
-          onSave={async (id) => { await updateStatus(id, "saved"); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: "saved" } : l)); }}
-          onIgnore={async (id) => { await updateStatus(id, "ignored"); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: "ignored" } : l)); }}
+          onSave={async (id) => { const cur = selectedForComparison.find((l) => l.id === id); const ns = cur?.status === "saved" ? "active" : "saved"; await updateStatus(id, ns); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: ns } : l)); }}
+          onIgnore={async (id) => { const cur = selectedForComparison.find((l) => l.id === id); const ns = cur?.status === "ignored" ? "active" : "ignored"; await updateStatus(id, ns); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: ns } : l)); }}
         />
       )}
 
@@ -1037,7 +1016,7 @@ function ManualResultCard({ listing }) {
 }
 
 // Slot ML pentru modalul partajat — mutat 1:1 din ListingModal (hooks + JSX identice).
-function RadarMLSection({ listing }) {
+export function RadarMLSection({ listing }) {
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlCategory, setMlCategory] = useState(null);
@@ -1121,7 +1100,7 @@ function RadarMLSection({ listing }) {
 }
 
 // Slot bannere detaliu on-demand Vinted/Facebook — mutat 1:1 din ListingModal.
-function RadarDetailBanner({ listing, onLoadVintedDetail, onLoadFacebookDetail }) {
+export function RadarDetailBanner({ listing, onLoadVintedDetail, onLoadFacebookDetail }) {
   const [vintedDetailStatus, setVintedDetailStatus] = useState(null);
   const [facebookDetailStatus, setFacebookDetailStatus] = useState(null);
 
@@ -1347,8 +1326,7 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
                 )}
                 <div style={{ display: "flex", gap: "0.25rem", marginTop: "auto" }}>
                   <button
-                    onClick={() => { if (l.status !== "saved") onSave(l.id); }}
-                    disabled={l.status === "saved"}
+                    onClick={() => onSave(l.id)}
                     title="Salvează"
                     style={smallActionBtn("#4ade80", l.status === "saved" ? "rgba(22,163,74,0.3)" : "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}
                   >
@@ -1357,8 +1335,7 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
                       : <Bookmark style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
                   </button>
                   <button
-                    onClick={() => { if (l.status !== "ignored") onIgnore(l.id); }}
-                    disabled={l.status === "ignored"}
+                    onClick={() => onIgnore(l.id)}
                     title="Ignoră"
                     style={smallActionBtn("var(--text-secondary)", l.status === "ignored" ? "rgba(100,116,139,0.3)" : "var(--bg-card)", "var(--border-color)")}
                   >

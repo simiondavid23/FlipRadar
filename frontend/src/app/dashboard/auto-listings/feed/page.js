@@ -18,13 +18,6 @@ const PLATFORM_LABELS = {
 };
 const IMPORT_PLATFORMS = ["mobile_de", "autoscout24", "kleinanzeigen_auto"];
 
-// Opțiuni status pentru <select> (identic cu Radar — valorile active/saved/ignored).
-const STATUS_OPTIONS = [
-  { label: "Active", value: "active" },
-  { label: "Salvate", value: "saved" },
-  { label: "Ignorate", value: "ignored" },
-];
-
 function gradeCfg(g) { return GRADE_COLORS[g] || GRADE_COLORS.C; }
 function eurRonOf(listing) {
   return listing.import_score_json?.pe_roti?.eur_ron_rate
@@ -45,6 +38,8 @@ export default function AutoFeedPage() {
   const { user } = useAuth();
   const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
   const [listings, setListings] = useState([]);
+  const [feedTotal, setFeedTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [keywords, setKeywords] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [stats, setStats] = useState({});
@@ -55,21 +50,39 @@ export default function AutoFeedPage() {
   const [selectedBulk, setSelectedBulk] = useState(new Set());
   const toggleBulk = (id) => setSelectedBulk((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
+  const _feedParams = useCallback((offset) => {
+    const params = { status: filters.status, limit: 100, offset };
+    if (filters.platform) params.platform = filters.platform;
+    if (filters.grade) params.grade = filters.grade;
+    if (filters.keyword_id) params.keyword_id = filters.keyword_id;
+    return params;
+  }, [filters]);
+
   const loadFeed = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { status: filters.status, limit: 100 };
-      if (filters.platform) params.platform = filters.platform;
-      if (filters.grade) params.grade = filters.grade;
-      if (filters.keyword_id) params.keyword_id = filters.keyword_id;
-      const r = await autoListingsAPI.getFeed(params);
+      const r = await autoListingsAPI.getFeed(_feedParams(0));
       setListings(r.data?.items || []);
+      setFeedTotal(r.data?.total || 0);
     } catch (e) {
       console.error("[AutoFeed]", e);
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [_feedParams]);
+
+  const loadMoreListings = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const r = await autoListingsAPI.getFeed(_feedParams(listings.length));
+      setListings((prev) => [...prev, ...(r.data?.items || [])]);
+      setFeedTotal(r.data?.total || 0);
+    } catch (e) {
+      console.error("[AutoFeed] loadMore", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [_feedParams, listings.length]);
 
   const loadStats = useCallback(async () => {
     try { const r = await autoListingsAPI.getStats(); setStats(r.data || {}); }
@@ -201,9 +214,6 @@ export default function AutoFeedPage() {
         alignItems: "center",
         gap: "0.625rem",
       }}>
-        <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} style={selectStyle}>
-          {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
         <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate platformele</option>
           {Object.entries(PLATFORM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -252,14 +262,14 @@ export default function AutoFeedPage() {
           Niciun anunț în această categorie. Adaugă keyword-uri și așteaptă scanarea automată (la 10 min).
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1rem" }}>
           {listings.map((l) => (
             <AutoListingCard
               key={l.id}
               listing={l}
               onOpen={() => setSelected(l)}
-              onSave={() => setStatus(l.id, "saved")}
-              onIgnore={() => setStatus(l.id, "ignored")}
+              onSave={() => setStatus(l.id, l.status === "saved" ? "active" : "saved")}
+              onIgnore={() => setStatus(l.id, l.status === "ignored" ? "active" : "ignored")}
               onDelete={() => remove(l.id)}
               isSelected={selectedBulk.has(l.id)}
               onToggleSelect={() => toggleBulk(l.id)}
@@ -268,12 +278,24 @@ export default function AutoFeedPage() {
         </div>
       )}
 
+      {!loading && listings.length > 0 && listings.length < feedTotal && (
+        <div style={{ textAlign: "center", marginTop: "1.25rem" }}>
+          <button
+            onClick={loadMoreListings}
+            disabled={loadingMore}
+            style={{ padding: "0.6rem 1.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", color: "var(--text-primary)", cursor: loadingMore ? "default" : "pointer", opacity: loadingMore ? 0.6 : 1, fontSize: "0.875rem" }}
+          >
+            {loadingMore ? "Se încarcă…" : `Încarcă mai multe (${feedTotal - listings.length} rămase)`}
+          </button>
+        </div>
+      )}
+
       {selected && (
         <AutoListingModal
           listing={selected}
           onClose={() => setSelected(null)}
-          onSave={() => setStatus(selected.id, "saved")}
-          onIgnore={() => setStatus(selected.id, "ignored")}
+          onSave={() => setStatus(selected.id, selected.status === "saved" ? "active" : "saved")}
+          onIgnore={() => setStatus(selected.id, selected.status === "ignored" ? "active" : "ignored")}
           templates={templates}
           reviewEnabled={reviewEnabled}
         />
@@ -327,7 +349,7 @@ function AutoSpecs({ listing, size = "0.7rem", mt }) {
   return <div style={{ fontSize: size, color: "var(--text-secondary)", marginTop: mt }}>{parts.join(" · ")}</div>;
 }
 
-function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect }) {
+export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect }) {
   const img = validImg(listing.image_url) || validImg(Array.isArray(listing.images_json) ? listing.images_json[0] : null);
   const label = PLATFORM_LABELS[listing.platform] || listing.platform;
   return (
@@ -464,7 +486,7 @@ function AutoImportScore({ listing }) {
   );
 }
 
-function AutoListingModal({ listing, onClose, onSave, onIgnore, templates, reviewEnabled }) {
+export function AutoListingModal({ listing, onClose, onSave, onIgnore, templates, reviewEnabled }) {
   const [detail, setDetail] = useState(null);
   const [generatingAI, setGeneratingAI] = useState(false);
   // Imbogatire on-demand (poze/descriere/vanzator/data). Merge cu base ca sa pastram campurile

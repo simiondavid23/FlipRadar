@@ -8,7 +8,7 @@
 // Culorile/insignele/eticheta "Deschide" vin ca props (nu hardcodat Radar).
 import { useState, useEffect } from "react";
 import {
-  X, ImageOff, Tag, MapPin, Calendar, Sparkles, ShieldOff,
+  X, ImageOff, Tag, MapPin, Calendar, Sparkles,
   Bookmark, EyeOff, ExternalLink, MessageSquare, Copy, Check,
 } from "lucide-react";
 import { marginColor, formatListedDate, timeAgo } from "./listingHelpers";
@@ -28,7 +28,6 @@ export default function ListingDetailModal({
   onClose,
   onSave,
   onIgnore,
-  onBlockSeller,
   showReview = false,
   reviewEnabled = true,
   onGenerateAI,
@@ -282,10 +281,9 @@ export default function ListingDetailModal({
         {/* Acțiuni */}
         <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <button
-            onClick={listing.status !== "saved" ? onSave : undefined}
-            disabled={listing.status === "saved"}
+            onClick={onSave}
             style={btn(
-              listing.status === "saved" ? "#4ade80" : "#4ade80",
+              "#4ade80",
               listing.status === "saved" ? "rgba(22,163,74,0.25)" : "rgba(22,163,74,0.15)",
               "rgba(22,163,74,0.3)"
             )}
@@ -294,8 +292,7 @@ export default function ListingDetailModal({
             {listing.status === "saved" ? "Salvat" : "Salvează"}
           </button>
           <button
-            onClick={listing.status !== "ignored" ? onIgnore : undefined}
-            disabled={listing.status === "ignored"}
+            onClick={onIgnore}
             style={btn(
               "var(--text-secondary)",
               listing.status === "ignored" ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.15)",
@@ -305,12 +302,6 @@ export default function ListingDetailModal({
             <EyeOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
             {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
           </button>
-          {onBlockSeller && (
-            <button onClick={onBlockSeller} style={btn("#fb923c", "rgba(249,115,22,0.15)", "rgba(249,115,22,0.3)")}>
-              <ShieldOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.375rem" }} />
-              Blochează vânzătorul
-            </button>
-          )}
           <a
             href={listing.url}
             target="_blank"

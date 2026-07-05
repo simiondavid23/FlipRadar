@@ -196,8 +196,7 @@ export default function ListingFeedCard({
         ) : (
         <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem", alignItems: "center" }}>
           <button
-            onClick={(e) => { e.stopPropagation(); if (listing.status !== "saved") onSave(); }}
-            disabled={listing.status === "saved"}
+            onClick={(e) => { e.stopPropagation(); onSave(); }}
             style={{
               display: "inline-flex", alignItems: "center", gap: "0.25rem",
               padding: "0.375rem 0.75rem",
@@ -206,15 +205,14 @@ export default function ListingFeedCard({
               border: "1px solid rgba(22,163,74,0.35)",
               borderRadius: "0.375rem",
               fontSize: "0.75rem", fontWeight: 600,
-              cursor: listing.status === "saved" ? "default" : "pointer",
+              cursor: "pointer",
             }}
           >
             <Bookmark style={{ width: "12px", height: "12px" }} />
             {listing.status === "saved" ? "Salvat" : "Salvează"}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); if (listing.status !== "ignored") onIgnore(); }}
-            disabled={listing.status === "ignored"}
+            onClick={(e) => { e.stopPropagation(); onIgnore(); }}
             style={{
               display: "inline-flex", alignItems: "center", gap: "0.25rem",
               padding: "0.375rem 0.75rem",
@@ -223,7 +221,7 @@ export default function ListingFeedCard({
               border: "1px solid var(--border-color)",
               borderRadius: "0.375rem",
               fontSize: "0.75rem", fontWeight: 600,
-              cursor: listing.status === "ignored" ? "default" : "pointer",
+              cursor: "pointer",
             }}
           >
             <EyeOff style={{ width: "12px", height: "12px" }} />

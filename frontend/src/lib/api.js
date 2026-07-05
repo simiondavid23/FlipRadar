@@ -407,9 +407,6 @@ export const radarAPI = {
   updateListingStatus: (id, status) =>
     api.patch(`/api/radar/listings/${id}/status`, { status }),
   deleteListing: (id) => api.delete(`/api/radar/listings/${id}`),
-  blockSeller: (id) => api.post(`/api/radar/listings/${id}/block-seller`),
-  getBlockedSellers: () => api.get("/api/radar/blocked-sellers"),
-  unblockSeller: (id) => api.delete(`/api/radar/blocked-sellers/${id}`),
   getSettings: () => api.get("/api/radar/settings"),
   updateSettings: (data) => api.put("/api/radar/settings", data),
   testDiscord: (webhook_url) =>

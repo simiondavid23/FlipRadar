@@ -751,6 +751,11 @@ def run_migrations():
                 DROP COLUMN IF EXISTS duplicate_match_id
         """)
 
+        # Eliminare feature "Vanzatori Blocati" (radar) — DROP la tabelul dedicat.
+        # Blocarea vanzatorilor la scanare a fost eliminata complet.
+        _migrate(conn, "drop_radar_blocked_sellers_table",
+            "DROP TABLE IF EXISTS radar_blocked_sellers")
+
     _backfill_product_sources()
 
 

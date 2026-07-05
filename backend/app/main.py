@@ -37,7 +37,7 @@ from app.models import favorite, notification
 from app.models import inventory as inventory_model
 from app.models import sale as sale_model
 from app.models import radar_keyword, radar_listing, radar_seen_id
-from app.models import radar_blocked_seller, radar_settings
+from app.models import radar_settings
 from app.models import radar_message_template, push_subscription
 from app.models import market_listing  # FlipRadar — date reale de piata pentru Consilier AI
 # FlipRadar — tabele noi pentru modulele auto/imobiliare (doar schema, populate ulterior)
