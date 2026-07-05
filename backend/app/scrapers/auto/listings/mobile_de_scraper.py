@@ -83,21 +83,16 @@ def _build_params(make_id: str, filters: dict, page: int) -> dict:
         params["pageNumber"] = page
     if make_id:
         params["makeModelVariant1.makeId"] = make_id
-    if filters.get("price_max") is not None:
-        params["price.max"] = int(float(filters["price_max"]))
-    if filters.get("price_min") is not None:
-        params["price.min"] = int(float(filters["price_min"]))
-    if filters.get("year_min") is not None:
-        params["minFirstRegistrationDate"] = int(filters["year_min"])
     # Categorie -> vc (vehicleClass), doar valori confirmate (Car/Motorbike).
     cat = (filters.get("category") or "").strip()
     if cat in _MOBILEDE_CATEGORIES:
         params["vc"] = cat
-    # Campuri tehnice confirmate (mobile_de: fuel, gearbox, power kW, drivetrain).
-    # NOTA: numele oficiale vin din Search API autentificat; pe interfata publica
-    # (suchen.mobile.de) pot diferi — de verificat live (vezi NOTA din auto_categories.py).
-    # Scanner-ul trimite "fuel" pentru fuel_type; "gearbox" coincide cu cheia campului.
-    apply_confirmed_filters("mobile_de", filters, params, aliases={"fuel_type": "fuel"})
+    # Campuri confirmate pe interfata PUBLICA: fuel (ft, repeat), year (fr), price (p),
+    # mileage (ml) — fr/p/ml sunt range-uri "MIN:MAX". ATENTIE: acestea INLOCUIESC complet
+    # cheile vechi (price.min/price.max/minFirstRegistrationDate), nu se adauga pe langa ele.
+    # Scanner-ul trimite "fuel"/"km_max" pentru fuel_type/mileage_max.
+    apply_confirmed_filters("mobile_de", filters, params,
+                            aliases={"fuel_type": "fuel", "mileage_max": "km_max"})
     return params
 
 
@@ -323,7 +318,9 @@ async def search_mobile_de(make_id: str = "", filters: dict = {}, page: int = 1)
         make_id = MOBILE_DE_MAKE_IDS.get(make_id, MOBILE_DE_MAKE_IDS.get(make_id.title(), ""))
 
     params = _build_params(make_id, filters, page)
-    url = _SEARCH_URL + "?" + urllib.parse.urlencode(params)
+    # doseq=True: "ft" poate fi lista (query_repeat) -> ft=PETROL&ft=DIESEL; string-urile
+    # raman intregi (doseq NU itereaza str-uri, doar liste/tuple).
+    url = _SEARCH_URL + "?" + urllib.parse.urlencode(params, doseq=True)
     log_manager.emit("auto_listings", "SCAN",
         f"Mobile.de: cautare make_id={make_id or '-'} pagina {page}")
 

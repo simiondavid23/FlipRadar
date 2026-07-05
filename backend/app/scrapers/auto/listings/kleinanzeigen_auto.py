@@ -36,10 +36,14 @@ async def search_kleinanzeigen_auto(query: str = "", make: str = "", filters: di
         params["locationCity"] = filters["plz"]
     if filters.get("radius_km"):
         params["locationRadius"] = filters["radius_km"]
-    # Campuri confirmate ca NUME de param (make->autos.marke_s, year->autos.ez_i).
-    # ATENTIE: sintaxa oficiala e colon-DSL "autos.{camp}_s:{valoare}" — NECONFIRMAT ca
-    # query param pe interfata publica; de verificat live. make e deja acoperit de slug.
-    apply_confirmed_filters("kleinanzeigen_auto", filters, params, aliases={"year": "year_min"})
+    # Campuri confirmate ca SUFIX de path "+autos.CAMP:VALOARE", adaugat DUPA /c216 (categoria
+    # ramane ultimul segment de path inainte de sufix, conform exemplelor reale). Scanner-ul
+    # trimite "fuel"/"body"/"km_max" pentru fuel_type/body_type/mileage_max.
+    suffix = apply_confirmed_filters(
+        "kleinanzeigen_auto", filters, params,
+        aliases={"fuel_type": "fuel", "body_type": "body", "mileage_max": "km_max"})
+    if suffix:
+        url += suffix
 
     headers = build_headers({"Referer": _BASE + "/", "Accept-Language": "de-DE,de;q=0.9,en;q=0.8"})
     results = []

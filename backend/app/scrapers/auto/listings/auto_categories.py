@@ -78,15 +78,18 @@ AUTO_TECHNICAL_FIELDS = {
         "gearbox": None,  # NU EXISTA filtru structurat pe OLX — doar text liber. Nu implementa.
     },
     "mobile_de": {
-        "fuel_type": {"confirmed": True, "param": "fuel"},  # nume exact din documentatia oficiala
-        "gearbox": {"confirmed": True, "param": "gearbox"},
-        "engine_power_min": {"confirmed": True, "param": "power"},  # kW
-        "drivetrain": {"confirmed": True, "param": "wheelFormula",  # sau driveType — verifica live
-                       "values": {"fata": "FRONT", "spate": "REAR", "integrala": "ALL_WHEEL"}},
-        # NOTA: parametrii oficiali sunt documentati pentru Search API (cu autentificare).
-        # Scraper-ul actual e curl_cffi pe HTML public — VERIFICA live daca interfata publica
-        # de cautare (suchen.mobile.de) accepta acesti parametri identic sau cu alt nume
-        # (am confirmat doar vc=Car pentru vehicleClass pe interfata publica).
+        # REVIZUIT: confirmat pe interfata PUBLICA suchen.mobile.de (nu pe API-ul autentificat,
+        # cum era gresit sursa inainte). Doar benzina/diesel/electric confirmate direct.
+        "fuel_type": {"confirmed": True, "param": "ft", "style": "query_repeat",
+                      "values": {"benzina": "PETROL", "diesel": "DIESEL", "electric": "ELECTRICITY"}},
+                      # hibrid/gpl VERIFY — nu le adauga in values
+        "year_min": {"confirmed": True, "param": "fr", "style": "query_range_colon"},   # fr=MIN:MAX
+        "price_min": {"confirmed": True, "param": "p", "style": "query_range_colon"},    # p=MIN:MAX
+        "mileage_max": {"confirmed": True, "param": "ml", "style": "query_range_colon"}, # ml=MIN:MAX
+        "gearbox": None,  # NECONFIRMAT pe interfata publica — cautat activ azi, niciun exemplu real
+                          # (desi documentatia API autentificat il mentioneaza).
+        "engine_power_min": None,  # un candidat "pw=" gasit o singura data, insuficient de sigur.
+        "drivetrain": None,  # eliminat wheelFormula — venea din documentatia API gresita.
     },
     "autoscout24": {
         "mileage_max": {"confirmed": True, "param": "kmto"},
@@ -95,45 +98,101 @@ AUTO_TECHNICAL_FIELDS = {
         "gearbox": None,  # idem
     },
     "kleinanzeigen_auto": {
-        "make": {"confirmed": True, "param": "autos.marke_s"},  # sintaxa: autos.{camp}_s:{valoare}
-        "year": {"confirmed": True, "param": "autos.ez_i"},  # sintaxa: autos.{camp}_i:{valoare}
-        "fuel_type": None,  # camp exista (confirmat ca "unmapped filter" intr-un proiect open
-        # source), dar cheia exacta NU e confirmata — NU presupune "autos.kraftstoff_s"
-        "gearbox": None,  # idem, posibil "autos.getriebe_s" dar NECONFIRMAT
+        # REVIZUIT din exemple reale: filtrele merg ca SUFIX de path "+autos.CAMP:VALOARE" dupa
+        # /c216 (style="path_suffix"). Sufix _s = string; _i = interval numeric "MIN,MAX".
+        "fuel_type": {"confirmed": True, "param": "autos.fuel_s", "style": "path_suffix",
+                      "values": {"benzina": "benzin"}},  # doar benzin confirmat; diesel/rest VERIFY
+        "gearbox": {"confirmed": True, "param": "autos.shift_s", "style": "path_suffix",
+                    "values": {"automata": "automatik"}},  # doar automatik confirmat; manual VERIFY
+        "mileage_max": {"confirmed": True, "param": "autos.km_i", "style": "path_suffix"},  # ",MAX"
+        "body_type": {"confirmed": True, "param": "autos.typ_s", "style": "path_suffix",
+                      "values": {"suv": "suv", "combi": "kombi"}},  # doar aceste 2 confirmate
+        "make": {"confirmed": True, "param": "autos.marke_s", "style": "path_suffix"},
+        "year_min": {"confirmed": True, "param": "autos.ez_i", "style": "path_suffix"},  # "MIN,MAX"
     },
 }
 
 
 def apply_confirmed_filters(platform: str, filters: dict, params: dict,
-                            aliases: dict | None = None) -> None:
-    """Scrie in `params` DOAR campurile tehnice cu "confirmed": True ale platformei,
-    citind valorile din `filters` (cheia = numele campului, ex. "fuel_type").
+                            aliases: dict | None = None) -> str:
+    """Aplica DOAR campurile tehnice cu "confirmed": True ale platformei. Suporta 4 stiluri
+    de aplicare (cheia "style" din spec; implicit "query" = comportamentul vechi, neschimbat):
 
-    - `aliases`: field_key -> cheie alternativa in filters (ex. scanner-ul auto trimite
-      "fuel"/"body" in loc de "fuel_type"/"body_type").
-    - Enum-uri (spec cu "values"): valoarea se trimite DOAR daca e in `values` (confirmata);
-      altfel se sare — nu inventam un cod/slug pentru valori neconfirmate.
-    - Campuri fara "values" (numerice): valoarea se trimite ca atare.
-    NU inventeaza nimic: sursa de adevar pt param/values e AUTO_TECHNICAL_FIELDS.
+      - "query"             : params[param] = valoare (mapata daca are "values").
+      - "query_repeat"      : lista -> param repetat (params[param] = [v1, v2]); single -> v.
+      - "query_range_colon" : params[param] = "MIN:MAX" (capat gol daca lipseste bound-ul).
+      - "path_suffix"       : NU scrie in params; acumuleaza "+param:val" (param _i -> "MIN,MAX").
+
+    Intoarce `path_suffix` (str): "" daca niciun camp path_suffix, altfel "+p1:v1+p2:v2".
+    `aliases`: field_key -> cheie alternativa in filters (ex. scanner-ul trimite "fuel"/"body"/
+    "km_max" in loc de "fuel_type"/"body_type"/"mileage_max"). Enum-uri: valoarea se trimite
+    DOAR daca e in "values" (confirmata); altfel se sare — nu inventam.
     """
     tech = AUTO_TECHNICAL_FIELDS.get(platform) or {}
     aliases = aliases or {}
+    path_parts = []
+
+    def _get(key):
+        v = filters.get(key)
+        if v in (None, "") and key in aliases:
+            v = filters.get(aliases[key])
+        return v
+
+    def _map(spec, val):
+        vm = spec.get("values")
+        return val if vm is None else vm.get(val)  # None daca valoarea nu e confirmata
+
+    def _range_pair(field_key):
+        # "price_min"/"mileage_max" -> baza "price"/"mileage"; citeste ambele capete.
+        base = field_key.rsplit("_", 1)[0]
+        lo, hi = _get(f"{base}_min"), _get(f"{base}_max")
+        if hi in (None, "") and field_key.endswith("_max"):
+            hi = _get(field_key)  # aliasul poate fi pe field_key exact (ex mileage_max->km_max)
+        if lo in (None, "") and field_key.endswith("_min"):
+            lo = _get(field_key)
+        if lo in (None, "") and hi in (None, ""):
+            return None
+        return ("" if lo in (None, "") else str(lo), "" if hi in (None, "") else str(hi))
+
     for field_key, spec in tech.items():
         if not isinstance(spec, dict) or not spec.get("confirmed"):
             continue
         param = spec.get("param")
         if not param:
             continue
-        val = filters.get(field_key)
-        if val in (None, "") and field_key in aliases:
-            val = filters.get(aliases[field_key])
-        if val in (None, ""):
-            continue
-        values_map = spec.get("values")
-        if values_map is not None:
-            mapped = values_map.get(val)
-            if mapped is None:
-                continue  # valoare neconfirmata -> nu se trimite (nu inventam)
-            val = mapped
-        params[param] = val
+        style = spec.get("style") or "query"
+
+        if style == "query_range_colon":
+            pair = _range_pair(field_key)
+            if pair is not None:
+                params[param] = f"{pair[0]}:{pair[1]}"
+
+        elif style == "query_repeat":
+            val = _get(field_key)
+            if val in (None, ""):
+                continue
+            items = val if isinstance(val, (list, tuple)) else [val]
+            mapped = [m for m in (_map(spec, it) for it in items) if m is not None]
+            if mapped:
+                params[param] = mapped if len(mapped) > 1 else mapped[0]
+
+        elif style == "path_suffix":
+            if param.endswith("_i"):  # interval numeric (ez_i/km_i) -> "MIN,MAX"
+                pair = _range_pair(field_key)
+                if pair is not None:
+                    path_parts.append(f"{param}:{pair[0]},{pair[1]}")
+            else:  # _s string/enum
+                m = _map(spec, _get(field_key)) if _get(field_key) not in (None, "") else None
+                if m is not None:
+                    path_parts.append(f"{param}:{str(m).lower()}")
+
+        else:  # "query" (implicit) — comportament vechi
+            val = _get(field_key)
+            if val in (None, ""):
+                continue
+            m = _map(spec, val)
+            if m is not None:
+                params[param] = m
+
+    return ("+" + "+".join(path_parts)) if path_parts else ""
 
