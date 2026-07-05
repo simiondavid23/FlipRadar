@@ -6,7 +6,7 @@ from curl_cffi.requests import AsyncSession
 
 from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price, parse_int,
-    extract_rooms, extract_surface, detect_currency, make_re_listing,
+    extract_rooms, extract_surface, detect_currency, make_re_listing, norm_city_slug,
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
@@ -27,13 +27,57 @@ def _path(tip_anunt: str, tip_proprietate: str) -> str:
     return f"/{tr}-{prop}/"
 
 
+def _passes_imob_filters(listing: dict, filters: dict) -> bool:
+    """Post-filtru local pentru Imobiliare.ro.
+
+    Imobiliare.ro NU aplica server-side pret/camere/suprafata: returneaza un set 'featured'
+    scopat DOAR pe locatie (path), ignorand param-urii pret_min/pret_max/nr_camere/suprafata_min
+    din URL (confirmat live). Filtram aici pe valorile deja extrase din card (pret/camere/
+    suprafata_mp — vezi make_re_listing).
+
+    TOLERANTA (la fel ca la Grupuri Facebook): daca listing-ul nu are o valoare cunoscuta pentru
+    un criteriu, NU respinge din acel motiv — necunoscut = "nu se poate verifica".
+    """
+    # Pret — filtrele sunt in EUR (default keyword + moneda uzuala pe imobiliare); daca listing-ul
+    # e in alta moneda, nu comparam numeric (toleranta).
+    price = listing.get("pret")
+    if price is not None and (listing.get("moneda") or "EUR").upper() == "EUR":
+        try:
+            pmin, pmax = filters.get("pret_min"), filters.get("pret_max")
+            if pmin is not None and float(price) < float(pmin):
+                return False
+            if pmax is not None and float(price) > float(pmax):
+                return False
+        except (TypeError, ValueError):
+            pass
+    # Camere — camere_min = minim.
+    rooms, cmin = listing.get("camere"), filters.get("camere_min")
+    if rooms is not None and cmin is not None:
+        try:
+            if int(rooms) < int(cmin):
+                return False
+        except (TypeError, ValueError):
+            pass
+    # Suprafata — suprafata_min = minim.
+    area, amin = listing.get("suprafata_mp"), filters.get("suprafata_min")
+    if area is not None and amin is not None:
+        try:
+            if float(area) < float(amin):
+                return False
+        except (TypeError, ValueError):
+            pass
+    return True
+
+
 async def search_imobiliare_ro(filters: dict = {}) -> list:
     filters = filters or {}
     tip_anunt = filters.get("tip_anunt", "vanzare")
     tip_proprietate = filters.get("tip_proprietate", "apartament")
     path = _path(tip_anunt, tip_proprietate)
     if filters.get("locatie"):
-        path += f"{str(filters['locatie']).strip().lower().replace(' ', '-')}/"
+        # FIX diacritice: normalizam slug-ul de oras ("București" -> "bucuresti", nu "bucurești").
+        # Fara asta imobiliare.ro nu rezolva orasul si intoarce rezultate din alte judete (mixate).
+        path += f"{norm_city_slug(filters['locatie'])}/"
     url = _BASE + path
 
     params = {}
@@ -56,38 +100,38 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
         log_manager.emit("real_estate", "ERR", f"Imobiliare.ro eroare: {str(exc)[:80]}")
         return []
 
-    cards = (
-        soup.select("div.box-anunt")
-        or soup.select("[data-id-anunt]")
-        or soup.select(".listing-item")
-        or soup.select("article")
-    )
+    # CONFIRMAT LIVE 2026-07-05 (fetch real pe imobiliare.ro): pagina nu mai are
+    # div.box-anunt/[data-id-anunt]/article — cardurile sunt <div data-bi="product-basic">
+    # cu atribute data-* semantice (data-name, data-price, data-bi-listing-currency,
+    # data-list-id, data-area/data-city/data-county). Selectoarele vechi dadeau 0 rezultate.
+    cards = soup.select('div[data-bi="product-basic"]')
     for card in cards:
         try:
-            link = card.find("a", href=True)
-            if not link:
-                continue
-            href = link["href"]
-            if href.startswith("/"):
-                href = _BASE + href
-
-            title_el = card.find(["h2", "h3"]) or card.find(class_=re.compile(r"titlu|title", re.I)) or link
-            titlu = title_el.get_text(strip=True) if title_el else ""
+            # Titlu: atributul data-name (curat); fallback pe heading.
+            titlu = card.get("data-name") or ""
+            if not titlu:
+                h = card.find(["h2", "h3"])
+                titlu = h.get_text(" ", strip=True) if h else ""
             if not titlu:
                 continue
 
-            card_text = card.get_text(" ", strip=True)
-            price_el = card.find(class_=re.compile(r"pret|price", re.I))
-            price_raw = price_el.get_text(" ", strip=True) if price_el else card_text
+            link = card.find("a", href=True)
+            href = link["href"] if link else None
+            if href and href.startswith("/"):
+                href = _BASE + href
+
+            # Pret + moneda din atribute (data-price = pretul afisat; currency dat de site).
+            price_raw = (card.get("data-price") or card.get("data-item-price")
+                         or card.get("data-bi-listing-price"))
             pret = parse_price(price_raw)
-            moneda = detect_currency(price_raw)
+            moneda = (card.get("data-bi-listing-currency") or "EUR").upper()
 
-            loc_el = card.find(class_=re.compile(r"locatie|location|zona|oras", re.I))
-            locatie = loc_el.get_text(" ", strip=True) if loc_el else None
+            # Locatie din atribute (zona/oras/judet).
+            locatie = card.get("data-area") or card.get("data-city") or card.get("data-county")
 
+            card_text = card.get_text(" ", strip=True)
             an_el = re.search(r"\b(19[5-9]\d|20[0-3]\d)\b", card_text)
             an = int(an_el.group(0)) if an_el else None
-
             etaj_m = re.search(r"etaj[ul]*\s*([\w/]+)", card_text, re.I)
             etaj = etaj_m.group(1) if etaj_m else None
 
@@ -95,7 +139,7 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
             thumb = (img.get("src") or img.get("data-src") or img.get("data-original")) if img else None
 
             results.append(make_re_listing(
-                platform="imobiliare", external_id=card.get("data-id-anunt"),
+                platform="imobiliare", external_id=card.get("data-list-id") or card.get("data-url-id"),
                 tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,
                 camere=extract_rooms(titlu) or extract_rooms(card_text),
                 suprafata_mp=extract_surface(titlu) or extract_surface(card_text),
@@ -108,6 +152,10 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
             print(f"[imobiliare] card parse error: {exc}")
             continue
 
-    print(f"[imobiliare] {len(results)} anunturi ({tip_proprietate} {tip_anunt})")
-    log_manager.emit("real_estate", "OK", f"Imobiliare.ro: {len(results)} anunturi gasite")
-    return results[:MAX_RESULTS]
+    # Filtrare locala: imobiliare.ro ignora pret/camere/suprafata server-side (vezi
+    # _passes_imob_filters) — eliminam aici din lista finala ce nu se potriveste criteriilor.
+    filtered = [r for r in results if _passes_imob_filters(r, filters)]
+
+    print(f"[imobiliare] {len(results)} brute -> {len(filtered)} dupa filtru local ({tip_proprietate} {tip_anunt})")
+    log_manager.emit("real_estate", "OK", f"Imobiliare.ro: {len(filtered)} anunturi gasite")
+    return filtered[:MAX_RESULTS]

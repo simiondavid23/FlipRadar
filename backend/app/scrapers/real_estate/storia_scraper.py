@@ -5,6 +5,7 @@ Incercam intai un endpoint JSON, apoi parsam __NEXT_DATA__, apoi HTML simplu.
 """
 import json
 import re
+import unicodedata
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -41,7 +42,34 @@ def _rooms_from_min(camere_min) -> Optional[str]:
     return "[" + ",".join(enums) + "]" if enums else None
 
 
-def _category_path(tip_anunt: str, tip_proprietate: str) -> str:
+# Oras (valoarea din dropdown-ul de keyword) -> segment de path Storia. CONFIRMAT LIVE
+# 2026-07-05 prin fetch-uri reale pe storia.ro: orasele care sunt resedinta de judet cu
+# ACELASI nume merg singure (bucuresti/iasi/brasov/constanta/sibiu/arad); restul au nevoie
+# de {judet}/{oras} (timis/timisoara, bihor/oradea, arges/pitesti). Cluj-Napoca foloseste
+# DUBLU-cratima in slug-ul de oras (cluj/cluj--napoca) — confirmat din __NEXT_DATA__ storia.
+# Cheile sunt slug-uri normalizate (fara diacritice, lowercase). Doar cele 10 orase din
+# dropdown-ul de keyword (CITIES). Necunoscut -> fara segment (toata-romania, ca inainte).
+_STORIA_LOCATION_PATHS = {
+    "bucuresti": "bucuresti",
+    "cluj-napoca": "cluj/cluj--napoca",
+    "iasi": "iasi",
+    "timisoara": "timis/timisoara",
+    "brasov": "brasov",
+    "constanta": "constanta",
+    "sibiu": "sibiu",
+    "oradea": "bihor/oradea",
+    "arad": "arad",
+    "pitesti": "arges/pitesti",
+}
+
+
+def _loc_key(locatie) -> str:
+    """Normalizeaza numele orasului la slug ascii (fara diacritice, lowercase, spatii->-)."""
+    s = unicodedata.normalize("NFKD", str(locatie or "")).encode("ascii", "ignore").decode()
+    return s.strip().lower().replace(" ", "-")
+
+
+def _category_path(tip_anunt: str, tip_proprietate: str, locatie=None) -> str:
     rent = (tip_anunt or "").lower().startswith("inchiri")
     tr = "inchiriere" if rent else "vanzare"
     tp = (tip_proprietate or "apartament").lower()
@@ -51,7 +79,11 @@ def _category_path(tip_anunt: str, tip_proprietate: str) -> str:
         prop = "teren"
     else:
         prop = "apartament"
-    return f"/ro/rezultate/{tr}/{prop}"
+    base = f"/ro/rezultate/{tr}/{prop}"
+    # Locatia e PATH (nu query) — vezi re_categories["storia"]. Adaugam segmentul de oras/judet
+    # DOAR pentru orasele confirmate; altfel lasam fara (storia redirectioneaza la /toata-romania).
+    loc_seg = _STORIA_LOCATION_PATHS.get(_loc_key(locatie)) if locatie else None
+    return f"{base}/{loc_seg}" if loc_seg else base
 
 
 def _find_items(obj, out, depth=0):
@@ -116,7 +148,7 @@ async def search_storia(filters: dict = {}) -> list:
     filters = filters or {}
     tip_anunt = filters.get("tip_anunt", "vanzare")
     tip_proprietate = filters.get("tip_proprietate", "apartament")
-    url = _BASE + _category_path(tip_anunt, tip_proprietate)
+    url = _BASE + _category_path(tip_anunt, tip_proprietate, filters.get("locatie"))
 
     params = {}
     # Pret via campurile confirmate (priceMin/priceMax) — vezi re_categories["storia"].

@@ -54,10 +54,15 @@ RE_TECHNICAL_FIELDS = {
         # aproximative, NEVERIFICATE pe .ro — nu presupune ca sunt identice cu poloneza.
     },
     "imobiliare_ro": {
-        "price_min": {"confirmed": True, "param": "pret_min"},        # confirmat live
-        "price_max": {"confirmed": True, "param": "pret_max"},        # confirmat live
-        "rooms_min": {"confirmed": True, "param": "nr_camere"},       # confirmat live
-        "area_min": {"confirmed": True, "param": "suprafata_min"},    # confirmat live
+        # NOTA (2026-07-05): param-urii de mai jos ajung CORECT in URL (confirmed:True, cerinta
+        # initiala indeplinita), DAR imobiliare.ro NU ii aplica server-side — intoarce un set
+        # 'featured' scopat doar pe LOCATIE (path). Filtrarea REALA pe pret/camere/suprafata se
+        # face CLIENT-SIDE, in scraper (imobiliare_ro_scraper._passes_imob_filters, post-filtru),
+        # nu de catre site. (Confirmat live: /iasi?pret_max=100000 intoarce si preturi > 100000.)
+        "price_min": {"confirmed": True, "param": "pret_min"},        # in URL; filtrat local (post-filtru)
+        "price_max": {"confirmed": True, "param": "pret_max"},        # in URL; filtrat local (post-filtru)
+        "rooms_min": {"confirmed": True, "param": "nr_camere"},       # in URL; filtrat local (post-filtru)
+        "area_min": {"confirmed": True, "param": "suprafata_min"},    # in URL; filtrat local (post-filtru)
         # NECONFIRMATE azi — nu am gasit un URL real cu aceste campuri:
         "area_max": None,
         "floor_min": None,

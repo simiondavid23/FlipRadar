@@ -5,10 +5,23 @@ este aliniata cu modelul RealEstateListing.
 """
 import random
 import re
+import unicodedata
 from typing import Optional
 
 IMPERSONATE = "chrome131"
 MAX_RESULTS = 50
+
+
+def norm_city_slug(name) -> str:
+    """Normalizeaza numele unui oras la slug ascii: fara diacritice, lowercase, spatii -> '-'.
+
+    ex. "București" -> "bucuresti", "Cluj-Napoca" -> "cluj-napoca". Aceeasi logica exacta ca
+    storia_scraper._loc_key (extrasa aici ca helper comun; storia isi pastreaza copia proprie —
+    nu o modificam in acest task). Necesara pentru path-urile de oras (site-urile .ro nu rezolva
+    slug-urile cu diacritice).
+    """
+    s = unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode()
+    return s.strip().lower().replace(" ", "-")
 
 _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
