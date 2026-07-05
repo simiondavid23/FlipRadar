@@ -19,10 +19,12 @@ from app.scrapers.auto.listings._common import (
     MAX_LISTINGS, parse_price, extract_ld_offers,
     extract_year, extract_km, make_listing,
 )
-from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
 
 _SEARCH_URL = "https://suchen.mobile.de/fahrzeuge/search.html"
+# vehicleClass confirmat pe interfata publica (vc=Car). Doar valorile confirmate (Car/Motorbike).
+_MOBILEDE_CATEGORIES = {c["value"] for c in AUTO_PLATFORM_CATEGORIES["mobile_de"] if c.get("value")}
 
 # Set complet de headere de browser real — necesar ca mobile.de sa nu raspunda 403.
 MOBILE_DE_HEADERS = {
@@ -87,6 +89,10 @@ def _build_params(make_id: str, filters: dict, page: int) -> dict:
         params["price.min"] = int(float(filters["price_min"]))
     if filters.get("year_min") is not None:
         params["minFirstRegistrationDate"] = int(filters["year_min"])
+    # Categorie -> vc (vehicleClass), doar valori confirmate (Car/Motorbike).
+    cat = (filters.get("category") or "").strip()
+    if cat in _MOBILEDE_CATEGORIES:
+        params["vc"] = cat
     # Campuri tehnice confirmate (mobile_de: fuel, gearbox, power kW, drivetrain).
     # NOTA: numele oficiale vin din Search API autentificat; pe interfata publica
     # (suchen.mobile.de) pot diferi — de verificat live (vezi NOTA din auto_categories.py).

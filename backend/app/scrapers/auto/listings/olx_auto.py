@@ -8,11 +8,13 @@ from curl_cffi.requests import AsyncSession
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
 )
-from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.olx.ro"
-_PATH = "/auto-masini-moto-ambarcatiuni/autoturisme/"
+_CAT_BASE = "/auto-masini-moto-ambarcatiuni/"  # baza fixa; segmentul final = categoria selectata
+# Categorii confirmate (auto_categories.py). Orice altceva -> fallback "autoturisme".
+_OLX_CATEGORIES = {c["value"] for c in AUTO_PLATFORM_CATEGORIES["olx_auto"] if c.get("value")}
 
 
 def _olx_id(href: str):
@@ -22,7 +24,9 @@ def _olx_id(href: str):
 
 async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
-    base_url = _BASE + _PATH
+    cat = (filters.get("category") or "").strip()
+    category = cat if cat in _OLX_CATEGORIES else "autoturisme"
+    base_url = _BASE + _CAT_BASE + category + "/"
     if (query or "").strip():
         base_url += f"q-{urllib.parse.quote(query.strip())}/"
 

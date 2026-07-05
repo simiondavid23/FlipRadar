@@ -1,11 +1,13 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { autoListingsAPI, mlAPI } from "@/lib/api";
-import { Car, RefreshCw, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff } from "lucide-react";
-import { GRADE_COLORS, STATUS_TABS, selectStyle } from "@/lib/uiStyles";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { autoListingsAPI, autoAPI, mlAPI } from "@/lib/api";
+import { Car, RefreshCw, ExternalLink, Bookmark, EyeOff, Trash2, X, ImageOff, Loader2 } from "lucide-react";
+import { GRADE_COLORS, STATUS_TABS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import StatusTabsBar from "@/components/shared/StatusTabsBar";
 import ScanNowButton from "@/components/shared/ScanNowButton";
+import SearchResultCard from "@/components/AutoListingCard";
+import AutoAiModal from "@/components/AutoAiModal";
 
 const PLATFORM_LABELS = {
   autovit: "Autovit", olx_auto: "OLX Auto", mobile_de: "Mobile.de",
@@ -26,6 +28,7 @@ export default function AutoFeedPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ platform: "", grade: "", status: "active", keyword_id: "" });
   const [selected, setSelected] = useState(null);
+  const [activeTab, setActiveTab] = useState("auto");
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
@@ -105,6 +108,16 @@ export default function AutoFeedPage() {
         <ScanNowButton onScan={handleScanNow} scanning={scanning} />
       </div>
 
+      {/* Tab-uri Feed Automat / Căutare Manuală (stil identic cu Radar) */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+        <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
+        <button onClick={() => setActiveTab("manual")} style={tabPillStyle(activeTab === "manual")}>Căutare Manuală</button>
+      </div>
+
+      {activeTab === "manual" && <ManualSearchTab />}
+
+      {activeTab === "auto" && (
+      <>
       {/* Facebook session expired banner */}
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
@@ -180,6 +193,8 @@ export default function AutoFeedPage() {
           onIgnore={() => setStatus(selected.id, "ignored")}
           onDelete={() => remove(selected.id)}
         />
+      )}
+      </>
       )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -406,4 +421,193 @@ function actBtn(color) {
     backgroundColor: "var(--bg-dark)", color, border: `1px solid ${color === "var(--text-secondary)" ? "var(--border-color)" : color + "55"}`,
     borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
   };
+}
+
+// ── Tab "Căutare Manuală" (înlocuiește pagina separată "Piața Auto") ─────────────
+const MANUAL_PLATFORMS = [
+  { value: "olx_auto", label: "OLX Auto" }, { value: "autovit", label: "AutoVit" },
+  { value: "mobile_de", label: "Mobile.de" }, { value: "autoscout24", label: "AutoScout24" },
+  { value: "facebook_auto", label: "FB Marketplace" }, { value: "kleinanzeigen_auto", label: "eBay KA" },
+];
+const MANUAL_FIELD_LABELS = {
+  fuel_type: "Combustibil", gearbox: "Cutie", body_type: "Caroserie", condition: "Stare",
+  seller_type: "Vânzător", drivetrain: "Tracțiune", engine_capacity_min: "Capacitate min (cmc)",
+  engine_capacity_max: "Capacitate max (cmc)", engine_power_min: "Putere min", power_unit: "Unitate putere",
+  mileage_max: "Km max", make: "Marcă", year: "An",
+};
+const mcap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+function ManualMobileDeWarning() {
+  return (
+    <span title="Funcționează doar de pe IP rezidential (pe server/datacenter: 403 Imperva)."
+      style={{ marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px", background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle", cursor: "help", fontWeight: 500 }}>
+      ⚠ IP local
+    </span>
+  );
+}
+
+function ManualSearchTab() {
+  const [catData, setCatData] = useState({ categories: {}, technical_fields: {} });
+  const [platform, setPlatform] = useState("olx_auto");
+  const [category, setCategory] = useState("");
+  const [tech, setTech] = useState({});
+  const [f, setF] = useState({ make: "", model: "", year_min: "", year_max: "", km_max: "", price_min: "", price_max: "" });
+  const [results, setResults] = useState(null);
+  const [byPlatform, setByPlatform] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [savedKeys, setSavedKeys] = useState(new Set());
+  const [savingKey, setSavingKey] = useState(null);
+  const [aiListing, setAiListing] = useState(null);
+
+  useEffect(() => {
+    autoListingsAPI.getCategories()
+      .then((r) => setCatData(r.data || { categories: {}, technical_fields: {} }))
+      .catch(() => {});
+  }, []);
+
+  const liKey = (l) => `${l.platform}:${l.external_id || l.source_url}`;
+  const validCats = ((catData.categories || {})[platform] || []).filter((c) => c.value != null);
+  const techFields = Object.entries((catData.technical_fields || {})[platform] || {})
+    .filter(([, s]) => s && typeof s === "object" && s.confirmed === true);
+  const setF1 = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const changePlatform = (v) => { setPlatform(v); setCategory(""); setTech({}); };
+
+  const doSearch = async (e) => {
+    e?.preventDefault();
+    const q = `${f.make} ${f.model}`.trim();
+    const filters = {};
+    if (f.make) filters.make = f.make;
+    if (f.model) filters.model = f.model;
+    if (f.year_min) filters.year_min = parseInt(f.year_min);
+    if (f.price_min) filters.price_min = parseFloat(f.price_min);
+    if (f.price_max) filters.price_max = parseFloat(f.price_max);
+    if (f.km_max) filters.km_max = parseInt(f.km_max);
+    if (category) filters.category = category;
+    Object.entries(tech).forEach(([k, v]) => { if (v !== "" && v != null) filters[k] = v; });
+    setLoading(true); setResults(null);
+    try {
+      const res = await autoAPI.searchListings(q, platform, filters);
+      setResults(res.data?.results || []);
+      setByPlatform(res.data?.by_platform || {});
+    } catch (err) { alert(err.response?.data?.detail || "Eroare la căutare."); setResults([]); }
+    finally { setLoading(false); }
+  };
+
+  // Filtrare client-side suplimentara (an/km/pret nu sunt aplicate uniform de toate scraperele).
+  const shown = useMemo(() => {
+    if (!results) return [];
+    return results.filter((l) => {
+      if (f.year_min && l.year && l.year < parseInt(f.year_min)) return false;
+      if (f.year_max && l.year && l.year > parseInt(f.year_max)) return false;
+      if (f.km_max && l.km && l.km > parseInt(f.km_max)) return false;
+      if (f.price_min && l.pret != null && l.pret < parseFloat(f.price_min)) return false;
+      if (f.price_max && l.pret != null && l.pret > parseFloat(f.price_max)) return false;
+      return true;
+    });
+  }, [results, f]);
+
+  const handleSave = async (listing) => {
+    const key = liKey(listing); setSavingKey(key);
+    try { await autoAPI.saveListing(listing); setSavedKeys((prev) => new Set(prev).add(key)); }
+    catch (err) { alert(err.response?.data?.detail || "Eroare la salvare."); }
+    finally { setSavingKey(null); }
+  };
+
+  return (
+    <div>
+      <form onSubmit={doSearch} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+        {/* Platformă — o singură (pill-uri, ca la Radar) */}
+        <div>
+          <label style={labelStyle}>Platformă</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {MANUAL_PLATFORMS.map((p) => {
+              const active = platform === p.value;
+              return (
+                <button key={p.value} type="button" onClick={() => changePlatform(p.value)} style={{
+                  padding: "0.375rem 0.875rem", borderRadius: "0.5rem", fontSize: "0.8125rem",
+                  fontWeight: active ? 600 : 400, cursor: "pointer",
+                  border: active ? "2px solid #2563eb" : "1px solid var(--border-color)",
+                  backgroundColor: active ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
+                  color: active ? "#60a5fa" : "var(--text-secondary)",
+                }}>{p.label}{p.value === "mobile_de" && <ManualMobileDeWarning />}</button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Categorie dinamică (doar dacă platforma are categorii confirmate) */}
+        {validCats.length > 0 && (
+          <div>
+            <label style={labelStyle}>Categorie</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>
+              <option value="">Toate</option>
+              {validCats.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* Câmpuri de bază */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
+          <div><label style={labelStyle}>Marcă</label><input value={f.make} onChange={(e) => setF1("make", e.target.value)} placeholder="ex: Audi" style={inputStyle} /></div>
+          <div><label style={labelStyle}>Model</label><input value={f.model} onChange={(e) => setF1("model", e.target.value)} placeholder="ex: A4" style={inputStyle} /></div>
+          <div><label style={labelStyle}>An min</label><input type="number" value={f.year_min} onChange={(e) => setF1("year_min", e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>An max</label><input type="number" value={f.year_max} onChange={(e) => setF1("year_max", e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>Km max</label><input type="number" value={f.km_max} onChange={(e) => setF1("km_max", e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>Preț min</label><input type="number" value={f.price_min} onChange={(e) => setF1("price_min", e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>Preț max</label><input type="number" value={f.price_max} onChange={(e) => setF1("price_max", e.target.value)} style={inputStyle} /></div>
+        </div>
+
+        {/* Câmpuri tehnice confirmate — doar dacă platforma are (Facebook: nu apar) */}
+        {techFields.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.75rem" }}>
+            {techFields.map(([key, spec]) => (
+              <div key={key}>
+                <label style={labelStyle}>{MANUAL_FIELD_LABELS[key] || key}</label>
+                {spec.values ? (
+                  <select value={tech[key] || ""} onChange={(e) => setTech((p) => ({ ...p, [key]: e.target.value }))} style={inputStyle}>
+                    <option value="">Toate</option>
+                    {Object.keys(spec.values).map((k) => <option key={k} value={k}>{mcap(k)}</option>)}
+                  </select>
+                ) : (
+                  <input type="number" value={tech[key] || ""} onChange={(e) => setTech((p) => ({ ...p, [key]: e.target.value }))} placeholder="—" style={inputStyle} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <button type="submit" style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
+            <Car style={{ width: "16px", height: "16px" }} /> Caută
+          </button>
+        </div>
+      </form>
+
+      {loading ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}>
+          <Loader2 style={{ width: "2rem", height: "2rem", color: "var(--blue-primary)", animation: "spin 1s linear infinite" }} />
+        </div>
+      ) : results != null && (
+        shown.length > 0 ? (
+          <>
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+              {shown.length} anunțuri
+              {Object.keys(byPlatform).length > 0 && ` (${Object.entries(byPlatform).map(([p, n]) => `${p}: ${n}`).join(", ")})`}
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1rem" }}>
+              {shown.map((l, i) => (
+                <SearchResultCard key={`${liKey(l)}-${i}`} listing={l} onSave={handleSave} onAnalyze={setAiListing} isSaved={savedKeys.has(liKey(l))} busy={savingKey === liKey(l)} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "2.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", color: "var(--text-secondary)" }}>
+            Niciun anunț găsit pentru filtrele selectate.
+          </div>
+        )
+      )}
+
+      <AutoAiModal open={!!aiListing} onClose={() => setAiListing(null)} listing={aiListing} />
+    </div>
+  );
 }

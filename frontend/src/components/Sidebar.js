@@ -63,7 +63,6 @@ const categories = [
     items: [
       { name: "Feed Anunțuri", href: "/dashboard/auto-listings/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/auto-listings/keywords", icon: Tag },
-      { name: "Piata Auto", href: "/dashboard/auto/listings/search", icon: Car },
       { name: "Anunturi Auto Salvate", href: "/dashboard/auto/listings/saved", icon: Heart },
     ],
   },

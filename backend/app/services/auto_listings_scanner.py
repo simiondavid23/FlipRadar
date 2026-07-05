@@ -78,6 +78,9 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
         "body":      kw.body_type,
     }
     filters = {k: v for k, v in filters.items() if v is not None}
+    # Categoria salvata pe keyword -> path-ul de cautare al scraperului (validata in scraper).
+    if getattr(kw, "category", None):
+        filters["category"] = kw.category
     # Filtre tehnice confirmate salvate pe keyword (JSON) — cheile sunt numele campurilor
     # (fuel_type, engine_capacity_min/max, condition, seller_type, engine_power_min,
     # drivetrain, power_unit, ...). Scraperele le aplica prin apply_confirmed_filters.

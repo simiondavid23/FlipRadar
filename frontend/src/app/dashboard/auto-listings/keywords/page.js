@@ -19,57 +19,20 @@ function MobileDeWarning() {
     <span
       title="Funcționează doar de pe IP rezidential. Pe server sau datacenter returnează 403 (blocat Imperva). 0 rezultate pe server = comportament normal."
       style={{
-        marginLeft: "0.375rem",
-        fontSize: "10px",
-        padding: "0.125rem 0.4rem",
-        borderRadius: "4px",
-        background: "var(--bg-warning)",
-        color: "var(--text-warning)",
-        verticalAlign: "middle",
-        cursor: "help",
-        fontWeight: 500,
+        marginLeft: "0.375rem", fontSize: "10px", padding: "0.125rem 0.4rem", borderRadius: "4px",
+        background: "var(--bg-warning)", color: "var(--text-warning)", verticalAlign: "middle",
+        cursor: "help", fontWeight: 500,
       }}
-    >
-      ⚠ IP local
-    </span>
+    >⚠ IP local</span>
   );
 }
-
-const MAKES = [
-  "Audi", "BMW", "Chevrolet", "Chrysler", "Citroën", "Dacia", "Dodge",
-  "Fiat", "Ford", "Honda", "Hyundai", "Jaguar", "Jeep", "Kia", "Land Rover",
-  "Lexus", "Mazda", "Mercedes-Benz", "Mitsubishi", "Nissan", "Opel",
-  "Peugeot", "Porsche", "Renault", "Seat", "Skoda", "Subaru", "Suzuki",
-  "Toyota", "Volkswagen", "Volvo",
-];
-
-const FUEL_TYPES = ["Benzina", "Motorina", "Electric", "Hibrid", "GPL", "CNG"];
-const TRANSMISSIONS = ["Manuala", "Automata"];
-const BODY_TYPES = [
-  "Berlina", "SUV", "Hatchback", "Break/Combi",
-  "Coupe", "Cabrio", "Monovolum", "Pickup", "Van",
-];
-const OLX_AUTO_VEHICLE_TYPES = [
-  "Autoturisme",
-  "Autoutilitare",
-  "Camioane - Rulote - Remorci",
-  "Motociclete",
-  "Scutere - ATV - UTV",
-  "Ambarcatiuni",
-  "Utilaje agricole si industriale",
-];
-const MOBILE_DE_MAKES = [
-  "Audi", "BMW", "Ford", "Honda", "Hyundai", "Kia", "Mazda",
-  "Mercedes-Benz", "Nissan", "Opel", "Peugeot", "Porsche", "Renault",
-  "Seat", "Skoda", "Toyota", "Volkswagen", "Volvo",
-];
 
 const POLL_OPTIONS = [5, 10, 15, 30, 60];
 
 const EMPTY_FORM = {
   name: "", make: "", model: "", query: "",
   year_from: "", year_to: "", km_max: "", price_max: "",
-  fuel_type: "", transmission: "", body_type: "", vehicle_type: "", location: "",
+  category: "", tech: {},
   is_active: true, notify_email: false, notify_discord: false,
   use_active_hours: false, active_hours_start: 8, active_hours_end: 22,
   polling_interval: 10,
@@ -83,8 +46,18 @@ const inputStyle = {
 const labelStyle = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
 const td = { padding: "0.625rem 0.75rem", fontSize: "0.8125rem", color: "var(--text-primary)", verticalAlign: "middle" };
 
+// Etichete RO pentru campurile tehnice dinamice (fallback pe cheia bruta).
+const FIELD_LABELS = {
+  fuel_type: "Combustibil", gearbox: "Cutie de viteze", body_type: "Caroserie", condition: "Stare",
+  seller_type: "Vânzător", drivetrain: "Tracțiune", engine_capacity_min: "Capacitate motor min (cmc)",
+  engine_capacity_max: "Capacitate motor max (cmc)", engine_power_min: "Putere min", power_unit: "Unitate putere",
+  mileage_max: "Km max", make: "Marcă (cod)", year: "An",
+};
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 export default function AutoKeywordsPage() {
   const [keywords, setKeywords] = useState([]);
+  const [catData, setCatData] = useState({ categories: {}, technical_fields: {} });
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -92,47 +65,36 @@ export default function AutoKeywordsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
-  // MODIFICARE 18 — modal confirmare stergere cu impact.
   const [deleteModal, setDeleteModal] = useState(null);
 
   const handleScanNow = async () => {
     setScanning(true);
-    try {
-      await autoListingsAPI.scanNow();
-      setTimeout(() => setScanning(false), 3000);
-    } catch {
-      setScanning(false);
-    }
+    try { await autoListingsAPI.scanNow(); setTimeout(() => setScanning(false), 3000); }
+    catch { setScanning(false); }
   };
 
   const load = useCallback(async () => {
-    try {
-      const r = await autoListingsAPI.getKeywords();
-      setKeywords(r.data || []);
-    } catch (e) {
-      console.error("[AutoKeywords]", e);
-    } finally {
-      setLoading(false);
-    }
+    try { const r = await autoListingsAPI.getKeywords(); setKeywords(r.data || []); }
+    catch (e) { console.error("[AutoKeywords]", e); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    autoListingsAPI.getCategories()
+      .then((r) => setCatData(r.data || { categories: {}, technical_fields: {} }))
+      .catch(() => {});
+  }, []);
 
-  const openAdd = () => {
-    setEditingId(null);
-    setPlatform("autovit");
-    setForm(EMPTY_FORM);
-    setShowModal(true);
-  };
+  const openAdd = () => { setEditingId(null); setPlatform("autovit"); setForm(EMPTY_FORM); setShowModal(true); };
 
   const openEdit = (kw) => {
     setEditingId(kw.id);
     setPlatform(kw.platform || "autovit");
     setForm({
       name: kw.name || "", make: kw.make || "", model: kw.model || "", query: kw.query || "",
-      year_from: kw.year_from ?? "", year_to: kw.year_to ?? "", km_max: kw.km_max ?? "",
-      price_max: kw.price_max ?? "", fuel_type: kw.fuel_type || "", transmission: kw.transmission || "",
-      body_type: kw.body_type || "", vehicle_type: kw.vehicle_type || "", location: kw.location || "",
+      year_from: kw.year_from ?? "", year_to: kw.year_to ?? "", km_max: kw.km_max ?? "", price_max: kw.price_max ?? "",
+      category: kw.category || "", tech: kw.tech_filters || {},
       is_active: kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
       use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
       active_hours_start: kw.active_hours_start ?? 8, active_hours_end: kw.active_hours_end ?? 22,
@@ -143,25 +105,20 @@ export default function AutoKeywordsPage() {
 
   const submit = async () => {
     if (!form.name.trim()) { alert("Numele keyword-ului este obligatoriu."); return; }
+    const cleanTech = Object.fromEntries(
+      Object.entries(form.tech || {}).filter(([, v]) => v !== "" && v != null)
+    );
     const payload = {
-      name: form.name,
-      platform,
-      make: form.make || null,
-      model: form.model || null,
-      query: form.query || null,
+      name: form.name, platform,
+      make: form.make || null, model: form.model || null, query: form.query || null,
       year_from: form.year_from ? parseInt(form.year_from) : null,
       year_to: form.year_to ? parseInt(form.year_to) : null,
       km_max: form.km_max ? parseInt(form.km_max) : null,
       price_max: form.price_max ? parseFloat(form.price_max) : null,
       price_currency: AUTO_PLATFORMS.find((p) => p.value === platform)?.currency || "RON",
-      fuel_type: form.fuel_type || null,
-      transmission: form.transmission || null,
-      body_type: form.body_type || null,
-      vehicle_type: form.vehicle_type || null,
-      location: form.location || null,
-      is_active: form.is_active,
-      notify_email: form.notify_email,
-      notify_discord: form.notify_discord,
+      category: form.category || null,
+      tech_filters: Object.keys(cleanTech).length ? cleanTech : null,
+      is_active: form.is_active, notify_email: form.notify_email, notify_discord: form.notify_discord,
       active_hours_start: form.use_active_hours ? form.active_hours_start : null,
       active_hours_end: form.use_active_hours ? form.active_hours_end : null,
       polling_interval_minutes: parseInt(form.polling_interval) || 10,
@@ -170,13 +127,9 @@ export default function AutoKeywordsPage() {
     try {
       if (editingId) await autoListingsAPI.updateKeyword(editingId, payload);
       else await autoListingsAPI.createKeyword(payload);
-      setShowModal(false);
-      await load();
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la salvare.");
-    } finally {
-      setSaving(false);
-    }
+      setShowModal(false); await load();
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la salvare."); }
+    finally { setSaving(false); }
   };
 
   const toggle = async (kw) => {
@@ -185,28 +138,21 @@ export default function AutoKeywordsPage() {
         name: kw.name, platform: kw.platform, make: kw.make, model: kw.model, query: kw.query,
         year_from: kw.year_from, year_to: kw.year_to, km_max: kw.km_max,
         price_max: kw.price_max != null ? parseFloat(kw.price_max) : null,
-        price_currency: kw.price_currency, fuel_type: kw.fuel_type, transmission: kw.transmission,
-        body_type: kw.body_type, location: kw.location, is_active: !kw.is_active,
-        notify_email: kw.notify_email, notify_discord: kw.notify_discord,
+        price_currency: kw.price_currency, category: kw.category, tech_filters: kw.tech_filters,
+        fuel_type: kw.fuel_type, transmission: kw.transmission, body_type: kw.body_type, location: kw.location,
+        is_active: !kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
         active_hours_start: kw.active_hours_start, active_hours_end: kw.active_hours_end,
         polling_interval_minutes: kw.polling_interval_minutes,
       });
       await load();
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la actualizare.");
-    }
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la actualizare."); }
   };
 
-  // MODIFICARE 18 — deschide modalul cu impactul (nr. listinguri asociate).
   const handleDeleteClick = async (kw) => {
     let impact = { listing_count: 0, seen_count: 0 };
     try { impact = (await autoListingsAPI.getKeywordImpact(kw.id)).data; } catch { /* fallback 0 */ }
-    setDeleteModal({
-      keywordId: kw.id, keywordName: kw.name,
-      listingCount: impact.listing_count ?? 0, seenCount: impact.seen_count ?? 0,
-    });
+    setDeleteModal({ keywordId: kw.id, keywordName: kw.name, listingCount: impact.listing_count ?? 0, seenCount: impact.seen_count ?? 0 });
   };
-
   const performDelete = async (id) => {
     try { await autoListingsAPI.deleteKeyword(id); await load(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere."); }
@@ -271,8 +217,9 @@ export default function AutoKeywordsPage() {
                 <tr key={k.id} style={{ borderTop: "1px solid var(--border-color)" }}>
                   <td style={td}>
                     <div style={{ fontWeight: 500 }}>{k.name}</div>
+                    {k.category && <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{k.category}</span>}
                     {(k.active_hours_start != null && k.active_hours_end != null) && (
-                      <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                      <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "block" }}>
                         🕐 {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
                       </span>
                     )}
@@ -306,18 +253,12 @@ export default function AutoKeywordsPage() {
 
       {showModal && (
         <KeywordModal
-          editing={!!editingId}
-          platform={platform}
-          setPlatform={setPlatform}
-          form={form}
-          setForm={setForm}
-          saving={saving}
-          onClose={() => setShowModal(false)}
-          onSubmit={submit}
+          editing={!!editingId} platform={platform} setPlatform={setPlatform}
+          form={form} setForm={setForm} catData={catData} saving={saving}
+          onClose={() => setShowModal(false)} onSubmit={submit}
         />
       )}
 
-      {/* MODIFICARE 18 — modal confirmare stergere cu impact */}
       <DeleteKeywordModal
         data={deleteModal}
         onCancel={() => setDeleteModal(null)}
@@ -336,131 +277,20 @@ const iconBtn = {
 };
 
 function Field({ label, children }) {
-  return (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      {children}
-    </div>
-  );
+  return (<div><label style={labelStyle}>{label}</label>{children}</div>);
 }
 
-function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, onClose, onSubmit }) {
+function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, saving, onClose, onSubmit }) {
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const setTech = (k, v) => set({ tech: { ...(form.tech || {}), [k]: v } });
   const cur = AUTO_PLATFORMS.find((p) => p.value === platform)?.currency || "RON";
-  const note = (txt) => (
-    <div style={{ gridColumn: "1/-1", fontSize: "0.7rem", color: "#a78bfa", marginTop: "-0.25rem" }}>{txt}</div>
-  );
 
-  const yearRow = (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-      <Field label="An de la"><input type="number" value={form.year_from} onChange={(e) => set({ year_from: e.target.value })} placeholder="2010" style={inputStyle} /></Field>
-      <Field label="An până la"><input type="number" value={form.year_to} onChange={(e) => set({ year_to: e.target.value })} placeholder="2024" style={inputStyle} /></Field>
-    </div>
-  );
-  const kmField = <Field label="Km max"><input type="number" value={form.km_max} onChange={(e) => set({ km_max: e.target.value })} placeholder="200000" style={inputStyle} /></Field>;
-  const priceField = <Field label={`Preț max ${cur}`}><input type="number" value={form.price_max} onChange={(e) => set({ price_max: e.target.value })} placeholder={cur === "EUR" ? "15000" : "60000"} style={inputStyle} /></Field>;
-  const fuelField = (
-    <Field label="Combustibil">
-      <select value={form.fuel_type} onChange={(e) => set({ fuel_type: e.target.value })} style={inputStyle}>
-        <option value="">Toate</option>
-        {FUEL_TYPES.map((f) => <option key={f} value={f}>{f}</option>)}
-      </select>
-    </Field>
-  );
+  // Dinamic din /categories: doar categoriile cu value confirmat + doar campurile confirmed:true.
+  const validCats = ((catData.categories || {})[platform] || []).filter((c) => c.value != null);
+  const techFields = Object.entries((catData.technical_fields || {})[platform] || {})
+    .filter(([, spec]) => spec && typeof spec === "object" && spec.confirmed === true);
 
-  const renderPlatformFields = () => {
-    switch (platform) {
-      case "autovit":
-        return (
-          <>
-            <Field label="Marcă *">
-              <select value={form.make} onChange={(e) => set({ make: e.target.value })} style={inputStyle}>
-                <option value="">Alege marca</option>
-                {MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </Field>
-            <Field label="Model"><input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="ex: Seria 3" style={inputStyle} /></Field>
-            <div style={{ gridColumn: "1/-1" }}>{yearRow}</div>
-            {kmField}
-            {priceField}
-            {fuelField}
-            <Field label="Transmisie">
-              <select value={form.transmission} onChange={(e) => set({ transmission: e.target.value })} style={inputStyle}>
-                <option value="">Toate</option>
-                {TRANSMISSIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Caroserie">
-              <select value={form.body_type} onChange={(e) => set({ body_type: e.target.value })} style={inputStyle}>
-                <option value="">Toate</option>
-                {BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </Field>
-          </>
-        );
-      case "olx_auto":
-        return (
-          <>
-            <Field label="Tip vehicul">
-              <select value={form.vehicle_type} onChange={(e) => set({ vehicle_type: e.target.value })} style={inputStyle}>
-                <option value="">Toate tipurile</option>
-                {OLX_AUTO_VEHICLE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Căutare"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: BMW E46" style={inputStyle} /></Field>
-            <div style={{ gridColumn: "1/-1" }}>{yearRow}</div>
-            {kmField}
-            {priceField}
-            <Field label="Județ"><input value={form.location} onChange={(e) => set({ location: e.target.value })} placeholder="ex: Cluj" style={inputStyle} /></Field>
-          </>
-        );
-      case "mobile_de":
-        return (
-          <>
-            <Field label="Marcă *">
-              <select value={form.make} onChange={(e) => set({ make: e.target.value })} style={inputStyle}>
-                <option value="">Alege marca</option>
-                {MOBILE_DE_MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </Field>
-            <Field label="An de la"><input type="number" value={form.year_from} onChange={(e) => set({ year_from: e.target.value })} placeholder="2015" style={inputStyle} /></Field>
-            {kmField}
-            {priceField}
-            {note("Prețurile sunt în EUR. Import Score calculat automat.")}
-          </>
-        );
-      case "autoscout24":
-        return (
-          <>
-            <Field label="Marcă *"><input value={form.make} onChange={(e) => set({ make: e.target.value })} placeholder="ex: BMW" style={inputStyle} /></Field>
-            <Field label="An de la"><input type="number" value={form.year_from} onChange={(e) => set({ year_from: e.target.value })} placeholder="2015" style={inputStyle} /></Field>
-            {kmField}
-            {priceField}
-            {fuelField}
-            {note("Prețurile sunt în EUR.")}
-          </>
-        );
-      case "facebook_auto":
-        return (
-          <>
-            <Field label="Căutare"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: BMW Seria 3" style={inputStyle} /></Field>
-            {priceField}
-            <Field label="Locație"><input value={form.location} onChange={(e) => set({ location: e.target.value })} placeholder="ex: București" style={inputStyle} /></Field>
-          </>
-        );
-      case "kleinanzeigen_auto":
-        return (
-          <>
-            <Field label="Marcă"><input value={form.make} onChange={(e) => set({ make: e.target.value })} placeholder="ex: BMW" style={inputStyle} /></Field>
-            <Field label="Căutare suplimentară"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: 320d" style={inputStyle} /></Field>
-            {priceField}
-            {note("Platformă germană. Prețuri în EUR.")}
-          </>
-        );
-      default:
-        return null;
-    }
-  };
+  const changePlatform = (v) => { setPlatform(v); set({ category: "", tech: {} }); };
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
@@ -478,32 +308,67 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
           </Field>
 
           <Field label="Platformă">
-            <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={inputStyle}>
+            <select value={platform} onChange={(e) => changePlatform(e.target.value)} style={inputStyle}>
               {AUTO_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
-            {/* MODIFICARE 14 — avertisment cand platforma selectata e Mobile.de */}
-            {platform === "mobile_de" && (
-              <div style={{ marginTop: "0.375rem" }}>Mobile.de<MobileDeWarning /></div>
-            )}
+            {platform === "mobile_de" && <div style={{ marginTop: "0.375rem" }}>Mobile.de<MobileDeWarning /></div>}
           </Field>
 
           {platform === "facebook_auto" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)", display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
               <span style={{ flexShrink: 0 }}>ℹ️</span>
               <span>
-                Facebook Auto folosește sesiunea autentificată configurată în{" "}
-                <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>.
-                Asigură-te că sesiunea este activă înainte de a adăuga keyword-uri pentru această platformă.
+                Facebook Auto folosește sesiunea autentificată din{" "}
+                <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Nu suportă filtre tehnice structurate.
               </span>
             </div>
           )}
 
-          {/* Platform-specific */}
+          {/* Categorie dinamica (doar daca platforma are categorii confirmate) */}
+          {validCats.length > 0 && (
+            <Field label="Categorie">
+              <select value={form.category} onChange={(e) => set({ category: e.target.value })} style={inputStyle}>
+                <option value="">Toate (implicit)</option>
+                {validCats.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </Field>
+          )}
+
+          {/* Campuri de baza (nemodificate) */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-            {renderPlatformFields()}
+            <Field label="Marcă"><input value={form.make} onChange={(e) => set({ make: e.target.value })} placeholder="ex: BMW" style={inputStyle} /></Field>
+            <Field label="Model"><input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="ex: Seria 3" style={inputStyle} /></Field>
+            <Field label="Căutare (text liber)"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: 320d" style={inputStyle} /></Field>
+            <Field label={`Preț max ${cur}`}><input type="number" value={form.price_max} onChange={(e) => set({ price_max: e.target.value })} placeholder={cur === "EUR" ? "15000" : "60000"} style={inputStyle} /></Field>
+            <Field label="An de la"><input type="number" value={form.year_from} onChange={(e) => set({ year_from: e.target.value })} placeholder="2010" style={inputStyle} /></Field>
+            <Field label="An până la"><input type="number" value={form.year_to} onChange={(e) => set({ year_to: e.target.value })} placeholder="2024" style={inputStyle} /></Field>
+            <Field label="Km max"><input type="number" value={form.km_max} onChange={(e) => set({ km_max: e.target.value })} placeholder="200000" style={inputStyle} /></Field>
           </div>
 
-          {/* Common: polling */}
+          {/* Campuri tehnice confirmate — DOAR daca platforma are (Facebook: nu apare) */}
+          {techFields.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "0.5rem" }}>
+                Filtre tehnice ({AUTO_PLATFORMS.find((p) => p.value === platform)?.label})
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                {techFields.map(([key, spec]) => (
+                  <Field key={key} label={FIELD_LABELS[key] || key}>
+                    {spec.values ? (
+                      <select value={form.tech?.[key] || ""} onChange={(e) => setTech(key, e.target.value)} style={inputStyle}>
+                        <option value="">Toate</option>
+                        {Object.keys(spec.values).map((k) => <option key={k} value={k}>{cap(k)}</option>)}
+                      </select>
+                    ) : (
+                      <input type="number" value={form.tech?.[key] || ""} onChange={(e) => setTech(key, e.target.value)} placeholder="—" style={inputStyle} />
+                    )}
+                  </Field>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Interval verificare */}
           <Field label="Interval verificare">
             <select value={form.polling_interval} onChange={(e) => set({ polling_interval: parseInt(e.target.value) })} style={inputStyle}>
               {POLL_OPTIONS.map((m) => <option key={m} value={m}>{m} min</option>)}
@@ -540,9 +405,6 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, o
             <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
               <input type="checkbox" checked={form.notify_discord} onChange={(e) => set({ notify_discord: e.target.checked })} style={{ width: "auto" }} /> Notificare Discord
             </label>
-            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginLeft: "1.5rem", marginTop: "-0.25rem" }}>
-              Necesită webhook configurat în Setări → Discord Auto
-            </span>
             <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
               <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} style={{ width: "auto" }} /> Activ
             </label>

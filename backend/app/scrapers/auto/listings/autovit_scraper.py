@@ -10,10 +10,12 @@ from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
 )
-from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
+from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
 
 _BASE = "https://www.autovit.ro"
+# Categorii confirmate (auto_categories.py). Orice altceva -> fallback "autoturisme".
+_AUTOVIT_CATEGORIES = {c["value"] for c in AUTO_PLATFORM_CATEGORIES["autovit"] if c.get("value")}
 
 
 def _slug(text: str) -> str:
@@ -68,7 +70,9 @@ def _extract_ld_prices(soup) -> list:
 
 async def search_autovit(make: str = "", model: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
-    path = "/autoturisme/"
+    cat = (filters.get("category") or "").strip()
+    category = cat if cat in _AUTOVIT_CATEGORIES else "autoturisme"
+    path = f"/{category}/"
     if make:
         path += f"{_slug(make)}/"
         if model:

@@ -186,6 +186,8 @@ export const autoListingsAPI = {
   deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
   getStats:       ()         => api.get("/api/auto-listings/stats"),
   scanNow:        ()         => api.post("/api/auto-listings/scan-now"),
+  // Categorii + campuri tehnice confirmate per platforma (formular dinamic + cautare manuala)
+  getCategories:  ()         => api.get("/api/auto-listings/categories"),
   // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
   getKeywordImpact: (id)     => api.get(`/api/auto-listings/keywords/${id}/impact`),
 };
