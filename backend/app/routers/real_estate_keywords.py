@@ -54,16 +54,15 @@ def _kw_dict(kw: RealEstateKeyword) -> dict:
 
 @router.get("/categories")
 def get_re_categories():
-    """Campuri tehnice confirmate per platforma (pentru formularul dinamic de keyword +
-    tab-ul de cautare manuala). GET /api/real-estate-monitor/categories.
+    """Campuri tehnice + tipuri de proprietate confirmate per platforma (pentru formularul
+    dinamic de keyword + tab-ul de cautare manuala). GET /api/real-estate-monitor/categories.
 
-    Nu exista categorii per-platforma distincte ca la Auto — tip_proprietate/tip_anunt sunt
-    comune tuturor platformelor (frontend realEstateConstants.js), deci nu le duplicam aici.
-    Doar campurile cu confirmed:True sunt de conectat; frontend-ul le foloseste pentru a sti
-    ce filtre suporta fiecare platforma.
+    Doar intrarile cu confirmed:True sunt de conectat; frontend-ul le foloseste ca sa stie ce
+    filtre / tipuri de proprietate suporta fiecare platforma (ex. "comercial" e confirmat pe OLX,
+    dar inca neconfirmat pe Storia/Imobiliare.ro — vezi RE_PROPERTY_TYPES).
     """
-    from app.scrapers.real_estate.re_categories import RE_TECHNICAL_FIELDS
-    return {"technical_fields": RE_TECHNICAL_FIELDS}
+    from app.scrapers.real_estate.re_categories import RE_TECHNICAL_FIELDS, RE_PROPERTY_TYPES
+    return {"technical_fields": RE_TECHNICAL_FIELDS, "property_types": RE_PROPERTY_TYPES}
 
 
 # ── Keywords CRUD ───────────────────────────────────────────────

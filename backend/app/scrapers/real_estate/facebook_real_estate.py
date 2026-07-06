@@ -12,7 +12,12 @@ from typing import Optional
 
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 
-_BASE_URL = "https://www.facebook.com/marketplace/category/propertyrentals/"
+_CATEGORY_SLUGS = {"vanzare": "propertyforsale", "inchiriere": "propertyrentals"}
+
+
+def _category_url(tip_anunt: str) -> str:
+    slug = _CATEGORY_SLUGS.get((tip_anunt or "inchiriere").lower(), "propertyrentals")
+    return f"https://www.facebook.com/marketplace/category/{slug}/"
 
 
 def _parse_price(raw: str) -> Optional[float]:
@@ -48,7 +53,7 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
     # Doar minPrice/maxPrice sunt confirmate (comportament existent). Filtrele de dormitoare/
     # bai/suprafata exista in UI dar au NUMELE param neverificat -> NECONECTATE (re_categories).
     apply_re_filters("facebook_real_estate", filters, params, aliases=RE_FILTER_ALIASES)
-    url = _BASE_URL + ("?" + urllib.parse.urlencode(params) if params else "")
+    url = _category_url(filters.get("tip_anunt")) + ("?" + urllib.parse.urlencode(params) if params else "")
 
     log_manager.emit("real_estate", "SCAN", f"Facebook RE Playwright: {query!r}")
 

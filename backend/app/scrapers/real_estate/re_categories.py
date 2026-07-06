@@ -85,6 +85,40 @@ RE_TECHNICAL_FIELDS = {
 }
 
 
+# Tipuri de proprietate per platforma (confirmed/neconfirmat — aceeasi regula ca RE_TECHNICAL_FIELDS:
+# DOAR "confirmed": True se conecteaza in scraper; False = documentat, NECONECTAT pana la verificare
+# live directa). Storia/Imobiliare.ro/OLX "comercial" confirmate live 2026-07-06 (URL-uri in
+# comentariile de mai jos); Facebook "vanzare" (propertyforsale) NECONFIRMAT — vezi nota de la
+# categorie_tip_anunt (intoarce doar Partner listings, nu vanzari imobiliare).
+RE_PROPERTY_TYPES = {
+    "olx": {
+        "apartament": {"confirmed": True}, "garsoniera": {"confirmed": True},
+        "casa": {"confirmed": True}, "teren": {"confirmed": True}, "comercial": {"confirmed": True},
+    },
+    "storia": {
+        "apartament": {"confirmed": True}, "garsoniera": {"confirmed": True},
+        "casa": {"confirmed": True}, "teren": {"confirmed": True},
+        "comercial": {"confirmed": True},   # confirmat live 2026-07-06: /ro/rezultate/vanzare/spatiu-comercial/{oras}
+    },
+    "imobiliare_ro": {
+        "apartament": {"confirmed": True}, "garsoniera": {"confirmed": True},
+        "casa": {"confirmed": True}, "teren": {"confirmed": True},
+        "comercial": {"confirmed": True},   # confirmat live 2026-07-06: /vanzare-spatii-comerciale/
+    },
+    "facebook_real_estate": {
+        "categorie_tip_anunt": {
+            # INVESTIGAT LIVE 2026-07-06 (sesiune valida, scroll adanc, cu/fara query):
+            # /category/propertyforsale/ intoarce DOAR "Partner listing" — electronice
+            # (laptop/telefon) + chirii, ZERO vanzari imobiliare reale. Query-ul e ignorat.
+            # Deci NECONFIRMAT ca sursa de vanzari. propertyrentals (chirii) merge corect.
+            "vanzare": {"confirmed": False, "slug": "propertyforsale"},
+            "inchiriere": {"confirmed": True, "slug": "propertyrentals"},
+        },
+        # tip_proprietate in interiorul categoriei — de investigat in Partea B, sectiunea 3.
+    },
+}
+
+
 # Scraperele RE citesc filtrele cu cheile "pret_min"/"camere_min"/"suprafata_min" (interfata
 # de facto, folosita si de /api/real-estate/search + scanner-ul vechi). Le mapam la field_key-urile
 # din RE_TECHNICAL_FIELDS ca apply_re_filters sa le gaseasca. Acelasi rol ca aliases in Auto.

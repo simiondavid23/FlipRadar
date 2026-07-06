@@ -46,7 +46,10 @@ def _olx_path(tip_anunt: str, tip_proprietate: str) -> str:
     if tp.startswith("teren"):
         return "/imobiliare/terenuri/"
     if tp.startswith("comerc"):
-        return f"/imobiliare/spatii-comerciale-{suffix}/"
+        # CONFIRMAT LIVE 2026-07-06: categoria reala e /imobiliare/birouri-spatii-comerciale/
+        # — o SINGURA categorie pt vanzare+inchiriere, FARA suffix. Vechiul
+        # /imobiliare/spatii-comerciale-{de-vanzare|de-inchiriat}/ dadea HTTP 404.
+        return "/imobiliare/birouri-spatii-comerciale/"
     # apartament / garsoniera
     return f"/imobiliare/apartamente-garsoniere-{suffix}/"
 

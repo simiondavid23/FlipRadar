@@ -22,6 +22,11 @@ def _path(tip_anunt: str, tip_proprietate: str) -> str:
         prop = "case"
     elif tp.startswith("teren"):
         prop = "terenuri"
+    elif tp.startswith("comerc"):
+        # CONFIRMAT LIVE 2026-07-06, HTTP 200 cu anunturi comerciale reale din mai multe
+        # orase (Brasov/Bucuresti/Chiajna...): /vanzare-spatii-comerciale/. Slug PLURAL;
+        # "spatiu-comercial"/"comercial" dau 410, "birouri" redirect -> spatii-comerciale.
+        prop = "spatii-comerciale"
     else:
         prop = "apartamente"
     return f"/{tr}-{prop}/"

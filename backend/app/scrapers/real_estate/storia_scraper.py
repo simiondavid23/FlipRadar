@@ -77,6 +77,11 @@ def _category_path(tip_anunt: str, tip_proprietate: str, locatie=None) -> str:
         prop = "casa"
     elif tp.startswith("teren"):
         prop = "teren"
+    elif tp.startswith("comerc"):
+        # CONFIRMAT LIVE 2026-07-06 pe 2 orase (Bucuresti + Cluj), HTTP 200 cu anunturi
+        # comerciale reale: /ro/rezultate/vanzare/spatiu-comercial/{oras}. Slug SINGULAR;
+        # "spatii-comerciale"/"birou"/"comercial" redirectau la apartament (?fromNoEstate=true).
+        prop = "spatiu-comercial"
     else:
         prop = "apartament"
     base = f"/ro/rezultate/{tr}/{prop}"
