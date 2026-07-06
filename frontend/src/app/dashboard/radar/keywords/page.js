@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { radarAPI } from "@/lib/api";
 import { modalFooterStyle } from "@/lib/uiStyles";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
+import NotifToggle from "@/components/NotifToggle";
 import {
   Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp, Mail, MessageSquare
 } from "lucide-react";
@@ -1580,7 +1581,7 @@ export default function RadarKeywordsPage() {
               )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                <Field label="Interval polling">
+                <Field label="Interval verificare">
                   <select value={form.poll_interval_minutes} onChange={(e) => setForm({ ...form, poll_interval_minutes: parseInt(e.target.value) })} style={inputStyle}>
                     {POLL_OPTIONS.map((m) => <option key={m} value={m}>{m} min</option>)}
                   </select>
@@ -1875,43 +1876,6 @@ function StatCard({ label, value, color }) {
     <div style={{ padding: "0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", textAlign: "center" }}>
       <div style={{ fontSize: "1rem", fontWeight: 700, color }}>{value}</div>
       <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>{label}</div>
-    </div>
-  );
-}
-
-function NotifToggle({ label, subtitle, value, onChange }) {
-  const on = !!value;
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem" }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: "0.8125rem", color: "var(--text-primary)", fontWeight: 500 }}>{label}</div>
-        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>{subtitle}</div>
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!on)}
-        aria-pressed={on}
-        style={{
-          width: 44, height: 24, borderRadius: 12,
-          backgroundColor: on ? "var(--blue-primary)" : "var(--border-color)",
-          border: "none", padding: 2, cursor: "pointer",
-          position: "relative",
-          transition: "background-color 0.15s ease",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            position: "absolute",
-            top: 2,
-            left: on ? 22 : 2,
-            width: 20, height: 20, borderRadius: "50%",
-            backgroundColor: "#ffffff",
-            transition: "left 0.15s ease",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-          }}
-        />
-      </button>
     </div>
   );
 }

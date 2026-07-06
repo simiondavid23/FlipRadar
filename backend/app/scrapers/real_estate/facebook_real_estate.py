@@ -10,7 +10,7 @@ import re
 import urllib.parse
 from typing import Optional
 
-from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
+from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES, RE_PROPERTY_TYPES
 
 _CATEGORY_SLUGS = {"vanzare": "propertyforsale", "inchiriere": "propertyrentals"}
 
@@ -33,6 +33,17 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
     from app.scrapers.auto.listings.facebook_auto_scraper import (
         _find_session_file, _is_session_valid)
     filters = filters or {}
+
+    # GUARD: nu porni scan pe o categorie NECONFIRMATA (ex. propertyforsale/vanzare —
+    # intoarce doar Partner listings/electronice+chirii, nu vanzari imobiliare reale).
+    # Vezi re_categories.RE_PROPERTY_TYPES["facebook_real_estate"]["categorie_tip_anunt"].
+    tip_anunt = (filters.get("tip_anunt") or "inchiriere").lower()
+    spec = RE_PROPERTY_TYPES["facebook_real_estate"]["categorie_tip_anunt"].get(tip_anunt)
+    if not spec or not spec.get("confirmed"):
+        log_manager.emit("real_estate", "WARN",
+            f"Facebook RE: categoria pentru tip_anunt='{tip_anunt}' e neconfirmata "
+            f"(vezi re_categories.RE_PROPERTY_TYPES) — scan omis, 0 rezultate.")
+        return []
 
     session_path = _find_session_file()
     if not session_path or not _is_session_valid(session_path):

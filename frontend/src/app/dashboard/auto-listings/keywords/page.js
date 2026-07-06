@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { autoListingsAPI } from "@/lib/api";
 import { modalFooterStyle } from "@/lib/uiStyles";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
+import NotifToggle from "@/components/NotifToggle";
 import { Car, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Info } from "lucide-react";
 
 // Prețul de referință e în EUR pentru TOATE platformele (inclusiv Facebook Auto) —
@@ -339,11 +340,22 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
             <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="ex: BMW Seria 3 diesel" style={inputStyle} autoFocus />
           </Field>
 
-          <Field label="Platformă">
-            <select value={platform} onChange={(e) => changePlatform(e.target.value)} style={inputStyle}>
-              {AUTO_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-            </select>
-          </Field>
+          <div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Platformă</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+              {AUTO_PLATFORMS.map((p) => {
+                const active = platform === p.value;
+                return (
+                  <button key={p.value} onClick={() => changePlatform(p.value)} style={{
+                    padding: "0.375rem 0.75rem", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
+                    border: `1px solid ${active ? "rgba(37,99,235,0.4)" : "var(--border-color)"}`,
+                    backgroundColor: active ? "rgba(37,99,235,0.15)" : "transparent",
+                    color: active ? "#60a5fa" : "var(--text-secondary)",
+                  }}>{p.label}</button>
+                );
+              })}
+            </div>
+          </div>
 
           {platform === "facebook_auto" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)", display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
@@ -474,18 +486,37 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
             )}
           </div>
 
-          {/* Toggles */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.notify_email} onChange={(e) => set({ notify_email: e.target.checked })} style={{ width: "auto" }} /> Notificare email
-            </label>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.notify_discord} onChange={(e) => set({ notify_discord: e.target.checked })} style={{ width: "auto" }} /> Notificare Discord
-            </label>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} style={{ width: "auto" }} /> Activ
-            </label>
+          {/* Canale de notificare — identic cu Radar (NotifToggle partajat) */}
+          <div style={{
+            border: "1px solid var(--border-color)",
+            borderRadius: "0.5rem",
+            padding: "1rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
+          }}>
+            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>
+              Canale de notificare
+            </div>
+            <NotifToggle
+              label="Notificări Email"
+              subtitle="Primești email pentru anunțuri auto cu grad A/B"
+              value={form.notify_email}
+              onChange={(v) => set({ notify_email: v })}
+            />
+            <NotifToggle
+              label="Notificări Discord"
+              subtitle="Trimite la webhook-urile configurate în Setări"
+              value={form.notify_discord}
+              onChange={(v) => set({ notify_discord: v })}
+            />
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+              Notificările in-app sunt întotdeauna active indiferent de selecție.
+            </div>
           </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} style={{ width: "auto" }} /> Activ
+          </label>
         </div>
 
         <div style={modalFooterStyle}>

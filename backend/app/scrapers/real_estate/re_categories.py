@@ -101,9 +101,13 @@ RE_PROPERTY_TYPES = {
         "comercial": {"confirmed": True},   # confirmat live 2026-07-06: /ro/rezultate/vanzare/spatiu-comercial/{oras}
     },
     "imobiliare_ro": {
+        # Re-confirmat live 2026-07-06 pe TOATE 10 combinatiile (site-ul si-a schimbat structura
+        # URL — vezi imobiliare_ro_scraper._path: prefix chirie 'inchirieri', casa='case-vile',
+        # garsoniera slug propriu). Toate tipurile OK la vanzare; la inchiriere toate OK IN AFARA de
+        # teren — /inchirieri-terenuri/ redirecteaza la spatii-comerciale, deci _path -> None + skip.
         "apartament": {"confirmed": True}, "garsoniera": {"confirmed": True},
-        "casa": {"confirmed": True}, "teren": {"confirmed": True},
-        "comercial": {"confirmed": True},   # confirmat live 2026-07-06: /vanzare-spatii-comerciale/
+        "casa": {"confirmed": True}, "teren": {"confirmed": True},   # teren: doar VANZARE (fara chirie)
+        "comercial": {"confirmed": True},   # confirmat live: /vanzare-spatii-comerciale/ + /inchirieri-spatii-comerciale/
     },
     "facebook_real_estate": {
         "categorie_tip_anunt": {

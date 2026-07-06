@@ -14,18 +14,29 @@ from app.services.log_manager import log_manager
 _BASE = "https://www.imobiliare.ro"
 
 
-def _path(tip_anunt: str, tip_proprietate: str) -> str:
+def _path(tip_anunt: str, tip_proprietate: str):
+    """URL de categorie imobiliare.ro. RESCRIS 2026-07-06 dupa ce site-ul si-a schimbat
+    structura (re-confirmat live pe TOATE cele 10 combinatii tip_anunt x tip_proprietate):
+      - prefixul de chirie e PLURAL 'inchirieri' (vechiul 'inchiriere-...' da 404 => TOATE
+        chiriile erau rupte, nu doar comercial);
+      - casa = 'case-vile' (vechiul slug 'case' da 410 — slug complet nou, nu doar prefixul);
+      - garsoniera are slug PROPRIU 'garsoniere' (inainte cadea pe 'apartamente');
+      - apartament='apartamente', teren='terenuri', comercial='spatii-comerciale'.
+    Returneaza None pentru combinatiile FARA categorie valida: /inchirieri-terenuri/ intoarce
+    200 dar redirecteaza SILENTIOS la /inchirieri-spatii-comerciale/ (imobiliare.ro n-are
+    'teren de inchiriat') -> None ca sa nu salvam spatii comerciale drept terenuri."""
     rent = (tip_anunt or "").lower().startswith("inchiri")
-    tr = "inchiriere" if rent else "vanzare"
+    tr = "inchirieri" if rent else "vanzare"
     tp = (tip_proprietate or "apartament").lower()
-    if tp.startswith("cas"):
-        prop = "case"
+    if tp.startswith("garsonier"):
+        prop = "garsoniere"
+    elif tp.startswith("cas"):
+        prop = "case-vile"
     elif tp.startswith("teren"):
+        if rent:
+            return None
         prop = "terenuri"
     elif tp.startswith("comerc"):
-        # CONFIRMAT LIVE 2026-07-06, HTTP 200 cu anunturi comerciale reale din mai multe
-        # orase (Brasov/Bucuresti/Chiajna...): /vanzare-spatii-comerciale/. Slug PLURAL;
-        # "spatiu-comercial"/"comercial" dau 410, "birouri" redirect -> spatii-comerciale.
         prop = "spatii-comerciale"
     else:
         prop = "apartamente"
@@ -79,6 +90,11 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
     tip_anunt = filters.get("tip_anunt", "vanzare")
     tip_proprietate = filters.get("tip_proprietate", "apartament")
     path = _path(tip_anunt, tip_proprietate)
+    if not path:
+        log_manager.emit("real_estate", "WARN",
+            f"Imobiliare.ro: {tip_anunt}/{tip_proprietate} nu are categorie valida "
+            f"(ex. teren de inchiriat redirecteaza la spatii comerciale) — scan omis, 0 rezultate.")
+        return []
     if filters.get("locatie"):
         # FIX diacritice: normalizam slug-ul de oras ("București" -> "bucuresti", nu "bucurești").
         # Fara asta imobiliare.ro nu rezolva orasul si intoarce rezultate din alte judete (mixate).

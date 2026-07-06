@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
+import NotifToggle from "@/components/NotifToggle";
+import { modalFooterStyle } from "@/lib/uiStyles";
 import { Home, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw, Info } from "lucide-react";
 
 const RE_PLATFORMS = [
@@ -333,7 +335,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
               {RE_PLATFORMS.map((p) => {
                 const active = platform === p.value;
                 return (
-                  <button key={p.value} onClick={() => setPlatform(p.value)} style={{
+                  <button key={p.value} onClick={() => { setPlatform(p.value); if (p.value === "facebook_marketplace" && form.tip_anunt === "vanzare") set({ tip_anunt: "inchiriere" }); }} style={{
                     padding: "0.375rem 0.75rem", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
                     border: `1px solid ${active ? "rgba(37,99,235,0.4)" : "var(--border-color)"}`,
                     backgroundColor: active ? "rgba(37,99,235,0.15)" : "transparent",
@@ -361,14 +363,16 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
           )}
           {platform === "facebook_marketplace" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>.
+              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Doar <strong>Închiriere</strong> e disponibil — categoria de vânzare Facebook nu conține anunțuri imobiliare reale.
             </div>
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
             <Field label="Tip anunț">
               <select value={form.tip_anunt} onChange={(e) => set({ tip_anunt: e.target.value })} style={inputStyle}>
-                <option value="vanzare">Vânzare</option>
+                <option value="vanzare" disabled={platform === "facebook_marketplace"}>
+                  Vânzare{platform === "facebook_marketplace" ? " — indisponibil pe Facebook" : ""}
+                </option>
                 <option value="inchiriere">Închiriere</option>
               </select>
             </Field>
@@ -440,23 +444,40 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
             )}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.notify_email} onChange={(e) => set({ notify_email: e.target.checked })} style={{ width: "auto" }} /> Notificare email
-            </label>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.notify_discord} onChange={(e) => set({ notify_discord: e.target.checked })} style={{ width: "auto" }} /> Notificare Discord
-            </label>
-            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginLeft: "1.5rem", marginTop: "-0.25rem" }}>
-              Necesită webhook configurat în Setări → Discord — Imobiliare
-            </span>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} style={{ width: "auto" }} /> Activ
-            </label>
+          {/* Canale de notificare — identic cu Radar (NotifToggle partajat) */}
+          <div style={{
+            border: "1px solid var(--border-color)",
+            borderRadius: "0.5rem",
+            padding: "1rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
+          }}>
+            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>
+              Canale de notificare
+            </div>
+            <NotifToggle
+              label="Notificări Email"
+              subtitle="Primești email pentru anunțuri imobiliare cu grad A/B"
+              value={form.notify_email}
+              onChange={(v) => set({ notify_email: v })}
+            />
+            <NotifToggle
+              label="Notificări Discord"
+              subtitle="Trimite la webhook-urile configurate în Setări"
+              value={form.notify_discord}
+              onChange={(v) => set({ notify_discord: v })}
+            />
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+              Notificările in-app sunt întotdeauna active indiferent de selecție.
+            </div>
           </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-primary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} style={{ width: "auto" }} /> Activ
+          </label>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", position: "sticky", bottom: 0, backgroundColor: "var(--bg-card)" }}>
+        <div style={modalFooterStyle}>
           <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
           <button onClick={onSubmit} disabled={saving} style={{ padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
             {saving ? "Se salvează..." : editing ? "Salvează" : "Adaugă"}
