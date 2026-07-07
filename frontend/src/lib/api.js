@@ -228,33 +228,6 @@ export const realEstateMonitorAPI = {
   exportListings: (params)  => api.get("/api/real-estate-monitor/feed/export", { params, responseType: "blob" }),
 };
 
-// Modulul 1 Marketplace — cautare live pe platforme (OLX, Vinted, etc.).
-// `filters` se trimite ca JSON encodat in query string.
-const _mpFilters = (filters) => (filters ? JSON.stringify(filters) : undefined);
-export const marketplaceAPI = {
-  // MODIFICARE 17 — opts = { page, per_page } pentru paginare "Încarcă mai multe".
-  olxGeneral: (q, category = "", filters, opts = {}) =>
-    api.get("/api/marketplace/olx-general", { params: { q, category, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  vinted: (q, filters, opts = {}) =>
-    api.get("/api/marketplace/vinted", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  lajumate: (q, filters, opts = {}) => api.get("/api/marketplace/lajumate", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  publi24: (q, filters, opts = {}) => api.get("/api/marketplace/publi24", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  okazii: (q, filters, opts = {}) => api.get("/api/marketplace/okazii", { params: { q, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  kleinanzeigen: (q, categoryId = "", filters, opts = {}) =>
-    api.get("/api/marketplace/kleinanzeigen", { params: { q, category_id: categoryId, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  searchAll: (q, platforms = "olx,vinted,okazii", filters, opts = {}) =>
-    api.get("/api/marketplace/search-all", { params: { q, platforms, filters: _mpFilters(filters), page: opts.page, per_page: opts.per_page } }),
-  // Anunturi salvate
-  getSaved: () => api.get("/api/marketplace/saved"),
-  saveListing: (data) => api.post("/api/marketplace/saved", data),
-  deleteSaved: (id) => api.delete(`/api/marketplace/saved/${id}`),
-  // Alerte keyword
-  getKeywordAlerts: () => api.get("/api/marketplace/keyword-alerts"),
-  createKeywordAlert: (data) => api.post("/api/marketplace/keyword-alerts", data),
-  updateKeywordAlert: (id, data) => api.put(`/api/marketplace/keyword-alerts/${id}`, data),
-  deleteKeywordAlert: (id) => api.delete(`/api/marketplace/keyword-alerts/${id}`),
-};
-
 // Auto — Loturi & Licitatii (Copart/IAAI/SCA/OpenLane) + calculator import
 export const autoAPI = {
   calculateImport: (data) => api.post("/api/auto/calculate-import", data),
