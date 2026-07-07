@@ -2,6 +2,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from jose import JWTError
 from sqlalchemy.orm import Session
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import (
@@ -24,7 +25,8 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=UserResponse)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Aceasta adresa de email este deja inregistrata")
@@ -71,7 +73,8 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/login")
-def login(response: Response, login_data: UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, response: Response, login_data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == login_data.email).first()
     if not user or not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Email sau parola incorecta")
@@ -127,7 +130,8 @@ def logout(response: Response):
 
 
 @router.get("/security-question", response_model=SecurityQuestionResponse)
-def get_security_question(email: str = Query(...), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def get_security_question(request: Request, email: str = Query(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == email).first()
     if not user or not user.security_question:
         raise HTTPException(
@@ -138,7 +142,8 @@ def get_security_question(email: str = Query(...), db: Session = Depends(get_db)
 
 
 @router.post("/reset-password")
-def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def reset_password(request: Request, data: ResetPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not user.security_answer_hash:
         raise HTTPException(
