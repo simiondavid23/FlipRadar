@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
 import { Home, AlertTriangle, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { GRADE_COLORS, selectStyle, tabPillStyle } from "@/lib/uiStyles";
@@ -8,6 +8,7 @@ import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import REManualSearch from "@/components/REManualSearch";
 
 const PLATFORM_LABELS = {
@@ -33,6 +34,8 @@ export default function REFeedPage() {
   const [tab, setTab] = useState("feed");   // "feed" | "manual" (Căutare Manuală)
   const [selectedBulk, setSelectedBulk] = useState(new Set());
   const toggleBulk = (id) => setSelectedBulk((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const reqIdRef = useRef(0);
+  const [feedError, setFeedError] = useState(null);
 
   // Serverul filtrează platform/grade/rooms/zone/keyword; orașul e client-side (vezi shownListings).
   const _feedParams = useCallback((offset) => {
@@ -46,19 +49,27 @@ export default function REFeedPage() {
   }, [filters]);
 
   const loadFeed = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setLoading(true);
+    setFeedError(null);
     try {
       const r = await realEstateMonitorAPI.getFeed(_feedParams(0));
+      if (rid !== reqIdRef.current) return;
       setListings(r.data?.items || []);
       setFeedTotal(r.data?.total || 0);
-    } catch (e) { console.error("[REFeed]", e); }
+    } catch (e) {
+      console.error("[REFeed]", e);
+      if (rid === reqIdRef.current) setFeedError("Nu am putut încărca feed-ul. Reîncearcă.");
+    }
     finally { setLoading(false); }
   }, [_feedParams]);
 
   const loadMoreListings = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setLoadingMore(true);
     try {
       const r = await realEstateMonitorAPI.getFeed(_feedParams(listings.length));
+      if (rid !== reqIdRef.current) return;
       setListings((prev) => [...prev, ...(r.data?.items || [])]);
       setFeedTotal(r.data?.total || 0);
     } catch (e) { console.error("[REFeed] loadMore", e); }
@@ -227,6 +238,8 @@ export default function REFeedPage() {
           Export Excel
         </button>
       </div>
+
+      <FeedErrorBanner message={feedError} onRetry={loadFeed} />
 
       {loading ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>

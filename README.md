@@ -33,7 +33,10 @@ API: `http://127.0.0.1:8000` · docs: `/docs`
 ```bash
 cd frontend
 npm install
-# .env.local: NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+# .env.local: NEXT_PUBLIC_API_URL=http://localhost:8000
+# ATENTIE: foloseste localhost, NU 127.0.0.1 — browserele trateaza `localhost` si
+# `127.0.0.1` ca site-uri diferite pentru cookie-urile SameSite; cu 127.0.0.1 aici,
+# autentificarea (cookie httpOnly) nu functioneaza.
 npm run dev
 ```
 

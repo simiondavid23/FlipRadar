@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { radarAPI, mlAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
@@ -11,6 +11,7 @@ import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 
 // ── ML Predictor: detectie categorie + construire features din anunt ──
 function detectMLCategory(title = "") {
@@ -160,6 +161,8 @@ export default function RadarFeedPage() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const reqIdRef = useRef(0);
+  const [feedError, setFeedError] = useState(null);
   const [selected, setSelected] = useState(null);
   const [generatingAI, setGeneratingAI] = useState(false);
   const [selectedForComparison, setSelectedForComparison] = useState([]);
@@ -221,14 +224,18 @@ export default function RadarFeedPage() {
   }, [filters]);
 
   const loadListings = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setRefreshing(true);
+    setFeedError(null);
     try {
       const r = await radarAPI.getListings(_listingParams(1));
+      if (rid !== reqIdRef.current) return;
       setListings(r.data?.items || []);
       setFeedTotal(r.data?.total || 0);
       setFeedPage(1);
     } catch (e) {
       console.error("[Radar] listings:", e);
+      if (rid === reqIdRef.current) setFeedError("Nu am putut încărca feed-ul. Reîncearcă.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -237,9 +244,11 @@ export default function RadarFeedPage() {
 
   const loadMoreListings = useCallback(async () => {
     const next = feedPage + 1;
+    const rid = ++reqIdRef.current;
     setRefreshing(true);
     try {
       const r = await radarAPI.getListings(_listingParams(next));
+      if (rid !== reqIdRef.current) return;
       setListings((prev) => [...prev, ...(r.data?.items || [])]);
       setFeedTotal(r.data?.total || 0);
       setFeedPage(next);
@@ -599,6 +608,8 @@ export default function RadarFeedPage() {
           />
         </div>
       </div>
+
+      <FeedErrorBanner message={feedError} onRetry={loadListings} />
 
       {/* Grilă listinguri */}
       {listings.length === 0 ? (
@@ -1017,33 +1028,35 @@ function ManualResultCard({ listing }) {
 
 // Slot ML pentru modalul partajat — mutat 1:1 din ListingModal (hooks + JSX identice).
 export function RadarMLSection({ listing }) {
-  const [mlPrediction, setMlPrediction] = useState(null);
-  const [mlLoading, setMlLoading] = useState(false);
-  const [mlCategory, setMlCategory] = useState(null);
+  // mlCategory e pur derivat din titlu; mlState reține DOAR rezultatul fetch-ului
+  // (etichetat cu id-ul listing-ului). loading/prediction se derivă în render, deci
+  // singurul setState e în .then/.catch (asincron), nu sincron în efect.
+  const mlCategory = listing ? detectMLCategory(listing.title) : null;
+  const [mlState, setMlState] = useState({ id: null, data: null });
 
   useEffect(() => {
-    if (!listing) { setMlPrediction(null); return; }
-    const cat = detectMLCategory(listing.title);
-    setMlCategory(cat);
-    if (!cat) { setMlPrediction(null); return; }
-    setMlLoading(true);
+    if (!listing || !mlCategory) return;
+    let cancelled = false;
     mlAPI.predict({
-      category: cat,
-      features: buildFeaturesFromListing(listing, cat),
+      category: mlCategory,
+      features: buildFeaturesFromListing(listing, mlCategory),
     })
-      .then((r) => setMlPrediction(r.data))
+      .then((r) => { if (!cancelled) setMlState({ id: listing.id, data: r.data }); })
       .catch((err) => {
+        if (cancelled) return;
         const msg = err.response?.data?.detail;
-        setMlPrediction(
+        setMlState({ id: listing.id, data:
           msg === "model_not_trained" ? { error: "model_not_trained" }
             : msg === "features_incomplete" ? { error: "features_incomplete" }
               : { error: "unavailable" }
-        );
-      })
-      .finally(() => setMlLoading(false));
-  }, [listing?.id]);
+        });
+      });
+    return () => { cancelled = true; };
+  }, [listing?.id, mlCategory]);
 
   if (!mlCategory) return null;
+  const mlLoading = mlState.id !== listing.id;
+  const mlPrediction = mlState.id === listing.id ? mlState.data : null;
   return (
     <div style={{ margin: "0 1.25rem 1rem" }}>
       <div style={{
@@ -1101,36 +1114,40 @@ export function RadarMLSection({ listing }) {
 
 // Slot bannere detaliu on-demand Vinted/Facebook — mutat 1:1 din ListingModal.
 export function RadarDetailBanner({ listing, onLoadVintedDetail, onLoadFacebookDetail }) {
-  const [vintedDetailStatus, setVintedDetailStatus] = useState(null);
-  const [facebookDetailStatus, setFacebookDetailStatus] = useState(null);
+  // Reținem DOAR rezultatul fetch-ului (per id). Statusul "loading" e derivat cât
+  // timp fetch-ul pentru id-ul curent nu a revenit, deci singurul setState e în
+  // .then (asincron). "success" nu are UI (ca și null) — vezi randarea de mai jos.
+  const [vintedResult, setVintedResult] = useState({ id: null, ok: null });
+  const [facebookResult, setFacebookResult] = useState({ id: null, ok: null });
+
+  const needsExtraDetail = (listing.images || []).length <= 1 || !listing.description;
+  const vintedNeedsFetch = listing.platform === "vinted" && !listing.vinted_detail_fetched && needsExtraDetail;
+  const facebookNeedsFetch = listing.platform === "facebook" && !listing.facebook_detail_fetched && needsExtraDetail;
 
   useEffect(() => {
-    if (!listing || listing.platform !== "vinted") return;
-    if (listing.vinted_detail_fetched) return;
-    const needsDetail = (listing.images || []).length <= 1 || !listing.description;
-    if (!needsDetail) return;
+    if (!vintedNeedsFetch) return;
     let cancelled = false;
-    setVintedDetailStatus("loading");
     Promise.resolve(onLoadVintedDetail?.(listing.id)).then((ok) => {
-      if (cancelled) return;
-      setVintedDetailStatus(ok ? "success" : "failed");
+      if (!cancelled) setVintedResult({ id: listing.id, ok: !!ok });
     });
     return () => { cancelled = true; };
-  }, [listing.id]);
+  }, [listing.id, vintedNeedsFetch]);
 
   useEffect(() => {
-    if (!listing || listing.platform !== "facebook") return;
-    if (listing.facebook_detail_fetched) return;
-    const needsDetail = (listing.images || []).length <= 1 || !listing.description;
-    if (!needsDetail) return;
+    if (!facebookNeedsFetch) return;
     let cancelled = false;
-    setFacebookDetailStatus("loading");
     Promise.resolve(onLoadFacebookDetail?.(listing.id)).then((ok) => {
-      if (cancelled) return;
-      setFacebookDetailStatus(ok ? "success" : "failed");
+      if (!cancelled) setFacebookResult({ id: listing.id, ok: !!ok });
     });
     return () => { cancelled = true; };
-  }, [listing.id]);
+  }, [listing.id, facebookNeedsFetch]);
+
+  const vintedDetailStatus = !vintedNeedsFetch ? null
+    : vintedResult.id === listing.id ? (vintedResult.ok ? "success" : "failed")
+    : "loading";
+  const facebookDetailStatus = !facebookNeedsFetch ? null
+    : facebookResult.id === listing.id ? (facebookResult.ok ? "success" : "failed")
+    : "loading";
 
   return (
     <>

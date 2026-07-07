@@ -854,7 +854,15 @@ function MessageTemplatesSection() {
     try { const r = await radarAPI.getTemplates(); setItems(r.data || []); }
     catch (e) { console.error("[Templates]", e); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // Fetch inline la montare (nu apelăm load() sincron în efect — regula
+  // set-state-in-effect); load() rămâne pentru refetch după create/update/delete.
+  useEffect(() => {
+    let cancelled = false;
+    radarAPI.getTemplates()
+      .then((r) => { if (!cancelled) setItems(r.data || []); })
+      .catch((e) => console.error("[Templates]", e));
+    return () => { cancelled = true; };
+  }, []);
 
   const openCreate = () => { setEditingId(null); setForm(EMPTY_TEMPLATE_FORM); setShowForm(true); };
   const openEdit = (t) => {

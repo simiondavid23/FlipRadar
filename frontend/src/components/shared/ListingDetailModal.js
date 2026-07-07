@@ -41,8 +41,12 @@ export default function ListingDetailModal({
   mlSlot = null,
   children = null,
 }) {
-  const [mainImg, setMainImg] = useState(images[0] || null);
-  useEffect(() => { setMainImg(images[0] || null); }, [listing.id]);
+  // selectedImg ține DOAR imaginea aleasă de user din thumbnails; imaginea afișată
+  // e derivată în render. Când se schimbă listing-ul SAU enrichment-ul aduce alte
+  // poze (același id, `images` se schimbă), selecția veche nu mai e în `images` și
+  // se cade automat pe prima imagine — fără efect, deci fără set-state-in-effect.
+  const [selectedImg, setSelectedImg] = useState(null);
+  const mainImg = (selectedImg && images.includes(selectedImg)) ? selectedImg : (images[0] || null);
 
   return (
     <div
@@ -140,7 +144,8 @@ export default function ListingDetailModal({
                   <img
                     key={idx}
                     src={img}
-                    onClick={() => setMainImg(img)}
+                    alt=""
+                    onClick={() => setSelectedImg(img)}
                     style={{
                       width: "64px", height: "64px", objectFit: "cover",
                       borderRadius: "0.375rem", cursor: "pointer",

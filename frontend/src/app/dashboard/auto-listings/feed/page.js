@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { autoListingsAPI, autoAPI, mlAPI, radarAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Car, RefreshCw, Loader2, AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
@@ -11,6 +11,7 @@ import SearchResultCard from "@/components/AutoListingCard";
 import AutoAiModal from "@/components/AutoAiModal";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 
 const PLATFORM_LABELS = {
   autovit: "Autovit", olx_auto: "OLX Auto", mobile_de: "Mobile.de",
@@ -49,6 +50,8 @@ export default function AutoFeedPage() {
   const [activeTab, setActiveTab] = useState("auto");
   const [selectedBulk, setSelectedBulk] = useState(new Set());
   const toggleBulk = (id) => setSelectedBulk((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const reqIdRef = useRef(0);
+  const [feedError, setFeedError] = useState(null);
 
   const _feedParams = useCallback((offset) => {
     const params = { status: filters.status, limit: 100, offset };
@@ -59,22 +62,28 @@ export default function AutoFeedPage() {
   }, [filters]);
 
   const loadFeed = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setLoading(true);
+    setFeedError(null);
     try {
       const r = await autoListingsAPI.getFeed(_feedParams(0));
+      if (rid !== reqIdRef.current) return;
       setListings(r.data?.items || []);
       setFeedTotal(r.data?.total || 0);
     } catch (e) {
       console.error("[AutoFeed]", e);
+      if (rid === reqIdRef.current) setFeedError("Nu am putut încărca feed-ul. Reîncearcă.");
     } finally {
       setLoading(false);
     }
   }, [_feedParams]);
 
   const loadMoreListings = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setLoadingMore(true);
     try {
       const r = await autoListingsAPI.getFeed(_feedParams(listings.length));
+      if (rid !== reqIdRef.current) return;
       setListings((prev) => [...prev, ...(r.data?.items || [])]);
       setFeedTotal(r.data?.total || 0);
     } catch (e) {
@@ -258,6 +267,8 @@ export default function AutoFeedPage() {
         </button>
       </div>
 
+      <FeedErrorBanner message={feedError} onRetry={loadFeed} />
+
       {/* Grid */}
       {loading ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
@@ -381,25 +392,30 @@ export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, i
 
 // Slot ML BMW (mutat 1:1 din vechiul modal Auto).
 function AutoMLSection({ listing }) {
-  const [mlPrediction, setMlPrediction] = useState(null);
-  const [mlLoading, setMlLoading] = useState(false);
+  // mlState reține DOAR rezultatul fetch-ului, etichetat cu id-ul listing-ului pentru
+  // care a fost calculat. loading/prediction se derivă în render (fără setState sincron
+  // în efect); rezultatul vechi cade automat când se schimbă listing-ul.
+  const [mlState, setMlState] = useState({ id: null, data: null });
   const isBmw = /\bbmw\b/i.test(listing.title || "");
   useEffect(() => {
-    if (!isBmw) { setMlPrediction(null); return; }
-    setMlLoading(true);
+    if (!isBmw) return;
+    let cancelled = false;
     mlAPI.predict({
       category: "auto_bmw",
       features: { make: "BMW", price: listing.price, year: listing.year, km: listing.km, platform: listing.platform },
     })
-      .then((r) => setMlPrediction(r.data))
+      .then((r) => { if (!cancelled) setMlState({ id: listing.id, data: r.data }); })
       .catch((err) => {
+        if (cancelled) return;
         const msg = err.response?.data?.detail;
-        setMlPrediction(msg === "model_not_trained" ? { error: "model_not_trained" }
-          : msg === "features_incomplete" ? { error: "features_incomplete" } : { error: "unavailable" });
-      })
-      .finally(() => setMlLoading(false));
+        setMlState({ id: listing.id, data: msg === "model_not_trained" ? { error: "model_not_trained" }
+          : msg === "features_incomplete" ? { error: "features_incomplete" } : { error: "unavailable" } });
+      });
+    return () => { cancelled = true; };
   }, [listing.id, isBmw, listing.price, listing.year, listing.km, listing.platform]);
   if (!isBmw) return null;
+  const mlLoading = mlState.id !== listing.id;
+  const mlPrediction = mlState.id === listing.id ? mlState.data : null;
   return (
     <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", margin: "0 1.25rem 1rem" }}>
       <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.5rem" }}>PREDICȚIE ML</div>

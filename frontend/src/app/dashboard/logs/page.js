@@ -165,17 +165,23 @@ export default function LogsPage() {
     // MODIFICARE 3 — EventSource trimite automat cookie-ul httpOnly de sesiune
     // (withCredentials); backend-ul citește token-ul din cookie.
     const url = `${API_BASE}/api/logs/stream?module=${activeModule}`;
-    const es = new EventSource(url, { withCredentials: true });
-    es.onmessage = (event) => {
-      try {
-        const entry = JSON.parse(event.data);
-        setLogs((prev) => [...prev, entry].slice(-500));
-      } catch {
-        /* ignora liniile invalide */
-      }
+    // Reconectare automata: la eroare (ex. restart backend) inchidem si reincercam
+    // dupa 4s, cat timp efectul nu a fost curatat (schimbare modul / unmount).
+    let cancelled = false, es = null, timer = null;
+    const connect = () => {
+      es = new EventSource(url, { withCredentials: true });
+      es.onmessage = (event) => {
+        try {
+          const entry = JSON.parse(event.data);
+          setLogs((prev) => [...prev, entry].slice(-500));
+        } catch {
+          /* ignora liniile invalide */
+        }
+      };
+      es.onerror = () => { es.close(); if (!cancelled) timer = setTimeout(connect, 4000); };
     };
-    es.onerror = () => es.close();
-    return () => es.close();
+    connect();
+    return () => { cancelled = true; clearTimeout(timer); es?.close(); };
   }, [activeModule]);
 
   // Auto-scroll cand sosesc loguri noi.

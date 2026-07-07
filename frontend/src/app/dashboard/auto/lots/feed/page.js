@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { autoLotKeywordsAPI } from "@/lib/api";
 import { Car, RefreshCw } from "lucide-react";
 import { STATUS_TABS, selectStyle } from "@/lib/uiStyles";
@@ -7,6 +7,7 @@ import StatCardsRow from "@/components/shared/StatCardsRow";
 import StatusTabsBar from "@/components/shared/StatusTabsBar";
 import ScanNowButton from "@/components/shared/ScanNowButton";
 import AutoLotCard from "@/components/AutoLotCard";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 
 const PLATFORM_LABELS = { copart: "Copart", iaai: "IAAI", sca: "SCA", openlane: "OpenLane" };
 
@@ -18,17 +19,23 @@ export default function AutoLotsFeedPage() {
   const [filters, setFilters] = useState({ platform: "", status: "active", keyword_id: "" });
   const [scanning, setScanning] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const reqIdRef = useRef(0);
+  const [feedError, setFeedError] = useState(null);
 
   const loadFeed = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setLoading(true);
+    setFeedError(null);
     try {
       const params = { status: filters.status, limit: 100 };
       if (filters.platform) params.platform = filters.platform;
       if (filters.keyword_id) params.keyword_id = filters.keyword_id;
       const r = await autoLotKeywordsAPI.getFeed(params);
+      if (rid !== reqIdRef.current) return;
       setLots(r.data?.items || []);
     } catch (e) {
       console.error("[AutoLotsFeed]", e);
+      if (rid === reqIdRef.current) setFeedError("Nu am putut încărca feed-ul. Reîncearcă.");
     } finally {
       setLoading(false);
     }
@@ -124,6 +131,8 @@ export default function AutoLotsFeedPage() {
           <RefreshCw style={{ width: "14px", height: "14px" }} /> Reîmprospătează
         </button>
       </div>
+
+      <FeedErrorBanner message={feedError} onRetry={loadFeed} />
 
       {/* Grid */}
       {loading ? (
