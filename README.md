@@ -1,5 +1,7 @@
 # FlipRadar
 
+[![CI](https://github.com/simiondavid23/FlipRadar/actions/workflows/ci.yml/badge.svg)](https://github.com/simiondavid23/FlipRadar/actions/workflows/ci.yml)
+
 Aplicatie web pentru research-ul de produse profitabile in comertul online (revanzare). Permite monitorizarea preturilor pe mai multe magazine din Romania, analiza profitabilitatii produselor, gestionarea inventarului si a vanzarilor, plus alerte automate cand preturile scad.
 
 Lucrare de licenta.
@@ -41,6 +43,21 @@ npm run dev
 ```
 
 App: `http://localhost:3000`
+
+## Rulare teste local
+
+Testele backend folosesc o baza PostgreSQL **dedicata** (`flipradar_test`), niciodata cea reala.
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+# In backend/.env adauga linia (cu parola ta reala de postgres):
+#   TEST_DATABASE_URL=postgresql://postgres:parola@localhost:5432/flipradar_test
+pytest
+```
+
+`conftest.py` creeaza singur baza `flipradar_test` la prima rulare daca nu exista si
+refuza sa porneasca daca `TEST_DATABASE_URL` lipseste sau e egala cu `DATABASE_URL`.
 
 ## Functionalitati
 

@@ -2,7 +2,9 @@ import os
 import sys
 import asyncio
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Mutat in backend/scripts/ — path-ul trebuie sa pointeze la PARINTELE lui scripts/
+# (adica backend/), ca `import app...` sa functioneze din noua locatie.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 results_summary = {}
 

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flipradar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flipradar_test
+      SECRET_KEY: ci-secret-key-pentru-teste-0123456789abcdef
+      GROQ_API_KEY: ci-dummy-groq-key
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          # VERIFY: runner-ul GitHub trebuie sa aiba 3.14 (versiunea din venv local).
+          # Daca setup-python nu o gaseste, schimba in "3.13".
+          python-version: "3.14"
+      - name: Install backend deps
+        run: pip install -r backend/requirements-dev.txt
+      - name: Run pytest
+        run: cd backend && pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # package.json nu are `engines` -> folosim 22 (LTS curent). # VERIFY
+          node-version: "22"
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+      - name: Lint
+        run: cd frontend && npx eslint src --max-warnings=9999
+      - name: Build
+        run: cd frontend && npm run build

@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Testare (fundatia pytest) — versiuni verificate la instalare in venv (Python 3.14).
+pytest==9.1.1
+pytest-asyncio==1.4.0
