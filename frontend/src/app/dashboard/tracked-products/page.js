@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { trackedProductsAPI } from "@/lib/api";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import { Heart, Trash2, Bell, Package, ExternalLink, Activity } from "lucide-react";
 
 // Pills de status + pills per magazin (sursa = domeniul salvat de scrapere).
@@ -30,6 +31,7 @@ const SOURCE_STYLES = {
 export default function TrackedProductsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   // Valori draft pentru inputul "Alerta pret", per produs.
   const [alertDrafts, setAlertDrafts] = useState({});
@@ -41,11 +43,13 @@ export default function TrackedProductsPage() {
 
   const loadItems = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await trackedProductsAPI.getAll();
       setItems(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Tracked products error:", err);
+      setLoadError("Nu am putut încărca datele. Reîncearcă.");
     } finally {
       setLoading(false);
     }
@@ -159,6 +163,8 @@ export default function TrackedProductsPage() {
           </button>
         ))}
       </div>
+
+      <FeedErrorBanner message={loadError} onRetry={loadItems} />
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "8rem" }}>

@@ -5,6 +5,7 @@ hardcoded reference prices per city/zone/room-count.
 """
 from typing import Optional
 from sqlalchemy.orm import Session
+from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword
 
 # Reference prices EUR/sqm/month (chirie) — 2025-2026 market data
 # Format: (city, zone_canonical): {rooms: avg_eur_per_sqm}
@@ -35,7 +36,8 @@ _REFS = {
 def get_zone_avg_ppm(db: Session, model_class,
                      user_id: int, city: str,
                      zone_normalized: str,
-                     rooms: int = None) -> Optional[float]:
+                     rooms: int = None,
+                     tip_anunt: str | None = None) -> Optional[float]:
     """Compute average price/sqm from DB listings (≥5 required)."""
     try:
         q = db.query(model_class).filter(
@@ -43,6 +45,12 @@ def get_zone_avg_ppm(db: Session, model_class,
             model_class.price_per_sqm.isnot(None),
             model_class.price_per_sqm > 0,
         )
+        # Media pe chirii nu se contamineaza cu vanzari: filtram pe tip prin
+        # keyword (model_class.keyword_id -> real_estate_keywords.tip_anunt).
+        if tip_anunt and hasattr(model_class, "keyword_id"):
+            q = q.join(RealEstateMonitorKeyword,
+                       model_class.keyword_id == RealEstateMonitorKeyword.id
+                ).filter(RealEstateMonitorKeyword.tip_anunt == tip_anunt)
         if zone_normalized:
             q = q.filter(model_class.zone_normalized == zone_normalized)
         if rooms:
@@ -71,7 +79,12 @@ def get_ref_ppm(city: str, zone: str, rooms: int = None) -> Optional[float]:
 
 def compute_re_score(price: float, currency: str, area_sqm: int,
                      rooms: int, zone_normalized: str, city: str,
-                     zone_avg_ppm: float = None) -> tuple:
+                     zone_avg_ppm: float = None,
+                     tip_anunt: str | None = None) -> tuple:
+    if (tip_anunt or "vanzare") != "inchiriere":
+        # Referintele (_REFS) si mediile sunt de CHIRIE; vanzarile primesc scor
+        # neutru pana exista referinte de vanzare (post-licenta).
+        return 50, "C"
     from app.services.bnr_exchange import get_eur_ron
     score = 50
 

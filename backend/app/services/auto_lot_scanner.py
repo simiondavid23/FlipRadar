@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.auto_lot_keyword import AutoLotKeyword
 from app.models.auto_lot import AutoLot
+from app.models.user import User
 from app.services.log_manager import log_manager
 from app.scrapers.auto.lots.copart_public import search_copart_lots
 from app.scrapers.auto.lots.iaai_public import search_iaai_lots
@@ -283,7 +284,8 @@ def run_auto_lot_scan_global(db: Session) -> None:
     active si deleaga per-user (la fel ca _scan_user vs run_radar_scan)."""
     user_ids = {
         row[0] for row in db.query(AutoLotKeyword.user_id)
-        .filter(AutoLotKeyword.is_active == True).distinct().all()
+        .join(User, AutoLotKeyword.user_id == User.id)
+        .filter(AutoLotKeyword.is_active == True, User.is_active == True).distinct().all()
     }
     if not user_ids:
         return

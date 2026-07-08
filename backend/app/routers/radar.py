@@ -1140,7 +1140,7 @@ def facebook_status(
     s = _get_or_create_settings(db, current_user.id)
     path = s.facebook_session_path or _default_facebook_session_path(current_user.id)
     valid = is_facebook_session_valid(path)
-    return {"valid": valid, "session_path": path}
+    return {"valid": valid}
 
 
 @router.post("/facebook/connect")

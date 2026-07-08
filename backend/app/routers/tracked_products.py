@@ -4,6 +4,7 @@ from app.database import get_db
 from app.models.favorite import FavoriteItem
 from app.models.watchlist import WatchlistItem
 from app.models.product import Product
+from app.models.price_history import PriceHistory
 from app.models.user import User
 from app.utils.auth import get_current_user
 
@@ -60,6 +61,19 @@ def get_tracked_products(
                     "source": "watchlist",
                 }
 
+    # BH-02 — istoricul de preț pentru sparkline, într-un SINGUR query (evită N+1).
+    pids = list(tracked.keys())
+    history_by_pid: dict = {}
+    if pids:
+        _hist_rows = (
+            db.query(PriceHistory)
+            .filter(PriceHistory.product_id.in_(pids))
+            .order_by(PriceHistory.product_id, PriceHistory.recorded_at.asc())
+            .all()
+        )
+        for _h in _hist_rows:
+            history_by_pid.setdefault(_h.product_id, []).append(_h)
+
     result = []
     for pid, data in tracked.items():
         p = data["product"]
@@ -80,6 +94,11 @@ def get_tracked_products(
             "alert_threshold": float(data["alert_threshold"])
                 if data["alert_threshold"] else None,
             "tracked_source": data["source"],
+            "price_history": [
+                {"price": float(h.price),
+                 "recorded_at": h.recorded_at.isoformat() if h.recorded_at else None}
+                for h in history_by_pid.get(pid, [])[-7:]
+            ],
         })
 
     return sorted(result, key=lambda x: x["saved_at"] or "", reverse=True)

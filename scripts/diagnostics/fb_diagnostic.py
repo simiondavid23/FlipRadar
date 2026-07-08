@@ -32,8 +32,6 @@ except Exception:
 
 # Calea reala a proiectului (vezi memoria flipradar-layout).
 BACKEND_DIR = r"C:\licenta\flipRadar\backend"
-# Fallback identic cu app/config.py daca .env nu are DATABASE_URL.
-DEFAULT_DATABASE_URL = "postgresql://postgres:***REMOVED***@localhost:5432/flipradar"
 
 # Header realiste de browser (UA Chrome + Accept-Language cerut).
 CHROME_UA = (
@@ -87,7 +85,10 @@ def resolve_session_path():
             load_dotenv(os.path.join(BACKEND_DIR, ".env"))
         except Exception:
             pass
-        db_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            print("EROARE: DATABASE_URL nu este setat. Defineste-l in backend/.env inainte de a rula fb_diagnostic.")
+            sys.exit(1)
         import psycopg2
         from psycopg2.extras import RealDictCursor
         conn = psycopg2.connect(db_url)

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { inventoryAPI } from "@/lib/api";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import { Boxes, Plus, Trash2, Pencil, Package, Euro, Calculator, X, TrendingUp, TrendingDown, Upload, FileDown } from "lucide-react";
 
 const inputStyle = {
@@ -46,6 +47,7 @@ export default function InventoryPage() {
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -64,6 +66,7 @@ export default function InventoryPage() {
 
   const loadAll = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [itemsRes, statsRes] = await Promise.all([
         inventoryAPI.getItems(),
@@ -73,6 +76,7 @@ export default function InventoryPage() {
       setStats(statsRes.data);
     } catch (e) {
       console.error(e);
+      setLoadError("Nu am putut încărca datele. Reîncearcă.");
     } finally {
       setLoading(false);
     }
@@ -339,6 +343,8 @@ export default function InventoryPage() {
           </form>
         </div>
       )}
+
+      <FeedErrorBanner message={loadError} onRetry={loadAll} />
 
       {/* List */}
       {loading ? (

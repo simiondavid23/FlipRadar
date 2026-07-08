@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword as RealEstateKeyword
 from app.models.real_estate_monitor_listing import RealEstateMonitorListing as RealEstateListing
+from app.models.user import User
 from app.services.real_estate.extractor import extract_all, groq_extract
 from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
@@ -150,14 +151,14 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     zone_avg = get_zone_avg_ppm(
         db, RealEstateListing, kw.user_id,
         kw.city, zone_norm,
-        extracted.get("rooms"))
+        extracted.get("rooms"), tip_anunt=kw.tip_anunt)
     price = extracted.get("price") or (float(raw.get("price") or 0) or None)
     currency = extracted.get("currency", "EUR")
     score, grade = (50, "C")
     if price and extracted.get("area_sqm"):
         score, grade = compute_re_score(
             price, currency, extracted["area_sqm"],
-            extracted.get("rooms"), zone_norm, kw.city, zone_avg)
+            extracted.get("rooms"), zone_norm, kw.city, zone_avg, tip_anunt=kw.tip_anunt)
 
     listing = RealEstateListing(
         user_id         = kw.user_id,
@@ -327,10 +328,10 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     if price and extracted.get("area_sqm"):
         zone_avg = get_zone_avg_ppm(
             db, RealEstateListing, kw.user_id, kw.city, zone_norm,
-            extracted.get("rooms"))
+            extracted.get("rooms"), tip_anunt=kw.tip_anunt)
         score, grade = compute_re_score(
             price, currency, extracted["area_sqm"],
-            extracted.get("rooms"), zone_norm, kw.city, zone_avg)
+            extracted.get("rooms"), zone_norm, kw.city, zone_avg, tip_anunt=kw.tip_anunt)
 
     listing = RealEstateListing(
         user_id         = kw.user_id,
@@ -363,7 +364,7 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
 
 
 def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
-    query = db.query(RealEstateKeyword).filter(RealEstateKeyword.is_active == True)
+    query = db.query(RealEstateKeyword).join(User, RealEstateKeyword.user_id == User.id).filter(RealEstateKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(RealEstateKeyword.user_id == user_id)
     keywords = query.all()
@@ -405,7 +406,9 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
                     FacebookGroupConfig.is_active == True,
                 ).all()
                 for cfg in configs:
-                    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+                    # coloana FacebookGroupPost.created_at e naivă-UTC (default=datetime.utcnow);
+                    # migrarea completă pe timezone-aware rămâne post-licență.
+                    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=48)
                     posts = db.query(FacebookGroupPost).filter(
                         FacebookGroupPost.config_id == cfg.id,
                         FacebookGroupPost.created_at >= cutoff,
@@ -441,7 +444,7 @@ def _notify_re(listing: RealEstateListing, kw: RealEstateKeyword,
             from app.services.real_estate.scorer import get_zone_avg_ppm
             zone_avg = get_zone_avg_ppm(
                 db, RealEstateListing, kw.user_id,
-                listing.city, listing.zone_normalized, listing.rooms)
+                listing.city, listing.zone_normalized, listing.rooms, tip_anunt=kw.tip_anunt)
             listing_dict = {c.name: getattr(listing, c.name)
                             for c in listing.__table__.columns}
             listing_dict["price"] = float(listing.price or 0)

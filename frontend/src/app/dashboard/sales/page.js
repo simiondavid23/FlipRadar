@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { salesAPI, inventoryAPI } from "@/lib/api";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import { Receipt, Plus, Trash2, Pencil, TrendingUp, Coins, Euro, FileDown, Boxes } from "lucide-react";
 
 const inputStyle = {
@@ -32,6 +33,7 @@ export default function SalesPage() {
   const [sales, setSales] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -40,6 +42,7 @@ export default function SalesPage() {
 
   const loadAll = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [salesRes, statsRes, invRes] = await Promise.all([
         salesAPI.getSales(),
@@ -51,6 +54,7 @@ export default function SalesPage() {
       setInventoryItems(invRes.data || []);
     } catch (e) {
       console.error(e);
+      setLoadError("Nu am putut încărca datele. Reîncearcă.");
     } finally {
       setLoading(false);
     }
@@ -303,6 +307,8 @@ export default function SalesPage() {
           </form>
         </div>
       )}
+
+      <FeedErrorBanner message={loadError} onRetry={loadAll} />
 
       {/* List */}
       {loading ? (

@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.auto_keyword import AutoKeyword
 from app.models.auto_feed_listing import AutoFeedListing
+from app.models.user import User
 from app.services.auto_scorer import compute_import_costs, IMPORT_PLATFORMS
 from app.services.bnr_exchange import get_eur_ron
 # Gradare identica cu Radar: acelasi calculate_score (marja fata de pretul de
@@ -259,7 +260,7 @@ def _send_email_alert_auto(user, kw, listing, send_email) -> None:
 def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
     """Called by APScheduler every 10 minutes (global) sau din butonul „Scanează
     acum” cu user_id setat (atunci scaneaza DOAR keyword-urile acelui user)."""
-    query = db.query(AutoKeyword).filter(AutoKeyword.is_active == True)
+    query = db.query(AutoKeyword).join(User, AutoKeyword.user_id == User.id).filter(AutoKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(AutoKeyword.user_id == user_id)
     keywords = query.all()
