@@ -46,7 +46,7 @@ const categories = [
   },
   {
     id: "auto_lots",
-    label: "Loturi Automobile",
+    label: "Loturi Automobile - IN LUCRU",
     items: [
       { name: "Feed Loturi", href: "/dashboard/auto/lots/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/auto/lots/keywords", icon: Tag },
@@ -105,7 +105,7 @@ const categories = [
   },
   {
     id: "ml",
-    label: "ML Predictor",
+    label: "ML Predictor - IN LUCRU",
     icon: Brain,
     items: [
       { name: "Predictor Preturi", href: "/dashboard/ml-predictor", icon: TrendingUp },
