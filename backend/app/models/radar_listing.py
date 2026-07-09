@@ -32,3 +32,10 @@ class RadarListing(Base):
     vinted_detail_fetched = Column(Boolean, default=False, nullable=False)
     # Facebook: detaliul complet (descriere/galerie) a fost adus on-demand o singura data.
     facebook_detail_fetched = Column(Boolean, default=False, nullable=False)
+    # RP-1 — informatii despre vanzator + atribute (imbogatite la scan / on-demand).
+    seller_reviews = Column(Integer, nullable=True)          # numar de review-uri/calificative
+    seller_rating = Column(Float, nullable=True)             # scara normalizata 0-5 (toate platformele)
+    seller_risk = Column(Boolean, nullable=True)             # badge "vanzator riscant"
+    # JSON liber: atribute Vinted (Model/Stocare/...), view_count/favourite_count,
+    # olx_member_since, okazii_seller_type, seller_badges, risk_reason etc.
+    attributes_json = Column(Text, nullable=True)

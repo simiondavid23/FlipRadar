@@ -188,16 +188,41 @@ def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
     return None
 
 
+def _parse_valabil_din(html: str) -> Optional[datetime]:
+    """'Valabil din 7/9/2026 7:14:42 PM' -> datetime NAIV. Format M/D/YYYY + AM/PM
+    (confirmat RP-DIAG-2 §7: un anunt viu pe 9 iulie avea 7/9/2026 -> luna/zi)."""
+    if not html:
+        return None
+    m = re.search(
+        r"Valabil din\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP])M",
+        html, re.I,
+    )
+    if not m:
+        return None
+    month, day, year, hh, mm, ss, ap = (int(m.group(i)) if i <= 6 else m.group(i).upper()
+                                        for i in range(1, 8))
+    if ap == "P" and hh != 12:
+        hh += 12
+    elif ap == "A" and hh == 12:
+        hh = 0
+    try:
+        return datetime(year, month, day, hh, mm, ss)
+    except ValueError:
+        return None
+
+
 def fetch_publi24_listing_details(url: str) -> dict:
     """Descarca pagina individuala si extrage descrierea completa + toate imaginile
-    din galerie (la calitate extralarge). {"images": [...], "description": str|None}
-    La orice eroare, dict gol -> caller-ul pastreaza datele din pagina de search."""
+    din galerie (extralarge) + data exacta ('Valabil din'). {"images", "description",
+    "listed_at"}. Numele vanzatorului NU e disponibil public pe layout-ul actual
+    (RP-DIAG-2 §7) -> nu se extrage. La orice eroare, dict minim (caller pastreaza ce are)."""
     if not url:
         return {"images": [], "description": None}
     html = _request(url, referer=_BASE + "/")
     if not html:
         return {"images": [], "description": None}
 
+    listed_at = _parse_valabil_din(html)
     soup = BeautifulSoup(html, "html.parser")
 
     # Descriere
@@ -229,7 +254,7 @@ def fetch_publi24_listing_details(url: str) -> dict:
         seen.add(up)
         imgs.append(up)
 
-    return {"images": imgs, "description": description}
+    return {"images": imgs, "description": description, "listed_at": listed_at}
 
 
 def search_publi24(
@@ -359,6 +384,9 @@ def search_publi24(
                 item["images"] = details["images"]
             if details.get("description"):
                 item["description"] = details["description"]
+            # RP-1 — data exacta din detaliu ('Valabil din') suprascrie data din card.
+            if details.get("listed_at"):
+                item["listed_at"] = details["listed_at"]
         except Exception as exc:
             log_manager.emit("radar", "WARN", f"Publi24: enrichment {item['external_id']}: {str(exc)[:80]}")
             continue

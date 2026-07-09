@@ -11,7 +11,7 @@ import {
   X, ImageOff, Tag, MapPin, Calendar, Sparkles,
   Bookmark, EyeOff, ExternalLink, MessageSquare, Copy, Check,
 } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo } from "./listingHelpers";
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel } from "./listingHelpers";
 
 export default function ListingDetailModal({
   listing,
@@ -207,7 +207,26 @@ export default function ListingDetailModal({
               <div><Tag style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} /> {platformUpper}</div>
               {listing.location && <div><MapPin style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} /> {listing.location}</div>}
               {listing.condition && <div>Condiție: {listing.condition}</div>}
-              {listing.seller_name && <div>Vânzător: {listing.seller_name}</div>}
+              {(listing.seller_name || listing.seller_rating != null || listing.seller_risk) && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", flexWrap: "wrap" }}>
+                  {listing.seller_name && <span>Vânzător: {listing.seller_name}</span>}
+                  {sellerRatingLabel(listing) && (
+                    <span style={{ color: "var(--text-muted)" }}>· {sellerRatingLabel(listing)}</span>
+                  )}
+                  {listing.seller_risk && (
+                    <span
+                      title={listing.risk_reason || "Vânzător riscant"}
+                      style={{
+                        padding: "0.05rem 0.4rem", borderRadius: "0.3rem",
+                        backgroundColor: "rgba(239,68,68,0.12)", color: "#f87171",
+                        border: "1px solid rgba(239,68,68,0.35)", fontSize: "0.7rem", fontWeight: 600,
+                      }}
+                    >
+                      ⚠ Riscant
+                    </span>
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem", marginTop: "0.25rem" }}>
                 <span>
                   <Calendar style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
@@ -226,6 +245,27 @@ export default function ListingDetailModal({
 
         {/* Slot bannere detaliu on-demand (Radar: Vinted/Facebook) */}
         {detailBannerSlot}
+
+        {/* RP-1 — Detalii articol (atribute, ex. Vinted): cheile RO cunoscute întâi. */}
+        {listing.attributes && Object.keys(listing.attributes).length > 0 && (
+          <div style={{ padding: "0 1.25rem 1rem" }}>
+            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>
+              Detalii articol
+            </div>
+            <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", overflow: "hidden" }}>
+              {orderedAttributes(listing.attributes).map(([k, v], idx) => (
+                <div key={k} style={{
+                  display: "flex", justifyContent: "space-between", gap: "1rem",
+                  fontSize: "0.8125rem", padding: "0.4rem 0.625rem",
+                  backgroundColor: idx % 2 ? "var(--bg-dark)" : "transparent",
+                }}>
+                  <span style={{ color: "var(--text-muted)" }}>{k}</span>
+                  <span style={{ color: "var(--text-primary)", textAlign: "right" }}>{String(v)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Descriere */}
         {listing.description && (
@@ -323,6 +363,14 @@ export default function ListingDetailModal({
       </div>
     </div>
   );
+}
+
+// RP-1 — ordoneaza atributele: cheile RO cunoscute intai, apoi restul (ordinea data).
+function orderedAttributes(attrs) {
+  const KNOWN = ["Brand", "Model", "Sănătatea bateriei", "Capacitate de stocare", "Stare", "Blocare SIM", "Culoare"];
+  const known = KNOWN.filter((k) => attrs[k] !== undefined && attrs[k] !== null).map((k) => [k, attrs[k]]);
+  const rest = Object.entries(attrs).filter(([k]) => !KNOWN.includes(k) && attrs[k] !== null);
+  return [...known, ...rest];
 }
 
 function btn(color, bg, border) {

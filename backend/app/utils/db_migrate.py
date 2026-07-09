@@ -271,6 +271,19 @@ def run_migrations():
                 _migrate(conn, "add_radar_listings_facebook_detail_fetched",
                          "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS "
                          "facebook_detail_fetched BOOLEAN NOT NULL DEFAULT FALSE")
+            # RP-1 — informatii despre vanzator + atribute imbogatite.
+            if not _column_exists(inspector, "radar_listings", "seller_reviews"):
+                _migrate(conn, "add_radar_listings_seller_reviews",
+                         "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS seller_reviews INTEGER")
+            if not _column_exists(inspector, "radar_listings", "seller_rating"):
+                _migrate(conn, "add_radar_listings_seller_rating",
+                         "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS seller_rating FLOAT")
+            if not _column_exists(inspector, "radar_listings", "seller_risk"):
+                _migrate(conn, "add_radar_listings_seller_risk",
+                         "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS seller_risk BOOLEAN")
+            if not _column_exists(inspector, "radar_listings", "attributes_json"):
+                _migrate(conn, "add_radar_listings_attributes_json",
+                         "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS attributes_json TEXT")
 
         # Radar keywords: car_filters (JSON serializat) + extensii pentru scrapere auto
         if _table_exists(inspector, "radar_keywords"):

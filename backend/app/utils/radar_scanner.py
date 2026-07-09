@@ -36,14 +36,22 @@ from app.services.radar.facebook_scraper import search_facebook
 from app.services.radar.lajumate_scraper import search_lajumate
 from app.services.radar.mobilede_scraper import search_mobilede
 from app.services.radar.okazii_scraper import search_okazii
-from app.services.radar.olx_scraper import search_olx
+from app.services.radar.olx_scraper import search_olx, fetch_olx_offer_details
 from app.services.radar.publi24_scraper import search_publi24
-from app.services.radar.scorer import calculate_score
-from app.services.radar.vinted_scraper import search_vinted
+from app.services.radar.scorer import calculate_score, compute_seller_risk
+from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 
 
 # Contor global pentru frecventa cleanup-ului (ruleaza la fiecare 10 cicluri).
 _cycle_counter = {"n": 0}
+
+# RP-1 — plafoane de enrichment per CICLU de scan (resetate in run_radar_scan).
+# OLX: inline inainte de save+notify (badge risc + descriere in notificare).
+# Vinted: in fundal DUPA save+notify (pagina HTML, limiter >=6s per item).
+_ENRICH_OLX_CAP = 15
+_ENRICH_OLX_BACKLOG_CAP = 5
+_ENRICH_VINTED_CAP = 15
+_enrich_counters = {"olx": 0, "olx_backlog": 0, "vinted": 0}
 
 # Delay intre scraping-urile platformelor pentru a evita blocaje.
 _PLATFORM_DELAY_RANGE = (1.5, 3.5)
@@ -1875,6 +1883,168 @@ def _is_within_active_hours(kw) -> bool:
         return h >= s or h < e
 
 
+def _seller_persist_fields(listing: dict, kw: RadarKeyword) -> tuple:
+    """(seller_reviews, seller_rating, seller_risk, attributes_json) pentru un listing.
+
+    Aduna `extra_attributes` (view/favourite Vinted, okazii_seller_type, ...) + badge-uri
+    + olx_member_since/olx_numeric_id + atributele Vinted + `risk_reason` intr-un singur
+    JSON si calculeaza badge-ul de risc (compute_seller_risk).
+    """
+    seller_reviews = listing.get("seller_reviews")
+    seller_rating = listing.get("seller_rating")
+    extra = dict(listing.get("extra_attributes") or {})
+    if listing.get("olx_member_since") is not None:
+        extra["olx_member_since"] = listing.get("olx_member_since")
+    if listing.get("olx_numeric_id") is not None:
+        extra["olx_numeric_id"] = listing.get("olx_numeric_id")
+    if listing.get("seller_badges"):
+        extra["seller_badges"] = listing.get("seller_badges")
+    if listing.get("attributes"):
+        extra["attributes"] = listing.get("attributes")
+
+    risk, reason = compute_seller_risk(
+        platform=listing.get("platform"),
+        price=listing.get("price"),
+        resale_price=kw.resale_price,
+        seller_name=listing.get("seller_name"),
+        seller_reviews=seller_reviews,
+        seller_rating=seller_rating,
+        extra=extra,
+    )
+    if reason:
+        extra["risk_reason"] = reason
+    attributes_json = json.dumps(extra, ensure_ascii=False) if extra else None
+    return seller_reviews, seller_rating, risk, attributes_json
+
+
+def _maybe_enrich_olx_inline(listing: dict) -> None:
+    """Enrichment OLX inline (inainte de save+notify) prin /api/v1/offers/{id}, cu
+    plafon _ENRICH_OLX_CAP pe ciclu + delay 2-4s jitter. Muta seller/data/descriere/
+    member_since in listing. La cap sau lipsa id numeric, nu face nimic."""
+    nid = listing.get("olx_numeric_id")
+    if not nid or _enrich_counters["olx"] >= _ENRICH_OLX_CAP:
+        return
+    if _enrich_counters["olx"] > 0:
+        time.sleep(random.uniform(2.0, 4.0))
+    _enrich_counters["olx"] += 1
+    try:
+        det = fetch_olx_offer_details(nid)
+    except Exception as exc:
+        log_manager.emit("radar", "WARN", f"OLX enrichment inline: {str(exc)[:80]}")
+        return
+    for k in ("seller_name", "seller_id", "listed_at", "description", "olx_member_since"):
+        if det.get(k) is not None:
+            listing[k] = det[k]
+
+
+def _enrich_vinted_background(db: Session, user: User) -> None:
+    """Enrichment Vinted in FUNDAL, dupa save+notify: pentru listingurile cu
+    vinted_detail_fetched=False (recente intai), pana la _ENRICH_VINTED_CAP pe ciclu.
+    Fiecare fetch trece prin limiterul vinted_html (>=6s). La succes persista
+    poze/descriere/data/atribute/vanzator + recalculeaza risc + marcheaza fetched."""
+    if _enrich_counters["vinted"] >= _ENRICH_VINTED_CAP:
+        return
+    remaining = _ENRICH_VINTED_CAP - _enrich_counters["vinted"]
+    rows = (
+        db.query(RadarListing)
+        .filter(
+            RadarListing.user_id == user.id,
+            RadarListing.platform == "vinted",
+            RadarListing.vinted_detail_fetched == False,  # noqa: E712
+        )
+        .order_by(RadarListing.found_at.desc())
+        .limit(remaining)
+        .all()
+    )
+    for row in rows:
+        if _enrich_counters["vinted"] >= _ENRICH_VINTED_CAP:
+            break
+        _enrich_counters["vinted"] += 1
+        item_id = (row.external_id or "").replace("vinted_", "", 1)
+        if not item_id:
+            continue
+        try:
+            detail = get_vinted_item_detail(item_id)
+        except Exception as exc:
+            log_manager.emit("radar", "WARN", f"Vinted enrichment {row.id}: {str(exc)[:80]}")
+            detail = None
+        if not detail:
+            continue  # ramane fetched=False -> reincearca on-demand / ciclul urmator
+        kw = db.query(RadarKeyword).filter(RadarKeyword.id == row.keyword_id).first()
+        apply_vinted_detail(row, detail, kw.resale_price if kw else None)
+        log_manager.emit("radar", "OK", f"Vinted enrichment: {row.title[:50]} (reviews={row.seller_reviews})")
+    try:
+        db.commit()
+    except Exception as exc:
+        log_manager.emit("radar", "ERR", f"Vinted enrichment commit: {str(exc)[:80]}")
+        db.rollback()
+
+
+def _enrich_olx_backlog(db: Session, user: User) -> None:
+    """Backlog OLX (dupa scan): re-imbogateste rowuri OLX fara seller_name care au
+    olx_numeric_id persistat in attributes_json, max _ENRICH_OLX_BACKLOG_CAP pe ciclu."""
+    if _enrich_counters["olx_backlog"] >= _ENRICH_OLX_BACKLOG_CAP:
+        return
+    remaining = _ENRICH_OLX_BACKLOG_CAP - _enrich_counters["olx_backlog"]
+    rows = (
+        db.query(RadarListing)
+        .filter(
+            RadarListing.user_id == user.id,
+            RadarListing.platform == "olx",
+            RadarListing.seller_name.is_(None),
+        )
+        .order_by(RadarListing.found_at.desc())
+        .limit(remaining * 4)  # supra-esantionam; unele rowuri n-au id numeric persistat
+        .all()
+    )
+    done = 0
+    for row in rows:
+        if done >= remaining:
+            break
+        try:
+            extra = json.loads(row.attributes_json) if row.attributes_json else {}
+        except Exception:
+            extra = {}
+        nid = extra.get("olx_numeric_id")
+        if not nid:
+            continue
+        done += 1
+        _enrich_counters["olx_backlog"] += 1
+        time.sleep(random.uniform(2.0, 4.0))
+        try:
+            det = fetch_olx_offer_details(nid)
+        except Exception:
+            det = None
+        if not det:
+            continue
+        if det.get("seller_name"):
+            row.seller_name = det["seller_name"]
+        if det.get("seller_id"):
+            row.seller_id = det["seller_id"]
+        if det.get("listed_at"):
+            row.listed_at = det["listed_at"]
+        if det.get("description") and not row.description:
+            row.description = det["description"]
+        if det.get("olx_member_since") is not None:
+            extra["olx_member_since"] = det["olx_member_since"]
+        kw = db.query(RadarKeyword).filter(RadarKeyword.id == row.keyword_id).first()
+        risk, reason = compute_seller_risk(
+            "olx", row.price, kw.resale_price if kw else None, row.seller_name,
+            row.seller_reviews, row.seller_rating, extra,
+        )
+        row.seller_risk = risk
+        if reason:
+            extra["risk_reason"] = reason
+        else:
+            extra.pop("risk_reason", None)
+        row.attributes_json = json.dumps(extra, ensure_ascii=False) if extra else None
+    try:
+        db.commit()
+    except Exception as exc:
+        log_manager.emit("radar", "ERR", f"OLX backlog commit: {str(exc)[:80]}")
+        db.rollback()
+
+
 def _scan_user(db: Session, user: User) -> dict:
     """Scaneaza toate keyword-urile active ale unui user. Returneaza statistici."""
     stats = {"new_listings": 0, "alerts_sent": 0}
@@ -1986,6 +2156,13 @@ def _scan_user(db: Session, user: User) -> dict:
 
                     _mark_seen(db, user.id, platform, ext_id)
 
+                    # RP-1 — OLX: enrichment inline INAINTE de save+notify (numele
+                    # vanzatorului, data exacta, member_since, descrierea -> in alerta si badge).
+                    if platform == "olx":
+                        _maybe_enrich_olx_inline(listing)
+                    # Campuri vanzator + badge de risc (recalculat la enrichment Vinted).
+                    _srev, _srat, _srisk, _sattr = _seller_persist_fields(listing, kw)
+
                     listing_db = RadarListing(
                         user_id=user.id,
                         keyword_id=kw.id,
@@ -2006,6 +2183,10 @@ def _scan_user(db: Session, user: User) -> dict:
                         status="active",
                         ai_review=None,
                         listed_at=listing.get("listed_at"),
+                        seller_reviews=_srev,
+                        seller_rating=_srat,
+                        seller_risk=_srisk,
+                        attributes_json=_sattr,
                     )
                     db.add(listing_db)
                     db.flush()
@@ -2104,6 +2285,25 @@ def _scan_user(db: Session, user: User) -> dict:
         kw.last_scan_at = datetime.now(timezone.utc)
         db.commit()
 
+    # RP-1 — enrichment in fundal DUPA procesarea keyword-urilor ciclului:
+    # Vinted (pagina HTML, seller+atribute) + backlog OLX (rowuri fara vanzator).
+    try:
+        _enrich_vinted_background(db, user)
+    except Exception as exc:
+        log_manager.emit("radar", "ERR", f"Vinted enrichment user {user.id}: {str(exc)[:80]}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    try:
+        _enrich_olx_backlog(db, user)
+    except Exception as exc:
+        log_manager.emit("radar", "ERR", f"OLX backlog user {user.id}: {str(exc)[:80]}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     return stats
 
 
@@ -2113,6 +2313,10 @@ def run_radar_scan() -> None:
     db: Session = SessionLocal()
     total_new = 0
     total_alerts = 0
+    # RP-1 — reset plafoane de enrichment la inceputul fiecarui ciclu de scan.
+    _enrich_counters["olx"] = 0
+    _enrich_counters["olx_backlog"] = 0
+    _enrich_counters["vinted"] = 0
     try:
         active_user_ids = {
             row[0] for row in db.query(RadarKeyword.user_id)

@@ -5,10 +5,57 @@ de sesiune). Filtrarea pe categorie e server-side via `catalog_ids` (rezolvat di
 VINTED_CATALOG_ID_MAP), iar filtrarea pe subcategorie se face post-scrape pe
 titlu/descriere. La eroare returnam [] si logam — fara mecanism de fallback.
 """
+import json
+import re
+import threading
+import time
+from datetime import datetime
 from typing import Optional
 
 from app.services.radar.base_scraper import is_excluded
+from app.services.radar import vinted_html
 from app.services.log_manager import log_manager
+
+
+# ── Singleton VintedWrapper (JSON brut) — reutilizat la toate apelurile ─────────
+# Elimina instantierea per-apel. Constructie cu retry (primul attempt poate da 406).
+_wrapper = None
+_wrapper_lock = threading.Lock()
+_wrapper_fail_count = 0
+
+
+def _get_wrapper():
+    """Instanta VintedWrapper la nivel de modul (JSON brut), construita o singura
+    data cu retry x3 + backoff 2/4/8s. None daca nu poate fi construita."""
+    global _wrapper
+    with _wrapper_lock:
+        if _wrapper is not None:
+            return _wrapper
+        try:
+            from vinted_scraper import VintedWrapper
+        except Exception as exc:
+            log_manager.emit("radar", "ERR", f"Vinted: libraria lipseste: {str(exc)[:80]}")
+            return None
+        last = None
+        for attempt in range(3):
+            try:
+                _wrapper = VintedWrapper("https://www.vinted.ro")
+                return _wrapper
+            except Exception as exc:
+                last = exc
+                time.sleep(2 * (2 ** attempt))  # 2 / 4 / 8 s
+        log_manager.emit("radar", "ERR",
+            f"Vinted wrapper: constructie esuata dupa 3 incercari: {str(last)[:100]}")
+        _wrapper = None
+        return None
+
+
+def _invalidate_wrapper():
+    """Forteaza reconstruirea sesiunii la urmatorul apel (dupa esecuri repetate)."""
+    global _wrapper, _wrapper_fail_count
+    with _wrapper_lock:
+        _wrapper = None
+        _wrapper_fail_count = 0
 
 
 # Generat automat — map_vinted_categories.py — 2026-07-03
@@ -783,85 +830,123 @@ def _search_vinted_library(
     subcategory: Optional[str] = None,
     page: int = 1,
 ) -> list:
-    """Cauta pe Vinted prin libraria vinted-scraper (gestioneaza DataDome automat,
-    fara cookie). Returneaza intotdeauna o lista (goala la eroare sau zero rezultate).
+    """Cauta pe Vinted prin VintedWrapper (JSON brut, sesiune singleton). Returneaza
+    intotdeauna o lista (goala la eroare sau zero rezultate).
 
-    Rezultatele sunt mapate in formatul standard al aplicatiei (external_id,
-    images list, platform...) ca scanner-ul si cautarea manuala sa le consume.
+    Fata de varianta veche (VintedScraper tipizat, instanta per-apel): reutilizeaza
+    sesiunea si citeste direct din dict-ul brut al search-ului `user.login`/`user.id`
+    (nume/id vanzator), `photo.high_resolution.timestamp` (data postarii) si
+    `view_count`/`favourite_count` (in `extra_attributes`). `description` NU exista in
+    search (dovedit RP-DIAG) -> ramane None pana la enrichment.
     """
-    try:
-        from vinted_scraper import VintedScraper
-        scraper = VintedScraper("https://www.vinted.ro")
-        params = {"search_text": (keyword or "").strip(), "order": "newest_first", "per_page": 96}
-        if page > 1:
-            params["page"] = page
-        if max_price and max_price > 0:
-            params["price_to"] = int(max_price)
-        if min_price and min_price > 0:
-            params["price_from"] = int(min_price)
-        # Filtrare server-side: rezolvam catalog_id-ul din (category, subcategory)
-        # text -> ID Vinted. Inainte se incerca int(category) care esua mereu (text).
-        catalog_id = _resolve_vinted_catalog_id(category, subcategory)
-        if catalog_id:
-            params["catalog_ids"] = [catalog_id]
-            _label = category + (f" > {subcategory}" if subcategory else "")
-            print(f"[VintedScraper] catalog_id={catalog_id} pentru '{_label}'")
-
-        raw_items = scraper.search(params)
-        results = []
-        for item in (raw_items or []):
-            title = (getattr(item, "title", None) or getattr(item, "name", None) or "").strip()
-            if not title:
-                continue
-            if is_excluded(title, exclude_words):
-                continue
-            desc = getattr(item, "description", None) or ""
-            if exclude_description_words and desc and is_excluded(desc, exclude_description_words):
-                continue
-            price_raw = getattr(item, "price", None)
-            try:
-                price = float(price_raw) if price_raw is not None else None
-            except (TypeError, ValueError):
-                price = None
-            if price is None or price <= 0:
-                continue
-            if max_price and price > max_price:
-                continue
-            if min_price and price < min_price:
-                continue
-
-            # `photo` poate fi dict (lib v3) sau obiect — extragem URL-ul defensiv.
-            photo = getattr(item, "photo", None)
-            thumb = None
-            if isinstance(photo, dict):
-                thumb = photo.get("url") or photo.get("full_size_url")
-            elif photo is not None:
-                thumb = getattr(photo, "url", None) or getattr(photo, "full_size_url", None)
-
-            item_id = getattr(item, "id", None)
-            url = getattr(item, "url", None) or (f"https://www.vinted.ro/items/{item_id}" if item_id else "")
-            currency = getattr(item, "currency", None) or "RON"
-
-            results.append({
-                "external_id": f"vinted_{item_id}" if item_id else None,
-                "platform": "vinted",
-                "title": title,
-                "price": price,
-                "currency": currency,
-                "condition": _condition_label(str(getattr(item, "status", None) or "")),
-                "location": None,
-                "url": url,
-                "images": [thumb] if thumb else [],
-                "description": desc or None,
-                "seller_name": None,
-                "seller_id": None,
-                "listed_at": None,
-            })
-        log_manager.emit("radar", "OK", f"Vinted library: {len(results)} rezultate pentru '{keyword}'")
-        return results
-    except Exception as exc:
-        log_manager.emit("radar", "ERR", f"Vinted library eroare: {str(exc)[:120]}")
+    global _wrapper_fail_count
+    wrapper = _get_wrapper()
+    if wrapper is None:
         return []
+
+    params = {"search_text": (keyword or "").strip(), "order": "newest_first", "per_page": 96}
+    if page > 1:
+        params["page"] = page
+    if max_price and max_price > 0:
+        params["price_to"] = int(max_price)
+    if min_price and min_price > 0:
+        params["price_from"] = int(min_price)
+    # Filtrare server-side: rezolvam catalog_id-ul din (category, subcategory).
+    catalog_id = _resolve_vinted_catalog_id(category, subcategory)
+    if catalog_id:
+        params["catalog_ids"] = [catalog_id]
+        _label = category + (f" > {subcategory}" if subcategory else "")
+        print(f"[VintedScraper] catalog_id={catalog_id} pentru '{_label}'")
+
+    try:
+        raw = wrapper.search(params)
+        _wrapper_fail_count = 0
+    except Exception as exc:
+        _wrapper_fail_count += 1
+        log_manager.emit("radar", "ERR",
+            f"Vinted search eroare ({_wrapper_fail_count}/2): {str(exc)[:100]}")
+        # Dupa 2 esecuri consecutive, invalideaza sesiunea (se reconstruieste la urmatorul apel).
+        if _wrapper_fail_count >= 2:
+            _invalidate_wrapper()
+        return []
+
+    items = raw.get("items") if isinstance(raw, dict) else None
+    results = []
+    for item in (items or []):
+        if not isinstance(item, dict):
+            continue
+        title = (item.get("title") or "").strip()
+        if not title or is_excluded(title, exclude_words):
+            continue
+
+        price_obj = item.get("price")
+        try:
+            if isinstance(price_obj, dict):
+                price = float(price_obj.get("amount"))
+            elif price_obj is not None:
+                price = float(price_obj)
+            else:
+                price = None
+        except (TypeError, ValueError):
+            price = None
+        if price is None or price <= 0:
+            continue
+        if max_price and price > max_price:
+            continue
+        if min_price and price < min_price:
+            continue
+        currency = (price_obj.get("currency_code") if isinstance(price_obj, dict) else None) or "RON"
+
+        user = item.get("user") or {}
+        seller_name = user.get("login") if isinstance(user, dict) else None
+        seller_id = str(user.get("id")) if isinstance(user, dict) and user.get("id") is not None else None
+
+        photo = item.get("photo") or {}
+        thumb = None
+        ts = None
+        if isinstance(photo, dict):
+            thumb = photo.get("url") or photo.get("full_size_url")
+            hr = photo.get("high_resolution") or {}
+            ts = hr.get("timestamp") if isinstance(hr, dict) else None
+        listed_at = None
+        if ts:
+            try:
+                listed_at = datetime.fromtimestamp(int(ts))  # naiv local (conventia scraperelor)
+            except (TypeError, ValueError, OSError):
+                listed_at = None
+
+        item_id = item.get("id")
+        url = item.get("url") or (f"https://www.vinted.ro/items/{item_id}" if item_id else "")
+
+        extra = {}
+        if item.get("view_count") is not None:
+            extra["view_count"] = item.get("view_count")
+        if item.get("favourite_count") is not None:
+            extra["favourite_count"] = item.get("favourite_count")
+        if item.get("brand_title"):
+            extra["brand"] = item.get("brand_title")
+
+        results.append({
+            "external_id": f"vinted_{item_id}" if item_id else None,
+            "platform": "vinted",
+            "title": title,
+            "price": price,
+            "currency": currency,
+            "condition": _condition_label(str(item.get("status") or "")),
+            "location": None,
+            "url": url,
+            "images": [thumb] if thumb else [],
+            "description": None,  # nu exista in search (RP-DIAG) — vine la enrichment
+            "seller_name": seller_name,
+            "seller_id": seller_id,
+            "listed_at": listed_at,
+            "extra_attributes": extra or None,
+        })
+    # Nota: `exclude_description_words` nu se poate aplica la Vinted in search (payload-ul
+    # nu contine descriere) — filtrarea pe descriere ramane la enrichment/altele.
+    _ = exclude_description_words
+    log_manager.emit("radar", "OK", f"Vinted: {len(results)} rezultate pentru '{keyword}'")
+    return results
 
 
 def search_vinted(
@@ -901,38 +986,217 @@ def search_vinted(
     return _apply_subcategory_filter(results, _local_sub)
 
 
-def get_vinted_item_detail(item_id: str) -> Optional[dict]:
-    """Aduce detaliul complet al unui articol Vinted (poze toate,
-    descriere completă, timestamp exact) prin VintedScraper.item().
-    Returnează None la orice eroare (403/404/etc) — apelantul trebuie
-    sa trateze None ca 'nu am putut îmbogăți, păstrează ce am'."""
+def _balanced_json(s: str, start: int) -> Optional[str]:
+    """Returneaza sub-stringul `{...}` echilibrat care incepe la `start` (s[start]='{'),
+    respectand string-urile si escape-urile. None daca nu se inchide."""
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return s[start:i + 1]
+    return None
+
+
+def _plugin_data(rsc: str, name: str) -> Optional[dict]:
+    """Extrage obiectul `data` al pluginului `name` din RSC-ul decodat. Blocurile au
+    forma {"name":"<name>","type":"<name>","section":...,"data":{...}} — folosim si
+    `type` ca ancora ca sa nu prindem aparitii intamplatoare ale numelui (S1)."""
+    marker = f'"name":"{name}","type":"{name}"'
+    idx = rsc.find(marker)
+    if idx < 0:
+        return None
+    d = rsc.find('"data":', idx)
+    if d < 0:
+        return None
+    brace = rsc.find("{", d)
+    if brace < 0:
+        return None
+    raw = _balanced_json(rsc, brace)
+    if not raw:
+        return None
     try:
-        from vinted_scraper import VintedScraper
-        scraper = VintedScraper("https://www.vinted.ro")
-        item = scraper.item(item_id)
-        if not item:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _extract_item_rsc(rsc: str) -> dict:
+    """Extrage din RSC-ul decodat (React Flight) datele item-ului. Functie PURA —
+    testabila pe fixture, fara retea. Returneaza seller_name/seller_reviews/
+    seller_rating (feedback_reputation×5, scara 0-5)/seller_badges, atributele (perechi
+    RO titlu->valoare), galeria de poze si descrierea (pluginul description)."""
+    out = {
+        "seller_name": None, "seller_reviews": None, "seller_rating": None,
+        "seller_badges": [], "attributes": {}, "images": [], "description": None,
+    }
+    uih = _plugin_data(rsc, "user_info_header") or {}
+    if uih:
+        out["seller_name"] = uih.get("name")
+        fc = uih.get("feedback_count")
+        if isinstance(fc, (int, float)):
+            out["seller_reviews"] = int(fc)
+        fr = uih.get("feedback_reputation")
+        if isinstance(fr, (int, float)):
+            out["seller_rating"] = round(float(fr) * 5, 2)
+
+    sbi = _plugin_data(rsc, "seller_badges_info") or {}
+    for b in (sbi.get("badges") or []):
+        t = b.get("type") if isinstance(b, dict) else None
+        if t:
+            out["seller_badges"].append(t)
+    if not out["seller_name"] and sbi.get("username"):
+        out["seller_name"] = sbi.get("username")
+
+    ap = _plugin_data(rsc, "attributes") or {}
+    for a in (ap.get("attributes") or []):
+        data = a.get("data") if isinstance(a, dict) else None
+        if isinstance(data, dict) and data.get("title"):
+            out["attributes"][str(data.get("title"))] = data.get("value")
+
+    g = _plugin_data(rsc, "gallery") or {}
+    for ph in (g.get("photos") or []):
+        if isinstance(ph, dict):
+            u = ph.get("full_size_url") or ph.get("url")
+            if u:
+                out["images"].append(u)
+
+    dp = _plugin_data(rsc, "description") or {}
+    if dp.get("description"):
+        out["description"] = str(dp["description"]).strip() or None
+    return out
+
+
+def get_vinted_item_detail(item_id: str) -> Optional[dict]:
+    """Detaliul complet al unui articol Vinted, prin PAGINA HTML (nu API-ul de detaliu,
+    care da 403 — dovedit RP-DIAG). Extrage:
+      - ld+json: descriere (garantat), culoare, brand, stare;
+      - RSC decodat: feedback_count/reputation (user_info_header), badge-uri
+        (seller_badges_info), atribute item (attributes), galerie (gallery);
+      - listed_at: min al timestamp-urilor din URL-urile pozelor.
+    Contract de retur compatibil (images/description/listed_at) + chei noi
+    (attributes/seller_reviews/seller_rating/seller_badges/seller_name). None la esec.
+    """
+    try:
+        page = vinted_html.fetch_item_page(item_id)
+        if not page:
             return None
-        photos = getattr(item, "photos", None) or []
-        image_urls = []
-        timestamps = []
-        for p in photos:
-            url = getattr(p, "full_size_url", None) or getattr(p, "url", None)
-            if url:
-                image_urls.append(url)
-            hr = getattr(p, "high_resolution", None)
-            ts = getattr(hr, "timestamp", None) if hr else None
-            if ts:
-                timestamps.append(int(ts))
+        html = page.get("html") or ""
+        rsc = page.get("decoded") or ""
+
+        # ── ld+json (Product) — sursa garantata pentru descriere/culoare/brand ──
+        ld = {}
+        m = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.DOTALL)
+        if m:
+            try:
+                ld = json.loads(m.group(1))
+            except Exception:
+                ld = {}
+
+        # ── extractie pura din RSC (seller/atribute/poze/descriere) ──
+        ext = _extract_item_rsc(rsc)
+        seller_name = ext["seller_name"]
+        seller_reviews = ext["seller_reviews"]
+        seller_rating = ext["seller_rating"]
+        seller_badges = ext["seller_badges"]
+        attributes = dict(ext["attributes"])
+
+        # ── galerie: din RSC, fallback pe imaginea ld+json ──
+        images = list(ext["images"])
+        if not images and ld.get("image"):
+            img = ld.get("image")
+            images = [img] if isinstance(img, str) else (img if isinstance(img, list) else [])
+
+        # ── descriere: ld+json garantat, altfel pluginul description din RSC ──
+        description = None
+        if ld.get("description"):
+            description = str(ld["description"]).strip() or None
+        if not description and ext["description"]:
+            description = ext["description"]
+
+        # ── completeaza atributele din ld+json daca lipsesc ──
+        if ld.get("color") and "Culoare" not in attributes:
+            attributes["Culoare"] = ld["color"]
+        brand = ld.get("brand")
+        if isinstance(brand, dict) and brand.get("name") and "Brand" not in attributes:
+            attributes["Brand"] = brand["name"]
+
+        # ── listed_at: cel mai vechi timestamp din URL-urile pozelor ──
         listed_at = None
-        if timestamps:
-            from datetime import datetime
-            listed_at = datetime.fromtimestamp(min(timestamps))
-        description = (getattr(item, "description", None) or "").strip() or None
+        ts_list = [int(x) for x in re.findall(r"/(\d{10})\.webp", html)]
+        if ts_list:
+            try:
+                listed_at = datetime.fromtimestamp(min(ts_list))
+            except (ValueError, OSError):
+                listed_at = None
+
         return {
-            "images": image_urls,
+            "images": images,
             "description": description,
             "listed_at": listed_at,
+            "attributes": attributes or None,
+            "seller_name": seller_name,
+            "seller_reviews": seller_reviews,
+            "seller_rating": seller_rating,
+            "seller_badges": seller_badges or None,
         }
     except Exception as exc:
-        log_manager.emit("radar", "WARN", f"Vinted item detail eșuat ({item_id}): {str(exc)[:100]}")
+        log_manager.emit("radar", "WARN", f"Vinted item detail HTML eșuat ({item_id}): {str(exc)[:100]}")
         return None
+
+
+def apply_vinted_detail(row, detail: dict, resale_price=None) -> None:
+    """Aplica rezultatul get_vinted_item_detail pe un RadarListing (FARA commit) si
+    recalculeaza seller_risk. Folosit atat de scanner (enrichment in fundal) cat si
+    de router (on-demand) ca sa nu duplicam maparea. Marcheaza vinted_detail_fetched=True.
+    """
+    from app.services.radar.scorer import compute_seller_risk
+
+    if detail.get("images"):
+        row.images = json.dumps(detail["images"], ensure_ascii=False)
+    if detail.get("description"):
+        row.description = detail["description"]
+    if detail.get("listed_at"):
+        row.listed_at = detail["listed_at"]
+    if detail.get("seller_name") and not row.seller_name:
+        row.seller_name = detail["seller_name"]
+    if detail.get("seller_reviews") is not None:
+        row.seller_reviews = detail["seller_reviews"]
+    if detail.get("seller_rating") is not None:
+        row.seller_rating = detail["seller_rating"]
+
+    try:
+        extra = json.loads(row.attributes_json) if row.attributes_json else {}
+    except Exception:
+        extra = {}
+    if detail.get("attributes"):
+        extra["attributes"] = detail["attributes"]
+    if detail.get("seller_badges"):
+        extra["seller_badges"] = detail["seller_badges"]
+
+    risk, reason = compute_seller_risk(
+        "vinted", row.price, resale_price, row.seller_name,
+        row.seller_reviews, row.seller_rating, extra,
+    )
+    row.seller_risk = risk
+    if reason:
+        extra["risk_reason"] = reason
+    else:
+        extra.pop("risk_reason", None)
+    row.attributes_json = json.dumps(extra, ensure_ascii=False) if extra else None
+    row.vinted_detail_fetched = True

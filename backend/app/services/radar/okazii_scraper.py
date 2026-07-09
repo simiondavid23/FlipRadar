@@ -12,6 +12,7 @@ curl_cffi impersonate=chrome110. Structura confirmata prin fetch-uri reale:
 - Card:      #listing-Okazii .list-item
 - external_id: '-a(\\d+)' la finalul URL-ului anuntului
 """
+import json
 import random
 import re
 import time
@@ -130,9 +131,79 @@ def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
     return None
 
 
+def _ld_seller_name(obj) -> Optional[str]:
+    """Cauta recursiv offers.seller.name intr-un JSON-LD (poate fi in @graph)."""
+    if isinstance(obj, dict):
+        seller = obj.get("seller")
+        if isinstance(seller, dict) and seller.get("name"):
+            return str(seller["name"]).strip() or None
+        for v in obj.values():
+            r = _ld_seller_name(v)
+            if r:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _ld_seller_name(v)
+            if r:
+                return r
+    return None
+
+
+def _extract_okazii_seller(soup) -> dict:
+    """RP-1 — date vanzator de pe pagina de detaliu Okazii (selectorii §6, defensiv).
+
+    seller_name (din title-ul linkului de profil / fallback JSON-LD), seller_id (slug),
+    seller_rating (procent pozitive / 20 -> scara 0-5), seller_reviews (nr. calificative),
+    okazii_seller_type ("companie"/"persoana"). Data postarii NU e publica -> nesetata.
+    """
+    seller: dict = {}
+    prof = (soup.select_one('.info-seller a[href*="/comunitati/okazia-lui/"]')
+            or soup.select_one('a[href*="/comunitati/okazia-lui/"]'))
+    if prof:
+        title_attr = prof.get("title") or ""
+        m = re.search(r"Profilul vanzatorului\s+(.+)$", title_attr, re.I)
+        if m:
+            seller["seller_name"] = m.group(1).strip()
+        hm = re.search(r"/okazia-lui/([^/.]+)", prof.get("href") or "")
+        if hm:
+            seller["seller_id"] = hm.group(1)
+
+    rating_box = soup.select_one(".seller-rating")
+    if rating_box:
+        first_span = rating_box.find("span")
+        if first_span:
+            pm = re.search(r"(\d+)", first_span.get_text(strip=True))
+            if pm:
+                seller["seller_rating"] = round(int(pm.group(1)) / 20.0, 2)  # procent -> 0-5
+        avail = rating_box.select_one(".available")
+        if avail:
+            cnt = avail.find("span")
+            digits = re.sub(r"[^\d]", "", cnt.get_text() if cnt else avail.get_text())
+            if digits:
+                seller["seller_reviews"] = int(digits)
+
+    type_line = soup.select_one(".seller-type-line")
+    if type_line:
+        tm = re.search(r"Tip vanzator:\s*([A-Za-zăâîșțĂÂÎȘȚ]+)", type_line.get_text(" ", strip=True), re.I)
+        if tm:
+            seller["okazii_seller_type"] = tm.group(1)
+
+    if not seller.get("seller_name"):
+        for scl in soup.find_all("script", type="application/ld+json"):
+            try:
+                name = _ld_seller_name(json.loads(scl.string or "{}"))
+            except Exception:
+                name = None
+            if name:
+                seller["seller_name"] = name
+                break
+    return seller
+
+
 def fetch_okazii_listing_details(url: str) -> dict:
     """Pagina individuala -> descriere completa + toate imaginile din galerie
-    (calitate 1000x1000). {"images": [...], "description": str|None}."""
+    (calitate 1000x1000) + date vanzator. {"images", "description", "seller_name",
+    "seller_id", "seller_rating", "seller_reviews", "okazii_seller_type"}."""
     if not url:
         return {"images": [], "description": None}
     html = _request(url, referer=_BASE + "/")
@@ -163,7 +234,9 @@ def fetch_okazii_listing_details(url: str) -> dict:
         seen.add(up)
         imgs.append(up)
 
-    return {"images": imgs, "description": description}
+    result = {"images": imgs, "description": description}
+    result.update(_extract_okazii_seller(soup))
+    return result
 
 
 def search_okazii(
@@ -266,7 +339,10 @@ def search_okazii(
                 "description": None,
                 "seller_name": None,
                 "seller_id": None,
+                "seller_rating": None,
+                "seller_reviews": None,
                 "listed_at": None,
+                "extra_attributes": None,
             })
         except Exception as exc:
             log_manager.emit("radar", "WARN", f"Okazii: card invalid ignorat: {str(exc)[:80]}")
@@ -282,6 +358,14 @@ def search_okazii(
                 item["images"] = details["images"]
             if details.get("description"):
                 item["description"] = details["description"]
+            # RP-1 — propaga datele vanzatorului in listing.
+            for k in ("seller_name", "seller_id", "seller_rating", "seller_reviews"):
+                if details.get(k) is not None:
+                    item[k] = details[k]
+            if details.get("okazii_seller_type"):
+                extra = item.get("extra_attributes") or {}
+                extra["okazii_seller_type"] = details["okazii_seller_type"]
+                item["extra_attributes"] = extra
         except Exception as exc:
             log_manager.emit("radar", "WARN", f"Okazii: enrichment {item['external_id']}: {str(exc)[:80]}")
             continue

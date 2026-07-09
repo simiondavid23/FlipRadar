@@ -270,6 +270,13 @@ def _listing_to_dict(listing: RadarListing, keyword: Optional[RadarKeyword] = No
     fee_ceiling = None
     if resale_price:
         fee_ceiling = calculate_fee_ceiling(resale_price, listing.platform)
+    # RP-1 — attributes_json contine atribute item + badge-uri + risk_reason + extras.
+    try:
+        _attrs = json.loads(listing.attributes_json) if listing.attributes_json else {}
+    except Exception:
+        _attrs = {}
+    if not isinstance(_attrs, dict):
+        _attrs = {}
     return {
         "id": listing.id,
         "keyword_id": listing.keyword_id,
@@ -288,6 +295,16 @@ def _listing_to_dict(listing: RadarListing, keyword: Optional[RadarKeyword] = No
         "facebook_detail_fetched": listing.facebook_detail_fetched,
         "seller_name": listing.seller_name,
         "seller_id": listing.seller_id,
+        "seller_reviews": listing.seller_reviews,
+        "seller_rating": listing.seller_rating,
+        "seller_risk": listing.seller_risk,
+        "risk_reason": _attrs.get("risk_reason"),
+        "attributes": _attrs.get("attributes"),
+        "seller_badges": _attrs.get("seller_badges"),
+        "seller_type": _attrs.get("okazii_seller_type"),
+        "member_since": _attrs.get("olx_member_since"),
+        "view_count": _attrs.get("view_count"),
+        "favourite_count": _attrs.get("favourite_count"),
         "score": listing.score,
         "margin_pct": listing.margin_pct,
         "margin_value": (resale_price - listing.price) if resale_price else None,
@@ -695,15 +712,22 @@ def get_listing(
     return _listing_to_dict(listing, keyword)
 
 
+# RP-1 — single-flight pentru enrichment-ul on-demand Vinted: al doilea request
+# pentru acelasi listing in timp ce primul ruleaza primeste imediat un raspuns
+# "in curs" (fara fetch dublu / hammering pe pagina HTML).
+_vinted_detail_inflight: set = set()
+_vinted_detail_lock = threading.Lock()
+
+
 @router.get("/listings/{listing_id}/vinted-detail")
 def get_vinted_listing_detail(
     listing_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Îmbogățește on-demand un anunț Vinted cu poze/descriere/dată
-    complete, o singură dată per anunț (rezultat cache-uit în DB)."""
-    from app.services.radar.vinted_scraper import get_vinted_item_detail
+    """Îmbogățește on-demand un anunț Vinted cu poze/descriere/dată/atribute/vânzător
+    complete (pagina HTML), o singură dată per anunț (rezultat cache-uit în DB)."""
+    from app.services.radar.vinted_scraper import get_vinted_item_detail, apply_vinted_detail
     listing = (
         db.query(RadarListing)
         .filter(RadarListing.id == listing_id, RadarListing.user_id == current_user.id)
@@ -711,30 +735,33 @@ def get_vinted_listing_detail(
     )
     if not listing:
         raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
+    keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
     if listing.platform != "vinted":
-        keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
         return _listing_to_dict(listing, keyword)
 
     if not listing.vinted_detail_fetched:
-        item_id = (listing.external_id or "").replace("vinted_", "", 1)
-        detail = get_vinted_item_detail(item_id) if item_id else None
-        if detail:
-            if detail.get("images"):
-                listing.images = json.dumps(detail["images"], ensure_ascii=False)
-            if detail.get("description"):
-                listing.description = detail["description"]
-            if detail.get("listed_at"):
-                listing.listed_at = detail["listed_at"]
-            # Marcam fetched=True DOAR la succes. La esec (403/404/exceptie,
-            # detail=None) lasam flag-ul False intentionat, ca sa reincercam
-            # data viitoare cand redeschizi anuntul — dupa ce limita Vinted
-            # pe endpoint-ul de detaliu se reseteaza (biblioteca insasi
-            # documenteaza ca da 403 dupa putine folosiri per sesiune).
-            listing.vinted_detail_fetched = True
-            db.commit()
-            db.refresh(listing)
+        # Single-flight: daca deja se imbogateste acest listing, raspunde "in curs".
+        with _vinted_detail_lock:
+            already = listing_id in _vinted_detail_inflight
+            if not already:
+                _vinted_detail_inflight.add(listing_id)
+        if already:
+            resp = _listing_to_dict(listing, keyword)
+            resp["enrichment_in_progress"] = True
+            return resp
+        try:
+            item_id = (listing.external_id or "").replace("vinted_", "", 1)
+            detail = get_vinted_item_detail(item_id) if item_id else None
+            if detail:
+                # Persista poze/descriere/data/atribute/vanzator + recalculeaza risc.
+                # La esec (403/None) NU marcam fetched -> reincercare data viitoare.
+                apply_vinted_detail(listing, detail, keyword.resale_price if keyword else None)
+                db.commit()
+                db.refresh(listing)
+        finally:
+            with _vinted_detail_lock:
+                _vinted_detail_inflight.discard(listing_id)
 
-    keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
     return _listing_to_dict(listing, keyword)
 
 

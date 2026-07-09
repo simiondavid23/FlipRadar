@@ -34,3 +34,20 @@ export function marginColor(pct) {
   if (pct >= 10) return "#facc15";
   return "#fb923c";
 }
+
+// RP-1 — eticheta de rating a vanzatorului, formatata per platforma:
+//   okazii: "{pct}% pozitive ({n})"  (pct = rating×20)
+//   vinted (si generic, scara 0-5): "★{rating} ({n} evaluări)"
+export function sellerRatingLabel(listing) {
+  if (listing.seller_reviews === 0) return "fără evaluări";
+  const n = listing.seller_reviews;
+  const r = listing.seller_rating;
+  if (r === null || r === undefined) {
+    return n !== null && n !== undefined ? `(${n} evaluări)` : "";
+  }
+  if (listing.platform === "okazii") {
+    const pct = Math.round(r * 20);
+    return n !== null && n !== undefined ? `${pct}% pozitive (${n})` : `${pct}% pozitive`;
+  }
+  return n !== null && n !== undefined ? `★${r.toFixed(1)} (${n} evaluări)` : `★${r.toFixed(1)}`;
+}

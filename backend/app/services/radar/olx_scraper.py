@@ -4,6 +4,7 @@ Foloseste curl_cffi cu impersonate=chrome110 ca sa treaca peste WAF-ul Cloudflar
 care blocheaza requests-ul standard. Daca primim 429, aplicam backoff exponential
 si reincercam de maxim 3 ori inainte sa renuntam.
 """
+import json
 import random
 import re
 import time
@@ -294,6 +295,100 @@ def _extract_olx_categories(html: str) -> dict:
         return {}
 
 
+def _extract_olx_numeric_ids(html: str) -> dict:
+    """{token_external_id -> id_numeric} din window.__PRERENDERED_STATE__.ads[] (S2).
+
+    Necesare pentru /api/v1/offers/{id_numeric}: cardul are doar `-ID<token>.html`,
+    dar API-ul cere id-ul numeric, prezent in state langa url. Dict gol la esec.
+    """
+    try:
+        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html, re.DOTALL)
+        if not m:
+            return {}
+        state = json.loads(json.loads(m.group(1)))
+        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
+        result: dict = {}
+        for ad in ads:
+            aid = ad.get("id")
+            url = ad.get("url") or ad.get("urlPath") or ""
+            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
+            if mm and aid is not None:
+                result[mm.group(1)] = aid
+        return result
+    except Exception as e:
+        print(f"[OlxScraper] __PRERENDERED_STATE__ numeric-id parse error: {e}")
+        return {}
+
+
+def _parse_iso_dt(s) -> Optional[datetime]:
+    """ISO 8601 cu offset ('2026-07-07T12:08:09+03:00') -> datetime NAIV local
+    (consecvent cu conventia listed_at a scraperelor)."""
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(s))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone().replace(tzinfo=None)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_olx_offer_details(numeric_id) -> dict:
+    """GET https://www.olx.ro/api/v1/offers/{id} -> date vanzator + data postarii.
+
+    Confirmat RP-DIAG (§5): `data.user.name`, `data.user.created` (an), `data.created_time`,
+    `data.description`. Returneaza dict cu cheile disponibile (seller_name, seller_id,
+    olx_member_since, listed_at, description) sau {} la orice esec (caller pastreaza ce are).
+    """
+    if not numeric_id:
+        return {}
+    url = f"https://www.olx.ro/api/v1/offers/{numeric_id}"
+    try:
+        resp = curl_requests.get(
+            url,
+            headers=build_headers({
+                "Referer": "https://www.olx.ro/",
+                "Accept": "application/json, text/plain, */*",
+            }),
+            impersonate=_IMPERSONATE, timeout=20,
+        )
+        if resp.status_code != 200:
+            return {}
+        data = (resp.json() or {}).get("data") or {}
+    except Exception as exc:
+        print(f"[OlxScraper] offer details eroare ({numeric_id}): {exc}")
+        return {}
+    return _map_olx_offer(data)
+
+
+def _map_olx_offer(data: dict) -> dict:
+    """Mapeaza `data` din /api/v1/offers/{id} la campurile noastre (functie PURA,
+    testabila pe fixture): seller_name/seller_id/olx_member_since/listed_at/description."""
+    out: dict = {}
+    if not isinstance(data, dict):
+        return out
+    user = data.get("user") or {}
+    if user.get("name"):
+        out["seller_name"] = user.get("name")
+    if user.get("id") is not None:
+        out["seller_id"] = str(user.get("id"))
+    created = user.get("created")
+    if created:
+        mm = re.match(r"(\d{4})", str(created))
+        if mm:
+            out["olx_member_since"] = int(mm.group(1))
+    dt = _parse_iso_dt(data.get("created_time"))
+    if dt:
+        out["listed_at"] = dt
+    desc = data.get("description")
+    if desc:
+        txt = re.sub(r"<[^>]+>", " ", str(desc))
+        txt = re.sub(r"\s+", " ", txt).strip()
+        out["description"] = txt or None
+    return out
+
+
 def search_olx(
     keyword: str,
     max_price: float,
@@ -497,6 +592,13 @@ def search_olx(
             for item in parsed:
                 hid = (item.get("external_id") or "").replace("olx_", "")
                 item["olx_category"] = cat_map.get(hid, "")
+        # RP-1 — id numeric pentru enrichment prin /api/v1/offers/{id} (fara request extra).
+        num_map = _extract_olx_numeric_ids(html)
+        if num_map:
+            for item in parsed:
+                hid = (item.get("external_id") or "").replace("olx_", "")
+                if num_map.get(hid) is not None:
+                    item["olx_numeric_id"] = num_map.get(hid)
         return parsed
 
     # FIX paginare — intreaga colectare + procesare e protejata: nicio exceptie

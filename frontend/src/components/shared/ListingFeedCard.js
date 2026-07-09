@@ -8,7 +8,7 @@
 //   showMarginLine       — arata linia "-> revanzare | Marja" (Radar: mereu; Auto: doar cu marja)
 //   onToggleCompare      — daca lipseste, butonul de comparare nu apare (opt-in)
 import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo } from "./listingHelpers";
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel } from "./listingHelpers";
 
 export default function ListingFeedCard({
   listing, scoreCfg, scoreBadge, platformCfg, platformBadge, image, openLabel,
@@ -176,6 +176,32 @@ export default function ListingFeedCard({
             )}
           </span>
         </div>
+
+        {/* RP-1 — vânzător + rating + badge de risc (randate doar când există date). */}
+        {(listing.seller_name || listing.seller_rating != null || listing.seller_risk) && (
+          <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "0.375rem", flexWrap: "wrap" }}>
+            {listing.seller_name && (
+              <span style={{ maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {listing.seller_name}
+              </span>
+            )}
+            {sellerRatingLabel(listing) && (
+              <span style={{ color: "var(--text-muted)" }}>{sellerRatingLabel(listing)}</span>
+            )}
+            {listing.seller_risk && (
+              <span
+                title={listing.risk_reason || "Vânzător riscant"}
+                style={{
+                  padding: "0.05rem 0.4rem", borderRadius: "0.3rem",
+                  backgroundColor: "rgba(239,68,68,0.12)", color: "#f87171",
+                  border: "1px solid rgba(239,68,68,0.35)", fontSize: "0.65rem", fontWeight: 600,
+                }}
+              >
+                ⚠ Riscant
+              </span>
+            )}
+          </div>
+        )}
 
         {confirmingDelete ? (
           <div onClick={(e) => e.stopPropagation()} style={{

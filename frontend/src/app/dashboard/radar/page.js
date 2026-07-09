@@ -181,6 +181,22 @@ export default function RadarFeedPage() {
     status: "active",
     hide_filtered: true,
   });
+  // RP-1 — filtre/sortare client-side pe lista deja incarcata.
+  const [hideRisky, setHideRisky] = useState(false);
+  const [sortBy, setSortBy] = useState("");  // "" = ordinea din server; "listed_desc" = data postarii
+
+  const displayedListings = useMemo(() => {
+    let arr = listings;
+    if (hideRisky) arr = arr.filter((l) => !l.seller_risk);
+    if (sortBy === "listed_desc") {
+      arr = [...arr].sort((a, b) => {
+        const ta = a.listed_at ? new Date(a.listed_at).getTime() : -Infinity;  // null la coada
+        const tb = b.listed_at ? new Date(b.listed_at).getTime() : -Infinity;
+        return tb - ta;  // recente intai
+      });
+    }
+    return arr;
+  }, [listings, hideRisky, sortBy]);
 
   const loadKeywords = useCallback(async () => {
     try {
@@ -513,6 +529,26 @@ export default function RadarFeedPage() {
           />
           Ascunde sub prag AI
         </label>
+        {/* RP-1 — ascunde vanzatorii riscanti (client-side) */}
+        <label style={{
+          display: "inline-flex", alignItems: "center", gap: "0.5rem",
+          padding: "0.5rem 0.75rem", border: "1px solid var(--border-color)",
+          borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)",
+          color: "var(--text-primary)", fontSize: "0.8125rem", cursor: "pointer",
+        }}>
+          <input
+            type="checkbox"
+            checked={hideRisky}
+            onChange={(e) => setHideRisky(e.target.checked)}
+            style={{ width: "auto", margin: 0 }}
+          />
+          Ascunde vânzătorii riscanți
+        </label>
+        {/* RP-1 — sortare */}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
+          <option value="">Sortare: implicită</option>
+          <option value="listed_desc">Data postării (recente)</option>
+        </select>
 
         <SelectFiniteControl
           totalVisible={listings.length}
@@ -631,7 +667,7 @@ export default function RadarFeedPage() {
             gap: "1rem",
           }}
         >
-          {listings.map((l) => (
+          {displayedListings.map((l) => (
             <ListingFeedCard
               key={l.id}
               listing={l}
