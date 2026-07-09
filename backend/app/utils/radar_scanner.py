@@ -41,6 +41,7 @@ from app.services.radar.publi24_scraper import search_publi24
 from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
+from app.services.radar.vinted_html import guard_status as vinted_guard_status
 
 
 # Contor global pentru frecventa cleanup-ului (ruleaza la fiecare 10 cicluri).
@@ -51,7 +52,7 @@ _cycle_counter = {"n": 0}
 # Vinted: in fundal DUPA save+notify (pagina HTML, limiter >=6s per item).
 _ENRICH_OLX_CAP = 15
 _ENRICH_OLX_BACKLOG_CAP = 5
-_ENRICH_VINTED_CAP = 15
+_ENRICH_VINTED_CAP = 8   # RP-1.1 — redus de la 15 (cadenta mai lenta contra blocarii DataDome)
 _enrich_counters = {"olx": 0, "olx_backlog": 0, "vinted": 0}
 
 # Delay intre scraping-urile platformelor pentru a evita blocaje.
@@ -1966,9 +1967,17 @@ def _maybe_enrich_olx_inline(listing: dict) -> None:
 def _enrich_vinted_background(db: Session, user: User) -> None:
     """Enrichment Vinted in FUNDAL, dupa save+notify: pentru listingurile cu
     vinted_detail_fetched=False (recente intai), pana la _ENRICH_VINTED_CAP pe ciclu.
-    Fiecare fetch trece prin limiterul vinted_html (>=6s). La succes persista
-    poze/descriere/data/atribute/vanzator + recalculeaza risc + marcheaza fetched."""
+    Fiecare fetch trece prin guard-ul+limiterul vinted_html (throttle 20–30s, plafon
+    zilnic, circuit breaker). La succes persista poze/descriere/data/atribute/vanzator
+    + recalculeaza risc + marcheaza fetched."""
     if _enrich_counters["vinted"] >= _ENRICH_VINTED_CAP:
+        return
+    # RP-1.1 — respecta guard-ul INAINTE de batch: daca breaker-ul e deschis / plafonul
+    # zilnic e atins, sari TOT batch-ul cu O SINGURA linie (nu 8 incercari degeaba).
+    gs = vinted_guard_status("vinted.ro")
+    if not gs["allowed"]:
+        log_manager.emit("radar", "INFO",
+            f"Enrichment Vinted: batch sarit (guard: {gs['reason']})")
         return
     remaining = _ENRICH_VINTED_CAP - _enrich_counters["vinted"]
     rows = (
@@ -1995,6 +2004,12 @@ def _enrich_vinted_background(db: Session, user: User) -> None:
             log_manager.emit("radar", "WARN", f"Vinted enrichment {row.id}: {str(exc)[:80]}")
             detail = None
         if not detail:
+            # RP-1.1 — daca fetch-ul a esuat SI breaker-ul tocmai s-a deschis, opreste
+            # batch-ul imediat (nu continua cu restul itemilor din ciclul curent).
+            if vinted_guard_status("vinted.ro")["reason"] == "breaker_open":
+                log_manager.emit("radar", "WARN",
+                    "Enrichment Vinted: breaker deschis — opresc batch-ul")
+                break
             continue  # ramane fetched=False -> reincearca on-demand / ciclul urmator
         kw = db.query(RadarKeyword).filter(RadarKeyword.id == row.keyword_id).first()
         apply_vinted_detail(row, detail, kw.resale_price if kw else None)

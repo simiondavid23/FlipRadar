@@ -6,14 +6,25 @@ sesiune noua (dovedit in RP-DIAG). Ne pivotam pe pagina HTML a itemului, servita
 `self.__next_f.push([1,"...escaped..."])` (format React Flight) — le decodam si le
 concatenam intr-un singur text pe care extractoarele il parcurg.
 
-Modul REUTILIZABIL: enrichment-ul Vinted (vinted_scraper) si viitorul refresh de
-catalog (RP-2) trec toate prin aceeasi sesiune singleton + limiter per domeniu.
+Modul REUTILIZABIL: enrichment-ul Vinted (vinted_scraper), on-demand din router si
+refresh-ul de catalog (RP-2) trec TOATE prin `get_html` — deci guard-ul de mai jos
+(throttle + plafon zilnic + circuit breaker) se aplica o singura data si acopera
+automat toti apelantii.
+
+RP-1.1 — incident real: enrichment la cadenta sustinuta (15/ciclu la 6s) a degradat
+progresiv reputatia IP-ului la DataDome pana la 403 pe TOATE paginile HTML (search-ul
+prin API-ul wrapper-ului = alt tier, a ramas ok). Fix: cadenta mai lenta cu jitter,
+plafon zilnic, si un circuit breaker care OPRESTE requesturile cand incepe blocarea.
+
+NOTA de stare: contoarele plafonului zilnic + starea breaker-ului sunt IN MEMORIE (per
+proces) — se reseteaza la restart. Acceptat: un restart e rar si oricum reface sesiunea.
 """
 import json
 import random
 import re
 import threading
 import time
+from datetime import datetime
 from urllib.parse import urlparse
 
 from curl_cffi import requests as curl_requests
@@ -26,15 +37,39 @@ _IMPERSONATE = "chrome131"
 # strica potrivirea cu fingerprintul TLS si ne-ar bloca).
 _ACCEPT_LANG = {"Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7"}
 
-# Interval minim intre requesturi catre acelasi domeniu (secunde). Vinted e sensibil
-# la rate-limit pe pagina HTML -> >=6s + jitter.
-_MIN_INTERVAL = {"vinted.ro": 6.0}
+# ── Guard per domeniu (constante documentate, usor de ajustat) ──────────────────
+_MIN_INTERVAL = {"vinted.ro": 20.0}      # era 6.0 (RP-1) — cadenta mai lenta
 _DEFAULT_MIN_INTERVAL = 3.0
+_JITTER_MAX = {"vinted.ro": 10.0}        # interval efectiv Vinted: 20–30s
+_DEFAULT_JITTER_MAX = 1.0
+_DAILY_CAP = {"vinted.ro": 250}          # requesturi HTML / zi calendaristica
+_BREAKER_THRESHOLD = 2                    # blocked-uri consecutive -> breaker deschis
+_BREAKER_COOLDOWN_S = 6 * 3600           # pauza dupa deschidere
 
+# ── Ceas/sleep injectabile (monkeypatch in teste, fara retea/sleep real) ────────
+def _now() -> float:
+    return time.time()
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+# ── Stare (thread-safe) ─────────────────────────────────────────────────────────
 _session = None
 _session_lock = threading.Lock()
-_domain_last: dict[str, float] = {}
+# limiter: momentul-tinta al urmatorului request permis per domeniu
+_domain_next_ts: dict[str, float] = {}
 _domain_lock = threading.Lock()
+# guard: breaker + plafon zilnic
+_guard_lock = threading.Lock()
+_breaker: dict[str, dict] = {}                 # {domeniu: {consec, open_until, half_open, warned_skip}}
+_daily: dict[str, tuple[str, int]] = {}        # {domeniu: (data_azi, count)}
+_daily_cap_warned: dict[str, str] = {}         # {domeniu: data_ultimului_warn}
+
+
+def _new_breaker() -> dict:
+    return {"consec": 0, "open_until": 0.0, "half_open": False, "warned_skip": False}
 
 
 def get_html_session() -> "curl_requests.Session":
@@ -53,26 +88,159 @@ def _domain_of(url: str) -> str:
     return (urlparse(url).netloc or "").replace("www.", "")
 
 
+def _min_interval_for(domain: str) -> float:
+    return next((iv for d, iv in _MIN_INTERVAL.items() if domain.endswith(d)), _DEFAULT_MIN_INTERVAL)
+
+
+def _jitter_for(domain: str) -> float:
+    return next((j for d, j in _JITTER_MAX.items() if domain.endswith(d)), _DEFAULT_JITTER_MAX)
+
+
+def _cap_for(domain: str):
+    return next((c for d, c in _DAILY_CAP.items() if domain.endswith(d)), None)
+
+
+def _today_str() -> str:
+    return datetime.fromtimestamp(_now()).strftime("%Y-%m-%d")
+
+
 def _rate_limit(domain: str) -> None:
-    """Impune intervalul minim per domeniu + jitter, rezervand slotul sub lock si
-    dormind IN AFARA lock-ului (nu blocheaza requesturile catre alt domeniu)."""
-    min_iv = next((iv for d, iv in _MIN_INTERVAL.items() if domain.endswith(d)), _DEFAULT_MIN_INTERVAL)
+    """Throttle per domeniu: pastreaza intre requesturi consecutive un interval de
+    `min_interval + uniform(0, jitter_max)`. Rezerva slotul sub lock, doarme in afara
+    lui (nu blocheaza alt domeniu). Ceas/sleep injectabile (_now/_sleep)."""
+    min_iv = _min_interval_for(domain)
+    jitter = _jitter_for(domain)
     while True:
         with _domain_lock:
-            now = time.time()
-            wait = (_domain_last.get(domain, 0.0) + min_iv) - now
-            if wait <= 0:
-                _domain_last[domain] = now  # rezerva slotul curent
+            now = _now()
+            target = _domain_next_ts.get(domain, 0.0)
+            if now >= target:
+                # rezerva: urmatorul request permis la now + min_iv + jitter
+                _domain_next_ts[domain] = now + min_iv + random.uniform(0, jitter)
                 return
-        time.sleep(wait + random.uniform(0.1, 0.6))
+            wait = target - now
+        _sleep(wait)
+
+
+# ── Guard: circuit breaker + plafon zilnic (factorizat pentru teste) ────────────
+def guard_before_request(domain: str) -> dict:
+    """Decizie INAINTE de un request REAL (apelata din get_html sub lock propriu).
+    Efecte laterale: rezerva slotul zilnic daca permite; marcheaza proba half-open.
+    Returneaza {"allowed", "reason": None|"breaker_open"|"daily_cap", "open_until"}."""
+    with _guard_lock:
+        b = _breaker.setdefault(domain, _new_breaker())
+        now = _now()
+
+        # 1) breaker DESCHIS (cooldown neexpirat) -> skip
+        if b["open_until"] > now:
+            if not b["warned_skip"]:
+                b["warned_skip"] = True
+                log_manager.emit("radar", "INFO",
+                    f"Vinted breaker DESCHIS — requesturi HTML in pauza pana la reincercarea de proba ({domain})")
+            return {"allowed": False, "reason": "breaker_open", "open_until": b["open_until"]}
+
+        # breaker in fereastra HALF-OPEN (a expirat cooldown-ul): lasa UN singur request de proba
+        if b["open_until"] > 0:  # (si <= now, implicat de mai sus)
+            if b["half_open"]:
+                return {"allowed": False, "reason": "breaker_open", "open_until": b["open_until"]}
+            b["half_open"] = True  # aceasta cerere e proba
+
+        # 2) plafon zilnic
+        cap = _cap_for(domain)
+        if cap is not None:
+            today = _today_str()
+            date, count = _daily.get(domain, (today, 0))
+            if date != today:
+                date, count = today, 0
+            if count >= cap:
+                _daily[domain] = (date, count)
+                if b["half_open"]:
+                    b["half_open"] = False  # nu trimitem proba daca plafonul e atins
+                if _daily_cap_warned.get(domain) != today:
+                    _daily_cap_warned[domain] = today
+                    log_manager.emit("radar", "WARN",
+                        f"Plafon zilnic Vinted atins ({cap}) — enrichment in pauza pana maine ({domain})")
+                return {"allowed": False, "reason": "daily_cap", "open_until": 0.0}
+            _daily[domain] = (date, count + 1)
+
+        return {"allowed": True, "reason": None, "open_until": b["open_until"]}
+
+
+def guard_after_response(domain: str, blocked: bool) -> None:
+    """Actualizeaza breaker-ul DUPA un raspuns (apelata din get_html)."""
+    with _guard_lock:
+        b = _breaker.setdefault(domain, _new_breaker())
+        now = _now()
+        was_half_open = b["half_open"]
+        b["half_open"] = False
+        if blocked:
+            b["consec"] += 1
+            if was_half_open:
+                b["open_until"] = now + _BREAKER_COOLDOWN_S
+                b["warned_skip"] = False
+                log_manager.emit("radar", "WARN",
+                    f"Vinted breaker re-DESCHIS {_BREAKER_COOLDOWN_S // 3600}h (proba half-open a esuat) ({domain})")
+            elif b["consec"] >= _BREAKER_THRESHOLD and b["open_until"] <= now:
+                b["open_until"] = now + _BREAKER_COOLDOWN_S
+                b["warned_skip"] = False
+                log_manager.emit("radar", "WARN",
+                    f"Vinted breaker DESCHIS {_BREAKER_COOLDOWN_S // 3600}h ({_BREAKER_THRESHOLD}×403 consecutive) ({domain})")
+        else:
+            if was_half_open:
+                log_manager.emit("radar", "OK", f"Vinted breaker INCHIS (proba a reusit) ({domain})")
+            b["consec"] = 0
+            b["open_until"] = 0.0
+            b["warned_skip"] = False
+
+
+def _release_half_open(domain: str) -> None:
+    """Elibereaza slotul de proba half-open (ex. eroare de retea) fara a-l numara ca blocat."""
+    with _guard_lock:
+        b = _breaker.get(domain)
+        if b:
+            b["half_open"] = False
+
+
+def guard_status(domain: str) -> dict:
+    """Stare READ-ONLY pentru apelanti (ex. scanner-ul, inainte de un batch): decid
+    FARA sa declanseze un request. Nu consuma plafonul, nu porneste proba half-open."""
+    with _guard_lock:
+        b = _breaker.get(domain, _new_breaker())
+        now = _now()
+        if b["open_until"] > now:
+            return {"allowed": False, "reason": "breaker_open", "open_until": b["open_until"]}
+        cap = _cap_for(domain)
+        if cap is not None:
+            today = _today_str()
+            date, count = _daily.get(domain, (today, 0))
+            if date == today and count >= cap:
+                return {"allowed": False, "reason": "daily_cap", "open_until": 0.0}
+        return {"allowed": True, "reason": None, "open_until": b.get("open_until", 0.0)}
 
 
 def get_html(url: str, referer: str | None = None):
-    """GET prin sesiunea singleton, respectand limiterul de domeniu."""
-    _rate_limit(_domain_of(url))
+    """GET prin sesiunea singleton, respectand guard-ul (breaker + plafon zilnic) si
+    throttle-ul cu jitter. Intoarce raspunsul sau `None` la SKIP (breaker/plafon) —
+    motivul e interogabil prin `guard_status(domain)`. La 403/blocat, actualizeaza breaker-ul."""
+    domain = _domain_of(url)
+    decision = guard_before_request(domain)
+    if not decision["allowed"]:
+        return None  # marker de skip (get_html NU face HTTP)
+
+    _rate_limit(domain)
     sess = get_html_session()
     headers = {"Referer": referer} if referer else None
-    return sess.get(url, headers=headers)
+    try:
+        resp = sess.get(url, headers=headers)
+    except Exception:
+        _release_half_open(domain)  # eroare de retea: nu o numaram ca blocaj DataDome
+        raise
+    try:
+        blocked = _looks_blocked(resp.status_code, resp.text or "")
+    except Exception:
+        blocked = False
+    guard_after_response(domain, blocked)
+    return resp
 
 
 def decode_next_f(html: str) -> str:
@@ -105,10 +273,12 @@ def _looks_blocked(status: int, html: str) -> bool:
 
 
 def fetch_item_page(item_id_or_url) -> dict | None:
-    """Pagina HTML a unui item Vinted -> {"html", "decoded"} sau None la esec.
+    """Pagina HTML a unui item Vinted -> {"html", "decoded"} sau None la esec/skip.
 
     Accepta un id numeric (construieste URL-ul canonic; redirectul adauga slug-ul)
-    sau un URL complet. Trateaza 403/captcha ca esec logat.
+    sau un URL complet. `get_html` poate intoarce None (guard: breaker/plafon) — il
+    tratam ca orice esec (None), deci contractul lui `get_vinted_item_detail` (si al
+    router-ului/frontend-ului) ramane neschimbat.
     """
     s = str(item_id_or_url or "").strip()
     if not s:
@@ -116,6 +286,8 @@ def fetch_item_page(item_id_or_url) -> dict | None:
     url = s if s.startswith("http") else f"https://www.vinted.ro/items/{s}"
     try:
         resp = get_html(url, referer="https://www.vinted.ro/")
+        if resp is None:
+            return None  # skip din guard (breaker/plafon) — logat deja acolo
         status = resp.status_code
         html = resp.text or ""
         if status != 200 or _looks_blocked(status, html):

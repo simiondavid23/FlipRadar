@@ -142,6 +142,12 @@ def refresh_catalog_tree(db) -> dict:
         log_manager.emit("radar", "WARN", f"Catalog Vinted: eroare fetch /catalog: {str(exc)[:100]}")
         return {"ok": False, "reason": "fetch_error", "count": 0}
 
+    # RP-1.1 — get_html poate intoarce None la SKIP (breaker deschis / plafon zilnic):
+    # tratam ca esec grațios, NU stergem datele vechi (altfel resp.text ar arunca).
+    if resp is None:
+        log_manager.emit("radar", "WARN", "Catalog Vinted: refresh sarit de guard (breaker/plafon) — pastrez datele vechi")
+        return {"ok": False, "reason": "guard_skip", "count": 0}
+
     html = resp.text or ""
     if resp.status_code != 200 or vinted_html._looks_blocked(resp.status_code, html):
         log_manager.emit("radar", "WARN",
