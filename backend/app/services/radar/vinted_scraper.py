@@ -733,27 +733,21 @@ VINTED_CATALOG_ID_MAP: dict[tuple[str, str, str], int] = {
 }
 
 
-def _resolve_vinted_catalog_id(category, subcategory):
-    """Rezolva catalog_id-ul Vinted din (category, subcategory) stocate pe keyword.
+def _resolve_from_map(category, subcategory):
+    """Rezolvare din harta hardcodata VINTED_CATALOG_ID_MAP (fallback-ul istoric).
 
     Doua formate coexista pe keyword.category:
-      • wizard: "Tab > Categorie" (ex: "Femei > Haine") + subcategory text ("Rochii")
-        -> lookup in VINTED_CATALOG_ID_MAP (arborele live).
-      • edit form vechi: catalog_id numeric brut din dropdown-ul PLATFORM_CATEGORIES
-        (ex: "2995") -> il folosim direct ca filtru (restaureaza vechiul int(category)).
-    Incearca in ordine descrescatoare de specificitate: subcategorie -> categorie -> tab.
-    Returneaza None daca nimic nu se potriveste (caller cauta fara catalog_ids -> nicio regresie).
+      • wizard: "Tab > Categorie" + subcategory text -> lookup in map (arborele live);
+      • edit form vechi: catalog_id numeric brut din dropdown -> folosit direct ca filtru.
+    Ordine descrescatoare de specificitate: subcategorie -> categorie -> tab. None daca nimic.
     """
     if not category:
         return None
-    # Format vechi: valoare numerica bruta = catalog_id Vinted direct din dropdown.
-    # (subcategoria e mai specifica, deci o preferam daca si ea e un ID numeric).
     sub_raw = (subcategory or "").strip()
     if sub_raw.isdigit():
         return int(sub_raw)
     if str(category).strip().isdigit():
         return int(str(category).strip())
-    # Format wizard: "Tab > Categorie" + subcategorie text -> lookup in arbore.
     parts = [p.strip() for p in category.split(">")]
     tab = parts[0] if len(parts) > 0 else ""
     cat = parts[1] if len(parts) > 1 else ""
@@ -767,6 +761,37 @@ def _resolve_vinted_catalog_id(category, subcategory):
         if cid:
             return cid
     return VINTED_CATALOG_ID_MAP.get((tab, "", ""))
+
+
+def _resolve_vinted_catalog_id(category, subcategory, db=None, marketplace_config=None):
+    """RP-2 — rezolvare cu PRECEDENȚĂ: config > tabelul dinamic vinted_catalogs > harta.
+    Logheaza sursa. `db`/`marketplace_config` sunt optionale (compat: fara ele = doar harta).
+    """
+    # 1) catalog_id explicit din marketplace_config (wizard-ul nou)
+    if isinstance(marketplace_config, dict):
+        raw = marketplace_config.get("vinted_catalog_id")
+        if raw:
+            try:
+                cid = int(raw)
+                log_manager.emit("radar", "INFO", f"Vinted catalog_id={cid} (sursă: config)")
+                return cid
+            except (TypeError, ValueError):
+                pass
+    # 2) tabelul dinamic vinted_catalogs (după titluri normalizate pe path)
+    if db is not None:
+        try:
+            from app.services.radar.vinted_catalog_service import find_catalog_id_by_titles
+            cid = find_catalog_id_by_titles(db, category, subcategory)
+            if cid:
+                log_manager.emit("radar", "INFO", f"Vinted catalog_id={cid} (sursă: db)")
+                return cid
+        except Exception as exc:
+            log_manager.emit("radar", "WARN", f"Vinted catalog DB lookup eșuat: {str(exc)[:60]}")
+    # 3) harta hardcodata (fallback existent, zero regresii)
+    cid = _resolve_from_map(category, subcategory)
+    if cid:
+        log_manager.emit("radar", "INFO", f"Vinted catalog_id={cid} (sursă: map)")
+    return cid
 
 
 def _strip_accents(s: Optional[str]) -> str:
@@ -829,6 +854,7 @@ def _search_vinted_library(
     exclude_description_words: list,
     subcategory: Optional[str] = None,
     page: int = 1,
+    catalog_id: Optional[int] = None,
 ) -> list:
     """Cauta pe Vinted prin VintedWrapper (JSON brut, sesiune singleton). Returneaza
     intotdeauna o lista (goala la eroare sau zero rezultate).
@@ -851,11 +877,11 @@ def _search_vinted_library(
         params["price_to"] = int(max_price)
     if min_price and min_price > 0:
         params["price_from"] = int(min_price)
-    # Filtrare server-side: rezolvam catalog_id-ul din (category, subcategory).
-    catalog_id = _resolve_vinted_catalog_id(category, subcategory)
+    # Filtrare server-side: catalog_id-ul e rezolvat de apelant (search_vinted) cu
+    # precedența config > db > map. Aici doar îl aplicăm dacă a fost furnizat.
     if catalog_id:
         params["catalog_ids"] = [catalog_id]
-        _label = category + (f" > {subcategory}" if subcategory else "")
+        _label = (category or "") + (f" > {subcategory}" if subcategory else "")
         print(f"[VintedScraper] catalog_id={catalog_id} pentru '{_label}'")
 
     try:
@@ -959,29 +985,30 @@ def search_vinted(
     exclude_description_words: Optional[list] = None,
     page: int = 1,
     subcategory: Optional[str] = None,
+    db=None,
+    marketplace_config=None,
 ) -> list[dict]:
     """Cauta pe Vinted prin libraria vinted-scraper (DataDome gestionat automat).
 
     `category` ("Tab > Categorie") + `subcategory` sunt rezolvate la un `catalog_id`
-    Vinted (VINTED_CATALOG_ID_MAP) si trimise ca filtru server-side. Daca maparea
-    reuseste, filtrarea pe subcategorie o face Vinted; altfel se aplica local pe
-    titlu/descriere (fallback fara regresie). La eroare, libraria returneaza [].
-    `condition` e acceptat pentru compatibilitate cu apelantii (nefolosit de librarie).
+    Vinted cu precedența config > db > map (RP-2) și trimise ca filtru server-side.
+    Daca rezolvarea reuseste, filtrarea pe subcategorie o face Vinted; altfel se aplica
+    local pe titlu/descriere (fallback fara regresie). `db`/`marketplace_config` sunt
+    optionale (compat: fara ele = doar harta hardcodata, exact ca inainte).
     """
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
         return []
 
-    # Daca resolverul gaseste un catalog_id, Vinted filtreaza server-side pe
-    # subcategorie -> NU mai aplicam filtrul local pe text. Altfel (None) pastram
-    # filtrul local ca fallback -> nicio regresie.
-    _server_side = _resolve_vinted_catalog_id(category, subcategory) is not None
-    _local_sub = None if _server_side else subcategory
+    # Rezolvam catalog_id-ul O SINGURA DATA (config > db > map). Daca e non-None,
+    # Vinted filtreaza server-side -> NU mai aplicam filtrul local pe text.
+    catalog_id = _resolve_vinted_catalog_id(category, subcategory, db=db, marketplace_config=marketplace_config)
+    _local_sub = None if catalog_id is not None else subcategory
 
     results = _search_vinted_library(
         keyword_clean, max_price, min_price, category,
         exclude_words or [], exclude_description_words or [],
-        subcategory=subcategory, page=page,
+        subcategory=subcategory, page=page, catalog_id=catalog_id,
     )
     return _apply_subcategory_filter(results, _local_sub)
 

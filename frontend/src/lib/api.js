@@ -389,6 +389,12 @@ export const radarAPI = {
   getStats: () => api.get("/api/radar/stats"),
   scanNow: () => api.post("/api/radar/scan-now"),
   getCategories: () => api.get("/api/radar/categories"),
+  // RP-2 — arbore dinamic de categorii Vinted + tester de excluderi
+  getVintedCatalogs: (parentId) =>
+    api.get("/api/radar/vinted-catalogs", { params: parentId != null ? { parent_id: parentId } : {} }),
+  searchVintedCatalogs: (q) => api.get("/api/radar/vinted-catalogs/search", { params: { q } }),
+  testExclusion: (keywordId, data) =>
+    api.post(`/api/radar/keywords/${keywordId}/test-exclusion`, data),
   // Proxy
   getProxy: () => api.get("/api/radar/settings/proxy"),
   updateProxy: (data) => api.put("/api/radar/settings/proxy", data),

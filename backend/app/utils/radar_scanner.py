@@ -39,6 +39,7 @@ from app.services.radar.okazii_scraper import search_okazii
 from app.services.radar.olx_scraper import search_olx, fetch_olx_offer_details
 from app.services.radar.publi24_scraper import search_publi24
 from app.services.radar.scorer import calculate_score, compute_seller_risk
+from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 
 
@@ -116,6 +117,18 @@ def _keyword_subcategory(keyword) -> Optional[str]:
     except Exception:
         pass
     return None
+
+
+def _keyword_marketplace_config(keyword) -> Optional[dict]:
+    """marketplace_config parsat ca dict (RP-2: pentru vinted_catalog_id în resolver)."""
+    raw = getattr(keyword, "marketplace_config", None)
+    if not raw:
+        return None
+    try:
+        cfg = json.loads(raw) if isinstance(raw, str) else raw
+        return cfg if isinstance(cfg, dict) else None
+    except Exception:
+        return None
 
 
 # Categorie OLX (ID numeric din __PRERENDERED_STATE__, atasat ca listing["olx_category"])
@@ -1690,14 +1703,24 @@ def _run_scraper(
     settings: RadarSettings,
     exclude_words: list[str],
     page: int = 1,
+    advanced: bool = False,
+    db=None,
 ) -> list[dict]:
     """Apel sincron la scraperul potrivit. Try/except per scraper ca un crash
     pe o platforma sa nu opreasca scanul pentru celelalte.
+
+    RP-2: in modul `advanced`, scraperele primesc liste de excluderi GOALE — filtrarea
+    o face centralizat `_apply_advanced_exclusions` dupa intoarcere (ca sa nu se
+    dubleze cu regulile vechi din is_excluded).
     """
     try:
         # MODULE 1d — cuvinte excluse pe descriere (doar OLX & Vinted le primesc)
         desc_raw = getattr(keyword, "exclude_description_words", None)
         desc_exclude = desc_raw if isinstance(desc_raw, list) else _parse_json_list(desc_raw)
+        if advanced:
+            # engine-ul v2 filtreaza dupa intoarcere; scraperele NU mai exclud.
+            exclude_words = []
+            desc_exclude = []
         if platform == "olx":
             return search_olx(
                 keyword=keyword.name,
@@ -1723,6 +1746,9 @@ def _run_scraper(
                 exclude_description_words=desc_exclude,
                 # MODIFICARE 4 — subcategoria (din marketplace_config) filtreaza post-scrape.
                 subcategory=_keyword_subcategory(keyword),
+                # RP-2 — resolver cu precedență config > db > map.
+                db=db,
+                marketplace_config=_keyword_marketplace_config(keyword),
             )
         if platform == "okazii":
             return search_okazii(
@@ -2072,6 +2098,12 @@ def _scan_user(db: Session, user: User) -> dict:
         else:
             platforms = _parse_json_list(kw.platforms) or []
         exclude_words = _parse_json_list(kw.exclude_words)
+        # RP-2 — engine de excluderi v2 (opt-in). In `advanced`, scraperele NU exclud
+        # (liste goale) si filtram centralizat cu check_exclusion dupa intoarcere.
+        _adv = (getattr(kw, "exclude_matching_mode", "simple") or "simple") == "advanced"
+        _desc_raw = getattr(kw, "exclude_description_words", None)
+        _adv_desc = _desc_raw if isinstance(_desc_raw, list) else _parse_json_list(_desc_raw)
+        _adv_exceptions = _parse_json_list(getattr(kw, "exclude_exceptions", None))
 
         cancelled_mid_loop = False
         for idx, platform in enumerate(platforms):
@@ -2092,7 +2124,23 @@ def _scan_user(db: Session, user: User) -> dict:
             _seen_ext: set = set()
             _page = 1
             while True:
-                page_listings = _run_scraper(platform, kw, settings, exclude_words, page=_page)
+                page_listings = _run_scraper(platform, kw, settings, exclude_words, page=_page, advanced=_adv, db=db)
+                # RP-2 — filtrare centralizata cu engine-ul v2 (doar in modul advanced).
+                # Nota: Vinted NU are descriere in search -> excluderile pe descriere
+                # devin efective abia la enrichment (documentat in raport).
+                if _adv and page_listings:
+                    _kept = []
+                    for _r in page_listings:
+                        _excl, _rule = check_exclusion(
+                            _r.get("title"), _r.get("description"),
+                            exclude_words, _adv_desc, _adv_exceptions,
+                        )
+                        if not _excl:
+                            _kept.append(_r)
+                    if len(_kept) != len(page_listings):
+                        log_manager.emit("radar", "INFO",
+                            f"Excluderi v2 ({platform}): {len(page_listings)} → {len(_kept)} după filtrare")
+                    page_listings = _kept
                 # OLX — filtrare pe subcategorie folosind categoria extrasa din
                 # __PRERENDERED_STATE__ (listing["olx_category"]). Safe default in helper.
                 if platform == "olx":

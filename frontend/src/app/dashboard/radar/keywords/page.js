@@ -460,6 +460,17 @@ export default function RadarKeywordsPage() {
   const [formPlatform, setFormPlatform] = useState("");
   const [formMainCat, setFormMainCat] = useState("");
   const [formSubCat, setFormSubCat] = useState("");
+  // RP-2 — engine de excluderi v2 + arbore dinamic Vinted
+  const [excludeMode, setExcludeMode] = useState("simple");
+  const [exceptionsText, setExceptionsText] = useState("");
+  const [testTitle, setTestTitle] = useState("");
+  const [testDesc, setTestDesc] = useState("");
+  const [testResult, setTestResult] = useState(null);
+  const [vintedCatId, setVintedCatId] = useState(null);
+  const [vintedCatPath, setVintedCatPath] = useState("");
+  // RP-2-fix — configul marketplace EXISTENT al keyword-ului (wizard etc.), păstrat
+  // integral ca să nu-l suprascriem la salvare când edităm doar categoria Vinted.
+  const [existingMc, setExistingMc] = useState({});
   // Wizard marketplace (3 pasi) pentru adaugare keyword
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
@@ -508,6 +519,14 @@ export default function RadarKeywordsPage() {
     setFormPlatform("");
     setFormMainCat("");
     setFormSubCat("");
+    setExcludeMode("simple");
+    setExceptionsText("");
+    setVintedCatId(null);
+    setVintedCatPath("");
+    setExistingMc({});
+    setTestResult(null);
+    setTestTitle("");
+    setTestDesc("");
     setShowGrades(false);
     setShowForm(true);
   };
@@ -640,6 +659,23 @@ export default function RadarKeywordsPage() {
     })();
     setExcludeDescChips(Array.isArray(descWords) ? descWords : []);
     setDescChipInput("");
+    // RP-2 — mod excluderi v2 + excepții + categorie Vinted din marketplace_config
+    setExcludeMode(kw.exclude_matching_mode || "simple");
+    setExceptionsText(Array.isArray(kw.exclude_exceptions) ? kw.exclude_exceptions.join("\n") : "");
+    // Parsează defensiv marketplace_config (obiect din serializer, dar tratăm și string)
+    // și păstrează-l INTEGRAL — nu doar cheile Vinted — ca să nu pierdem configul wizard.
+    let _mc = {};
+    try {
+      const raw = kw.marketplace_config;
+      _mc = typeof raw === "string" ? JSON.parse(raw || "{}") : (raw || {});
+      if (!_mc || typeof _mc !== "object") _mc = {};
+    } catch { _mc = {}; }
+    setExistingMc(_mc);
+    setVintedCatId(_mc.vinted_catalog_id ?? null);
+    setVintedCatPath(_mc.vinted_catalog_path || "");
+    setTestResult(null);
+    setTestTitle("");
+    setTestDesc("");
     // MODULE 2k — initializeaza platforma + categoria (main/sub) din keyword
     const platformVal = kw.platform
       || (Array.isArray(kw.platforms) ? kw.platforms[0] : (() => { try { return JSON.parse(kw.platforms || "[]")[0]; } catch { return ""; } })())
@@ -723,7 +759,20 @@ export default function RadarKeywordsPage() {
       active_hours_start: form.use_active_hours ? (form.active_hours_start ?? 8) : null,
       active_hours_end: form.use_active_hours ? (form.active_hours_end ?? 22) : null,
       car_filters: carFiltersForSend,
+      // RP-2 — mod excluderi v2 + excepții (linii → listă)
+      exclude_matching_mode: excludeMode,
+      exclude_exceptions: exceptionsText.split("\n").map((s) => s.trim()).filter(Boolean),
     };
+    // RP-2-fix — pentru Vinted trimitem ÎNTOTDEAUNA marketplace_config, MERGE peste
+    // configul existent (wizard: subcategory etc.), ca să nu-l suprascriem și ca
+    // ștergerea categoriei (vinted_catalog_id=null) să se persiste.
+    if (formPlatform === "vinted") {
+      payload.marketplace_config = {
+        ...existingMc,
+        vinted_catalog_id: vintedCatId,            // null când e șters
+        vinted_catalog_path: vintedCatPath || null,
+      };
+    }
     if (!payload.name || !payload.max_price || !payload.resale_price) {
       alert("Numele, prețul maxim și prețul de revânzare sunt obligatorii.");
       return;
@@ -1572,6 +1621,72 @@ export default function RadarKeywordsPage() {
                 </div>
               </Field>
 
+              {/* RP-2 — categorie Vinted din arborele live (doar pentru platforma Vinted) */}
+              {formPlatform === "vinted" && (
+                <Field label="Categorie Vinted (arbore live)">
+                  <VintedCatalogPicker
+                    selectedId={vintedCatId}
+                    selectedPath={vintedCatPath}
+                    onPick={(id, path) => { setVintedCatId(id); setVintedCatPath(path); }}
+                    onClear={() => { setVintedCatId(null); setVintedCatPath(""); }}
+                    inputStyle={inputStyle}
+                  />
+                </Field>
+              )}
+
+              {/* RP-2 — mod potrivire excluderi + excepții + tester */}
+              <Field label="Mod potrivire excluderi">
+                <select value={excludeMode} onChange={(e) => setExcludeMode(e.target.value)} style={inputStyle}>
+                  <option value="simple">Simplu (substring — actual)</option>
+                  <option value="advanced">Avansat (diacritice + cuvinte întregi + excepții)</option>
+                </select>
+              </Field>
+              {excludeMode === "advanced" && (
+                <Field label={'Excepții (o frază pe linie — neutralizează excluderi, ex. „fără defecte")'}>
+                  <textarea
+                    value={exceptionsText}
+                    onChange={(e) => setExceptionsText(e.target.value)}
+                    rows={2}
+                    placeholder={"fara defecte\nnu are probleme"}
+                    style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+                  />
+                </Field>
+              )}
+              {editingId ? (
+                <div style={{ padding: "0.6rem", border: "1px solid var(--border-color)", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.4rem" }}>
+                    Testează excluderile (pe configurația salvată)
+                  </div>
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    <input value={testTitle} onChange={(e) => setTestTitle(e.target.value)} placeholder="Titlu de test" style={{ ...inputStyle, flex: 1, minWidth: "160px" }} />
+                    {excludeMode === "advanced" && (
+                      <input value={testDesc} onChange={(e) => setTestDesc(e.target.value)} placeholder="Descriere (opțional)" style={{ ...inputStyle, flex: 1, minWidth: "160px" }} />
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const r = await radarAPI.testExclusion(editingId, { title: testTitle, description: testDesc || null });
+                          setTestResult(r.data);
+                        } catch { setTestResult({ error: true }); }
+                      }}
+                      style={{ padding: "0.4rem 0.8rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                    >
+                      Testează
+                    </button>
+                  </div>
+                  {testResult && (
+                    <div style={{ marginTop: "0.4rem", fontSize: "0.8125rem", fontWeight: 600, color: testResult.error ? "var(--text-muted)" : testResult.excluded ? "#f87171" : "#4ade80" }}>
+                      {testResult.error ? "Eroare la testare" : testResult.excluded ? `Exclus de: ${testResult.matched_rule}` : "Trece ✓"}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                  Salvează keyword-ul pentru a putea testa excluderile pe configurația lui.
+                </div>
+              )}
+
               {(form.platforms.includes("autovit") || form.platforms.includes("mobilede")) && (
                 <CarFiltersSection
                   value={form.car_filters || EMPTY_CAR_FILTERS}
@@ -1879,6 +1994,113 @@ function StatCard({ label, value, color }) {
     </div>
   );
 }
+
+// RP-2 — selector cascadat + căutare pentru arborele dinamic de categorii Vinted.
+// Populează lazy nivelurile din /api/radar/vinted-catalogs?parent_id=. Defensiv: dacă
+// arborele nu e încă populat (refresh eșuat/în așteptare), afișează un mesaj și lasă gol.
+function VintedCatalogPicker({ selectedId, selectedPath, onPick, onClear, inputStyle }) {
+  const [levels, setLevels] = useState([[]]); // levels[i] = opțiunile de la nivelul i
+  const [chosen, setChosen] = useState([]);   // chosen[i] = {id, title} ales la nivelul i
+  const [searchQ, setSearchQ] = useState("");
+  const [searchRes, setSearchRes] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    radarAPI.getVintedCatalogs(null)
+      .then((r) => { if (alive) setLevels([r.data || []]); })
+      .catch(() => { if (alive) setLevels([[]]); });
+    return () => { alive = false; };
+  }, []);
+
+  const pickLevel = async (levelIdx, opt) => {
+    const newChosen = chosen.slice(0, levelIdx);
+    newChosen[levelIdx] = opt;
+    setChosen(newChosen);
+    onPick(opt.id, newChosen.map((c) => c.title).join(" > "));
+    const newLevels = levels.slice(0, levelIdx + 1);
+    if (opt.has_children) {
+      try { const r = await radarAPI.getVintedCatalogs(opt.id); newLevels[levelIdx + 1] = r.data || []; }
+      catch { /* nivel gol */ }
+    }
+    setLevels(newLevels);
+  };
+
+  const runSearch = async () => {
+    if (!searchQ.trim()) return;
+    try { const r = await radarAPI.searchVintedCatalogs(searchQ.trim()); setSearchRes(r.data || []); }
+    catch { setSearchRes([]); }
+  };
+
+  const optStyle = { ...inputStyle, marginBottom: "0.4rem" };
+
+  return (
+    <div>
+      {(levels[0] || []).length === 0 ? (
+        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+          Arborele Vinted nu e încă populat (se reîmprospătează automat săptămânal). Poți lăsa
+          gol — se folosește maparea existentă.
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: "0.4rem", marginBottom: "0.4rem" }}>
+            <input
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runSearch(); } }}
+              placeholder="Caută categoria..."
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <button type="button" onClick={runSearch} style={{ padding: "0.4rem 0.75rem", backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.8125rem", cursor: "pointer" }}>
+              Caută
+            </button>
+          </div>
+          {searchRes.length > 0 && (
+            <div style={{ maxHeight: "160px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "0.375rem", marginBottom: "0.4rem" }}>
+              {searchRes.map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() => { onPick(s.id, s.path); setSearchRes([]); setChosen([]); setSearchQ(""); }}
+                  style={{ padding: "0.35rem 0.5rem", fontSize: "0.78rem", cursor: "pointer", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)" }}
+                >
+                  {s.path}
+                </div>
+              ))}
+            </div>
+          )}
+          {(levels || []).map((opts, i) => (
+            (opts || []).length > 0 && (
+              <select
+                key={i}
+                value={chosen[i]?.id ?? ""}
+                onChange={(e) => {
+                  const opt = (opts || []).find((o) => String(o.id) === e.target.value);
+                  if (opt) pickLevel(i, opt);
+                }}
+                style={optStyle}
+              >
+                <option value="">
+                  {i === 0 ? "Categorie..." : i === 1 ? "Subcategorie..." : "Sub-subcategorie..."}
+                </option>
+                {(opts || []).map((o) => (
+                  <option key={o.id} value={o.id}>{o.title}{o.has_children ? " ›" : ""}</option>
+                ))}
+              </select>
+            )
+          ))}
+        </>
+      )}
+      {selectedId != null && (
+        <div style={{ fontSize: "0.75rem", color: "#60a5fa", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span>Selectat: {selectedPath || `id ${selectedId}`}</span>
+          <button type="button" onClick={() => { onClear(); setChosen([]); }} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "0.72rem", textDecoration: "underline" }}>
+            șterge
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function Field({ label, children }) {
   return (

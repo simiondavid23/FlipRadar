@@ -38,5 +38,10 @@ class RadarKeyword(Base):
     car_filters = Column(Text, nullable=True)
     # FlipRadar — config wizard marketplace (platform, categorie, subcategorie, filtre) serializat JSON
     marketplace_config = Column(Text, nullable=True)
+    # RP-2 — engine de excluderi v2, opt-in per keyword. `simple` = comportamentul
+    # actual (is_excluded); `advanced` = diacritice + word-boundary + excepții.
+    exclude_matching_mode = Column(String(16), nullable=False, default="simple")
+    # RP-2 — fraze care neutralizează excluderi (JSON listă), folosite doar în `advanced`.
+    exclude_exceptions = Column(Text, nullable=True)
     last_scan_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)

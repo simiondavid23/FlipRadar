@@ -38,6 +38,7 @@ from app.models import inventory as inventory_model
 from app.models import sale as sale_model
 from app.models import radar_keyword, radar_listing, radar_seen_id
 from app.models import radar_settings
+from app.models import vinted_catalog  # RP-2 — arbore dinamic de categorii Vinted
 from app.models import radar_message_template, push_subscription
 from app.models import market_listing  # FlipRadar — date reale de piata pentru Consilier AI
 # FlipRadar — tabele noi pentru modulele auto/imobiliare (doar schema, populate ulterior)
@@ -92,6 +93,39 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
         next_run_time=datetime.now(),
     )
+
+    # RP-2 — refresh arbore categorii Vinted: săptămânal (duminică 04:30) + o singură
+    # încercare la startup dacă tabelul e gol. Eșecul (block Vinted) NU blochează app-ul.
+    def _run_vinted_catalog_refresh():
+        from app.database import SessionLocal
+        from app.services.radar.vinted_catalog_service import refresh_catalog_tree
+        _db = SessionLocal()
+        try:
+            refresh_catalog_tree(_db)
+        except Exception as exc:
+            print(f"[VintedCatalog] refresh esuat: {exc}")
+        finally:
+            _db.close()
+
+    scheduler.add_job(
+        _run_vinted_catalog_refresh, "cron", day_of_week="sun", hour=4, minute=30,
+        id="vinted_catalog_refresh", replace_existing=True,
+    )
+    try:
+        from app.database import SessionLocal
+        from app.models.vinted_catalog import VintedCatalog
+        _cdb = SessionLocal()
+        try:
+            _catalog_empty = _cdb.query(VintedCatalog.id).first() is None
+        finally:
+            _cdb.close()
+        if _catalog_empty:
+            scheduler.add_job(
+                _run_vinted_catalog_refresh, "date", run_date=datetime.now(),
+                id="vinted_catalog_bootstrap", replace_existing=True,
+            )
+    except Exception as exc:
+        print(f"[VintedCatalog] verificare bootstrap eșuată: {exc}")
 
     # FlipRadar — Auto Anunturi: scaneaza keyword-urile auto la fiecare 10 min.
     try:

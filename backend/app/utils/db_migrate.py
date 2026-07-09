@@ -285,6 +285,21 @@ def run_migrations():
                 _migrate(conn, "add_radar_listings_attributes_json",
                          "ALTER TABLE radar_listings ADD COLUMN IF NOT EXISTS attributes_json TEXT")
 
+        # RP-2 — arborele de categorii Vinted (id-ul Vinted ca PK, nu autoincrement).
+        _migrate(conn, "create_vinted_catalogs", """
+            CREATE TABLE IF NOT EXISTS vinted_catalogs (
+                id BIGINT PRIMARY KEY,
+                parent_id BIGINT,
+                title TEXT NOT NULL,
+                code TEXT,
+                path TEXT NOT NULL,
+                depth INTEGER NOT NULL,
+                updated_at TIMESTAMP
+            )
+        """)
+        _migrate(conn, "create_ix_vinted_catalogs_parent_id",
+                 "CREATE INDEX IF NOT EXISTS ix_vinted_catalogs_parent_id ON vinted_catalogs (parent_id)")
+
         # Radar keywords: car_filters (JSON serializat) + extensii pentru scrapere auto
         if _table_exists(inspector, "radar_keywords"):
             if not _column_exists(inspector, "radar_keywords", "car_filters"):
@@ -299,6 +314,15 @@ def run_migrations():
                 if not _column_exists(inspector, "radar_keywords", _col):
                     _migrate(conn, f"add_radar_keywords_{_col}",
                              f"ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS {_col} DOUBLE PRECISION")
+
+            # RP-2 — engine de excluderi v2 (opt-in per keyword).
+            if not _column_exists(inspector, "radar_keywords", "exclude_matching_mode"):
+                _migrate(conn, "add_radar_keywords_exclude_matching_mode",
+                         "ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS "
+                         "exclude_matching_mode VARCHAR(16) NOT NULL DEFAULT 'simple'")
+            if not _column_exists(inspector, "radar_keywords", "exclude_exceptions"):
+                _migrate(conn, "add_radar_keywords_exclude_exceptions",
+                         "ALTER TABLE radar_keywords ADD COLUMN IF NOT EXISTS exclude_exceptions TEXT")
 
             # FlipRadar — remapare catalog_id-uri Vinted pe keyword-urile old-form.
             # Dropdown-ul vechi (PLATFORM_CATEGORIES["vinted"]) stoca ID-uri gresite fata de

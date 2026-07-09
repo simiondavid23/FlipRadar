@@ -81,6 +81,9 @@ class KeywordCreate(BaseModel):
     notify_discord: bool = True
     car_filters: Optional[dict] = None
     marketplace_config: Optional[dict] = None
+    # RP-2 — engine de excluderi v2 (opt-in).
+    exclude_matching_mode: Optional[str] = None
+    exclude_exceptions: Optional[list[str]] = None
 
 
 class KeywordUpdate(BaseModel):
@@ -109,6 +112,9 @@ class KeywordUpdate(BaseModel):
     notify_discord: Optional[bool] = None
     car_filters: Optional[dict] = None
     marketplace_config: Optional[dict] = None
+    # RP-2 — engine de excluderi v2 (opt-in).
+    exclude_matching_mode: Optional[str] = None
+    exclude_exceptions: Optional[list[str]] = None
 
 
 class ListingStatusUpdate(BaseModel):
@@ -259,7 +265,9 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "notify_email": bool(getattr(kw, "notify_email", True)),
         "notify_discord": bool(getattr(kw, "notify_discord", True)),
         "car_filters": (json.loads(kw.car_filters) if getattr(kw, "car_filters", None) else None),
-        "marketplace_config": (json.loads(kw.marketplace_config) if getattr(kw, "marketplace_config", None) else None),
+        "marketplace_config": _parse_json_obj(getattr(kw, "marketplace_config", None)),
+        "exclude_matching_mode": getattr(kw, "exclude_matching_mode", "simple") or "simple",
+        "exclude_exceptions": _parse_json_list(getattr(kw, "exclude_exceptions", None)),
         "last_scan_at": kw.last_scan_at.isoformat() if kw.last_scan_at else None,
         "created_at": kw.created_at.isoformat() if kw.created_at else None,
     }
@@ -328,6 +336,20 @@ def _parse_json_list(raw: Optional[str]) -> list:
     except Exception:
         pass
     return []
+
+
+def _parse_json_obj(raw) -> Optional[dict]:
+    """RP-2-fix — marketplace_config ca OBIECT (defensiv): None → None, dict → dict,
+    string JSON → dict parsat, orice malformat → None (nu aruncă 500 în serializer)."""
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else None
+    except Exception:
+        return None
 
 
 def _get_or_create_settings(db: Session, user_id: int) -> RadarSettings:
@@ -451,6 +473,8 @@ def create_keyword(
         notify_discord=bool(data.notify_discord),
         car_filters=(json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None),
         marketplace_config=(json.dumps(data.marketplace_config, ensure_ascii=False) if data.marketplace_config else None),
+        exclude_matching_mode=(data.exclude_matching_mode if data.exclude_matching_mode in ("simple", "advanced") else "simple"),
+        exclude_exceptions=(json.dumps(data.exclude_exceptions, ensure_ascii=False) if data.exclude_exceptions else None),
     )
     db.add(kw)
     db.commit()
@@ -521,6 +545,10 @@ def update_keyword(
         kw.car_filters = json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None
     if data.marketplace_config is not None:
         kw.marketplace_config = json.dumps(data.marketplace_config, ensure_ascii=False) if data.marketplace_config else None
+    if data.exclude_matching_mode is not None:
+        kw.exclude_matching_mode = data.exclude_matching_mode if data.exclude_matching_mode in ("simple", "advanced") else "simple"
+    if data.exclude_exceptions is not None:
+        kw.exclude_exceptions = json.dumps(data.exclude_exceptions, ensure_ascii=False) if data.exclude_exceptions else None
     # Validare combinata pret min/max dupa update
     if kw.min_price is not None and kw.min_price > kw.max_price:
         raise HTTPException(status_code=400, detail="Prețul minim nu poate fi mai mare decât prețul maxim.")
@@ -763,6 +791,75 @@ def get_vinted_listing_detail(
                 _vinted_detail_inflight.discard(listing_id)
 
     return _listing_to_dict(listing, keyword)
+
+
+# ── RP-2: arbore dinamic de categorii Vinted ────────────────────────────────────
+@router.get("/vinted-catalogs")
+def list_vinted_catalogs(
+    parent_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Copiii unui nod de catalog Vinted (parent_id gol = rădăcini)."""
+    from app.services.radar.vinted_catalog_service import get_children
+    return get_children(db, parent_id)
+
+
+@router.get("/vinted-catalogs/search")
+def search_vinted_catalogs(
+    q: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Max 20 potriviri pe `path`, diacritics-insensitive."""
+    from app.services.radar.vinted_catalog_service import search_catalogs
+    return search_catalogs(db, q)
+
+
+class ExclusionTestBody(BaseModel):
+    title: str
+    description: Optional[str] = None
+
+
+@router.post("/keywords/{keyword_id}/test-exclusion")
+def test_keyword_exclusion(
+    keyword_id: int,
+    body: ExclusionTestBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """RP-2 — tester de excluderi pe configurația keyword-ului (ambele moduri)."""
+    kw = (
+        db.query(RadarKeyword)
+        .filter(RadarKeyword.id == keyword_id, RadarKeyword.user_id == current_user.id)
+        .first()
+    )
+    if not kw:
+        raise HTTPException(status_code=404, detail="Keyword-ul nu a fost găsit.")
+
+    mode = getattr(kw, "exclude_matching_mode", "simple") or "simple"
+    exclude_words = _parse_json_list(kw.exclude_words)
+    desc_raw = kw.exclude_description_words
+    desc_words = desc_raw if isinstance(desc_raw, list) else _parse_json_list(desc_raw)
+
+    if mode == "advanced":
+        from app.services.radar.exclusion_engine import check_exclusion
+        exceptions = _parse_json_list(getattr(kw, "exclude_exceptions", None))
+        excluded, rule = check_exclusion(body.title, body.description, exclude_words, desc_words, exceptions)
+    else:
+        # Modul simplu = logica veche (is_excluded, substring case-insensitive pe titlu).
+        from app.services.radar.base_scraper import is_excluded
+        excluded, rule = False, None
+        if is_excluded(body.title, exclude_words):
+            excluded = True
+            w = next((x for x in exclude_words if x and x.lower() in (body.title or "").lower()), None)
+            rule = f'„{w}" (în titlu)'
+        elif body.description and is_excluded(body.description, desc_words):
+            excluded = True
+            w = next((x for x in desc_words if x and x.lower() in (body.description or "").lower()), None)
+            rule = f'„{w}" (în descriere)'
+
+    return {"excluded": excluded, "matched_rule": rule, "mode": mode}
 
 
 @router.get("/listings/{listing_id}/facebook-detail")
