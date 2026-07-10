@@ -33,6 +33,7 @@ python-dotenv==1.2.2
 beautifulsoup4==4.14.3
 playwright==1.58.0
 playwright-stealth==2.0.3
+patchright==1.61.2
 curl_cffi==0.15.0
 vinted-scraper==3.1.1
 

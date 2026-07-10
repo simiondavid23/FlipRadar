@@ -1,10 +1,14 @@
 """Mobile.de — anunturi auto (Germania). platform="mobile_de".
 
-Mobile.de e protejat anti-bot (Imperva): requesturile simple primesc 403 sau o
-pagina-challenge JS (HTTP 200 fara continut). Strategie: incercam intai curl_cffi
-cu impersonate="chrome124" + set complet de headere (rapid, daca trece), apoi
-cadem pe Playwright (executa JS, trece de challenge). Daca si Playwright e blocat,
-e blocaj la nivel de IP — necesita proxy rezidential.
+Mobile.de e protejat anti-bot (Imperva). Strategie: incercam intai curl_cffi (rapid),
+apoi cadem pe patchright cu Chrome real (executa JS).
+
+Blocajul istoric NU era la nivel de IP: era detectie de AUTOMATIZARE — leak-uri CDP +
+un user_agent hardcodat inconsistent cu Client Hints (Sec-Ch-Ua) trimise de Chrome real,
+exact consistenta pe care o verifica Imperva. Rezolvat prin patchright (patch la nivel de
+binar) cu context MINIMAL fara stealth; confirmat live 2026-07 (pagina reala, zero markeri
+de blocare). Proxy rezidential NU e necesar. Headless e detectat de Imperva -> ruleaza
+headed (pe VPS: xvfb-run).
 
 Datele publice disponibile: titlu, an, km, pret (EUR), locatie, URL, thumbnail.
 """
@@ -15,8 +19,8 @@ import urllib.parse
 from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
-    MAX_LISTINGS, parse_price, extract_ld_offers,
-    extract_year, extract_km, make_listing, safe_soup,
+    MAX_LISTINGS, parse_price, extract_year, extract_km, make_listing,
+    safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
@@ -96,72 +100,77 @@ def _build_params(make_id: str, filters: dict, page: int) -> dict:
     return params
 
 
-def _extract_price_mobile_de(card, ld_offers=None, card_idx=0) -> tuple:
-    """Returneaza (pret: float | None, moneda). Nu cade niciodata pe textul cardului.
+def _extract_price_mobile_de(card) -> tuple:
+    """Returneaza (pret: float | None, moneda). Sursa reala confirmata pe DOM 2026-07:
+    elementul [data-testid=price-label] al cardului (fallback main-price-label).
 
-    Cand pagina e accesibila luam pretul intai din JSON-LD (asociat pe pozitie),
-    apoi dintr-un element de pret dedicat.
+    JSON-LD pe mobile.de NU are Offer-uri per anunt (doar Organization + @graph), deci
+    calea veche extract_ld_offers e moarta aici — nu mai cadem pe ea.
     """
-    # Strategy A — JSON-LD, asociat pe pozitie.
-    if ld_offers and card_idx < len(ld_offers):
-        offer = ld_offers[card_idx]
-        p = parse_price(str(offer.get("price") or ""))
-        if p:
-            return p, offer.get("currency") or "EUR"
-
-    # Strategy B — element de pret (data-price/content/text), niciodata tot cardul.
-    el = (card.find(attrs={"data-testid": re.compile(r"price", re.I)})
-          or card.find(class_=re.compile(r"price", re.I)))
+    el = (card.select_one('[data-testid="price-label"]')
+          or card.select_one('[data-testid="main-price-label"]'))
     if el is not None:
-        raw = el.get("data-price") or el.get("content") or el.get_text(" ", strip=True)
-        p = parse_price(str(raw))
+        p = parse_price(el.get_text(" ", strip=True))
         if p:
             return p, "EUR"
-
     return None, "EUR"
 
 
 def _parse_mobilede_html(html: str) -> list:
-    """Parseaza HTML-ul de cautare (calea curl) -> dict-uri make_listing.
-    Intoarce [] daca pagina e o pagina-challenge (fara carduri)."""
+    """Parseaza HTML-ul de rezultate (page.content() din patchright sau raspunsul curl) ->
+    dict-uri make_listing. PRIMA validare pe DOM real din istoria parserului (2026-07):
+    cardul e ANCORA <a href="/fahrzeuge/details.html?id=...>; selectorii/atributele vechi
+    (.cBox-body--resultitem, [data-testid=result-list-item], [data-listing-id]) sunt MOARTE
+    (mobile.de a trecut la clase ofuscate). [] daca pagina n-are carduri (challenge/gol).
+    """
     soup = safe_soup(html)
     cards = (
-        soup.select(".cBox-body--resultitem")
+        soup.select('a[href*="/fahrzeuge/details.html"]')   # confirmat pe DOM real 2026-07
+        or soup.select(".cBox-body--resultitem")
         or soup.select('[data-testid="result-list-item"]')
         or soup.select("article")
         or soup.select("[data-listing-id]")
     )
-    ld_offers = extract_ld_offers(soup)
-    results = []
-    for idx, card in enumerate(cards):
+    results, seen = [], set()
+    for card in cards:
         try:
-            link = card.find("a", href=True)
+            # cardul poate fi ANCORA insasi (selectorul nou) sau un container (fallback vechi)
+            link = card if (card.name == "a" and card.get("href")) else card.find("a", href=True)
             if not link:
                 continue
             href = link["href"]
             if href.startswith("/"):
                 href = "https://suchen.mobile.de" + href
-
-            title_el = card.find(["h2", "h3"]) or card.find(class_=re.compile(r"title|headline", re.I)) or link
-            titlu = title_el.get_text(strip=True) if title_el else ""
-            if not titlu:
+            # external_id din URL (?id=NNN) — data-listing-id nu mai exista pe DOM real.
+            m = re.search(r"[?&]id=(\d+)", href)
+            ext_id = m.group(1) if m else None
+            if ext_id and ext_id in seen:
                 continue
 
+            # Titlu: alt-ul imaginii (curat) cu fallback pe elementul aria-labelledby.
+            img = link.find("img")
+            titlu = (img.get("alt") or "").strip() if img else ""
+            if not titlu:
+                lb = link.get("aria-labelledby")
+                tnode = link.find(id=lb) if lb else None
+                titlu = tnode.get_text(" ", strip=True) if tnode else ""
+            if not titlu:
+                continue
+            if ext_id:
+                seen.add(ext_id)
+
             card_text = card.get_text(" ", strip=True)
-            # Pret din JSON-LD/element de pret; niciodata din textul cardului.
-            pret, _ = _extract_price_mobile_de(card, ld_offers, idx)
-
-            loc_el = card.find(class_=re.compile(r"location|seller", re.I))
-            locatie = loc_el.get_text(" ", strip=True) if loc_el else None
-
-            img = card.find("img")
-            thumb = (img.get("src") or img.get("data-src")) if img else None
+            pret, moneda = _extract_price_mobile_de(link)
+            # Km: scoate consumul "N l/100km" INAINTE de extractie, altfel "5,7 l/100km"
+            # produce km=100 fals (confirmat pe DOM real la un Neuwagen fara kilometraj).
+            km_text = re.sub(r"\d[\d.,]*\s*l\s*/\s*100\s*km", " ", card_text, flags=re.I)
 
             results.append(make_listing(
-                platform="mobile_de", external_id=card.get("data-listing-id"), titlu=titlu,
-                year=extract_year(titlu) or extract_year(card_text), km=extract_km(card_text),
-                pret=pret, moneda="EUR", locatie=locatie or "Germania",
-                source_url=href, thumbnail_url=thumb,
+                platform="mobile_de", external_id=ext_id, titlu=titlu,
+                year=extract_year(titlu) or extract_year(card_text),
+                km=extract_km(km_text), pret=pret, moneda=moneda,
+                locatie="Germania", source_url=href,
+                thumbnail_url=thumb_from_img(img) or None,
             ))
             if len(results) >= MAX_LISTINGS:
                 break
@@ -172,158 +181,84 @@ def _parse_mobilede_html(html: str) -> list:
 
 
 def _search_mobile_de_playwright(url: str, page: int) -> list:
-    """Fallback Playwright — executa JS si trece de challenge-ul anti-bot.
-    Mobile.de NU cere autentificare, deci nu e nevoie de sesiune salvata.
-    Functie SINCRONA (sync_playwright); apelata din async prin asyncio.to_thread.
+    """Fallback patchright — executa JS si trece de detectia anti-bot Imperva.
+
+    Blocajul istoric era detectie de AUTOMATIZARE (leak-uri CDP + user_agent hardcodat
+    inconsistent cu Client Hints), NU blocaj de IP. Rezolvat prin patchright cu Chrome real
+    + context MINIMAL fara stealth; confirmat live 2026-07. Proxy rezidential NU e necesar.
+    Functie SINCRONA; apelata din async prin asyncio.to_thread.
     """
     results = []
     try:
-        from playwright.sync_api import sync_playwright
+        from patchright.sync_api import sync_playwright
     except ImportError:
-        log_manager.emit("auto_listings", "ERR", "Mobile.de: Playwright nu e instalat")
+        log_manager.emit("auto_listings", "ERR", "Mobile.de: patchright nu e instalat")
         return results
 
-    # playwright-stealth 2.x expune clasa Stealth (use_sync); aplica stealth
-    # automat fiecarei pagini noi. Daca lipseste, cadem pe sync_playwright simplu.
-    try:
-        from playwright_stealth import Stealth
-        _ctx = lambda: Stealth().use_sync(sync_playwright())
-    except Exception:
-        _ctx = sync_playwright
-
     proxy_cfg = get_proxy_config()
-    context_kwargs = {
-        "locale": "de-DE",
-        "user_agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "viewport": {"width": 1280, "height": 800},
-    }
+    context_kwargs = {}
     if proxy_cfg:
         proxy_arg = {"server": f"http://{proxy_cfg['host']}:{proxy_cfg['port']}"}
         if proxy_cfg["username"]:
             proxy_arg["username"] = proxy_cfg["username"]
             proxy_arg["password"] = proxy_cfg["password"]
         context_kwargs["proxy"] = proxy_arg
-        log_manager.emit("auto_listings", "INFO", "Mobile.de Playwright: folosesc proxy configurat")
+        log_manager.emit("auto_listings", "INFO", "Mobile.de patchright: folosesc proxy configurat")
 
     try:
-        with _ctx() as p:
-            # Chrome real (canal instalat separat) evadeaza mai bine detectia Incapsula
-            # a Chromium-ului headless bundled. Fallback pe Chromium daca Chrome nu e
-            # instalat (playwright install chrome) — nu crapa scanul.
+        with sync_playwright() as p:
+            # Chrome real (channel=chrome) — cheia consistentei UA/Client Hints; fallback pe
+            # Chromium bundled de patchright daca Chrome nu e instalat (nu crapa scanul).
             try:
-                browser = p.chromium.launch(headless=True, channel="chrome")
+                browser = p.chromium.launch(headless=False, channel="chrome")
                 log_manager.emit("auto_listings", "INFO", "Mobile.de: Playwright cu Chrome real")
             except Exception:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=False)
                 log_manager.emit("auto_listings", "INFO",
                     "Mobile.de: Chrome real indisponibil, fallback Chromium bundled")
+            # Context minimal intentionat: UA custom strica consistenta cu Client Hints
+            # (Sec-Ch-Ua) verificata de Imperva; configul asta e cel validat live 2026-07.
+            # headless=False obligatoriu: Imperva detecteaza headless (confirmat live) — pe VPS
+            # ruleaza cu xvfb-run; pe PC-ul de dev apare o fereastra Chrome la scanarile mobile.de.
             context = browser.new_context(**context_kwargs)
             pw_page = context.new_page()
             try:
-                pw_page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                pw_page.wait_for_timeout(3000)
+                pw_page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                pw_page.wait_for_timeout(6000)
+                try:
+                    pw_page.wait_for_load_state("networkidle", timeout=12000)
+                except Exception:
+                    pass
 
-                # Pagina de blocare (Imperva) → 0 rezultate, necesita proxy.
-                body_text = pw_page.inner_text("body")[:300].lower()
-                if any(m in body_text for m in (
-                        "access denied", "zugriff verweigert", "captcha")):
+                # Pagina de blocare Imperva -> 0 rezultate.
+                body_head = pw_page.inner_text("body")[:400].lower()
+                if any(m in body_head for m in ("access denied", "zugriff verweigert", "captcha")):
                     log_manager.emit("auto_listings", "WARN",
-                        "Mobile.de: blocat chiar și cu Playwright "
-                        "— necesită proxy rezidențial")
+                        "Mobile.de: blocat de Imperva (fingerprint automatizare) "
+                        "— verifica versiunile patchright/Chrome")
                     return results
 
-                CARD_SELECTORS = [
-                    "article.cBox-body",
-                    "[data-testid='result-listing']",
-                    ".result-list-entry",
-                    ".cBox-body--resultitem",
-                    "article",
-                ]
-                cards = []
-                for sel in CARD_SELECTORS:
-                    cards = pw_page.query_selector_all(sel)
-                    if len(cards) > 2:
-                        log_manager.emit("auto_listings", "INFO",
-                            f"Mobile.de: {len(cards)} carduri cu selector '{sel}'")
-                        break
-
-                if not cards:
-                    log_manager.emit("auto_listings", "WARN",
-                        "Mobile.de Playwright: niciun card găsit")
-                    return results
-
-                for card in cards[:MAX_LISTINGS]:
-                    try:
-                        title_el = (
-                            card.query_selector("h2") or
-                            card.query_selector("h3") or
-                            card.query_selector("[class*='title']") or
-                            card.query_selector("a")
-                        )
-                        title = title_el.inner_text().strip() if title_el else ""
-                        if not title:
+                # Parsam DIRECT din page.content() cu parserul BS4 unificat (acelasi ca la curl).
+                # Bannerul GDPR NU ascunde cardurile din DOM (confirmat live) -> parsam intai fara
+                # interactiune; DOAR daca nu apar carduri, refuzam tracking-ul (Ablehnen) o data.
+                results = _parse_mobilede_html(pw_page.content())
+                if not results:
+                    for sel in ("button:has-text('Ablehnen')", "text=Ablehnen"):
+                        try:
+                            pw_page.click(sel, timeout=3000)
+                            break
+                        except Exception:
                             continue
-
-                        price_val = None
-                        price_attr = card.get_attribute("data-price")
-                        if price_attr:
-                            price_val = parse_price(str(price_attr))
-                        if not price_val:
-                            price_el = card.query_selector(
-                                "[class*='price'], [data-testid*='price']")
-                            if price_el:
-                                raw = (
-                                    price_el.get_attribute("data-price") or
-                                    price_el.get_attribute("content") or
-                                    price_el.inner_text().strip()
-                                )
-                                price_val = parse_price(str(raw))
-
-                        link_el = card.query_selector("a[href]")
-                        href = link_el.get_attribute("href") if link_el else ""
-                        if href and href.startswith("/"):
-                            href = "https://www.mobile.de" + href
-                        ext_m = re.search(r"/(\d{6,})", href)
-                        ext_id = ext_m.group(1) if ext_m else (href or None)
-
-                        img_el = card.query_selector("img")
-                        thumb = ""
-                        if img_el:
-                            thumb = (
-                                img_el.get_attribute("src") or
-                                img_el.get_attribute("data-src") or ""
-                            )
-
-                        card_text = card.inner_text()
-                        year_m = re.search(r"\b(19|20)\d{2}\b", card_text)
-                        year = int(year_m.group()) if year_m else None
-                        km_m = re.search(r"(\d[\d\.]+)\s*km", card_text, re.IGNORECASE)
-                        km = None
-                        if km_m:
-                            try:
-                                km = int(km_m.group(1).replace(".", ""))
-                            except ValueError:
-                                pass
-
-                        results.append(make_listing(
-                            platform="mobile_de", external_id=ext_id, titlu=title,
-                            year=year, km=km, pret=price_val, moneda="EUR",
-                            locatie="Germania", source_url=href, thumbnail_url=thumb or None,
-                        ))
-                    except Exception:
-                        continue
+                    pw_page.wait_for_timeout(1500)
+                    results = _parse_mobilede_html(pw_page.content())
             except Exception as exc:
                 log_manager.emit("auto_listings", "ERR",
-                    f"Mobile.de Playwright eroare: {str(exc)[:100]}")
+                    f"Mobile.de patchright eroare: {str(exc)[:100]}")
             finally:
                 browser.close()
     except Exception as exc:
         log_manager.emit("auto_listings", "ERR",
-            f"Mobile.de Playwright init: {str(exc)[:100]}")
+            f"Mobile.de patchright init: {str(exc)[:100]}")
 
     log_manager.emit("auto_listings", "OK",
         f"Mobile.de: {len(results)} rezultate pagina {page}")
