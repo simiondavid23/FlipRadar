@@ -142,3 +142,16 @@ def send_test_message(webhook_url: str) -> bool:
     except Exception as exc:
         print(f"[Discord] Test eroare: {exc}")
         return False
+
+
+def send_system_alert(webhook_url: str, text: str) -> bool:
+    """Mesaj simplu de sistem (watchdog) la webhook. True daca status 200/204."""
+    if not webhook_url:
+        return False
+    payload = {"content": text}
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        return resp.status_code in (200, 204)
+    except Exception as exc:
+        print(f"[Discord] System alert eroare: {exc}")
+        return False

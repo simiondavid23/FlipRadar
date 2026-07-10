@@ -28,6 +28,7 @@ from app.models.user import User
 from app.services.email_service import is_configured as smtp_configured, send_email
 from app.services.push_service import is_push_configured, notify_user_push
 from app.services.radar.cleanup_service import cleanup_sold_listings
+from app.services.radar import health_watchdog
 from app.services.discord_service import send_radar_notification
 from app.services.log_manager import log_manager
 from app.services.ml.feed_ml_bridge import try_save_to_ml
@@ -1825,6 +1826,7 @@ def _run_scraper(
             )
     except Exception as exc:
         print(f"[RadarScanner] Scraperul {platform} a crapat: {exc}")
+        health_watchdog.note_error(platform)
     return []
 
 
@@ -2154,6 +2156,9 @@ def _scan_user(db: Session, user: User) -> dict:
             _page = 1
             while True:
                 page_listings = _run_scraper(platform, kw, settings, exclude_words, page=_page, advanced=_adv, db=db, skip_enrich_ids=_skip_enrich)
+                # RP-6 — watchdog: rezultate BRUTE (o platforma care returneaza doar
+                # anunturi deja vazute e sanatoasa; filtrarea vine dupa).
+                health_watchdog.note_results(platform, len(page_listings))
                 # RP-2 — filtrare centralizata cu engine-ul v2 (doar in modul advanced).
                 # Nota: Vinted NU are descriere in search -> excluderile pe descriere
                 # devin efective abia la enrichment (documentat in raport).
@@ -2394,6 +2399,8 @@ def run_radar_scan() -> None:
     _enrich_counters["olx"] = 0
     _enrich_counters["olx_backlog"] = 0
     _enrich_counters["vinted"] = 0
+    # RP-6 — deschide ciclul watchdog-ului (agregam rezultate/erori per platforma).
+    health_watchdog.open_cycle()
     try:
         active_user_ids = {
             row[0] for row in db.query(RadarKeyword.user_id)
@@ -2416,6 +2423,12 @@ def run_radar_scan() -> None:
                     db.rollback()
                 except Exception:
                     pass
+
+        # RP-6 — evaluarea watchdog-ului la finalul ciclului complet.
+        try:
+            health_watchdog.close_cycle(db)
+        except Exception as exc:
+            print(f"[RadarScanner] Watchdog esuat: {exc}")
 
         _cycle_counter["n"] += 1
         if _cycle_counter["n"] % 10 == 0:
