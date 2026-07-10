@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { autoListingsAPI, autoAPI, mlAPI, radarAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Car, RefreshCw, Loader2, AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
+import { Car, RefreshCw, Loader2, AlertTriangle, Info, FileSpreadsheet, X, ImageOff, Check, Bookmark, EyeOff } from "lucide-react";
 import { GRADE_COLORS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
@@ -12,6 +12,7 @@ import AutoAiModal from "@/components/AutoAiModal";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
+import ActionBanner from "@/components/shared/ActionBanner";
 
 const PLATFORM_LABELS = {
   autovit: "Autovit", olx_auto: "OLX Auto", mobile_de: "Mobile.de",
@@ -52,6 +53,18 @@ export default function AutoFeedPage() {
   const toggleBulk = (id) => setSelectedBulk((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const reqIdRef = useRef(0);
   const [feedError, setFeedError] = useState(null);
+  const [sortBy, setSortBy] = useState("");  // "" = ordinea serverului (found_at desc)
+  // Compară (max 3, obiecte întregi) — mirror pe radar/page.js::selectedForComparison/toggleCompare.
+  const [selectedForComparison, setSelectedForComparison] = useState([]);
+  const [showCompare, setShowCompare] = useState(false);
+  const toggleCompare = (listing) => {
+    setSelectedForComparison((prev) => {
+      const exists = prev.find((l) => l.id === listing.id);
+      if (exists) return prev.filter((l) => l.id !== listing.id);
+      if (prev.length >= 3) return prev;  // plafon 3 — la depășire nu adaugă (fără toast: nu există infra aici)
+      return [...prev, listing];
+    });
+  };
 
   const _feedParams = useCallback((offset) => {
     const params = { status: filters.status, limit: 100, offset };
@@ -113,6 +126,19 @@ export default function AutoFeedPage() {
     try { await autoListingsAPI.deleteListing(id); setSelected(null); await loadFeed(); await loadStats(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
+  // Actiuni in masa pe selectie (saved/ignored/active/deleted) — mirror pe Radar::applyBulkAction.
+  // Fara toast (nu exista infra aici); reincarcarea feed-ului e feedback-ul de succes.
+  const applyBulkAction = async (action) => {
+    if (selectedBulk.size === 0) return;
+    try {
+      await autoListingsAPI.bulkAction(Array.from(selectedBulk), action);
+      setSelectedBulk(new Set());
+      await loadFeed();
+      await loadStats();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la acțiune în masă.");
+    }
+  };
   const downloadExcel = async () => {
     try {
       const params = {};
@@ -151,6 +177,27 @@ export default function AutoFeedPage() {
       setScanning(false);
     }
   };
+
+  // Sortare client-side pe lista deja încărcată (nu mută elemente între pagini, nu resetează
+  // selecțiile) — mirror pe radar/page.js::displayedListings. Preț normalizat în RON (eurRonOf),
+  // null la coadă indiferent de direcție.
+  const sortedListings = useMemo(() => {
+    if (!sortBy) return listings;
+    const priceRon = (l) => (l.price == null ? null : l.price * (l.currency === "EUR" ? eurRonOf(l) : 1));
+    const nullsLast = (av, bv, cmp) => {
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return cmp(av, bv);
+    };
+    return [...listings].sort((a, b) => {
+      if (sortBy === "price_asc")  return nullsLast(priceRon(a), priceRon(b), (x, y) => x - y);
+      if (sortBy === "price_desc") return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
+      if (sortBy === "year_desc")  return nullsLast(a.year, b.year, (x, y) => y - x);
+      if (sortBy === "km_asc")     return nullsLast(a.km, b.km, (x, y) => x - y);
+      return 0;
+    });
+  }, [listings, sortBy]);
 
   const byGrade = stats.by_grade || {};
   const statCards = [
@@ -240,6 +287,15 @@ export default function AutoFeedPage() {
           ))}
         </select>
 
+        {/* AA-3 — sortare client-side pe lista deja încărcată */}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
+          <option value="">Sortare: implicită</option>
+          <option value="price_asc">Preț crescător</option>
+          <option value="price_desc">Preț descrescător</option>
+          <option value="year_desc">An: noile întâi</option>
+          <option value="km_asc">Km: puținii întâi</option>
+        </select>
+
         <SelectFiniteControl
           totalVisible={listings.length}
           selectedCount={selectedBulk.size}
@@ -267,6 +323,34 @@ export default function AutoFeedPage() {
         </button>
       </div>
 
+      {/* Bara de acțiuni sticky (sub controale, deasupra grilei) — mirror pe Radar.
+          Vizibilă când există selecție bulk SAU selecție de comparare (AA-3). */}
+      <div style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 20,
+        marginBottom: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "0.75rem" : 0,
+      }}>
+        <div style={{
+          maxHeight: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "160px" : "0px",
+          overflow: "hidden",
+          opacity: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? 1 : 0,
+          transition: "max-height 0.2s ease, opacity 0.15s ease",
+        }}>
+          <ActionBanner
+            comparisonCount={selectedForComparison.length}
+            bulkCount={selectedBulk.size}
+            totalVisible={listings.length}
+            onCompareOpen={() => setShowCompare(true)}
+            onCompareClear={() => setSelectedForComparison([])}
+            onBulkSave={() => applyBulkAction("saved")}
+            onBulkIgnore={() => applyBulkAction("ignored")}
+            onBulkDelete={() => applyBulkAction("deleted")}
+            onBulkClear={() => setSelectedBulk(new Set())}
+          />
+        </div>
+      </div>
+
       <FeedErrorBanner message={feedError} onRetry={loadFeed} />
 
       {/* Grid */}
@@ -278,7 +362,7 @@ export default function AutoFeedPage() {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1rem" }}>
-          {listings.map((l) => (
+          {sortedListings.map((l) => (
             <AutoListingCard
               key={l.id}
               listing={l}
@@ -288,6 +372,8 @@ export default function AutoFeedPage() {
               onDelete={() => remove(l.id)}
               isSelected={selectedBulk.has(l.id)}
               onToggleSelect={() => toggleBulk(l.id)}
+              compareSelected={!!selectedForComparison.find((x) => x.id === l.id)}
+              onToggleCompare={() => toggleCompare(l)}
             />
           ))}
         </div>
@@ -313,6 +399,16 @@ export default function AutoFeedPage() {
           onIgnore={() => setStatus(selected.id, selected.status === "ignored" ? "active" : "ignored")}
           templates={templates}
           reviewEnabled={reviewEnabled}
+        />
+      )}
+
+      {/* Compară (max 3) — mirror pe radar/page.js: se deschide doar la ≥2 selectate. */}
+      {showCompare && selectedForComparison.length >= 2 && (
+        <AutoCompareModal
+          listings={selectedForComparison}
+          onClose={() => setShowCompare(false)}
+          onSave={async (id) => { const cur = selectedForComparison.find((l) => l.id === id); const ns = cur?.status === "saved" ? "active" : "saved"; await setStatus(id, ns); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: ns } : l)); }}
+          onIgnore={async (id) => { const cur = selectedForComparison.find((l) => l.id === id); const ns = cur?.status === "ignored" ? "active" : "ignored"; await setStatus(id, ns); setSelectedForComparison((prev) => prev.map((l) => l.id === id ? { ...l, status: ns } : l)); }}
         />
       )}
       </>
@@ -364,7 +460,7 @@ function AutoSpecs({ listing, size = "0.7rem", mt }) {
   return <div style={{ fontSize: size, color: "var(--text-secondary)", marginTop: mt }}>{parts.join(" · ")}</div>;
 }
 
-export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect }) {
+export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect, compareSelected, onToggleCompare }) {
   const img = validImg(listing.image_url) || validImg(Array.isArray(listing.images_json) ? listing.images_json[0] : null);
   const label = PLATFORM_LABELS[listing.platform] || listing.platform;
   return (
@@ -382,6 +478,8 @@ export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, i
       imageOverlaySlot={<AutoCardOverlay listing={listing} />}
       isSelected={isSelected}
       onToggleSelect={onToggleSelect}
+      compareSelected={compareSelected}
+      onToggleCompare={onToggleCompare}
       onOpen={onOpen}
       onSave={onSave}
       onIgnore={onIgnore}
@@ -569,6 +667,124 @@ export function AutoListingModal({ listing, onClose, onSave, onIgnore, templates
       <AutoImportScore listing={listing} />
     </ListingDetailModal>
   );
+}
+
+// AutoCompareModal — mirror VIZUAL pe CompareModal din radar/page.js (~1243), adaptat la
+// câmpurile auto din serializarea feed-ului (_d = dump la toate coloanele). Nu extragem
+// componentă partajată acum: coloanele sunt specifice domeniului (an/km/combustibil/cutie/caroserie).
+function AutoCompareModal({ listings, onClose, onSave, onIgnore }) {
+  // Evidențieri verzi (ca la Radar): cel mai mic preț RON-normalizat + cea mai mare marjă.
+  const pricesRon = listings.map((l) => (l.price == null ? Infinity : l.price * (l.currency === "EUR" ? eurRonOf(l) : 1)));
+  const margins = listings.map((l) => (l.margin_pct == null ? -Infinity : Number(l.margin_pct)));
+  const lowestPriceIdx = pricesRon.indexOf(Math.min(...pricesRon));
+  const highestMarginIdx = margins.indexOf(Math.max(...margins));
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 110, padding: "1.5rem",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        backgroundColor: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: "0.875rem",
+        maxWidth: "1100px", width: "100%",
+        maxHeight: "90vh", overflowY: "auto",
+        padding: "1.25rem",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+          <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)" }}>
+            Comparare anunțuri
+          </h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>
+            <X style={{ width: "20px", height: "20px" }} />
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${listings.length}, 1fr)`, gap: "0.875rem" }}>
+          {listings.map((l, idx) => {
+            const sc = gradeCfg(l.grade);
+            const label = PLATFORM_LABELS[l.platform] || l.platform;
+            const img = validImg(l.image_url) || validImg(Array.isArray(l.images_json) ? l.images_json[0] : null);
+            return (
+              <div key={l.id} style={{
+                backgroundColor: "var(--bg-dark)",
+                border: "1px solid var(--border-color)",
+                borderRadius: "0.625rem", padding: "0.75rem",
+                display: "flex", flexDirection: "column", gap: "0.5rem",
+              }}>
+                <div style={{ display: "flex", gap: "0.375rem" }}>
+                  {l.grade && (
+                    <span style={{ padding: "0.125rem 0.5rem", backgroundColor: sc.bg, border: `1px solid ${sc.border}`, borderRadius: "0.375rem", color: sc.text, fontSize: "0.7rem", fontWeight: 700 }}>{l.grade}</span>
+                  )}
+                </div>
+                <div style={{ width: "100%", height: "160px", overflow: "hidden", backgroundColor: "var(--bg-card)", borderRadius: "0.375rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {img ? (
+                    <img src={img} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <ImageOff style={{ width: "32px", height: "32px", color: "var(--text-muted)" }} />
+                  )}
+                </div>
+                <CompareRow label="Titlu" value={l.title || "—"} />
+                <CompareRow label="Preț" value={priceLine(l)} highlight={idx === lowestPriceIdx} good />
+                <CompareRow label="An" value={l.year != null ? `${l.year}` : "—"} />
+                <CompareRow label="Km" value={l.km != null ? `${l.km.toLocaleString("ro-RO")} km` : "—"} />
+                <CompareRow label="Combustibil" value={l.fuel_type || "—"} />
+                <CompareRow label="Cutie" value={l.transmission || "—"} />
+                <CompareRow label="Caroserie" value={l.body_type || "—"} />
+                <CompareRow label="Locație" value={l.location || "—"} />
+                <CompareRow label="Platformă" value={label} />
+                <CompareRow label="Găsit la" value={l.found_at ? (formatListedDate(l.found_at) || "—") : "—"} />
+                {l.margin_pct != null && l.resale_price != null && (
+                  <CompareRow label="Marjă estimată"
+                    value={`${l.margin_pct}% · revânzare ${Math.round(l.resale_price).toLocaleString("ro-RO")} RON`}
+                    highlight={idx === highestMarginIdx} good />
+                )}
+                <div style={{ display: "flex", gap: "0.25rem", marginTop: "auto" }}>
+                  <button onClick={() => onSave(l.id)} title="Salvează"
+                    style={smallActionBtn("#4ade80", l.status === "saved" ? "rgba(22,163,74,0.3)" : "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}>
+                    {l.status === "saved"
+                      ? <><Check style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />Salvat</>
+                      : <Bookmark style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
+                  </button>
+                  <button onClick={() => onIgnore(l.id)} title="Ignoră"
+                    style={smallActionBtn("var(--text-secondary)", l.status === "ignored" ? "rgba(100,116,139,0.3)" : "var(--bg-card)", "var(--border-color)")}>
+                    {l.status === "ignored"
+                      ? <><Check style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />Ignorat</>
+                      : <EyeOff style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
+                  </button>
+                  <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ ...smallActionBtn("white", "var(--blue-primary)", "var(--blue-primary)"), textDecoration: "none", marginLeft: "auto" }}>↗ Deschide</a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// CompareRow / smallActionBtn — reproduse local din radar/page.js (~1347/1357), folosite doar
+// de AutoCompareModal (nicăieri altundeva în pagină).
+function CompareRow({ label, value, highlight, good, bad }) {
+  const color = highlight ? (good ? "#4ade80" : bad ? "#fca5a5" : "var(--text-primary)") : "var(--text-primary)";
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", gap: "0.5rem" }}>
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span style={{ color, fontWeight: highlight ? 700 : 500, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+function smallActionBtn(color, bg, border) {
+  return {
+    padding: "0.3rem 0.5rem",
+    backgroundColor: bg, color,
+    border: `1px solid ${border}`,
+    borderRadius: "0.375rem", fontSize: "0.7rem",
+    fontWeight: 600, cursor: "pointer",
+    display: "inline-flex", alignItems: "center",
+  };
 }
 
 function actBtn(color) {

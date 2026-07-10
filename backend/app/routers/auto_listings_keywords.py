@@ -224,6 +224,61 @@ def export_feed(
     )
 
 
+class BulkAction(BaseModel):
+    listing_ids: list[int]
+    action: str  # "saved" | "ignored" | "active" | "deleted"
+
+
+# Definit ÎNAINTE de rutele parametrizate /feed/{listing_id}/... (același pattern ca /feed/export
+# de mai sus și ca radar.py) ca "bulk-action" să nu fie prins drept listing_id.
+@router.post("/feed/bulk-action")
+def bulk_feed_action(
+    data: BulkAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Acțiuni în masă pe feed-ul Auto — mirror pe radar.py::bulk_listing_action, adaptat la
+    AutoFeedListing. Toate query-urile sunt scopate pe user_id == current_user.id, deci un user
+    nu poate atinge listingurile altuia nici cu ID-uri ghicite. "active" e în plus față de Radar:
+    scoate în masă din Salvate/Ignorate înapoi în feed (statusuri deja folosite de update_listing_status).
+    listing_ids gol → {"updated": 0, ...} fără eroare."""
+    if data.action not in ("saved", "ignored", "active", "deleted"):
+        raise HTTPException(status_code=400, detail="Acțiune invalidă.")
+    if not data.listing_ids:
+        return {"updated": 0, "action": data.action, "message": "Niciun listing selectat."}
+
+    if data.action == "deleted":
+        updated = (
+            db.query(AutoFeedListing)
+            .filter(
+                AutoFeedListing.user_id == current_user.id,
+                AutoFeedListing.id.in_(data.listing_ids),
+            )
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        return {
+            "updated": int(updated),
+            "action": "deleted",
+            "message": f"{updated} listinguri șterse definitiv.",
+        }
+
+    updated = (
+        db.query(AutoFeedListing)
+        .filter(
+            AutoFeedListing.user_id == current_user.id,
+            AutoFeedListing.id.in_(data.listing_ids),
+        )
+        .update({AutoFeedListing.status: data.action}, synchronize_session=False)
+    )
+    db.commit()
+    return {
+        "updated": int(updated),
+        "action": data.action,
+        "message": f"{updated} listinguri actualizate ({data.action}).",
+    }
+
+
 @router.patch("/feed/{listing_id}/status")
 def update_listing_status(
     listing_id: int,

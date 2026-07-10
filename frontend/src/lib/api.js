@@ -184,6 +184,8 @@ export const autoListingsAPI = {
   getFeed:        (params)   => api.get("/api/auto-listings/feed", { params }),
   updateStatus:   (id, st)   => api.patch(`/api/auto-listings/feed/${id}/status`, { status: st }),
   deleteListing:  (id)       => api.delete(`/api/auto-listings/feed/${id}`),
+  // Actiuni in masa pe selectie (saved/ignored/active/deleted) — mirror pe radarAPI.bulkAction
+  bulkAction:     (listing_ids, action) => api.post("/api/auto-listings/feed/bulk-action", { listing_ids, action }),
   // Imbogatire on-demand a detaliului (poze/descriere/vanzator/data), o data per anunt
   getListingDetail: (id)     => api.get(`/api/auto-listings/feed/${id}/detail`),
   generateReview: (id)       => api.post(`/api/auto-listings/feed/${id}/generate-review`),
