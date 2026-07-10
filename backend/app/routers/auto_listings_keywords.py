@@ -75,6 +75,14 @@ def get_auto_categories():
     return {"categories": AUTO_PLATFORM_CATEGORIES, "technical_fields": AUTO_TECHNICAL_FIELDS}
 
 
+@router.get("/makes/mobile-de")
+def get_mobile_de_makes(current_user: User = Depends(get_current_user)):
+    """Marcile mapate pe ID-uri mobile.de (sursa unica de adevar: MOBILE_DE_MAKE_IDS din
+    scraper) — pentru datalist-ul de sugestii din formularul de keyword. Read-only."""
+    from app.scrapers.auto.listings.mobile_de_scraper import MOBILE_DE_MAKE_IDS
+    return {"makes": sorted(MOBILE_DE_MAKE_IDS.keys())}
+
+
 # ── Keywords CRUD ───────────────────────────────────────────────
 
 @router.get("/keywords")

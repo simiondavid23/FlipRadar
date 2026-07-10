@@ -79,6 +79,31 @@ MOBILE_DE_MAKE_IDS = {
     "Dacia": "6600",
 }
 
+# Aliase (chei lowercase) -> numele EXACT din MOBILE_DE_MAKE_IDS. DOAR pentru marci care
+# EXISTA in dict (verificat): Volkswagen / Mercedes-Benz / Skoda. Nu inventam pt marci absente.
+MOBILE_DE_MAKE_ALIASES = {
+    "vw": "Volkswagen",
+    "mercedes": "Mercedes-Benz",
+    "mercedes benz": "Mercedes-Benz",
+    "škoda": "Skoda",
+}
+
+
+def _resolve_make(make: str) -> str:
+    """Numele marcii -> ID numeric mobile.de, sau "" daca nu se mapeaza. Functie pura.
+    Ordine: strip -> potrivire exacta -> alias pe lowercase -> .title() -> "".
+    (Un make_id deja numeric NU trece pe aici — search_mobile_de il paseaza direct.)
+    """
+    make = (make or "").strip()
+    if not make:
+        return ""
+    if make in MOBILE_DE_MAKE_IDS:
+        return MOBILE_DE_MAKE_IDS[make]
+    alias = MOBILE_DE_MAKE_ALIASES.get(make.lower())
+    if alias:
+        return MOBILE_DE_MAKE_IDS.get(alias, "")
+    return MOBILE_DE_MAKE_IDS.get(make.title(), "")
+
 
 def _build_params(make_id: str, filters: dict, page: int) -> dict:
     # mobile.de (search.html) pagineaza prin pageNumber, nu prin offset.
@@ -211,7 +236,7 @@ def _search_mobile_de_playwright(url: str, page: int) -> list:
             # Chromium bundled de patchright daca Chrome nu e instalat (nu crapa scanul).
             try:
                 browser = p.chromium.launch(headless=False, channel="chrome")
-                log_manager.emit("auto_listings", "INFO", "Mobile.de: Playwright cu Chrome real")
+                log_manager.emit("auto_listings", "INFO", "Mobile.de: patchright cu Chrome real")
             except Exception:
                 browser = p.chromium.launch(headless=False)
                 log_manager.emit("auto_listings", "INFO",
@@ -267,9 +292,13 @@ def _search_mobile_de_playwright(url: str, page: int) -> list:
 
 async def search_mobile_de(make_id: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
-    # Permite trimiterea numelui marcii in loc de ID (ex: "BMW").
+    # Permite trimiterea numelui marcii in loc de ID (ex: "BMW"/"vw"). Rezolvare pura cu aliase.
     if make_id and not make_id.isdigit():
-        make_id = MOBILE_DE_MAKE_IDS.get(make_id, MOBILE_DE_MAKE_IDS.get(make_id.title(), ""))
+        resolved = _resolve_make(make_id)
+        if not resolved:
+            log_manager.emit("auto_listings", "INFO",
+                f"Mobile.de: marca '{make_id}' nu e in lista mapata — caut pe toate marcile")
+        make_id = resolved
 
     params = _build_params(make_id, filters, page)
     # doseq=True: "ft" poate fi lista (query_repeat) -> ft=PETROL&ft=DIESEL; string-urile

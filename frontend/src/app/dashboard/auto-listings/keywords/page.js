@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { autoListingsAPI } from "@/lib/api";
+import api, { autoListingsAPI } from "@/lib/api";
 import { modalFooterStyle } from "@/lib/uiStyles";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import NotifToggle from "@/components/NotifToggle";
@@ -74,6 +74,7 @@ export default function AutoKeywordsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteModal, setDeleteModal] = useState(null);
+  const [makes, setMakes] = useState([]);  // marci mapate mobile.de (sugestii datalist)
 
   const load = useCallback(async () => {
     try { const r = await autoListingsAPI.getKeywords(); setKeywords(r.data || []); }
@@ -85,6 +86,13 @@ export default function AutoKeywordsPage() {
   useEffect(() => {
     autoListingsAPI.getCategories()
       .then((r) => setCatData(r.data || { categories: {}, technical_fields: {} }))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    // Sugestii de marca pentru mobile.de. api.js n-are metoda dedicata (nu-l atingem in AA-6) ->
+    // apel direct pe instanta axios exportata default. Esecul nu blocheaza formularul (lista goala).
+    api.get("/api/auto-listings/makes/mobile-de")
+      .then((r) => setMakes(r.data?.makes || []))
       .catch(() => {});
   }, []);
 
@@ -254,7 +262,7 @@ export default function AutoKeywordsPage() {
       {showModal && (
         <KeywordModal
           editing={!!editingId} platform={platform} setPlatform={setPlatform}
-          form={form} setForm={setForm} catData={catData} saving={saving}
+          form={form} setForm={setForm} catData={catData} saving={saving} makes={makes}
           onClose={() => setShowModal(false)} onSubmit={submit}
         />
       )}
@@ -278,7 +286,7 @@ function Field({ label, children }) {
   return (<div><label style={labelStyle}>{label}</label>{children}</div>);
 }
 
-function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, saving, onClose, onSubmit }) {
+function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, saving, makes, onClose, onSubmit }) {
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
   const setTech = (k, v) => set({ tech: { ...(form.tech || {}), [k]: v } });
   const cur = AUTO_PLATFORMS.find((p) => p.value === platform)?.currency || "RON";
@@ -379,7 +387,18 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
 
           {/* Campuri de baza (nemodificate) */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-            <Field label="Marcă"><input value={form.make} onChange={(e) => set({ make: e.target.value })} placeholder="ex: BMW" style={inputStyle} /></Field>
+            <Field label="Marcă">
+              <input value={form.make} onChange={(e) => set({ make: e.target.value })} placeholder="ex: BMW" style={inputStyle} list="mobilede-makes" />
+              <datalist id="mobilede-makes">
+                {(makes || []).map((m) => <option key={m} value={m} />)}
+              </datalist>
+              {platform === "mobile_de" && form.make.trim() &&
+                !(makes || []).some((m) => m.toLowerCase() === form.make.trim().toLowerCase()) && (
+                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                  Pe mobile.de, marca asta nu e în lista mapată — se va căuta pe toate mărcile.
+                </div>
+              )}
+            </Field>
             <Field label="Model"><input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="ex: Seria 3" style={inputStyle} /></Field>
             <Field label="Căutare (text liber)"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: 320d" style={inputStyle} /></Field>
             <Field label={`Preț max ${cur}`}><input type="number" value={form.price_max} onChange={(e) => set({ price_max: e.target.value })} placeholder={cur === "EUR" ? "15000" : "60000"} style={inputStyle} /></Field>
