@@ -297,13 +297,21 @@ def fetch_lajumate_listing_details(url: str) -> dict:
     }
 
 
-def _enrich_details(results: list[dict]) -> None:
+def _enrich_details(results: list[dict], skip_external_ids: Optional[set] = None) -> tuple[int, int]:
     """Imbogateste fiecare rezultat cu toate imaginile + descrierea completa din
     pagina individuala a anuntului (adData), secvential cu delay aleator — la fel ca
-    OLX/Publi24/Okazii. Modifica lista pe loc; esecul unui anunt nu opreste restul."""
-    for idx, item in enumerate(results):
-        if idx > 0:
+    OLX/Publi24/Okazii. Modifica lista pe loc; esecul unui anunt nu opreste restul.
+    RP-3: imbogateste DOAR itemele care nu sunt in skip_external_ids (anunturi deja
+    vazute de scanner). Returneaza (fetched, skipped)."""
+    fetched = 0
+    skipped = 0
+    for item in results:
+        if skip_external_ids and item.get("external_id") in skip_external_ids:
+            skipped += 1
+            continue
+        if fetched > 0:
             time.sleep(random.uniform(0.4, 0.8))
+        fetched += 1
         try:
             details = fetch_lajumate_listing_details(item["url"])
             if details.get("images"):
@@ -313,6 +321,9 @@ def _enrich_details(results: list[dict]) -> None:
         except Exception as exc:
             log_manager.emit("radar", "WARN", f"LaJumate details {item['external_id']}: {str(exc)[:100]}")
             continue
+    if skipped > 0:
+        log_manager.emit("radar", "INFO", f"LaJumate: enrichment {fetched} noi · {skipped} sărite (deja văzute)")
+    return fetched, skipped
 
 
 def search_lajumate(
@@ -325,6 +336,7 @@ def search_lajumate(
     judet: Optional[str] = None,
     oras: Optional[str] = None,
     page: int = 1,
+    skip_enrich_ids: Optional[set] = None,
 ) -> list[dict]:
     """Cauta pe LaJumate; returneaza listinguri in format standard.
 
@@ -350,7 +362,7 @@ def search_lajumate(
     results = _post_filter(results, max_price, min_price, exclude_words)
 
     if results:
-        _enrich_details(results)
+        _enrich_details(results, skip_enrich_ids)
         log_manager.emit("radar", "OK", f'LaJumate: {len(results)} rezultate pentru "{keyword_clean}" (pag {page})')
         return results
 
@@ -363,7 +375,7 @@ def search_lajumate(
         cat_results = _fetch_ads(cat_url, "categorie")
         cat_results = _post_filter(cat_results, max_price, min_price, exclude_words)
         cat_results = _apply_keyword_filter(cat_results, keyword_clean)
-        _enrich_details(cat_results)
+        _enrich_details(cat_results, skip_enrich_ids)
         log_manager.emit("radar", "OK",
                          f'LaJumate (categorie {cat_slug}): {len(cat_results)} rezultate pentru "{keyword_clean}"')
         return cat_results

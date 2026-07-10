@@ -1706,6 +1706,7 @@ def _run_scraper(
     page: int = 1,
     advanced: bool = False,
     db=None,
+    skip_enrich_ids: Optional[set] = None,
 ) -> list[dict]:
     """Apel sincron la scraperul potrivit. Try/except per scraper ca un crash
     pe o platforma sa nu opreasca scanul pentru celelalte.
@@ -1760,6 +1761,7 @@ def _run_scraper(
                 exclude_words=exclude_words,
                 min_price=keyword.min_price,
                 category=keyword.category,
+                skip_enrich_ids=skip_enrich_ids,
             )
         if platform == "facebook":
             return search_facebook(
@@ -1784,6 +1786,7 @@ def _run_scraper(
                 judet=keyword.judet,
                 oras=keyword.oras,
                 category=keyword.category,
+                skip_enrich_ids=skip_enrich_ids,
             )
         if platform == "publi24":
             return search_publi24(
@@ -1796,6 +1799,7 @@ def _run_scraper(
                 judet=keyword.judet,
                 oras=keyword.oras,
                 category=keyword.category,
+                skip_enrich_ids=skip_enrich_ids,
             )
         if platform in ("autovit", "mobilede"):
             try:
@@ -2133,13 +2137,23 @@ def _scan_user(db: Session, user: User) -> dict:
                 time.sleep(random.uniform(*_PLATFORM_DELAY_RANGE))
 
             log_manager.emit("radar", "SCAN", f'Keyword "{kw.name}" · {platform} · ciclu #{_cycle_counter["n"]}')
+            # FlipRadar — RP-3: enrichment doar pe anunturi noi. Setul de external_id
+            # deja vazute (per user+platforma) e pasat in search_* ca buclele de
+            # enrichment sa sara fetch-urile de detaliu pentru ele.
+            _skip_enrich: Optional[set] = None
+            if platform in ("okazii", "lajumate", "publi24"):
+                _skip_enrich = {
+                    ext for (ext,) in db.query(RadarSeenId.external_id)
+                    .filter(RadarSeenId.user_id == user.id, RadarSeenId.platform == platform)
+                    .all()
+                }
             # MODULE 2 — paginare: aduna pagini pana cand una nu mai aduce anunturi
             # noi (necunoscute). Procesarea de mai jos ruleaza pe setul combinat.
             listings = []
             _seen_ext: set = set()
             _page = 1
             while True:
-                page_listings = _run_scraper(platform, kw, settings, exclude_words, page=_page, advanced=_adv, db=db)
+                page_listings = _run_scraper(platform, kw, settings, exclude_words, page=_page, advanced=_adv, db=db, skip_enrich_ids=_skip_enrich)
                 # RP-2 — filtrare centralizata cu engine-ul v2 (doar in modul advanced).
                 # Nota: Vinted NU are descriere in search -> excluderile pe descriere
                 # devin efective abia la enrichment (documentat in raport).

@@ -257,6 +257,36 @@ def fetch_publi24_listing_details(url: str) -> dict:
     return {"images": imgs, "description": description, "listed_at": listed_at}
 
 
+def _enrich_results(results: list[dict], skip_external_ids: Optional[set] = None) -> tuple[int, int]:
+    """FlipRadar — RP-3: imbogateste DOAR itemele care nu sunt in skip_external_ids
+    (anunturi deja vazute de scanner). Modifica lista pe loc.
+    Returneaza (fetched, skipped)."""
+    fetched = 0
+    skipped = 0
+    for item in results:
+        if skip_external_ids and item.get("external_id") in skip_external_ids:
+            skipped += 1
+            continue
+        if fetched > 0:
+            time.sleep(random.uniform(0.5, 1.0))
+        fetched += 1
+        try:
+            details = fetch_publi24_listing_details(item["url"])
+            if details.get("images"):
+                item["images"] = details["images"]
+            if details.get("description"):
+                item["description"] = details["description"]
+            # RP-1 — data exacta din detaliu ('Valabil din') suprascrie data din card.
+            if details.get("listed_at"):
+                item["listed_at"] = details["listed_at"]
+        except Exception as exc:
+            log_manager.emit("radar", "WARN", f"Publi24: enrichment {item['external_id']}: {str(exc)[:80]}")
+            continue
+    if skipped > 0:
+        log_manager.emit("radar", "INFO", f"Publi24: enrichment {fetched} noi · {skipped} sărite (deja văzute)")
+    return fetched, skipped
+
+
 def search_publi24(
     keyword: str,
     max_price: float,
@@ -267,11 +297,13 @@ def search_publi24(
     oras: Optional[str] = None,
     category: Optional[str] = None,
     page: int = 1,
+    skip_enrich_ids: Optional[set] = None,
 ) -> list[dict]:
     """Cauta pe Publi24 dupa keyword; returneaza listinguri in format standard.
 
     `category` = slug de path 'categorie/subcategorie' (value din PLATFORM_CATEGORIES).
-    `page` (>=1) adauga &pag=N. Enrichment secvential (descriere + galerie) ca la OLX.
+    `page` (>=1) adauga &pag=N. Enrichment secvential (descriere + galerie) ca la OLX,
+    dar DOAR pentru anunturile noi (RP-3: `skip_enrich_ids` = external_id-uri deja vazute).
     """
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
@@ -374,22 +406,8 @@ def search_publi24(
             log_manager.emit("radar", "WARN", f"Publi24: card invalid ignorat: {str(exc)[:80]}")
             continue
 
-    # Enrichment secvential — descriere completa + toate imaginile din galerie.
-    for idx, item in enumerate(results):
-        if idx > 0:
-            time.sleep(random.uniform(0.5, 1.0))
-        try:
-            details = fetch_publi24_listing_details(item["url"])
-            if details.get("images"):
-                item["images"] = details["images"]
-            if details.get("description"):
-                item["description"] = details["description"]
-            # RP-1 — data exacta din detaliu ('Valabil din') suprascrie data din card.
-            if details.get("listed_at"):
-                item["listed_at"] = details["listed_at"]
-        except Exception as exc:
-            log_manager.emit("radar", "WARN", f"Publi24: enrichment {item['external_id']}: {str(exc)[:80]}")
-            continue
+    # Enrichment secvential — descriere completa + galerie + data, DOAR pe anunturi noi.
+    _enrich_results(results, skip_enrich_ids)
 
     log_manager.emit("radar", "OK", f'Publi24: {len(results)} rezultate pentru "{keyword_clean}" (pag {page})')
     return results
