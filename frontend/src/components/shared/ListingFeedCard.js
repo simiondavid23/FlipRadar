@@ -8,7 +8,7 @@
 //   showMarginLine       — arata linia "-> revanzare | Marja" (Radar: mereu; Auto: doar cu marja)
 //   onToggleCompare      — daca lipseste, butonul de comparare nu apare (opt-in)
 import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo, sellerRatingLabel } from "./listingHelpers";
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel } from "./listingHelpers";
 
 export default function ListingFeedCard({
   listing, scoreCfg, scoreBadge, platformCfg, platformBadge, image, openLabel,
@@ -178,7 +178,7 @@ export default function ListingFeedCard({
         </div>
 
         {/* RP-1 — vânzător + rating + badge de risc (randate doar când există date). */}
-        {(listing.seller_name || listing.seller_rating != null || listing.seller_risk) && (
+        {(listing.seller_name || listing.seller_rating != null || listing.seller_risk || memberSinceLabel(listing)) && (
           <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "0.375rem", flexWrap: "wrap" }}>
             {listing.seller_name && (
               <span style={{ maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -187,6 +187,9 @@ export default function ListingFeedCard({
             )}
             {sellerRatingLabel(listing) && (
               <span style={{ color: "var(--text-muted)" }}>{sellerRatingLabel(listing)}</span>
+            )}
+            {memberSinceLabel(listing) && (
+              <span style={{ color: "var(--text-muted)" }}>{memberSinceLabel(listing)}</span>
             )}
             {listing.seller_risk && (
               <span

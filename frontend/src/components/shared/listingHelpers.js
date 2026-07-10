@@ -51,3 +51,10 @@ export function sellerRatingLabel(listing) {
   }
   return n !== null && n !== undefined ? `★${r.toFixed(1)} (${n} evaluări)` : `★${r.toFixed(1)}`;
 }
+
+// RP-4 — vechimea contului vanzatorului (deocamdata doar OLX: `member_since` = anul
+// inregistrarii, extras la enrichment din /api/v1/offers/{id}).
+export function memberSinceLabel(listing) {
+  if (listing.platform !== "olx" || listing.member_since == null) return "";
+  return `membru din ${listing.member_since}`;
+}

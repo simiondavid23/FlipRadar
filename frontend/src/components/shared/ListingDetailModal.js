@@ -11,7 +11,7 @@ import {
   X, ImageOff, Tag, MapPin, Calendar, Sparkles,
   Bookmark, EyeOff, ExternalLink, MessageSquare, Copy, Check,
 } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo, sellerRatingLabel } from "./listingHelpers";
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel } from "./listingHelpers";
 
 export default function ListingDetailModal({
   listing,
@@ -207,11 +207,14 @@ export default function ListingDetailModal({
               <div><Tag style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} /> {platformUpper}</div>
               {listing.location && <div><MapPin style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} /> {listing.location}</div>}
               {listing.condition && <div>Condiție: {listing.condition}</div>}
-              {(listing.seller_name || listing.seller_rating != null || listing.seller_risk) && (
+              {(listing.seller_name || listing.seller_rating != null || listing.seller_risk || memberSinceLabel(listing)) && (
                 <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", flexWrap: "wrap" }}>
                   {listing.seller_name && <span>Vânzător: {listing.seller_name}</span>}
                   {sellerRatingLabel(listing) && (
                     <span style={{ color: "var(--text-muted)" }}>· {sellerRatingLabel(listing)}</span>
+                  )}
+                  {memberSinceLabel(listing) && (
+                    <span style={{ color: "var(--text-muted)" }}>· {memberSinceLabel(listing)}</span>
                   )}
                   {listing.seller_risk && (
                     <span
