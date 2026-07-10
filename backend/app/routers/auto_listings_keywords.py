@@ -180,6 +180,23 @@ def get_feed(
     return {"total": total, "items": [_d(i) for i in items]}
 
 
+def _parse_id_csv(ids):
+    """CSV de id-uri -> list[int] tolerant: split pe virgula, strip, pastreaza doar tokenii
+    care trec int(); ignora restul. [] daca None/gol (fara filtrare pe id)."""
+    if not ids:
+        return []
+    out = []
+    for tok in str(ids).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            out.append(int(tok))
+        except ValueError:
+            continue
+    return out
+
+
 # Definit ÎNAINTE de /feed/{listing_id}/... ca "export" să nu fie prins de rutele cu param.
 @router.get("/feed/export")
 def export_feed(
@@ -187,6 +204,7 @@ def export_feed(
     grade: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     keyword_id: Optional[int] = Query(None),
+    ids: Optional[str] = Query(None),  # CSV de id-uri — folosit de "Exporta selectia"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -200,6 +218,10 @@ def export_feed(
         q = q.filter(AutoFeedListing.status == status)
     if keyword_id:
         q = q.filter(AutoFeedListing.keyword_id == keyword_id)
+    # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user.
+    id_list = _parse_id_csv(ids)
+    if id_list:
+        q = q.filter(AutoFeedListing.id.in_(id_list))
     items = q.order_by(AutoFeedListing.found_at.desc()).limit(5000).all()
 
     kw_ids = {i.keyword_id for i in items if i.keyword_id}

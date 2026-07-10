@@ -677,6 +677,23 @@ def list_listings(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _parse_id_csv(ids):
+    """CSV de id-uri -> list[int] tolerant: split pe virgula, strip, pastreaza doar tokenii
+    care trec int(); ignora restul. [] daca None/gol (fara filtrare pe id)."""
+    if not ids:
+        return []
+    out = []
+    for tok in str(ids).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            out.append(int(tok))
+        except ValueError:
+            continue
+    return out
+
+
 @router.get("/listings/export")
 def export_listings(
     db: Session = Depends(get_db),
@@ -687,6 +704,7 @@ def export_listings(
     status_filter: Optional[str] = Query(None, alias="status"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    ids: Optional[str] = Query(None),  # CSV de id-uri — folosit de "Exporta selectia"
 ):
     q = db.query(RadarListing).filter(RadarListing.user_id == current_user.id)
     if platform:
@@ -707,6 +725,11 @@ def export_listings(
             q = q.filter(RadarListing.found_at <= datetime.fromisoformat(date_to))
         except ValueError:
             pass
+    # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user
+    # (id-urile altui user pica din intersectie). Absent/gol -> feedul filtrat curent.
+    id_list = _parse_id_csv(ids)
+    if id_list:
+        q = q.filter(RadarListing.id.in_(id_list))
     items = q.order_by(RadarListing.found_at.desc()).limit(5000).all()
     kw_ids = {it.keyword_id for it in items}
     keywords = (

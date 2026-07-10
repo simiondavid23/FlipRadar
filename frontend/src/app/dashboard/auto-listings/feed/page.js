@@ -346,6 +346,20 @@ export default function AutoFeedPage() {
             onBulkSave={() => applyBulkAction("saved")}
             onBulkIgnore={() => applyBulkAction("ignored")}
             onBulkDelete={() => applyBulkAction("deleted")}
+            onBulkExport={async () => {
+              // Mirror pe radar/page.js (~631): export .xlsx doar pe selectie (param ids).
+              try {
+                const r = await autoListingsAPI.exportListings({ ids: Array.from(selectedBulk).join(",") });
+                const url = URL.createObjectURL(new Blob([r.data]));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `auto_selectie_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                document.body.appendChild(a); a.click(); a.remove();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                alert(e.response?.data?.detail || "Eroare la export Excel.");
+              }
+            }}
             onBulkClear={() => setSelectedBulk(new Set())}
           />
         </div>
