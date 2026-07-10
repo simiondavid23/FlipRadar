@@ -1,4 +1,5 @@
 """OLX.ro — anunturi auto (categoria autoturisme). platform="olx_auto"."""
+import json
 import re
 import urllib.parse
 
@@ -6,7 +7,7 @@ from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
-    safe_soup,
+    safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
@@ -20,6 +21,49 @@ _OLX_CATEGORIES = {c["value"] for c in AUTO_PLATFORM_CATEGORIES["olx_auto"] if c
 def _olx_id(href: str):
     m = re.search(r"-ID([A-Za-z0-9]+)\.html", href or "")
     return m.group(1) if m else None
+
+
+def _olx_upgrade_thumb(url: str) -> str:
+    """Normalizeaza sufixul OLX `;s=WxH` la o dimensiune de thumbnail stabila (1000x1000).
+
+    Reprodus dupa app/services/radar/olx_scraper.py::_upgrade_image_url (acelasi CDN
+    frankfurt.apollo.olxcdn.com) — local, fara import din app.services.radar.*. Un URL
+    fara `;s=` ramane neatins.
+    """
+    if not url:
+        return ""
+    return re.sub(r";s=\d+x\d+", ";s=1000x1000", url)
+
+
+def _photos_map_from_state(html: str) -> dict:
+    """{token_external_id -> URL prima poza} din window.__PRERENDERED_STATE__.ads[].
+
+    Reprodus din app/services/radar/olx_scraper.py::_extract_olx_numeric_ids (regex +
+    dublu json.loads, calea state["listing"]["listing"]["ads"], token din -ID<token>.html),
+    FARA import din app.services.radar.* — decuplare module (acelasi precedent ca detail.py).
+    Forma campului confirmata live (AA-1 Pasul 0): ad["photos"] = lista de URL-uri complete
+    cu sufix `;s=WxH`; luam prima si o normalizam la 1000x1000 (_olx_upgrade_thumb).
+    {} la orice esec (safe default -> cardul cade pe placeholder-ul ImageOff).
+    """
+    try:
+        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html or "", re.DOTALL)
+        if not m:
+            return {}
+        state = json.loads(json.loads(m.group(1)))  # dublu-decode (string JSON escapat)
+        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
+        result: dict = {}
+        for ad in ads:
+            url = ad.get("url") or ad.get("urlPath") or ""
+            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
+            if not mm:
+                continue
+            photos = ad.get("photos")
+            if isinstance(photos, list) and photos and isinstance(photos[0], str):
+                result[mm.group(1)] = _olx_upgrade_thumb(photos[0])
+        return result
+    except Exception as e:
+        print(f"[olx_auto] __PRERENDERED_STATE__ photos parse error: {e}")
+        return {}
 
 
 async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) -> list:
@@ -66,7 +110,14 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
         log_manager.emit("auto_listings", "ERR", f"OLX Auto eroare: {str(exc)[:80]}")
         return []
 
+    # AA-1 — pozele reale ale TUTUROR cardurilor stau in __PRERENDERED_STATE__ (ads[]),
+    # inclusiv cele de sub fold pe care OLX le lazy-load-eaza (src/data-src raman
+    # placeholder in HTML-ul server-rendered). Construim map-ul {token -> URL} o data/pagina.
+    photos_map = _photos_map_from_state(resp.text)
+
     cards = soup.select('div[data-cy="l-card"]') or soup.select('[data-testid="l-card"]')
+    cu_poza = 0
+    din_state = 0
     for card in cards:
         try:
             link = card.find("a", href=True)
@@ -93,16 +144,17 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
                 locatie = raw.split("-")[0].strip() if "-" in raw else raw.strip()
 
             img = card.find("img")
-            # OLX lazy-load: `src` e adesea placeholderul ("no_thumbnail"/data-URI/relativ),
-            # iar URL-ul real sta in `data-src`. Alegem primul candidat care e un URL http
-            # real; daca niciunul (doar placeholder) -> "" ca feed-ul sa arate fallback-ul
-            # ImageOff in loc de o imagine rupta.
-            thumb = ""
-            if img:
-                for cand in (img.get("src"), img.get("data-src")):
-                    if cand and cand.startswith("http") and "no_thumbnail" not in cand:
-                        thumb = cand
-                        break
+            # OLX lazy-load: pentru cardurile de sub fold `src`/`data-src` raman placeholder
+            # in HTML-ul server-rendered (poza reala e populata din JS). thumb_from_img
+            # acopera candidatii din tag; daca niciunul nu e URL real, cadem pe poza din
+            # __PRERENDERED_STATE__ (ads[]) dupa token-ul din URL (-ID<token>.html). Daca nici
+            # acolo -> "" (feed-ul arata fallback-ul ImageOff, nu o imagine rupta).
+            img_thumb = thumb_from_img(img)
+            thumb = img_thumb or photos_map.get(_olx_id(href) or "", "")
+            if thumb:
+                cu_poza += 1
+                if not img_thumb:
+                    din_state += 1
 
             results.append(make_listing(
                 platform="olx_auto", external_id=_olx_id(href), titlu=titlu,
@@ -116,6 +168,8 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
             print(f"[olx_auto] card parse error: {exc}")
             continue
 
-    print(f"[olx_auto] {len(results)} anunturi pentru '{query}'")
-    log_manager.emit("auto_listings", "OK", f"OLX Auto: {len(results)} anunturi gasite")
+    print(f"[olx_auto] {len(results)} anunturi pentru '{query}' "
+          f"({cu_poza} cu poza, {din_state} completate din state)")
+    log_manager.emit("auto_listings", "OK",
+                     f"OLX Auto: {len(results)} anunturi ({cu_poza} cu poza, {din_state} completate din state)")
     return results[:MAX_LISTINGS]

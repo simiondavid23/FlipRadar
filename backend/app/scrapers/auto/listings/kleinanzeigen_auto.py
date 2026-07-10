@@ -6,7 +6,7 @@ from curl_cffi.requests import AsyncSession
 
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price, extract_year, extract_km, make_listing,
-    safe_soup,
+    safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
 
@@ -85,7 +85,7 @@ async def search_kleinanzeigen_auto(query: str = "", make: str = "", model: str 
             locatie = loc_el.get_text(" ", strip=True) if loc_el else None
 
             img = card.find("img")
-            thumb = (img.get("src") or img.get("data-imgsrc") or img.get("data-src")) if img else None
+            thumb = thumb_from_img(img) or None
 
             card_text = card.get_text(" ", strip=True)
             results.append(make_listing(

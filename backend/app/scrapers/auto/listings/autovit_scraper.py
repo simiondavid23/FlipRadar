@@ -8,7 +8,7 @@ from curl_cffi.requests import AsyncSession
 from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
-    safe_soup,
+    safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
@@ -145,7 +145,7 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
             locatie = loc_el.get_text(" ", strip=True) if loc_el else None
 
             img = card.find("img")
-            thumb = (img.get("src") or img.get("data-src")) if img else None
+            thumb = thumb_from_img(img) or None
 
             results.append(make_listing(
                 platform="autovit", external_id=card.get("data-id"), titlu=titlu,

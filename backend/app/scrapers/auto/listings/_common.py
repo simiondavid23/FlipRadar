@@ -43,6 +43,39 @@ def safe_soup(html: str) -> BeautifulSoup:
     return BeautifulSoup(re.sub(r"&#(\d+)(?![\d;])", r"&#\1;", html or ""), "html.parser")
 
 
+def thumb_from_img(img) -> str:
+    """Primul URL http real dintr-un tag <img> (BS4) sau "" daca nu exista.
+
+    Ordinea candidatilor: src, data-src, data-imgsrc (Kleinanzeigen),
+    primul URL din srcset, primul URL din data-srcset.
+    Filtre: trebuie sa inceapa cu http, fara "no_thumbnail", fara ".svg".
+    Sursa pattern-ului: olx_auto.py (filtrul placeholder existent) + kleinanzeigen_auto.py
+    (data-imgsrc existent). srcset: primul segment inainte de virgula, primul token
+    inainte de spatiu (ex: "https://x/a.jpg 1x, https://x/b.jpg 2x" -> ".../a.jpg").
+
+    `img` poate fi None -> "". Nu arunca niciodata exceptie (safe default "").
+    """
+    try:
+        if img is None:
+            return ""
+        candidates = [img.get("src"), img.get("data-src"), img.get("data-imgsrc")]
+        for attr in ("srcset", "data-srcset"):
+            val = img.get(attr)
+            if isinstance(val, str) and val.strip():
+                # primul URL din srcset: segment inainte de "," apoi token inainte de " "
+                candidates.append(val.split(",")[0].strip().split(" ")[0].strip())
+        for cand in candidates:
+            if not isinstance(cand, str):
+                continue
+            c = cand.strip()
+            low = c.lower()
+            if low.startswith("http") and "no_thumbnail" not in low and ".svg" not in low:
+                return c
+        return ""
+    except Exception:
+        return ""
+
+
 # Limite realiste de pret pentru masini. Un singur prag superior generos acopera
 # ambele monede: EUR (~300k max pe piata RO) si RON (~1.5M ≈ 300k EUR × ~5 RON/EUR).
 # Sub minim = nu e pret; peste maxim = garbage (ex: tot textul cardului concatenat).
