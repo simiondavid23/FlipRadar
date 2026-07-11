@@ -5,7 +5,6 @@ Incercam intai un endpoint JSON, apoi parsam __NEXT_DATA__, apoi HTML simplu.
 """
 import json
 import re
-import unicodedata
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -13,7 +12,7 @@ from curl_cffi.requests import AsyncSession
 
 from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price,
-    extract_rooms, extract_surface, make_re_listing,
+    extract_rooms, extract_surface, make_re_listing, norm_city_slug,
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
@@ -63,12 +62,6 @@ _STORIA_LOCATION_PATHS = {
 }
 
 
-def _loc_key(locatie) -> str:
-    """Normalizeaza numele orasului la slug ascii (fara diacritice, lowercase, spatii->-)."""
-    s = unicodedata.normalize("NFKD", str(locatie or "")).encode("ascii", "ignore").decode()
-    return s.strip().lower().replace(" ", "-")
-
-
 def _category_path(tip_anunt: str, tip_proprietate: str, locatie=None) -> str:
     rent = (tip_anunt or "").lower().startswith("inchiri")
     tr = "inchiriere" if rent else "vanzare"
@@ -87,7 +80,7 @@ def _category_path(tip_anunt: str, tip_proprietate: str, locatie=None) -> str:
     base = f"/ro/rezultate/{tr}/{prop}"
     # Locatia e PATH (nu query) — vezi re_categories["storia"]. Adaugam segmentul de oras/judet
     # DOAR pentru orasele confirmate; altfel lasam fara (storia redirectioneaza la /toata-romania).
-    loc_seg = _STORIA_LOCATION_PATHS.get(_loc_key(locatie)) if locatie else None
+    loc_seg = _STORIA_LOCATION_PATHS.get(norm_city_slug(locatie)) if locatie else None
     return f"{base}/{loc_seg}" if loc_seg else base
 
 

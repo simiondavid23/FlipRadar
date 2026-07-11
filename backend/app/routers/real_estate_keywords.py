@@ -14,6 +14,7 @@ from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword as R
 from app.models.real_estate_monitor_listing import RealEstateMonitorListing as RealEstateListing
 from app.services.real_estate.excel_exporter import build_re_xlsx
 from app.utils.auth import get_current_user
+from app.utils.id_csv import parse_id_csv
 
 router = APIRouter(prefix="/api/real-estate-monitor", tags=["real-estate-monitor"])
 
@@ -171,25 +172,6 @@ def get_feed(
     return {"total": total, "items": [_listing_dict(i) for i in items]}
 
 
-def _parse_id_csv(ids):
-    """CSV de id-uri -> list[int] tolerant: split pe virgula, strip, pastreaza doar tokenii
-    care trec int(); ignora restul. [] daca None/gol (fara filtrare pe id).
-
-    Duplicat mic din radar.py — de unificat la refactorizarea shared."""
-    if not ids:
-        return []
-    out = []
-    for tok in str(ids).split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        try:
-            out.append(int(tok))
-        except ValueError:
-            continue
-    return out
-
-
 # Definit ÎNAINTE de /feed/{listing_id}/... ca "export" să nu fie prins de rutele cu param.
 @router.get("/feed/export")
 def export_feed(
@@ -223,7 +205,7 @@ def export_feed(
     # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user
     # (id-urile altui user pica din intersectie). Selectia poate traversa statusuri, deci cand
     # exista ids NU aplicam filtrul de status; absent/gol -> feedul filtrat curent (cu status).
-    id_list = _parse_id_csv(ids)
+    id_list = parse_id_csv(ids)
     if id_list:
         q = q.filter(RealEstateListing.id.in_(id_list))
     elif status and status != "all":

@@ -39,6 +39,7 @@ from app.services.radar.facebook_auth import start_facebook_login_session
 from app.services.radar.facebook_scraper import is_facebook_session_valid
 from app.services.radar.scorer import calculate_fee_ceiling, calculate_score
 from app.utils.auth import get_current_user
+from app.utils.id_csv import parse_id_csv
 from app.utils.radar_scanner import (
     cancel_keyword_scan,
     mark_keyword_deleted,
@@ -677,23 +678,6 @@ def list_listings(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _parse_id_csv(ids):
-    """CSV de id-uri -> list[int] tolerant: split pe virgula, strip, pastreaza doar tokenii
-    care trec int(); ignora restul. [] daca None/gol (fara filtrare pe id)."""
-    if not ids:
-        return []
-    out = []
-    for tok in str(ids).split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        try:
-            out.append(int(tok))
-        except ValueError:
-            continue
-    return out
-
-
 @router.get("/listings/export")
 def export_listings(
     db: Session = Depends(get_db),
@@ -727,7 +711,7 @@ def export_listings(
             pass
     # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user
     # (id-urile altui user pica din intersectie). Absent/gol -> feedul filtrat curent.
-    id_list = _parse_id_csv(ids)
+    id_list = parse_id_csv(ids)
     if id_list:
         q = q.filter(RadarListing.id.in_(id_list))
     items = q.order_by(RadarListing.found_at.desc()).limit(5000).all()

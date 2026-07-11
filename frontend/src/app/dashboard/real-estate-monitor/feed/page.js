@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
 import { Home, AlertTriangle, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { GRADE_COLORS, selectStyle, tabPillStyle } from "@/lib/uiStyles";
+import { eurRonOf } from "@/lib/currency";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
@@ -20,13 +21,7 @@ const PLATFORM_LABELS = {
 const gradeCfg = (g) => GRADE_COLORS[g] || GRADE_COLORS.C;
 // Culori platformă neutre (RE nu are branding per-sursă în card, ca Auto).
 const RE_PLATFORM_CFG = { bg: "var(--bg-dark)", border: "var(--border-color)", text: "var(--text-secondary)" };
-// Curs EUR->RON pentru sortarea pe preț — refoloseste EXACT mecanismul din AA-3
-// (auto-listings/feed): rata din listing dacă există, altfel constanta 5.0. Anunțurile RE nu au
-// import_score_json, deci cade pe 5.0 (constantă), suficient pentru o ordonare EUR/RON stabilă.
-function eurRonOf(listing) {
-  return listing.import_score_json?.pe_roti?.eur_ron_rate
-    || listing.import_score_json?.pe_platforma?.eur_ron_rate || 5.0;
-}
+// eurRonOf mutat in @/lib/currency (REF-1) — sortarea pe pret normalizeaza EUR->RON cu el.
 
 export default function REFeedPage() {
   const [listings, setListings] = useState([]);

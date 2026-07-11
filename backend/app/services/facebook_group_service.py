@@ -4,7 +4,7 @@ from app.models.facebook_group_config import FacebookGroupConfig
 from app.models.facebook_group_post import FacebookGroupPost
 from app.models.notification import Notification
 from app.scrapers.facebook_group_scraper import scrape_facebook_group
-from app.services.real_estate_extractor import (
+from app.services.real_estate.extractor import (
     extract_real_estate_data,
     passes_keyword_filter,
 )

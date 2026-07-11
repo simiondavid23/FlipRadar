@@ -4,6 +4,7 @@ import { autoListingsAPI, autoAPI, mlAPI, radarAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Car, RefreshCw, Loader2, AlertTriangle, Info, FileSpreadsheet, X, ImageOff, Check, Bookmark, EyeOff } from "lucide-react";
 import { GRADE_COLORS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
+import { eurRonOf } from "@/lib/currency";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
@@ -21,10 +22,6 @@ const PLATFORM_LABELS = {
 const IMPORT_PLATFORMS = ["mobile_de", "autoscout24", "kleinanzeigen_auto"];
 
 function gradeCfg(g) { return GRADE_COLORS[g] || GRADE_COLORS.C; }
-function eurRonOf(listing) {
-  return listing.import_score_json?.pe_roti?.eur_ron_rate
-    || listing.import_score_json?.pe_platforma?.eur_ron_rate || 5.0;
-}
 // Doar URL-uri http reale sunt imagini valide; placeholderele (relative/"no_thumbnail" OLX)
 // sau valorile goale -> null, ca sa se afiseze fallback-ul ImageOff. Garda generica (toate platformele).
 const validImg = (u) => (typeof u === "string" && u.startsWith("http")) ? u : null;

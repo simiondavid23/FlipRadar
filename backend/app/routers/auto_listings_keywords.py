@@ -17,6 +17,7 @@ from app.services.bnr_exchange import get_eur_ron
 from app.services.radar.ai_reviewer import generate_ai_review
 from app.models.radar_message_template import RadarMessageTemplate
 from app.utils.auth import get_current_user
+from app.utils.id_csv import parse_id_csv
 
 router = APIRouter(prefix="/api/auto-listings", tags=["auto-listings"])
 
@@ -188,23 +189,6 @@ def get_feed(
     return {"total": total, "items": [_d(i) for i in items]}
 
 
-def _parse_id_csv(ids):
-    """CSV de id-uri -> list[int] tolerant: split pe virgula, strip, pastreaza doar tokenii
-    care trec int(); ignora restul. [] daca None/gol (fara filtrare pe id)."""
-    if not ids:
-        return []
-    out = []
-    for tok in str(ids).split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        try:
-            out.append(int(tok))
-        except ValueError:
-            continue
-    return out
-
-
 # Definit ÎNAINTE de /feed/{listing_id}/... ca "export" să nu fie prins de rutele cu param.
 @router.get("/feed/export")
 def export_feed(
@@ -227,7 +211,7 @@ def export_feed(
     if keyword_id:
         q = q.filter(AutoFeedListing.keyword_id == keyword_id)
     # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user.
-    id_list = _parse_id_csv(ids)
+    id_list = parse_id_csv(ids)
     if id_list:
         q = q.filter(AutoFeedListing.id.in_(id_list))
     items = q.order_by(AutoFeedListing.found_at.desc()).limit(5000).all()
