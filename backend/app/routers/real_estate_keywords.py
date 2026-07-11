@@ -43,6 +43,7 @@ class KeywordCreate(BaseModel):
     active_hours_start: Optional[int] = None
     active_hours_end: Optional[int] = None
     polling_interval_minutes: int = 30
+    exclude_words: Optional[list[str]] = None   # termeni exclusi pe titlu+descriere (IM-6)
 
 class KeywordUpdate(KeywordCreate):
     pass
@@ -84,7 +85,9 @@ def create_keyword(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    kw = RealEstateKeyword(user_id=current_user.id, **payload.model_dump())
+    data = payload.model_dump()
+    data["exclude_words"] = data.get("exclude_words") or []   # JSON lista, nu NULL
+    kw = RealEstateKeyword(user_id=current_user.id, **data)
     db.add(kw); db.commit(); db.refresh(kw)
     return _kw_dict(kw)
 
@@ -102,7 +105,9 @@ def update_keyword(
     ).first()
     if not kw:
         raise HTTPException(404, "Keyword negăsit.")
-    for k, v in payload.model_dump().items():
+    data = payload.model_dump()
+    data["exclude_words"] = data.get("exclude_words") or []   # JSON lista, nu NULL
+    for k, v in data.items():
         setattr(kw, k, v)
     db.commit(); db.refresh(kw)
     return _kw_dict(kw)

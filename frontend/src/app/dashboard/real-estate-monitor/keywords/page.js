@@ -37,7 +37,7 @@ const POLL_OPTIONS = [15, 30, 60, 120];
 const EMPTY_FORM = {
   name: "", property_type: "", tip_anunt: "vanzare", rooms: "", area_min: "", area_max: "",
   price_min: "", price_max: "", price_currency: "EUR", zone: "", city: "București",
-  floor_min: "", floor_max: "", furnished: "", query: "",
+  floor_min: "", floor_max: "", furnished: "", query: "", exclude_words: [],
   is_active: true, notify_email: false, notify_discord: false,
   use_active_hours: false, active_hours_start: 8, active_hours_end: 22,
   polling_interval: 30,
@@ -113,7 +113,8 @@ export default function REKeywordsPage() {
       price_currency: kw.price_currency || "EUR", zone: kw.zone || "", city: kw.city || "București",
       floor_min: kw.floor_min ?? "", floor_max: kw.floor_max ?? "",
       furnished: kw.furnished === null || kw.furnished === undefined ? "" : (kw.furnished ? "true" : "false"),
-      query: kw.query || "", is_active: kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
+      query: kw.query || "", exclude_words: Array.isArray(kw.exclude_words) ? kw.exclude_words : [],
+      is_active: kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
       use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
       active_hours_start: kw.active_hours_start ?? 8, active_hours_end: kw.active_hours_end ?? 22,
       polling_interval: kw.polling_interval_minutes ?? 30,
@@ -140,6 +141,7 @@ export default function REKeywordsPage() {
       floor_max: form.floor_max ? parseInt(form.floor_max) : null,
       furnished: form.furnished === "" ? null : form.furnished === "true",
       query: form.query || null,
+      exclude_words: form.exclude_words,
       is_active: form.is_active,
       notify_email: form.notify_email,
       notify_discord: form.notify_discord,
@@ -170,6 +172,7 @@ export default function REKeywordsPage() {
         price_max: kw.price_max != null ? parseFloat(kw.price_max) : null,
         price_currency: kw.price_currency, zone: kw.zone, city: kw.city,
         floor_min: kw.floor_min, floor_max: kw.floor_max, furnished: kw.furnished, query: kw.query,
+        exclude_words: kw.exclude_words || [],   // CRITIC: KeywordUpdate seteaza tot; fara asta toggle-ul sterge excluderile
         is_active: !kw.is_active, notify_email: kw.notify_email, notify_discord: kw.notify_discord,
         active_hours_start: kw.active_hours_start, active_hours_end: kw.active_hours_end,
         polling_interval_minutes: kw.polling_interval_minutes,
@@ -305,6 +308,15 @@ function Field({ label, children }) {
 
 function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, categories, onClose, onSubmit }) {
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const [chipInput, setChipInput] = useState("");
+  const excludeChips = form.exclude_words || [];
+  const addChip = () => {
+    const w = chipInput.trim();
+    if (w && !excludeChips.some((c) => c.toLowerCase() === w.toLowerCase())) {
+      set({ exclude_words: [...excludeChips, w] });
+    }
+    setChipInput("");
+  };
   const showFloors = ["olx", "storia", "imobiliare_ro"].includes(platform);
   // Filtre confirmate la sursa pt platforma selectata (din /categories) — form dinamic.
   const reKey = PLATFORM_TO_RE_KEY[platform];
@@ -415,6 +427,30 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
 
           <Field label="Căutare liberă (opțional)">
             <input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: mobilat, parcare" style={inputStyle} />
+          </Field>
+
+          <Field label="Cuvinte excluse (titlu + descriere)">
+            <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)", padding: "0.375rem 0.5rem", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem", minHeight: "2.5rem" }}>
+              {excludeChips.map((chip) => (
+                <span key={chip} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", backgroundColor: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", color: "#60a5fa", fontSize: "0.75rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
+                  {chip}
+                  <button type="button" onClick={() => set({ exclude_words: excludeChips.filter((c) => c !== chip) })} style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", padding: 0, display: "flex" }}>
+                    <X style={{ width: "12px", height: "12px" }} />
+                  </button>
+                </span>
+              ))}
+              <input
+                type="text"
+                value={chipInput}
+                onChange={(e) => setChipInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addChip(); } }}
+                placeholder="ex: demisol, regim hotelier (Enter)"
+                style={{ flex: 1, minWidth: "140px", backgroundColor: "transparent", border: "none", color: "var(--text-primary)", fontSize: "0.8125rem", outline: "none", padding: "0.25rem" }}
+              />
+            </div>
+            <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: "0.375rem 0 0" }}>
+              Anunțurile care conțin oricare dintre acești termeni sunt excluse (fără diacritice).
+            </p>
           </Field>
 
           <Field label="Interval verificare">

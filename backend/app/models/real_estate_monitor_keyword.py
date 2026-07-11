@@ -3,7 +3,7 @@
 Distinct de modelul RealEstateAlert/RealEstateListing existent — acesta e pentru
 noul modul "Imobiliare Monitor" (feed scorat + zone normalizate).
 """
-from sqlalchemy import (Boolean, Column, Integer, Numeric,
+from sqlalchemy import (Boolean, Column, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
 from app.database import Base
@@ -38,3 +38,5 @@ class RealEstateMonitorKeyword(Base):
     created_at               = Column(TIMESTAMP, server_default=func.now())
     # Ultimul scan efectiv — folosita de polling-ul per keyword (_polling_due, IM-4).
     last_scan_at             = Column(TIMESTAMP)
+    # Termeni exclusi pe titlu+descriere, aplicati local in post-filtru (_matches_exclusions, IM-6).
+    exclude_words            = Column(JSON, default=list)

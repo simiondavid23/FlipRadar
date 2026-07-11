@@ -96,26 +96,48 @@ def _seed_from_raw(raw: dict) -> dict:
     }
 
 
+def _norm_ascii(s: str) -> str:
+    """Normalizare partajata: NFKD -> ascii (fara diacritice), lower, strip.
+
+    Folosita atat de _matches_query_local (cautare libera) cat si de _matches_exclusions (IM-6).
+    """
+    n = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode()
+    return n.lower().strip()
+
+
 def _matches_query_local(text: str, query: Optional[str]) -> bool:
     """True daca `text` contine toti termenii din `query` (cautare libera locala).
 
     Semantica: query gol/None => True. Query se sparge pe virgule in termeni; fiecare termen
-    (strip + lower + diacritice normalizate NFKD->ascii) trebuie sa apara ca substring in
-    textul normalizat identic (AND intre termeni). Text None tratat ca "". Folosit pentru
-    platformele care NU pot cauta liber la sursa (Storia, Imobiliare.ro, Grupuri FB); pe OLX
-    si Facebook Marketplace query-ul merge la sursa, deci nu se aplica local.
+    (normalizat cu _norm_ascii) trebuie sa apara ca substring in textul normalizat identic (AND
+    intre termeni). Text None tratat ca "". Folosit pentru platformele care NU pot cauta liber la
+    sursa (Storia, Imobiliare.ro, Grupuri FB); pe OLX si Facebook Marketplace query-ul merge la
+    sursa, deci nu se aplica local.
     """
     if not query or not str(query).strip():
         return True
-
-    def _norm(s):
-        n = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode()
-        return n.lower()
-
-    hay = _norm(text)
+    hay = _norm_ascii(text)
     for term in str(query).split(","):
-        t = _norm(term).strip()
+        t = _norm_ascii(term)
         if t and t not in hay:
+            return False
+    return True
+
+
+def _matches_exclusions(text: str, exclude_words) -> bool:
+    """True daca `text` NU contine NICIUN termen exclus (False = respins). IM-6.
+
+    Semantica inversa fata de _matches_query_local: exclude_words None/gol => True (nu respinge);
+    text None tratat ca ""; termenii se normalizeaza cu _norm_ascii (termeni goli ignorati); daca
+    ORICE termen apare ca substring in textul normalizat => False. Aplicata local pe TOATE
+    platformele (sursa nu poate exclude).
+    """
+    if not exclude_words:
+        return True
+    hay = _norm_ascii(text)
+    for term in exclude_words:
+        t = _norm_ascii(term)
+        if t and t in hay:
             return False
     return True
 
@@ -230,6 +252,11 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         existing.last_checked_at = datetime.now(timezone.utc)
         db.commit()
         return None, "duplicat"  # deja existent (nu e nou)
+
+    # Excluderi per keyword (IM-6) — ORICE termen exclus in titlu+descriere => respins. Se aplica
+    # DOAR salvarilor noi; un listing existent isi pastreaza update-ul de pret de mai sus.
+    if not _matches_exclusions(text, kw.exclude_words):
+        return None, "respins"
 
     # Extract structured data (regex/Groq), apoi suprascriem cu seed-ul scraperului.
     extracted = extract_all(text)
@@ -442,6 +469,9 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         return None
 
     text = post.get("text") or ""
+    # Excluderi per keyword (IM-6) — ORICE termen exclus in text => nu se salveaza.
+    if not _matches_exclusions(text, kw.exclude_words):
+        return None
     extracted = extract_all(text)
     extracted = groq_extract(text, extracted, groq_enabled)
 

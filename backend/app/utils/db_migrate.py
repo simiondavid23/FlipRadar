@@ -798,6 +798,11 @@ def run_migrations():
             "ALTER TABLE real_estate_keywords "
             "ADD COLUMN IF NOT EXISTS last_scan_at TIMESTAMP")
 
+        # IM-6: cuvinte excluse per keyword Imobiliare (titlu+descriere), aplicate local.
+        _migrate(conn, "add_re_kw_exclude_words",
+            "ALTER TABLE real_estate_keywords "
+            "ADD COLUMN IF NOT EXISTS exclude_words JSON")
+
     _backfill_product_sources()
 
 
