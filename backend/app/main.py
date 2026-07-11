@@ -177,7 +177,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] Auto lots scan setup failed: {exc}")
 
-    # FlipRadar — Imobiliare Monitor: scan (30m) + cleanup (12:30).
+    # FlipRadar — Imobiliare Monitor: scan (tick 5m, polling per keyword) + cleanup (12:30).
     try:
         from app.services.real_estate_scanner import run_real_estate_scan
 
@@ -191,9 +191,10 @@ async def lifespan(app: FastAPI):
             finally:
                 _db.close()
 
-        scheduler.add_job(_run_re_scan, "interval", minutes=30,
+        # Tick des (5 min); decizia de a scana e per keyword, in _polling_due (mirror radar_scan).
+        scheduler.add_job(_run_re_scan, "interval", minutes=5,
             id="real_estate_scan", replace_existing=True)
-        print("[Scheduler] Real estate scan (30m) inregistrat.")
+        print("[Scheduler] Real estate scan (tick 5m, polling per keyword) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] RE scan setup failed: {exc}")
 

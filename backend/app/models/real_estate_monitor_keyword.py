@@ -36,3 +36,5 @@ class RealEstateMonitorKeyword(Base):
     active_hours_end         = Column(Integer)
     polling_interval_minutes = Column(Integer, default=30)
     created_at               = Column(TIMESTAMP, server_default=func.now())
+    # Ultimul scan efectiv — folosita de polling-ul per keyword (_polling_due, IM-4).
+    last_scan_at             = Column(TIMESTAMP)

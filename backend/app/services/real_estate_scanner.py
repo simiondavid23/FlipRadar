@@ -27,6 +27,27 @@ def _within_hours(kw: RealEstateKeyword) -> bool:
     return (s <= h < e) if s <= e else (h >= s or h < e)
 
 
+def _polling_due(kw, now: datetime) -> bool:
+    """PURA: True daca intervalul de polling per keyword a expirat de la ultimul scan.
+
+    `now` (aware UTC) e injectat pentru testabilitate. Tratarea naive/aware EXACT ca in
+    radar_scanner._should_scan_keyword: un last_scan_at naiv (fara tzinfo) e considerat UTC.
+    Fallback 30 min = default-ul RE (polling_interval_minutes), NU 5 ca la Radar.
+    """
+    if kw.last_scan_at is None:
+        return True
+    last = kw.last_scan_at.replace(tzinfo=timezone.utc) if kw.last_scan_at.tzinfo is None else kw.last_scan_at
+    elapsed = now - last
+    return elapsed >= timedelta(minutes=kw.polling_interval_minutes or 30)
+
+
+def _due_keywords(keywords: list, now: datetime, force: bool) -> list:
+    """PURA: keyword-urile scadente la `now`. force=True (scan manual) -> lista neschimbata."""
+    if force:
+        return keywords
+    return [kw for kw in keywords if _polling_due(kw, now)]
+
+
 def _is_groq_enabled(db: Session, user_id: int) -> bool:
     try:
         from app.models.user import User
@@ -480,7 +501,8 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     return listing
 
 
-def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
+def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
+                         force_polling: bool = False) -> None:
     query = db.query(RealEstateKeyword).join(User, RealEstateKeyword.user_id == User.id).filter(RealEstateKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(RealEstateKeyword.user_id == user_id)
@@ -488,8 +510,16 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
     if not keywords:
         return
 
+    # Polling per keyword: scheduler-ul da tick des (5 min), dar scanam DOAR keyword-urile
+    # scadente (decizia in _polling_due). Scan-ul manual paseaza force_polling=True si ocoleste
+    # intervalul. Daca niciunul nu e scadent -> return FARA log (tick-ul de 5 min nu spameaza).
+    now = datetime.now(timezone.utc)
+    keywords = _due_keywords(keywords, now, force_polling)
+    if not keywords:
+        return
+
     log_manager.emit("real_estate", "SCAN",
-        f"Imobiliare scan: {len(keywords)} keyword-uri active")
+        f"Imobiliare scan: {len(keywords)} keyword-uri scadente")
 
     # Curs BNR EUR/RON, O SINGURA DATA pe scan — normalizeaza monedele la filtrarea de pret
     # (post-filtru) si converteste marginile de pret OLX (categoria e servita in EUR). Daca nu
@@ -575,6 +605,12 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
                     rej += 1
             log_manager.emit("real_estate", "OK",
                 f"{kw.platform}: {total_brute} brute -> {noi} noi, {dup} duplicate, {rej} respinse")
+
+        # Marcheaza scanul efectiv pentru polling-ul per keyword — DUPA procesare, indiferent de
+        # rezultat (0 anunturi sau eroare deja logata). Un keyword sarit de _within_hours NU
+        # ajunge aici, deci NU "consuma" intervalul.
+        kw.last_scan_at = datetime.now(timezone.utc)
+        db.commit()
 
 
 def _notify_re(listing: RealEstateListing, kw: RealEstateKeyword,

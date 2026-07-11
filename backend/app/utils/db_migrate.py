@@ -793,6 +793,11 @@ def run_migrations():
         _migrate(conn, "drop_radar_blocked_sellers_table",
             "DROP TABLE IF EXISTS radar_blocked_sellers")
 
+        # IM-4: polling real per keyword Imobiliare — last_scan_at pentru decizia _polling_due.
+        _migrate(conn, "add_re_kw_last_scan_at",
+            "ALTER TABLE real_estate_keywords "
+            "ADD COLUMN IF NOT EXISTS last_scan_at TIMESTAMP")
+
     _backfill_product_sources()
 
 

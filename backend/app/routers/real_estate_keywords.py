@@ -434,7 +434,9 @@ def scan_now(
     def _background_scan():
         _db = SessionLocal()
         try:
-            run_real_estate_scan(_db, user_id=user_id)
+            # Butonul manual ocoleste intervalul de polling (force_polling); intervalul orar
+            # (_within_hours) ramane respectat ca pana acum.
+            run_real_estate_scan(_db, user_id=user_id, force_polling=True)
         except Exception as exc:
             print(f"[REScan manual] eroare user {user_id}: {exc}")
         finally:
