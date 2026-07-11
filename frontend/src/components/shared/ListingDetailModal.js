@@ -46,7 +46,12 @@ export default function ListingDetailModal({
   // poze (același id, `images` se schimbă), selecția veche nu mai e în `images` și
   // se cade automat pe prima imagine — fără efect, deci fără set-state-in-effect.
   const [selectedImg, setSelectedImg] = useState(null);
-  const mainImg = (selectedImg && images.includes(selectedImg)) ? selectedImg : (images[0] || null);
+  // Fallback: cand galeria (enrichment) e goala, cade pe thumbnail-ul cardului. Auto expune
+  // `image_url` (coloana din _d); Radar nu are camp separat (foloseste `images`) -> undefined,
+  // deci fallback-ul e no-op pe Radar — fara regresie, se activeaza doar cand galeria e goala.
+  const mainImg = (selectedImg && images.includes(selectedImg))
+    ? selectedImg
+    : (images[0] || listing?.image_url || null);
 
   return (
     <div

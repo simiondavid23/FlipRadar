@@ -118,23 +118,68 @@ def fetch_olx_auto_detail(url: str) -> dict:
 
 
 # ── Mobile.de ────────────────────────────────────────────────────────────────
-# Imagini+descriere: aceeasi logica ca app.services.radar.mobilede_scraper.
-#   fetch_mobilede_listing_details (mobile.de / mobile-static + vip-description-text).
-# NECONFIRMAT LIVE azi (mobile.de e blocat anti-bot fara proxy/Playwright pe HTML public):
-# seller_name/listed_at raman None pana la o verificare directa — nu ghicim selectoare.
+# Detaliu on-demand prin patchright (curl e blocat de Imperva, ca la search). Selectoare
+# CONFIRMATE LIVE 2026-07 pe o pagina reala de detaliu:
+#   - descriere: element cu data-testid ce CONTINE "description" (regex — testid-ul exact e
+#     ofuscat dar contine mereu "description"); ~4700 char "Fahrzeugbeschreibung laut Anbieter".
+#   - galerie: DOAR img.classistatic.de/api/v1/mo-prod/images/... (poze reale), NU
+#     static.classistatic.de/static/... (chrome-ul paginii); variantele de marime au acelasi
+#     UUID cu ?rule=mo-NNN -> dedup pe UUID + cerem varianta mare (?rule=mo-1600).
+#   - seller_name/listed_at: NU apar curat (adresa/Handler-Suche/Erstzulassung nu sunt numele
+#     vanzatorului / data anuntului) -> raman None. Nu ghicim.
+# Lansare identica cu mobile_de_scraper.py::_search_mobile_de_playwright: channel=chrome ->
+# fallback Chromium bundled, headless=False (constrangerea Imperva), context minimal,
+# block-markers -> dict(_EMPTY). Fereastra headed ~5-8s la PRIMA deschidere (rezultat cache-uit).
 def fetch_mobilede_detail(url: str) -> dict:
-    html = _fetch(url, "https://www.mobile.de/")
+    if not url:
+        return dict(_EMPTY)
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:
+        return dict(_EMPTY)
+
+    html = None
+    try:
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(headless=False, channel="chrome")
+            except Exception:
+                browser = p.chromium.launch(headless=False)
+            pw_page = browser.new_context().new_page()
+            try:
+                pw_page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                pw_page.wait_for_timeout(5000)
+                try:
+                    pw_page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    pass
+                if any(m in pw_page.inner_text("body")[:400].lower()
+                       for m in ("access denied", "zugriff verweigert", "captcha")):
+                    return dict(_EMPTY)
+                html = pw_page.content()
+            finally:
+                browser.close()
+    except Exception as exc:
+        print(f"[mobile_de detail] patchright eroare: {exc}")
+        return dict(_EMPTY)
     if not html:
         return dict(_EMPTY)
+
     soup = safe_soup(html)
+    desc_el = (soup.find(attrs={"data-testid": re.compile("description", re.I)})
+               or soup.find(class_=re.compile(r"description|beschreibung", re.I)))
+    description = (desc_el.get_text("\n", strip=True) or None) if desc_el else None
+
     imgs, seen = [], set()
     for img in soup.select("img"):
-        src = img.get("data-src") or img.get("src") or ""
-        if ("mobile.de" in src or "mobile-static" in src) and src not in seen:
-            seen.add(src); imgs.append(src)
-    desc_el = (soup.find(attrs={"data-testid": "vip-description-text"})
-               or soup.find(class_=re.compile(r"description|beschreibung|descriere", re.I)))
-    description = desc_el.get_text("\n", strip=True) or None if desc_el else None
+        src = img.get("src") or img.get("data-src") or ""
+        if "img.classistatic.de" not in src or "/mo-prod/images/" not in src:
+            continue
+        base = src.split("?")[0]              # dedup pe UUID (nu pe varianta de marime)
+        if base in seen:
+            continue
+        seen.add(base)
+        imgs.append(base + "?rule=mo-1600")   # varianta mare
     return {"images": imgs, "description": description, "seller_name": None, "listed_at": None}
 
 

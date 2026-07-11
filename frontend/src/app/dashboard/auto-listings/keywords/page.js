@@ -398,6 +398,11 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
                   Pe mobile.de, marca asta nu e în lista mapată — se va căuta pe toate mărcile.
                 </div>
               )}
+              {platform === "mobile_de" && form.make.trim() === "" && ((form.model || "").trim() || (form.query || "").trim()) && (
+                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                  Fără Marcă, pe mobile.de căutarea acoperă toate mărcile — completează Marca pentru rezultate relevante.
+                </div>
+              )}
             </Field>
             <Field label="Model"><input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="ex: Seria 3" style={inputStyle} /></Field>
             <Field label="Căutare (text liber)"><input value={form.query} onChange={(e) => set({ query: e.target.value })} placeholder="ex: 320d" style={inputStyle} /></Field>

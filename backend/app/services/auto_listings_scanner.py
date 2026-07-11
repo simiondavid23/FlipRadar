@@ -96,7 +96,8 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
         elif platform == "mobile_de":
             from app.scrapers.auto.listings.mobile_de_scraper import search_mobile_de
             return asyncio.run(search_mobile_de(
-                make_id=kw.make or "", filters=filters, page=page))
+                make_id=kw.make or "", model=kw.model or "", query=kw.query or "",
+                filters=filters, page=page))
 
         elif platform == "autoscout24":
             from app.scrapers.auto.listings.autoscout24_scraper import search_autoscout24

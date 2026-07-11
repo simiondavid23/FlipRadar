@@ -1,0 +1,123 @@
+================================================================================
+RP-1 — RAPORT FINAL (necomis; fara git add/commit/push)
+Radar Piata: vanzator + review-uri + data postare + atribute Vinted +
+fix rate-limit Vinted (pagina HTML) + badge "vanzator riscant"
+Data: 2026-07-09
+================================================================================
+
+--------------------------------------------------------------------------------
+1. DECIZIILE DIN FAZA 0 (sonde reale — scripts/diagnostics/rp1_sonda_output.txt)
+--------------------------------------------------------------------------------
+S0 (fara requesturi):
+  - RadarListing(...) la salvare (radar_scanner.py:~1989) mapeaza DEJA seller_name,
+    seller_id, listed_at din dict-ul scraperului. Am adaugat DOAR: seller_reviews,
+    seller_rating, seller_risk, attributes_json.
+  - Conventie datetime: listed_at = datetime NAIV local (consecvent cu OLX
+    _parse_olx_date, Publi24 _parse_date, Vinted datetime.fromtimestamp). found_at
+    ramane aware-UTC (default coloana). Am pastrat naiv peste tot la listed_at.
+
+S1 (Vinted, pagina HTML, RSC __next_f) — structuri EXACTE confirmate + fixture salvat
+  (backend/tests/fixtures/vinted_item_rsc.txt):
+  - user_info_header.data -> feedback_count (=reviews), feedback_reputation (×5 => rating 0-5), name
+  - seller_badges_info.data -> username + badges[{type}]  (ex. ACTIVE_LISTER, SPEEDY_SHIPPING)
+  - attributes.data.attributes[] -> fiecare {code, data:{title, value}} (perechi RO:
+    Brand/Model/Capacitate de stocare/Stare/Blocare SIM/Culoare)
+  - gallery.data.photos[].(full_size_url|url) -> galeria
+  - description.data.description -> descriere (fallback; ld+json e sursa garantata)
+  - ld+json <script> Product -> description/color/brand/itemCondition/image
+  - listed_at = min timestamp (\d{10}) din URL-urile pozelor
+  => feedback_count prezent (1 aparitie) — componenta "feedback Vinted" VALIDA.
+
+S2 (OLX id numeric): id-ul NUMERIC e accesibil in window.__PRERENDERED_STATE__.ads[].id
+  langa url. CALE ALEASA: extrag {token -> id_numeric} in search_olx si apelez
+  /api/v1/offers/{id_numeric}. (Fallback HTML nefolosit — nu a fost necesar.)
+
+S3 (Facebook trust): sesiune valida (facebook_session_13.json), DAR payload-ul de
+  marketplace NU contine campuri rating/recommend/joined/member/follower (0 chei).
+  => FAZA 6 (trust FB) SARITA, conform regulii 3 (structura lipsa). Documentat mai jos.
+
+--------------------------------------------------------------------------------
+2. FISIERE MODIFICATE / CREATE  (git status --porcelain + git diff --stat)
+--------------------------------------------------------------------------------
+Modificate (M):
+  backend/app/models/radar_listing.py          (+7)   4 coloane noi
+  backend/app/routers/radar.py                 (+71)  serializare noua + single-flight vinted-detail
+  backend/app/services/radar/okazii_scraper.py (+88)  _extract_okazii_seller + propagare
+  backend/app/services/radar/olx_scraper.py    (+102) fetch_olx_offer_details + _map_olx_offer + id numeric
+  backend/app/services/radar/publi24_scraper.py(+34)  _parse_valabil_din (M/D/YYYY + AM/PM)
+  backend/app/services/radar/scorer.py         (+69)  compute_seller_risk (table-driven)
+  backend/app/services/radar/vinted_scraper.py (+462) singleton wrapper + search JSON brut +
+                                                      get_vinted_item_detail pe HTML + apply_vinted_detail
+  backend/app/utils/db_migrate.py              (+13)  4 migratii radar_listings
+  backend/app/utils/radar_scanner.py           (+210) enrichment OLX inline + Vinted fundal +
+                                                      backlog OLX + risc la salvare
+  frontend/src/app/dashboard/radar/page.js     (+38)  filtru "Ascunde riscanti" + sortare data postarii
+  frontend/src/components/shared/ListingDetailModal.js (+52) rating/risc + tabel "Detalii articol"
+  frontend/src/components/shared/ListingFeedCard.js    (+28) linie vanzator + badge risc
+  frontend/src/components/shared/listingHelpers.js     (+16) sellerRatingLabel
+  (13 fisiere, +1057 / -133)
+
+Create (??):
+  backend/app/services/radar/vinted_html.py            (modul reutilizabil: sesiune chrome131 +
+                                                        limiter domeniu + decode_next_f + fetch_item_page)
+  backend/tests/fixtures/{vinted_item_rsc.txt, okazii_info_seller.html,
+                          publi24_valabil.html, olx_offer.json}
+  backend/tests/test_radar_{vinted_rsc,okazii_seller,publi24_date,olx_mapper,seller_risk}.py
+  scripts/diagnostics/{rp1_sonda.py, rp1_sonda_output.txt, rp1_verify.py, rp1_raport.txt}
+
+NEATINSE (in afara scope): backend/app/scrapers/marketplace/* (setul duplicat) — 0 modificari.
+
+--------------------------------------------------------------------------------
+3. VERIFICARE (scripts/diagnostics/rp1_verify.py) — 5 requesturi HTTP (<=12) + PYTEST
+--------------------------------------------------------------------------------
+VINTED (live): search_vinted -> 96 rezultate, fiecare cu seller_name + listed_at (din search).
+  Enrichment on-demand (pagina HTML) pentru un iPhone 12 Pro Max real:
+    seller_reviews=0 · seller_rating=0.0 · listed_at=2023-03-23
+    attributes={Brand:Apple, Model:iPhone 12 Pro Max, Capacitate de stocare:256 MB,
+                Stare:Bună, Blocare SIM:Deblocat, Culoare:Gri Negru}
+    => RISC: True | "Cont Vinted fără review-uri"
+OLX (live minimal): 52 id-uri numerice extrase; /api/v1/offers -> seller_name="Mădă'",
+    member_since=2017, seller_id, listed_at=2026-06-16 => RISC: False (cont vechi).
+OKAZII (fixture): seller="Service Boutique SRL", reviews=6382, rating=4.8 (96%), tip=companie.
+PUBLI24 (fixture): listed_at=2026-07-09 19:14:42 (M/D + PM corect); nume vanzator indisponibil
+    public => RISC: True | "Vânzător necunoscut + preț mult sub valoarea de revânzare".
+
+PYTEST (backend/tests): 42 passed (14 existente + 28 noi RP-1), 0 esecuri.
+  - test_radar_vinted_rsc: feedback/reputation/atribute/galerie/descriere pe fixture
+  - test_radar_okazii_seller: nume/id/rating(procent->0-5)/reviews/tip
+  - test_radar_publi24_date: M/D + AM/PM (inclusiv 12 AM->00, 12 PM->12, PM->+12, absent->None)
+  - test_radar_olx_mapper: seller/member_since/listed_at naiv/descriere fara HTML
+  - test_radar_seller_risk: table-driven pe toate regulile (vinted/okazii/olx/generic)
+Migratii: run_migrations() aplica cele 4 coloane pe DB-ul de test (verificat: True).
+Frontend: eslint pe cele 4 fisiere -> 0 erori (doar warning-uri pre-existente img/hooks).
+
+--------------------------------------------------------------------------------
+4. PROBLEME / DECIZII DE SCOPE (STOP-uri si abateri, cu motivul)
+--------------------------------------------------------------------------------
+a) FAZA 6 (Facebook trust) SARITA — S3 nu a gasit niciun camp de trust in payload-ul
+   de marketplace deja folosit (0 chei rating/recommend/joined/member/follower). Conform
+   regulii 3, nu am inventat extractoare pe structuri nedovedite.
+
+b) Verificarea NU apeleaza integral search_okazii/publi24/olx: fiecare imbogateste INTERN
+   o pagina intreaga (zeci de fetch-uri de detaliu), ceea ce ar sparge plafonul de <=12
+   requesturi. De aceea okazii/publi24 sunt verificate pe fixture (parserele sunt testate),
+   iar OLX printr-o cale live minimala (1 pagina search + 1 offers). Pipeline-ul complet
+   ruleaza normal in scanner (unde traficul e reglat de plafoanele per-ciclu).
+
+c) Backlog OLX: id-ul numeric necesar pentru /api/v1/offers e PERSISTAT in attributes_json
+   (olx_numeric_id) la salvare, ca backlog-ul (max 5/ciclu) sa poata reimbogati rowuri
+   OLX fara seller_name in ciclurile urmatoare, fara a re-descarca pagina de search.
+
+d) exclude_description_words nu se mai aplica la Vinted in search (payload-ul de search NU
+   contine descriere — dovedit RP-DIAG). Nu e regresie: si inainte campul era gol la search.
+   Filtrarea pe descriere ramane disponibila la enrichment.
+
+e) seller_risk pentru Vinted la SALVARE se calculeaza cu reviews/rating=None (inca
+   ne-imbogatite) -> se RECALCULEAZA la enrichment-ul in fundal / on-demand (apply_vinted_detail),
+   cand feedback_count/reputation sosesc. Comportament intentionat (regula RP-1 FAZA 7).
+
+Plafoane enrichment per ciclu de scan (radar_scanner): OLX inline 15, OLX backlog 5,
+Vinted fundal 15. Limiter Vinted >=6s + jitter (vinted_html). Resetate la fiecare run.
+
+NU S-A COMIS NIMIC. Commit-ul ramane responsabilitatea utilizatorului, dupa verificare.
+================================================================================

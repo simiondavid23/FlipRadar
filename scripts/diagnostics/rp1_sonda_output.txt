@@ -1,0 +1,88 @@
+RP-1 FAZA 0 — sonde de structura
+timestamp: 2026-07-09 22:08:05
+NOTA: fisier NECOMIS. Fara git add/commit/push.
+
+==============================================================================
+===S0===  Maparea RadarListing + conventia datetime (fara requesturi)
+==============================================================================
+--- constructia RadarListing(...) la salvare (radar_scanner.py) ---
+  1989:                     listing_db = RadarListing(
+  1990:                         user_id=user.id,
+  1991:                         keyword_id=kw.id,
+  1992:                         external_id=ext_id,
+  1993:                         platform=platform,
+  1994:                         title=listing.get("title", "")[:500],
+  1995:                         price=float(listing.get("price") or 0),
+  1996:                         currency=listing.get("currency") or "RON",
+  1997:                         condition=listing.get("condition"),
+  1998:                         location=listing.get("location"),
+  1999:                         url=listing.get("url", ""),
+  2000:                         images=json.dumps(listing.get("images") or [], ensure_ascii=False),
+  2001:                         description=listing.get("description"),
+  2002:                         seller_name=listing.get("seller_name"),
+  2003:                         seller_id=listing.get("seller_id"),
+  2004:                         score=score_data["score"],
+  2005:                         margin_pct=score_data["margin_pct"],
+  2006:                         status="active",
+  2007:                         ai_review=None,
+  2008:                         listed_at=listing.get("listed_at"),
+  2009:                     )
+chei listing.get(...) copiate azi in RadarListing: ['condition', 'currency', 'description', 'external_id', 'listed_at', 'location', 'price', 'seller_id', 'seller_name', 'title', 'url']
+  'seller_name' deja persistat azi: True
+  'seller_id' deja persistat azi: True
+  'listed_at' deja persistat azi: True
+  'attributes_json' deja persistat azi: False
+  'seller_reviews' deja persistat azi: False
+  'seller_rating' deja persistat azi: False
+  'seller_risk' deja persistat azi: False
+--- conventia datetime pentru listed_at (scrapere existente) ---
+  app/services/radar/vinted_scraper.py: fromtimestamp=True · tz-aware(utc)=False
+  app/services/radar/olx_scraper.py: fromtimestamp=False · tz-aware(utc)=False
+  app/services/radar/publi24_scraper.py: fromtimestamp=False · tz-aware(utc)=False
+model radar_listing: found_at=aware UTC (default), listed_at=DateTime naiv (coloana fara tz)
+DECIZIE S0: listed_at = datetime NAIV local (consecvent cu OLX/_parse_olx_date, Publi24/_parse_date, Vinted/datetime.fromtimestamp). seller_name/seller_id/listed_at SUNT deja mapate la salvare; adaug DOAR attributes_json/seller_reviews/seller_rating/seller_risk.
+
+==============================================================================
+===S1===  Vinted item: decodare RSC __next_f + cai exacte
+==============================================================================
+item ales: id= 9362166726 url= https://www.vinted.ro/items/9362166726-etui-case-iphone-1212-pro-magsafe-szklo-hartowane title= Etui case iPhone 12/12 Pro Magsafe szkło hartowane
+search: user.login= karolo9696 user.id= 3147263915 photo.high_resolution.timestamp= 1783623411
+item page HTTP: 200 len: 2341908
+chunks __next_f[1,...]: 143; decoded len: 2024598
+fixture salvat: C:\licenta\flipRadar\backend\tests\fixtures\vinted_item_rsc.txt
+aparitii 'feedback_count' in RSC decodat: 1
+  [±800 'feedback_count' @ 1988645]:
+   sures":[]},{"name":"ask_seller","type":"ask_seller","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"can_buy":true,"instant_buy":true,"is_closed":false,"is_hidden":false,"is_reserved":false,"reservation":null},"exposure":null,"exposures":[]},{"name":"buy","type":"buy","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"closet_countdown_end_date":null,"is_sticky":false},"exposure":null,"exposures":[]},{"name":"seller_badges_info","type":"seller_badges_info","section":"sidebar","data":{"username":"karolo9696","badges":[{"type":"ACTIVE_LISTER"},{"type":"SPEEDY_SHIPPING"}]},"exposure":null,"exposures":[]},{"name":"user_info_header","type":"user_info_header","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"name":"karolo9696","feedback_count":48,"feedback_reputation":1,"photo":null,"badges":[],"user_info":[{"icon":"Clock16","text":"Ultima conectare acum 44 minute","key":"last-logged-in"}],"follow_action_visible":false,"business":false,"is_favourite":false},"exposure":null,"exposures":[]},{"name":"shipping","type":"shipping","section":"sidebar","data":{"item_id":9362166726},"exposure":null,"exposures":[]},{"name":"legal_info","type":"legal_info","section":"sidebar","data":{"item_id":9362166726},"exposure":null,"exposures":[]},{"name":"offline_verification_availability","type":"offline_verification_availability","section":"sidebar","data":{"item_id":9362166726},"exposure":null,"exposures":[]},{"name":"electronics_verification_availability","type":"electronics_verification_availability","section":"sidebar","data":{"item_id":9362
+  [±400 'feedback_reputation' @ 1988665]:
+   posure":null,"exposures":[]},{"name":"seller_badges_info","type":"seller_badges_info","section":"sidebar","data":{"username":"karolo9696","badges":[{"type":"ACTIVE_LISTER"},{"type":"SPEEDY_SHIPPING"}]},"exposure":null,"exposures":[]},{"name":"user_info_header","type":"user_info_header","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"name":"karolo9696","feedback_count":48,"feedback_reputation":1,"photo":null,"badges":[],"user_info":[{"icon":"Clock16","text":"Ultima conectare acum 44 minute","key":"last-logged-in"}],"follow_action_visible":false,"business":false,"is_favourite":false},"exposure":null,"exposures":[]},{"name":"shipping","type":"shipping","section":"sidebar","data":{"item_id":9362166726},"exposure":null,"exposures":[]},{"name":"legal_info","type":"legal_info","section":"si
+  [±800 'seller_badges_info' @ 1988303]:
+   ious":false,"full_size_url":"https://images1.vinted.net/tc/02_01507_mexLL9wwfyPTKcqx4VLBpVtU/1783623411.webp?s=2eb7ce2521895c04112fbbf89514bb85e0e247f7","is_hidden":false,"extra":{}}],"price":{"amount":"36.87","currency_code":"RON"},"offer_price":null,"closet_countdown_end_date":null,"business":false,"is_sticky":false},"exposure":null,"exposures":[]},{"name":"ask_seller","type":"ask_seller","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"can_buy":true,"instant_buy":true,"is_closed":false,"is_hidden":false,"is_reserved":false,"reservation":null},"exposure":null,"exposures":[]},{"name":"buy","type":"buy","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"closet_countdown_end_date":null,"is_sticky":false},"exposure":null,"exposures":[]},{"name":"seller_badges_info","type":"seller_badges_info","section":"sidebar","data":{"username":"karolo9696","badges":[{"type":"ACTIVE_LISTER"},{"type":"SPEEDY_SHIPPING"}]},"exposure":null,"exposures":[]},{"name":"user_info_header","type":"user_info_header","section":"sidebar","data":{"item_id":9362166726,"seller_id":3147263915,"name":"karolo9696","feedback_count":48,"feedback_reputation":1,"photo":null,"badges":[],"user_info":[{"icon":"Clock16","text":"Ultima conectare acum 44 minute","key":"last-logged-in"}],"follow_action_visible":false,"business":false,"is_favourite":false},"exposure":null,"exposures":[]},{"name":"shipping","type":"shipping","section":"sidebar","data":{"item_id":9362166726},"exposure":null,"exposures":[]},{"name":"legal_info","type":"legal_info","section":"sidebar","data":{"item_id":9362166726},
+  'Sănătatea bateriei': 0 aparitii
+  'Capacitate de stocare': 0 aparitii
+  [±700 '"photos"' @ 1882212]:
+   x32"}]\ncb:["$","link","45",{"rel":"icon","href":"https://marketplace-web-assets.vinted.com/_next/static/media/favicon-16x16.0dj6ypo__ktdq.png","type":"image/png","sizes":"16x16"}]\ncc:["$","$Lcd","46",{}]\nb8:["$","$Lce",null,{"wrapperComponent":"$1","catalogTree":"$af:props:catalogTree"}]\nae:["$","div",null,{"className":"l-header__logo","children":["$","$Lab",null,{"title":"Sigla Vinted","aria-label":"Sigla Vinted","children":["$","div",null,{"className":"u-ui-padding-left-small","children":"$Lcf"}]}]}]\n6d:["$","$Ld0",null,{"forceDesktop":"$undefined","children":["$","$Ld1",null,{"data":{"name":"gallery","type":"gallery","section":"content","data":{"item_id":9362166726,"seller_id":3147263915,"photos":[{"id":39629183088,"image_no":1,"width":600,"height":800,"dominant_color":"#807B76","dominant_color_opaque":"#D9D7D6","url":"https://images1.vinted.net/t/05_01d4d_PAaWwq13CqK94WBy51fMho4L/f800/1783623411.webp?s=8fb3e489deacca67ed37b77b22f3a9d7c5f7b7ea","is_main":true,"thumbnails":[{"type":"thumb70x100","url":"https://images1.vinted.net/t/05_01d4d_PAaWwq13CqK94WBy51fMho4L/70x100/1783623411.webp?s=9f7878f21e1919b24687ac7bc136de0c70451cb4","width":70,"height":100,"original_size":null},{"type":"thumb150x210","url":"https://images1.vinted.net/t/05_01d4d_PAaWwq13CqK94WBy51fMho4L/150x210/1783623411.webp?s=fd9d55c37e645a4f679c9c2f957b9280361e1bca","width":150,"height":210,"original_size":null},{"ty
+  [±900 '"attributes"' @ 1981148]:
+   ,"seller_id":3147263915,"is_draft":false,"is_reserved":false,"is_hidden":false,"is_closed":false,"item_closing_action":null,"stats_visible":false,"item_alert":null,"is_processing":false,"promoted":false,"transaction_permitted":true},"exposure":null,"exposures":[]},{"name":"summary","type":"summary","section":"sidebar","data":{"item_id":9362166726,"lines":[{"max_lines":4,"elements":[{"type":"text","value":"Etui case iPhone 12/12 Pro Magsafe szkło hartowane","style":"title"}]},{"max_lines":4,"elements":[{"type":"text","value":"Nou fără etichetă","style":"body"},{"type":"navigational","value":"ETUI","uri":"vintedfr://items?brand_id=289980&order=relevance&search_start_type=item_page_summary_brand&portal=fr","url":"/brand/289980-etui","id":289980,"code":"summary_brand","style":"body"},{"type":"text","value":"Încărcat acum 11 minute","style":"body"}]}]},"exposure":null,"exposures":[]},{"name":"attributes","type":"attributes","section":"sidebar","data":{"attributes":[{"type":"favouritable","code":"brand","data":{"title":"Brand","value":"ETUI","id":289980,"url":"/brand/289980-etui","uri":"/brand/289980-etui","is_favourite":false}},{"type":"faq","code":"status","data":{"title":"Stare","value":"Nou fără etichetă","id":50}},{"type":"text","code":"color","data":{"title":"Culoare","value":"Alb"}},{"type":"text","code":"upload_date","data":{"title":"Încărcat","value":"acum 11 minute"}}],"item_id":9362166726,"section_title":"Detalii","is_expanded":false,"primary_attributes_count":3},"exposure":null,"exposures":[]},{"name":"description","type":"description","section":"sidebar","data":{"section_title":"Descriere","description":"Etui case iPhone 12 12 Pro magnetyczne","item_id":9362166726,"localization":"none","is_localized":false,"max_lines":4,"is_expanded":false},"exposure":null,"exposures":[]},{"
+--- ld+json Product (din HTML) ---
+  {"@type":"Product","name":"Etui case iPhone 12/12 Pro Magsafe szkło hartowane","description":"Etui case iPhone 12 12 Pro magnetyczne","image":"https://images1.vinted.net/t/05_01d4d_PAaWwq13CqK94WBy51fMho4L/f800/1783623411.webp?s=8fb3e489deacca67ed37b77b22f3a9d7c5f7b7ea","brand":{"@type":"Brand","name":"ETUI"},"offers":{"@type":"Offer","url":"https://www.vinted.ro/items/9362166726-etui-case-iphone-1212-pro-magsafe-szklo-hartowane","priceCurrency":"RON","price":36.87,"availability":"InStock","itemCondition":"NewCondition"},"category":"Electronice Carcase pentru telefoane mobile","color":"Alb","@context":"https://schema.org"}
+
+==============================================================================
+===S2===  OLX id numeric din __PRERENDERED_STATE__
+==============================================================================
+OLX search HTTP: 200
+anunturi in state: 52; maparea id_numeric -> url pentru 3 carduri:
+  id_numeric=305812078 · external_id_token=kH9GS · url=https://www.olx.ro/d/oferta/iphone-13-pro-max-256gb-blue-garantie-12-luni-amanet
+  id_numeric=301674580 · external_id_token=kpNl2 · url=https://www.olx.ro/d/oferta/iphone-17-pro-max-256gb-orange-varianta-e-sim-sanata
+  id_numeric=306348422 · external_id_token=kJpdA · url=https://www.olx.ro/d/oferta/iphone-12-pro-128-gb-IDkJpdA.html
+DECIZIE S2: id numeric ACCESIBIL din __PRERENDERED_STATE__.ads[].id -> folosesc /api/v1/offers/{id}
+
+==============================================================================
+===S3===  Facebook payload: campuri de trust (doar daca sesiune valida)
+==============================================================================
+sesiuni FB valide: 1 (basenames: ['facebook_session_13.json'] )
+obiecte listing gasite: 31
+chei trust in obiectele listing: NICIUNA
+chei trust (regex pe HTML, top): NICIUNA
+S3 REZULTAT: niciun camp de trust in payload-ul folosit -> FAZA 6 se sare
+
+[RP-1 FAZA 0 terminat]

@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\licenta\flipradar\scripts\diagnostics\olx_rating_sonda.py", line 43, in <module>
+    from curl_cffi import requests as curl_requests
+ModuleNotFoundError: No module named 'curl_cffi'

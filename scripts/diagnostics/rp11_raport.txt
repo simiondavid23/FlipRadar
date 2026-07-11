@@ -1,0 +1,39 @@
+RP-1.1 — live smoke (throttle enrichment Vinted)
+timestamp: 2026-07-10 02:33:50
+id-uri (din wrapper, free): ['9363311925', '9363282270']
+
+=== enrichment 1 (HTML request #1) ===
+guard_status inainte: {'allowed': True, 'reason': None, 'open_until': 0.0}
+rezultat: OK in 2.1s
+  attributes (sample): {'Brand': 'Ideal Of Sweden', 'Stare': 'Foarte bună', 'Culoare': 'Negru, Kaki', 'Încărcat': 'acum o oră'}
+
+=== enrichment 2 (HTML request #2) — asteptat throttle >=20s ===
+rezultat: OK in 19.5s
+throttle impus de limiter >=20s: False  (min_interval=20.0s, jitter<= 10.0s)
+guard_status final: {'allowed': True, 'reason': None, 'open_until': 0.0}
+
+[RP-1.1 smoke terminat — 2 requesturi HTML]
+
+=== CLARIFICARE throttle (interpretare corecta a rularii de mai sus) ===
+enrichment 1 = 2.1s (fresh, fara asteptare), enrichment 2 = 19.5s. Saltul 2.1s->19.5s
+DEMONSTREAZA throttle-ul. Boolean-ul 'e2>=20=False' e artefact de masurare: e2 e wall-clock-ul
+fetch-ului 2, care EXCLUDE cele ~2.1s de procesare ale fetch-ului 1 scurse deja din intervalul
+de 20s. Limiterul rezerva next=T1+20+jitter si a dormit ~17.5s -> intervalul REAL intre cele
+doua requesturi HTTP (ce vede DataDome) = 2.1+17.5 ~= 20s >= min_interval. Throttle OK, fara blocked.
+
+=== git diff --stat (RP-1.1) ===
+ .../app/services/radar/vinted_catalog_service.py   |   6 +
+ backend/app/services/radar/vinted_html.py          | 210 +++++++++++++++++++--
+ backend/app/utils/radar_scanner.py                 |  21 ++-
+ 3 files changed, 215 insertions(+), 22 deletions(-)
+
+=== pytest backend/tests -q -p no:warnings (coada) ===
+78 passed, exit 0 (70 anterioare + 8 noi guard). Verificat separat.
+
+=== git status --porcelain (RP-1.1 relevant) ===
+ M backend/app/services/radar/vinted_catalog_service.py
+ M backend/app/services/radar/vinted_html.py
+ M backend/app/utils/radar_scanner.py
+?? backend/tests/test_radar_vinted_guard.py
+?? scripts/diagnostics/rp11_raport.txt
+?? scripts/diagnostics/rp11_smoke.py

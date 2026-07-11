@@ -285,12 +285,24 @@ def _search_mobile_de_playwright(url: str, page: int) -> list:
         log_manager.emit("auto_listings", "ERR",
             f"Mobile.de patchright init: {str(exc)[:100]}")
 
-    log_manager.emit("auto_listings", "OK",
-        f"Mobile.de: {len(results)} rezultate pagina {page}")
+    # OK-ul se emite in search_mobile_de (dupa post-filtrul de relevanta model/query).
     return results[:MAX_LISTINGS]
 
 
-async def search_mobile_de(make_id: str = "", filters: dict = {}, page: int = 1) -> list:
+def _relevant_title(title: str, model: str, query: str) -> bool:
+    """Plasa de siguranta de relevanta: titlul normalizat contine TOATE tokenurile din `model`
+    SI din `query`. Normalizare pe ambele parti: lowercase, virgula->punct, spatii colapsate
+    (deci '1,6 TDI' din anunt trece pentru query '1.6 TDI'). model+query goale -> True.
+    """
+    def _norm(s):
+        return re.sub(r"\s+", " ", (s or "").lower().replace(",", ".")).strip()
+    t = _norm(title)
+    tokens = _norm(model).split() + _norm(query).split()
+    return all(tok in t for tok in tokens)
+
+
+async def search_mobile_de(make_id: str = "", model: str = "", query: str = "",
+                           filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     # Permite trimiterea numelui marcii in loc de ID (ex: "BMW"/"vw"). Rezolvare pura cu aliase.
     if make_id and not make_id.isdigit():
@@ -301,13 +313,18 @@ async def search_mobile_de(make_id: str = "", filters: dict = {}, page: int = 1)
         make_id = resolved
 
     params = _build_params(make_id, filters, page)
+    # Model -> modelDescription (confirmat live 2026-07: 24/24 titluri contineau 'Passat').
+    # Restrange la modelul cerut inainte de fetch; plasa de siguranta ramane post-filtrul.
+    if model:
+        params["makeModelVariant1.modelDescription"] = model
     # doseq=True: "ft" poate fi lista (query_repeat) -> ft=PETROL&ft=DIESEL; string-urile
     # raman intregi (doseq NU itereaza str-uri, doar liste/tuple).
     url = _SEARCH_URL + "?" + urllib.parse.urlencode(params, doseq=True)
     log_manager.emit("auto_listings", "SCAN",
-        f"Mobile.de: cautare make_id={make_id or '-'} pagina {page}")
+        f"Mobile.de: cautare make_id={make_id or '-'} model='{model or '-'}' pagina {page}")
 
-    # 1) curl_cffi cu chrome124 + headere complete (rapid). Daca trece, gata.
+    # 1) curl_cffi cu chrome124 + headere complete (rapid). 2) fallback patchright.
+    results = []
     headers = {**MOBILE_DE_HEADERS, "Referer": "https://www.mobile.de/"}
     proxy_cfg = get_proxy_config()
     req_kwargs = {"params": params, "headers": headers, "impersonate": "chrome124", "timeout": 20}
@@ -318,17 +335,19 @@ async def search_mobile_de(make_id: str = "", filters: dict = {}, page: int = 1)
         async with AsyncSession() as session:
             resp = await session.get(_SEARCH_URL, **req_kwargs)
         if resp.status_code == 200:
-            results = _parse_mobilede_html(resp.text)
-            if results:
-                log_manager.emit("auto_listings", "OK",
-                    f"Mobile.de (headers): {len(results)} rezultate pagina {page}")
-                return results
-            # HTTP 200 dar fara carduri = pagina-challenge JS → fallback Playwright.
+            results = _parse_mobilede_html(resp.text)   # gol daca e pagina-challenge -> fallback
         else:
-            print(f"[mobile_de] curl HTTP {resp.status_code} → fallback Playwright")
+            print(f"[mobile_de] curl HTTP {resp.status_code} → fallback patchright")
     except Exception as exc:
-        print(f"[mobile_de] curl error: {exc} → fallback Playwright")
+        print(f"[mobile_de] curl error: {exc} → fallback patchright")
+    if not results:
+        # Rulat intr-un thread ca sync_playwright sa nu intre in conflict cu event loop-ul asyncio.
+        results = await asyncio.to_thread(_search_mobile_de_playwright, url, page)
 
-    # 2) Fallback Playwright (executa JS). Ruleaza intr-un thread ca sync_playwright
-    # sa nu intre in conflict cu event loop-ul asyncio al apelantului.
-    return await asyncio.to_thread(_search_mobile_de_playwright, url, page)
+    # 3) Post-filtru de relevanta pe titlu (model + query) — plasa de siguranta, indiferent daca
+    # mobile.de a onorat modelDescription; feed-ul nu mai contine alte modele ale marcii.
+    relevant = [r for r in results if _relevant_title(r.get("titlu") or "", model, query)]
+    log_manager.emit("auto_listings", "OK",
+        f"Mobile.de: {len(results)} rezultate pagina {page} "
+        f"({len(relevant)} relevante dupa filtrul model/query)")
+    return relevant

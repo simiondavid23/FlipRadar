@@ -1,0 +1,413 @@
+RP-DIAG — diagnostic read-only Radar Piata
+timestamp: 2026-07-09 21:09:04
+repo_root: C:\licenta\flipRadar
+NOTA: fisier NECOMIS. Fara git add/commit/push. Fara cookie-uri/tokeni in output.
+
+==============================================================================
+===D0===  vinted-scraper: versiune, API, mecanism de sesiune
+==============================================================================
+dir(vinted_scraper) public: ['AsyncVintedScraper', 'AsyncVintedWrapper', 'VintedScraper', 'VintedWrapper', 'models', 'utils']
+versiune (pip 'vinted-scraper'): 3.1.1
+VintedWrapper prezent: True
+VintedWrapper metode publice: ['config', 'cookie_names', 'curl', 'fetch_cookie', 'item', 'refresh_cookie', 'search', 'session_cookie', 'user_agent']
+VintedScraper metode publice: ['config', 'cookie_names', 'curl', 'fetch_cookie', 'item', 'refresh_cookie', 'search', 'session_cookie', 'user_agent']
+sursa VintedWrapper: C:\licenta\flipRadar\backend\venv\Lib\site-packages\vinted_scraper\_wrapper.py
+  -- camp _client (httpx.Client) + __post_init__ (creeaza client + fetch cookie 1x) (_wrapper.py:36-51) --
+    36:     _client: httpx.Client = field(init=False, repr=False)
+    37: 
+    38:     def __post_init__(self) -> None:
+    39:         """Initialize VintedWrapper after dataclass initialization.
+    40: 
+    41:         Validates the base URL, sets up user agent, initializes httpx client,
+    42:         and fetches session cookies if not provided.
+    43: 
+    44:         Raises:
+    45:             RuntimeError: If the base URL is invalid.
+    46:         """
+    47:         httpx_config = self._validate_and_init()
+    48:         self._client = httpx.Client(**httpx_config)
+    49:         if self.session_cookie is None:
+    50:             self.session_cookie = self.refresh_cookie()
+    51: 
+  -- curl(): reutilizeaza self._client + self.session_cookie la fiecare apel (_wrapper.py:173-190) --
+    173:         headers = self._build_curl_headers()
+    174:         self._log_curl_request(endpoint, headers, params)
+    175: 
+    176:         response = self._client.get(endpoint, headers=headers, params=params)
+    177: 
+    178:         self._log_curl_response(
+    179:             endpoint, response.status_code, response.headers, response.text
+    180:         )
+    181: 
+    182:         if response.status_code == HTTP_OK:
+    183:             return self._handle_curl_response(response, endpoint)
+    184: 
+    185:         if response.status_code == HTTP_UNAUTHORIZED and _retries < DEFAULT_RETRIES:
+    186:             self._log_cookie_retry(response.status_code)
+    187:             self.session_cookie = self.refresh_cookie()
+    188:             return self.curl(endpoint, params, _retries=_retries + 1)
+    189: 
+    190:         self._raise_curl_error(endpoint, response.status_code)
+VERDICT D0: OK — VintedWrapper exista (JSON brut); sesiune = httpx.Client la wrapper._client + cookie dict la wrapper.session_cookie, fetch 1x in __post_init__, reutilizat la toate apelurile (401 -> auto-refresh). Reutilizabila/accesibila DA.
+
+==============================================================================
+===D1===  Vinted: JSON brut de cautare
+==============================================================================
+  construct VintedWrapper attempt 1/2 esuat: Cannot fetch session cookie from https://www.vinted.ro, because of status code: 406different from 200.
+top-level keys (search raw): ['items', 'search_tracking_params', 'pagination', 'code']
+nr items: 24
+chei complete PRIM item: ['id', 'title', 'price', 'is_visible', 'brand_title', 'path', 'user', 'conversion', 'url', 'promoted', 'photos', 'photo', 'favourite_count', 'is_favourite', 'service_fee', 'total_item_price', 'show_1st_time_seller_discount', 'view_count', 'size_title', 'content_source', 'status', 'item_box', 'search_tracking_params']
+--- item[0] ---
+  id: 9361761602
+  title: Iphone 12 ProMax
+  price (struct completa): {
+  "amount": "1100.0",
+  "currency_code": "RON"
+}
+  url: https://www.vinted.ro/items/9361761602-iphone-12-promax
+  user (complet, scrubbed): {
+  "id": 3159799594,
+  "login": "iruyry",
+  "profile_url": "https://www.vinted.ro/member/3159799594-iruyry",
+  "photo": null,
+  "business": false
+}
+  photo keys: ['id', 'image_no', 'width', 'height', 'dominant_color', 'dominant_color_opaque', 'url', 'is_main', 'thumbnails', 'high_resolution', 'is_suspicious', 'full_size_url', 'is_hidden', 'extra']
+  photo.high_resolution (integral): {
+  "id": "06_01fb5_YrPfqh1R6gHukkFThhiCXb9X",
+  "timestamp": 1783620366,
+  "orientation": null
+}
+  brand_title: Apple
+  status: Foarte bună
+--- item[1] ---
+  id: 9361771979
+  title: Etui na telefon iphone 12 pro
+  price (struct completa): {
+  "amount": "14.75",
+  "currency_code": "RON"
+}
+  url: https://www.vinted.ro/items/9361771979-etui-na-telefon-iphone-12-pro
+  user keys: ['id', 'login', 'profile_url', 'photo', 'business']
+  user.login: jolantyna3
+  photo keys: ['id', 'image_no', 'width', 'height', 'dominant_color', 'dominant_color_opaque', 'url', 'is_main', 'thumbnails', 'high_resolution', 'is_suspicious', 'full_size_url', 'is_hidden', 'extra']
+  photo.high_resolution (integral): {
+  "id": "03_016c9_hkxF1hKJTfsECEkkb4bAquM5",
+  "timestamp": 1783620442,
+  "orientation": null
+}
+  brand_title: Amazon
+  status: Foarte bună
+--- item[2] ---
+  id: 9361658510
+  title: Zestaw
+  price (struct completa): {
+  "amount": "73.77",
+  "currency_code": "RON"
+}
+  url: https://www.vinted.ro/items/9361658510-zestaw
+  user keys: ['id', 'login', 'profile_url', 'photo', 'business']
+  user.login: dmytrot64
+  photo keys: ['id', 'image_no', 'width', 'height', 'dominant_color', 'dominant_color_opaque', 'url', 'is_main', 'thumbnails', 'high_resolution', 'is_suspicious', 'full_size_url', 'is_hidden', 'extra']
+  photo.high_resolution (integral): {
+  "id": "01_00510_WHFaQN2taydu5fCVPWJL5Rwg",
+  "timestamp": 1783619603,
+  "orientation": null
+}
+  brand_title: Accessories
+  status: Foarte bună
+VERDICT D1: OK — user.login in search=True; photo.high_resolution.timestamp in search=True; description in search=False
+
+==============================================================================
+===D2===  Vinted: JSON brut de detaliu (item)
+==============================================================================
+D2 EXCEPTIE: Traceback (most recent call last):
+  File "C:\licenta\flipRadar\scripts\diagnostics\rp_diag.py", line 274, in <module>
+    raw2 = VW.item(str(PHONE_ID))
+  File "C:\licenta\flipRadar\backend\venv\Lib\site-packages\vinted_scraper\_wrapper.py", line 150, in item
+    return self.curl(self._item_endpoint(item_id), params=params)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\licenta\flipRadar\backend\venv\Lib\site-packages\vinted_scraper\_wrapper.py", line 190, in curl
+    self._raise_curl_error(endpoint, response.status_code)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\licenta\flipRadar\backend\venv\Lib\site-packages\vinted_scraper\_base_wrapper.py", line 212, in _raise_curl_error
+    raise RuntimeError(
+        f"Cannot perform API call to endpoint {endpoint}, error code: {status_code}"
+    )
+RuntimeError: Cannot perform API call to endpoint /api/v2/items/9361761602/details, error code: 403
+
+VERDICT D2: FAIL — eroare item Vinted: Cannot perform API call to endpoint /api/v2/items/9361761602/details, error code: 403
+
+==============================================================================
+===D3===  Vinted: reutilizarea sesiunii (sanity rate-limit)
+==============================================================================
+item(9361771979): ESEC — RuntimeError: Cannot perform API call to endpoint /api/v2/items/9361771979/details, error code: 403
+item(9361658510): ESEC — RuntimeError: Cannot perform API call to endpoint /api/v2/items/9361658510/details, error code: 403
+VERDICT D3: FAIL — 1/3 detail-uri consecutive pe aceeasi sesiune reusite; 403/429 intalnit=True
+
+==============================================================================
+===D4===  Vinted: arborele de cataloage
+==============================================================================
+endpoint /api/v2/catalogs esuat: Cannot perform API call to endpoint /api/v2/catalogs, error code: 404
+homepage contine marker '"catalogs":[': False
+VERDICT D4: FAIL — nu am obtinut lista de cataloage (sursa=homepage embedded)
+
+==============================================================================
+===D5===  OLX: vanzator + data exacta
+==============================================================================
+search HTTP: 200
+primul anunt (regex /d/oferta/): https://www.olx.ro/d/oferta/autorizatia-taxi-cluj-IDgKsZR.html
+primul ad id numeric (state): 306490159
+--- 5a API /api/v1/offers/{id} ---
+API HTTP: 200 | content-type: application/json; charset=utf-8
+API top keys: ['data', 'links']
+API data keys: ['id', 'url', 'title', 'last_refresh_time', 'created_time', 'valid_to_time', 'pushup_time', 'description', 'promotion', 'params', 'key_params', 'business', 'user', 'status', 'contact', 'map', 'location', 'photos', 'partner', 'category', 'delivery', 'safedeal', 'shop', 'isGpsrAvailable', 'offer_type', 'protect_phone']
+API data.user (scrubbed): {
+  "id": 280047905,
+  "name": "Ștefan M.",
+  "created": "2019-11-23T18:17:19+02:00",
+  "about": "",
+  "seller_type": null,
+  "company_name": ""
+}
+API data.created_time: 2026-07-07T12:08:09+03:00
+API data.last_refresh_time: 2026-07-07T12:11:10+03:00
+API data.pushup_time: None
+--- 5b HTML detaliu ---
+detail HTTP: 200
+[data-testid="user-profile-user-name"]: Ștefan M.
+text 'Pe OLX din': Pe OLX din
+[data-cy="ad-posted-at"]: Postat 07 iulie 2026
+ld+json (doar campuri vanzator/data):
+   ld.offers: {
+  "@type": "Offer",
+  "availability": "https://schema.org/InStock",
+  "areaServed": {
+    "@type": "City",
+    "name": "Galati"
+  },
+  "priceCurrency": "RON",
+  "price": 5800,
+  "itemCondition": "https://schema.org/NewCondition"
+}
+VERDICT D5: OK — sursa recomandata=API; API user fields=['id', 'name', 'created', 'about', 'seller_type', 'company_name']; HTML fields=['user-profile-user-name', 'Pe OLX din', 'ad-posted-at']
+
+==============================================================================
+===D6===  Okazii: vanzator + calificative + data
+==============================================================================
+search url: https://www.okazii.ro/cautare/iphone+12+pro.html
+nr carduri: 36
+primul anunt: https://www.okazii.ro/banda-cu-conector-incarcare-microfon-apple-iphone-12-pro-max-argintiu-a263573020
+seller container outerHTML[:2500]:
+<div class="F-Block d-inline d-inline-block">
+<h3 class="footer-h3">Vinde</h3>
+<ul class="list-unstyled">
+<li><a href="https://www.okazii.ro/vanzari-online" title="Okazii Marketplace Romania">Okazii Marketplace Romania</a></li>
+<li><a href="http://ajutor.okazii.ro/vanzare/punerea-in-vanzare" title="Invata cum sa vinzi">Invata cum sa vinzi</a></li>
+<li><a href="https://www.okazii.ro/vinde/" title="Vinde acum">Vinde acum</a></li>
+<li><a href="https://www.okazii.ro/createshop/" title="Deschide-ti magazin">Deschide-ti magazin</a></li>
+<li><a href="http://ajutor.okazii.ro/calificativele/calculul-si-simbolurile-calificativelor" title="Sistemul de calificative">Sistemul de calificative</a></li>
+<li><a href="http://ajutor.okazii.ro/vanzare/vanzatori-premium" title="Vanzatori Premium">Vanzatori Premium</a></li>
+<li><a href="http://bit.ly/1JsMY34" title="Adauga anunt auto gratuit">Adauga anunt auto gratuit</a></li>
+</ul>
+</div>
+'calificativ': Sistemul de calificative | parent tag/clasa: a None
+VERDICT D6: OK — seller_selector=a[href*="http://ajutor.okazii"]; calificativ_selector=a.; data publica=False
+
+==============================================================================
+===D7===  Publi24: vanzator pe pagina de detaliu
+==============================================================================
+search url: https://www.publi24.ro/anunturi/?q=iphone%2012%20pro
+nr carduri: 22
+primul anunt (ne-promovat): https://www.publi24.ro/anunturi/electronice/telefoane-mobile/iphone/anunt/iphone-12-pro-max-impecabil/i4g022d5ge377093dd98eeddi07f0i79.html
+seller zona outerHTML[:2000]:
+<div class="row">
+<div class="small-12 columns content-data">
+<div class="detail-left radius">
+<script>
+                        var imageList = [];
+                        var maxImgHeight = 0;
+                        var ImgHeightFinal = 0;
+                        var maxImgHeightImgWidth = 0;
+                        var standardHeight = 0;
+                        var procentaj = 0;
+
+                            
+                            if (750 > maxImgHeight)
+                            {
+                                maxImgHeight = 750;
+                                maxImgHeightImgWidth = 1000;
+                            }
+
+                            imageList.push({ src: 'https://s3.publi24.ro/vertical-ro-f646bd5a/extralarge/20251009/0714/1b46de26ebb0ba670f9b2d122d7bc187.webp', w: 1000, h: 750 });
+                            
+                            
+                            if (1333 > maxImgHeight)
+                            {
+                                maxImgHeight = 1333;
+                                maxImgHeightImgWidth = 1000;
+                            }
+
+                            imageList.push({ src: 'https://s3.publi24.ro/vertical-ro-f646bd5a/extralarge/20251009/0714/9f7eba30e7da5fd416e907933e775da2.webp', w: 1000, h: 1333 });
+                            
+                            
+                            if (1333 > maxImgHeight)
+                            {
+                                maxImgHeight = 1333;
+                                maxImgHeightImgWidth = 1000;
+                            }
+
+                            imageList.push({ src: 'https://s3.publi24.ro/vertical-ro-f646bd5a/extralarge/20251009/0714/7944d06c5299a1c8e06230def7689a47.webp', w: 1000, h: 1333 });
+                            
+                            
+                            if (1333 > maxImgHeight)
+                            {
+                                maxImgHeight = 1333;
+             
+'Membru din': ABSENT
+tip cont (Persoana fizica/Firma): var txtSavedToFavorites = "Șterge de la favorite"; var txtAddToFavorites = "Salv
+data 'Valabil': Valabil din 7/9/2026 7:14:42 PM | ctx: Valabil din 7/9/2026 7:14:42 PM
+data 'Data': (function() { var host = window.location.hostname; var element = document.createElement('script'); v | ctx: (function() { var host = window.location.hostname; var element = document.createElement('script'); var firstScript = document.getElementsByTagName('sc
+VERDICT D7: OK — seller_selector=div.row; 'Membru din' exista=False
+
+==============================================================================
+===D8===  Facebook Marketplace: vizibilitate vanzator (doar daca sesiune activa)
+==============================================================================
+fisiere sesiune candidate (basenames): []
+nr sesiuni valide: 0
+VERDICT D8: SKIP — sesiune Facebook inactiva/expirata (niciun storage_state valid) -> nu deschid Marketplace
+
+==============================================================================
+===D9===  Puncte de integrare in codul LOCAL (fara modificari)
+==============================================================================
+[1] get_vinted_item_detail (definitie + 15 linii):
+   grep 904: def get_vinted_item_detail(item_id: str) -> Optional[dict]:
+  app/services/radar/vinted_scraper.py :: def get_vinted_item_detail @ linia 904
+  904: def get_vinted_item_detail(item_id: str) -> Optional[dict]:
+  905:     """Aduce detaliul complet al unui articol Vinted (poze toate,
+  906:     descriere completă, timestamp exact) prin VintedScraper.item().
+  907:     Returnează None la orice eroare (403/404/etc) — apelantul trebuie
+  908:     sa trateze None ca 'nu am putut îmbogăți, păstrează ce am'."""
+  909:     try:
+  910:         from vinted_scraper import VintedScraper
+  911:         scraper = VintedScraper("https://www.vinted.ro")
+  912:         item = scraper.item(item_id)
+  913:         if not item:
+  914:             return None
+  915:         photos = getattr(item, "photos", None) or []
+  916:         image_urls = []
+  917:         timestamps = []
+  918:         for p in photos:
+[2] fetch_okazii_listing_details (definitie + apeluri + context 5 linii):
+   grep 133: def fetch_okazii_listing_details(url: str) -> dict:
+   grep 280: details = fetch_okazii_listing_details(item["url"])
+   -- context apel @ 280 --
+  278:             time.sleep(random.uniform(0.5, 1.0))
+  279:         try:
+  280:             details = fetch_okazii_listing_details(item["url"])
+  281:             if details.get("images"):
+  282:                 item["images"] = details["images"]
+  283:             if details.get("description"):
+[3] fetch_publi24_listing_details (definitie + apeluri + context 5 linii):
+   grep 191: def fetch_publi24_listing_details(url: str) -> dict:
+   grep 357: details = fetch_publi24_listing_details(item["url"])
+   -- context apel @ 357 --
+  355:             time.sleep(random.uniform(0.5, 1.0))
+  356:         try:
+  357:             details = fetch_publi24_listing_details(item["url"])
+  358:             if details.get("images"):
+  359:                 item["images"] = details["images"]
+  360:             if details.get("description"):
+[4] _fetch_detail_image (grep + 10 linii context la apel):
+   grep 237: def _fetch_detail_image(url: str) -> Optional[str]:
+   grep 264: print(f"[OlxScraper] _fetch_detail_image error: {exc}")
+   grep 460: image_url = _fetch_detail_image(href)
+   -- context apel @ 264 --
+  259:                 src = img.get("src") or img.get("data-src") or img.get("data-lazy") or ""
+  260:                 if src.startswith("http") and "olxcdn" in src:
+  261:                     return src
+  262:         return None
+  263:     except Exception as exc:
+  264:         print(f"[OlxScraper] _fetch_detail_image error: {exc}")
+  265:         return None
+  266: 
+  267: 
+  268: def _extract_olx_categories(html: str) -> dict:
+  269:     """Extrage {href_id -> category_id} din window.__PRERENDERED_STATE__ (Apollo).
+   -- context apel @ 460 --
+  455:                     if image_url and image_url.startswith("data:"):
+  456:                         image_url = None
+  457:                 # MODULE 3c — daca thumbnail-ul lipseste, ia prima imagine din pagina de detalii
+  458:                 if not image_url:
+  459:                     time.sleep(random.uniform(0.3, 0.7))  # small delay to avoid hammering
+  460:                     image_url = _fetch_detail_image(href)
+  461:                 images = [image_url] if image_url else []
+  462: 
+  463:                 cond_tag = card.find(attrs={"data-testid": "ad-state"})
+  464:                 cond = _normalize_condition(cond_tag.get_text(" ", strip=True)) if cond_tag else None
+  465:                 if condition == "new" and cond != "nou":
+[5] is_excluded (functia integrala din base_scraper.py):
+  83: def is_excluded(title: str, exclude_words: list[str]) -> bool:
+  84:     """True daca titlul contine vreun cuvant din lista (case-insensitive)."""
+  85:     if not exclude_words:
+  86:         return False
+  87:     if not title:
+  88:         return False
+  89:     title_low = title.lower()
+  90:     for w in exclude_words:
+  91:         w = (w or "").strip().lower()
+  92:         if w and w in title_low:
+  93:             return True
+  94:     return False
+[6] git status --porcelain + git log --oneline -3 (READ-ONLY):
+  git status --porcelain:
+    M frontend/src/components/Sidebar.js
+   ?? docs/PURGE_ISTORIC_GIT.md
+   ?? docs/raport_AN1_idor.md
+   ?? scripts/diagnostics/rp_diag.py
+   ?? scripts/diagnostics/rp_diag_output.txt
+  git log --oneline -3:
+   ccbf10a Fundatie de teste: pytest + PostgreSQL de test izolata cu guard-uri anti-baza-reala, 14 teste de caracterizare, CI pe GitHub Actions (backend+frontend), scriptul manual de scrapers mutat in scripts/
+   7bee303 Fixuri stabilizare (lot 1 bug hunt): banner erori pe paginile de date, price_history in tracked-products, filtru User.is_active pe scanerele programate, scor neutru pe vanzari + medie pe tip la Imobiliare, fara cai absolute in API, fb_diagnostic fara DSN implicit, cutoff naiv-UTC pe fereastra FB
+   1b5093a Frontend: banner de erori pe feed-uri, fix galerie modal, lazy loading, reparatii react-hooks; mutare rapoarte QA in docs/
+VERDICT D9: OK — puncte de integrare localizate; git status/log capturate (read-only)
+
+==============================================================================
+===REZUMAT===  Tabel de verdicte
+==============================================================================
+| Pas | Verdict (OK/FAIL/SKIP) | Concluzie intr-o linie |
+|-----|------------------------|------------------------|
+| D0  | OK                     | VintedWrapper exista (JSON brut); sesiune = httpx.Client la wrapper._client + cookie dict la wrapper.session_c |
+| D1  | OK                     | user.login in search=True; photo.high_resolution.timestamp in search=True; description in search=False |
+| D2  | FAIL                   | eroare item Vinted: Cannot perform API call to endpoint /api/v2/items/9361761602/details, error code: 403 |
+| D3  | FAIL                   | 1/3 detail-uri consecutive pe aceeasi sesiune reusite; 403/429 intalnit=True |
+| D4  | FAIL                   | nu am obtinut lista de cataloage (sursa=homepage embedded) |
+| D5  | OK                     | sursa recomandata=API; API user fields=['id', 'name', 'created', 'about', 'seller_type', 'company_name']; HTML |
+| D6  | OK                     | seller_selector=a[href*="http://ajutor.okazii"]; calificativ_selector=a.; data publica=False |
+| D7  | OK                     | seller_selector=div.row; 'Membru din' exista=False |
+| D8  | SKIP                   | sesiune Facebook inactiva/expirata (niciun storage_state valid) -> nu deschid Marketplace |
+| D9  | OK                     | puncte de integrare localizate; git status/log capturate (read-only) |
+
+[RP-DIAG terminat]
+
+##############################################################################
+=== SUPLIMENTAR (probe tintit, sesiune Vinted NOUA) ===
+timestamp: 2026-07-09 21:14:26
+Motiv: D4 (catalog) a esuat cu cele 2 surse prescrise; D2/D3 (detaliu item)
+au dat 403 pe sesiune reutilizata. Verific: (a) endpointul canonic de catalog
+/api/v2/catalog/initializers; (b) daca o sesiune NOUA trece de 403 la detaliu.
+##############################################################################
+--- D4b: GET /api/v2/catalog/initializers ---
+initializers esuat: Cannot perform API call to endpoint /api/v2/catalog/initializers, error code: 404
+VERDICT D4b: FAIL — /api/v2/catalog/initializers esuat: Cannot perform API call to endpoint /api/v2/catalog/initializers, error code: 404
+--- D2b: item detail cu sesiune NOUA (verific daca trece de 403) ---
+id telefon pentru detaliu: 9361761602
+detaliu cu sesiune noua: ESEC — RuntimeError: Cannot perform API call to endpoint /api/v2/items/9361761602/details, error code: 403
+VERDICT D2b: FAIL — si sesiunea NOUA da eroare la detaliu (Cannot perform API call to endpoint /api/v2/items/9361761602/details, ) -> endpoint blocat pe IP/geo (datacenter), nu doar rate-limit de sesiune
+
+### TABEL SUPLIMENTAR
+| Pas | Verdict | Concluzie |
+|-----|---------|-----------|
+| D4b | FAIL | /api/v2/catalog/initializers esuat: Cannot perform API call to endpoint /api/v2/catalog/initializers, error co |
+| D2b | FAIL | si sesiunea NOUA da eroare la detaliu (Cannot perform API call to endpoint /api/v2/items/9361761602/details, ) |
+[RP-DIAG d4b terminat]
