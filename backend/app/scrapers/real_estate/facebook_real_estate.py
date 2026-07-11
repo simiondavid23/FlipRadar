@@ -127,7 +127,9 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
                                 location = line
                         if not title:
                             continue
-                        if filters.get("price_max") and price and price > float(filters["price_max"]):
+                        # Scannerul trimite cheia "pret_max" (nu "price_max"); acceptam ambele.
+                        pmax = filters.get("pret_max") or filters.get("price_max")
+                        if pmax and price and price > float(pmax):
                             continue
 
                         img_el = it.query_selector("img")

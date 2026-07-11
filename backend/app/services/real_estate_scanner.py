@@ -5,6 +5,7 @@ clasele distincte RealEstateMonitorKeyword / RealEstateMonitorListing, ca sa nu
 existe coliziune cu modelul existent RealEstateListing (tabel real_estate_listing).
 """
 import re
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -36,7 +37,69 @@ def _is_groq_enabled(db: Session, user_id: int) -> bool:
         return True
 
 
-def _call_scraper(kw: RealEstateKeyword) -> list:
+def _seed_from_raw(raw: dict) -> dict:
+    """Mapeaza cheile emise de scrapere intr-un seed canonic (scraper > regex/Groq).
+
+    Scraperele .ro (make_re_listing) emit chei romanesti (titlu/descriere/camere/
+    suprafata_mp/etaj/moneda/locatie_oras/tip_proprietate), iar scraperul Facebook emite
+    variante englezesti (title/description/price/currency/location). Citim cu fallback, in
+    ordinea data, ca sa nu mai pierdem campurile structurate (bug: scannerul citea doar
+    cheile EN si re-ghicea camerele/suprafata din regex, iar moneda din raw["currency"]
+    inexistent => RON salvat ca EUR). Valorile None/"" raman None. `price` -> float daca se
+    poate, altfel None. Returneaza un dict cu exact cheile de mai jos.
+    """
+    def pick(*keys):
+        # primul din chei cu valoare ne-goala (None/"" sar), altfel None
+        for k in keys:
+            v = raw.get(k)
+            if v not in (None, ""):
+                return v
+        return None
+
+    price = pick("price", "pret")
+    try:
+        price = float(price) if price is not None else None
+    except (TypeError, ValueError):
+        price = None
+
+    return {
+        "title":         pick("title", "titlu"),
+        "description":   pick("description", "descriere"),
+        "rooms":         pick("camere"),
+        "area_sqm":      pick("suprafata_mp"),
+        "floor":         pick("etaj"),
+        "price":         price,
+        "currency":      pick("currency", "moneda"),
+        "property_type": pick("property_type", "tip_proprietate"),
+        "zone_hint":     pick("location", "zone", "locatie_oras"),
+    }
+
+
+def _matches_query_local(text: str, query: Optional[str]) -> bool:
+    """True daca `text` contine toti termenii din `query` (cautare libera locala).
+
+    Semantica: query gol/None => True. Query se sparge pe virgule in termeni; fiecare termen
+    (strip + lower + diacritice normalizate NFKD->ascii) trebuie sa apara ca substring in
+    textul normalizat identic (AND intre termeni). Text None tratat ca "". Folosit pentru
+    platformele care NU pot cauta liber la sursa (Storia, Imobiliare.ro, Grupuri FB); pe OLX
+    si Facebook Marketplace query-ul merge la sursa, deci nu se aplica local.
+    """
+    if not query or not str(query).strip():
+        return True
+
+    def _norm(s):
+        n = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode()
+        return n.lower()
+
+    hay = _norm(text)
+    for term in str(query).split(","):
+        t = _norm(term).strip()
+        if t and t not in hay:
+            return False
+    return True
+
+
+def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None) -> list:
     import asyncio
     platform = kw.platform
     # Cheile TREBUIE sa fie cele CITITE de scrapere (tip_anunt/tip_proprietate/pret_*/
@@ -51,17 +114,30 @@ def _call_scraper(kw: RealEstateKeyword) -> list:
         "camere_min": kw.rooms,
         "suprafata_min": kw.area_min,
         "suprafata_max": kw.area_max,
-        "locatie": kw.zone or kw.city,
+        # Locatia trimisa la sursa e INTOTDEAUNA orasul (path/slug de oras confirmat live).
+        # Zona (cartier) NU se mai suprapune peste oras — ramane criteriu LOCAL, verificat in
+        # _matches_re_keyword (zone vs zone_normalized). Inainte "kw.zone or kw.city" trimitea
+        # zona ca locatie => Storia cadea pe toata-romania, Imobiliare.ro primea path invalid,
+        # OLX cauta textul zonei la nivel national.
+        "locatie": kw.city,
         "query": kw.query,
     }
     filters = {k: v for k, v in filters.items() if v is not None}
 
+    # OLX: categoria e servita PRE-CONVERTITA in EUR (fara carduri RON in SSR; sonda
+    # 2026-07-11), iar filtrul de pret opereaza pe valoarea EUR afisata. Daca keyword-ul e in
+    # RON, convertim marginile de pret in EUR inainte de a le trimite; altfel filtrul ar taia
+    # dupa cifre RON pe preturi EUR. Fara curs (eur_ron None) lasam valorile neconvertite —
+    # post-filtrul cu eur_ron=None ramane tolerant.
+    if platform == "olx" and (kw.price_currency or "EUR").upper() == "RON" and eur_ron and eur_ron > 0:
+        for _k in ("pret_min", "pret_max"):
+            if filters.get(_k) is not None:
+                filters[_k] = int(round(float(filters[_k]) / eur_ron))
+
     try:
         if platform == "olx":
-            # search_olx_real_estate(filters) — NU primeste query; il punem in filters.
+            # query e deja in filters (search_olx_real_estate il transforma in segment q-).
             from app.scrapers.real_estate.olx_real_estate import search_olx_real_estate
-            if kw.query:
-                filters["query"] = kw.query
             return asyncio.run(search_olx_real_estate(filters=filters))
         elif platform == "storia":
             from app.scrapers.real_estate.storia_scraper import search_storia
@@ -82,10 +158,13 @@ def _call_scraper(kw: RealEstateKeyword) -> list:
 
 def _save_listing(db: Session, kw: RealEstateKeyword,
                   raw: dict, groq_enabled: bool,
-                  custom_aliases: dict) -> Optional[RealEstateListing]:
+                  custom_aliases: dict,
+                  eur_ron: Optional[float] = None) -> tuple:
+    """Salveaza un anunt de platforma. Intoarce (listing | None, motiv) cu motiv in
+    {"nou","duplicat","respins","invalid"} — scanner-ul numara dupa motiv."""
     ext_id = str(raw.get("external_id") or raw.get("platform_id") or "")
     if not ext_id:
-        return None
+        return None, "invalid"
 
     existing = db.query(RealEstateListing).filter(
         RealEstateListing.user_id == kw.user_id,
@@ -93,8 +172,10 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         RealEstateListing.external_id == ext_id,
     ).first()
 
-    title = raw.get("title") or raw.get("titlu") or ""
-    desc  = raw.get("description") or ""
+    # Seed structurat din scraper (precedenta: scraper > regex/Groq).
+    seed = _seed_from_raw(raw)
+    title = seed["title"] or ""
+    desc  = seed["description"] or ""
     text  = f"{title} {desc}"
 
     if existing:
@@ -127,25 +208,36 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
                         f"Preț scăzut {drop*100:.0f}%: {title[:60]}")
         existing.last_checked_at = datetime.now(timezone.utc)
         db.commit()
-        return None  # not new
+        return None, "duplicat"  # deja existent (nu e nou)
 
-    # Extract structured data
+    # Extract structured data (regex/Groq), apoi suprascriem cu seed-ul scraperului.
     extracted = extract_all(text)
-    if not extracted.get("price"):
-        price_raw = raw.get("price") or raw.get("pret")
-        if price_raw:
-            try:
-                extracted["price"] = float(price_raw)
-                extracted["currency"] = raw.get("currency", "EUR")
-            except Exception:
-                pass
+
+    # Overlay: campurile structurate din scraper au precedenta peste regex.
+    for _k in ("rooms", "area_sqm", "floor"):
+        if seed[_k] is not None:
+            extracted[_k] = seed[_k]
+    # Pret: daca regex-ul n-a prins pretul, foloseste-l pe cel din scraper (cu moneda lui).
+    # FIX: inainte se citea raw.get("currency") inexistent la scraperele .ro => RON salvat ca EUR.
+    if extracted.get("price") is None and seed["price"] is not None:
+        extracted["price"] = seed["price"]
+        extracted["currency"] = seed["currency"] or "EUR"
+    # Recalculeaza pretul pe mp dupa orice suprascriere.
+    _p, _a = extracted.get("price"), extracted.get("area_sqm")
+    extracted["price_per_sqm"] = (round(_p / _a, 2) if _p and _a and _a > 0 else None)
 
     extracted = groq_extract(text, extracted, groq_enabled)
 
-    # Zone normalization
-    zone_raw = (extracted.get("zone_raw") or raw.get("location")
-                or raw.get("zone") or "")
+    # Zone normalization — text-first (zone_raw), cu fallback pe seed-ul structurat.
+    zone_raw = (extracted.get("zone_raw") or seed["zone_hint"] or "")
     zone_norm = normalize_zone(zone_raw, kw.city, custom_aliases)
+
+    # Filtru criterii pe listingul de platforma (inainte se aplica DOAR la Grupuri FB):
+    # zona normalizata e injectata pentru comparatie; monedele diferite se normalizeaza cu
+    # eur_ron in _matches_re_keyword.
+    extracted["zone_normalized"] = zone_norm
+    if not _matches_re_keyword(extracted, kw, eur_ron):
+        return None, "respins"
 
     # Scoring
     zone_avg = get_zone_avg_ppm(
@@ -170,7 +262,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         price           = price,
         currency        = currency,
         price_per_sqm   = extracted.get("price_per_sqm"),
-        property_type   = raw.get("property_type") or kw.property_type,
+        property_type   = seed["property_type"] or kw.property_type,
         rooms           = extracted.get("rooms"),
         area_sqm        = extracted.get("area_sqm"),
         floor           = extracted.get("floor"),
@@ -193,7 +285,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     db.commit()
     db.refresh(listing)
 
-    return listing
+    return listing, "nou"
 
 
 def _parse_floor(val) -> Optional[int]:
@@ -214,28 +306,46 @@ def _parse_floor(val) -> Optional[int]:
     return None
 
 
-def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword) -> bool:
+def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
+                        eur_ron: Optional[float] = None) -> bool:
     """True daca valorile extrase NU contrazic criteriile keyword-ului.
 
     TOLERANTA: un criteriu setat pe kw dar cu valoare extrasa necunoscuta (None) e tratat
     ca "nu se poate verifica" -> NU respinge. Respinge DOAR cand ambele valori exista si se
     contrazic clar. `property_type`, `tip_anunt` si `city` nu sunt produse de extractor, deci
     nu pot fi verificate din text (raman necontrolate).
+
+    Pret: cand monedele coincid, comparatie directa (comportamentul de dinainte). Cand DIFERA
+    si `eur_ron` e dat (>0), ambele parti se normalizeaza in EUR (valoare_ron / eur_ron)
+    inainte de comparatie. Cand difera si eur_ron e None -> tolerant (nu respinge).
     """
-    # Pret — doar cand monedele coincid (altfel comparatia numerica ar fi eronata).
+    # Pret.
     price = extracted.get("price")
     if price is not None:
         ext_cur = (extracted.get("currency") or "EUR").upper()
         kw_cur = (kw.price_currency or "EUR").upper()
-        if ext_cur == kw_cur:
-            try:
-                p = float(price)
+        try:
+            p = float(price)
+            if ext_cur == kw_cur:
                 if kw.price_min is not None and p < float(kw.price_min):
                     return False
                 if kw.price_max is not None and p > float(kw.price_max):
                     return False
-            except (TypeError, ValueError):
-                pass
+            elif eur_ron and eur_ron > 0:
+                # normalizeaza AMBELE parti in EUR si compara
+                p_eur = p / eur_ron if ext_cur == "RON" else p
+                kmin = kmax = None
+                if kw.price_min is not None:
+                    kmin = float(kw.price_min) / eur_ron if kw_cur == "RON" else float(kw.price_min)
+                if kw.price_max is not None:
+                    kmax = float(kw.price_max) / eur_ron if kw_cur == "RON" else float(kw.price_max)
+                if kmin is not None and p_eur < kmin:
+                    return False
+                if kmax is not None and p_eur > kmax:
+                    return False
+            # else: monede diferite fara curs -> tolerant, nu respinge.
+        except (TypeError, ValueError):
+            pass
 
     # Camere — kw.rooms e MINIM (la fel ca filtrul trimis scraperelor: camere_min).
     rooms = extracted.get("rooms")
@@ -283,7 +393,8 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword) -> bool:
 
 def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
                         groq_enabled: bool,
-                        custom_aliases: dict) -> Optional[RealEstateListing]:
+                        custom_aliases: dict,
+                        eur_ron: Optional[float] = None) -> Optional[RealEstateListing]:
     """Convert facebook_group_post -> real_estate_listing pentru un keyword anume.
 
     FIX confiscare: postarea se salveaza DOAR daca datele extrase se POTRIVESC criteriilor
@@ -313,13 +424,19 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     extracted = extract_all(text)
     extracted = groq_extract(text, extracted, groq_enabled)
 
+    # Query (cautare libera) local — Grupurile FB nu se cauta la sursa; daca postarea nu
+    # contine termenii din kw.query, nu o asociem acestui keyword.
+    if kw.query and not _matches_query_local(text, kw.query):
+        return None
+
     zone_raw = extracted.get("zone_raw") or post.get("zona") or ""
     zone_norm = normalize_zone(zone_raw, kw.city, custom_aliases)
 
     # Filtru criterii — postarea se asociaza cu acest keyword DOAR daca valorile extrase
-    # nu contrazic criteriile lui (zona normalizata e injectata pentru comparatie).
+    # nu contrazic criteriile lui (zona normalizata e injectata pentru comparatie; monedele
+    # diferite se normalizeaza cu eur_ron).
     extracted["zone_normalized"] = zone_norm
-    if not _matches_re_keyword(extracted, kw):
+    if not _matches_re_keyword(extracted, kw, eur_ron):
         return None
 
     price = extracted.get("price") or (float(post.get("pret") or 0) or None)
@@ -374,6 +491,15 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
     log_manager.emit("real_estate", "SCAN",
         f"Imobiliare scan: {len(keywords)} keyword-uri active")
 
+    # Curs BNR EUR/RON, O SINGURA DATA pe scan — normalizeaza monedele la filtrarea de pret
+    # (post-filtru) si converteste marginile de pret OLX (categoria e servita in EUR). Daca nu
+    # se poate obtine, ramane None => comparatiile pe monede diferite devin tolerante.
+    try:
+        from app.services.bnr_exchange import get_eur_ron
+        eur_ron = get_eur_ron()
+    except Exception:
+        eur_ron = None
+
     for kw in keywords:
         if not _within_hours(kw):
             log_manager.emit("real_estate", "INFO",
@@ -395,9 +521,9 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
         log_manager.emit("real_estate", "SCAN",
             f"Keyword {kw.name!r} · {kw.platform}")
 
-        new_count = 0
         if kw.platform == "facebook_groups":
             # Pull unread posts from facebook_group_posts table
+            new_count = 0
             try:
                 from app.models.facebook_group_post import FacebookGroupPost
                 from app.models.facebook_group_config import FacebookGroupConfig
@@ -417,23 +543,38 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None) -> None:
                         post_dict = {c.name: getattr(post, c.name)
                                      for c in post.__table__.columns}
                         saved = _save_fb_group_post(
-                            db, post_dict, kw, groq_enabled, custom_aliases)
+                            db, post_dict, kw, groq_enabled, custom_aliases, eur_ron)
                         if saved:
                             new_count += 1
                             _notify_re(saved, kw, settings, db)
             except Exception as exc:
                 log_manager.emit("real_estate", "ERR",
                     f"FB Groups ingest: {str(exc)[:80]}")
+            log_manager.emit("real_estate", "OK",
+                f"{kw.platform}: {new_count} anunțuri noi")
         else:
-            results = _call_scraper(kw)
+            results = _call_scraper(kw, eur_ron)
+            total_brute = len(results)
+            noi = dup = rej = 0
             for r in results:
-                saved = _save_listing(db, kw, r, groq_enabled, custom_aliases)
-                if saved:
-                    new_count += 1
+                # Query (cautare libera) local DOAR pentru platformele care nu cauta la sursa
+                # (Storia, Imobiliare.ro). Pe OLX/Facebook Marketplace query-ul merge la sursa.
+                if kw.platform in ("storia", "imobiliare_ro") and kw.query:
+                    seed = _seed_from_raw(r)
+                    text_q = f"{seed['title'] or ''} {seed['description'] or ''}"
+                    if not _matches_query_local(text_q, kw.query):
+                        rej += 1
+                        continue
+                saved, motiv = _save_listing(db, kw, r, groq_enabled, custom_aliases, eur_ron)
+                if motiv == "nou":
+                    noi += 1
                     _notify_re(saved, kw, settings, db)
-
-        log_manager.emit("real_estate", "OK",
-            f"{kw.platform}: {new_count} anunțuri noi")
+                elif motiv == "duplicat":
+                    dup += 1
+                elif motiv == "respins":
+                    rej += 1
+            log_manager.emit("real_estate", "OK",
+                f"{kw.platform}: {total_brute} brute -> {noi} noi, {dup} duplicate, {rej} respinse")
 
 
 def _notify_re(listing: RealEstateListing, kw: RealEstateKeyword,

@@ -14,6 +14,11 @@ Surse marcate per camp:
   - lipsa / "query"       : params[param] = valoare (mapata prin "values" daca exista).
   - "custom"              : aplicat IN SCRAPER (format special: path/array), apply_re_filters il
                             SARE. Vezi scraperul respectiv.
+
+NOTA OLX Imobiliare: categoria e servita PRE-CONVERTITA in EUR (zero carduri RON in SSR;
+preturile in lei apar convertite in EUR, cu zecimale — sonda 2026-07-11). Nu exista param de
+moneda utilizabil (currency= ignorat, search[currency]= da 404), iar filtrul de pret
+search[filter_float_price:*] opereaza pe valoarea EUR afisata.
 """
 
 RE_TECHNICAL_FIELDS = {
@@ -38,11 +43,16 @@ RE_TECHNICAL_FIELDS = {
     "olx_real_estate": {
         "price_min": {"confirmed": True, "param": "search[filter_float_price:from]"},  # confirmat live
         "price_max": {"confirmed": True, "param": "search[filter_float_price:to]"},     # confirmat live
-        # CORECTIE dupa verificare live 2026-07-05: rooms NU merge ca query param
-        # search[filter_enum_rooms][0]=two (returneaza pagina JS fara carduri SSR -> 0 rezultate,
-        # cauza reala a filtrului "mort" din scraperul vechi). Merge ca PATH /{N}-camere/
-        # (N=1..4, /4-camere/ = 4+; match EXACT). Aplicat IN SCRAPER (olx_real_estate) -> custom.
-        "rooms_min": {"confirmed": True, "param": "/{n}-camere/", "style": "custom"},
+        # Oras ca PATH /{oras-slug}/ — confirmat live 2026-07-11 (sonda T3 bucuresti / T4
+        # cluj-napoca / T5 +filter_float_price / T8 +q-text: filtreaza corect si coexista cu
+        # pretul si cu q-text). Aplicat IN SCRAPER (olx_real_estate._olx_build_url) -> custom
+        # (apply_re_filters il sare); citit de UI pentru hint-ul "filtre la sursa".
+        "city": {"confirmed": True, "param": "/{oras-slug}/", "style": "custom"},
+        # Camere: path-ul /{N}-camere/ E confirmat live ca functional (2026-07-05), DAR face
+        # match EXACT pe N. Semantica produsului e MINIM N, deci in IM-1 e DECONECTAT intentionat
+        # de la sursa si filtrat LOCAL (post-filtrul scannerului). confirmed:True inseamna
+        # "conectat in scraper" (si asa e citit de UI pt hint), deci valoarea corecta e False.
+        "rooms_min": {"confirmed": False, "param": "/{n}-camere/", "style": "custom"},
         # sister-docs (pyolx), neverificate direct pe olx.ro/imobiliare azi:
         "area_min": {"confirmed": False, "param": "search[filter_float_m:from]"},
         "area_max": {"confirmed": False, "param": "search[filter_float_m:to]"},

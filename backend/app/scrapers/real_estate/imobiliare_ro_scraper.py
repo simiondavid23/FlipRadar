@@ -82,6 +82,14 @@ def _passes_imob_filters(listing: dict, filters: dict) -> bool:
                 return False
         except (TypeError, ValueError):
             pass
+    # Suprafata — suprafata_max = maxim (aceeasi toleranta la valori lipsa).
+    amax = filters.get("suprafata_max")
+    if area is not None and amax is not None:
+        try:
+            if float(area) > float(amax):
+                return False
+        except (TypeError, ValueError):
+            pass
     return True
 
 
