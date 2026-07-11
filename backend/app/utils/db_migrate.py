@@ -803,6 +803,11 @@ def run_migrations():
             "ALTER TABLE real_estate_keywords "
             "ADD COLUMN IF NOT EXISTS exclude_words JSON")
 
+        # IM-7: data postarii pe platforma (OLX + FB Groups; NULL cand sursa nu o expune).
+        _migrate(conn, "add_re_listing_listed_at",
+            "ALTER TABLE real_estate_listings "
+            "ADD COLUMN IF NOT EXISTS listed_at TIMESTAMP")
+
     _backfill_product_sources()
 
 

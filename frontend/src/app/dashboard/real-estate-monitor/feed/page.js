@@ -103,6 +103,7 @@ export default function REFeedPage() {
   const displayedListings = useMemo(() => {
     if (!sortBy) return listings;
     const priceRon = (l) => (l.price == null ? null : l.price * (l.currency === "EUR" ? eurRonOf(l) : 1));
+    const ts = (l) => (l.listed_at ? new Date(l.listed_at).getTime() : null);
     const nullsLast = (av, bv, cmp) => {
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
@@ -110,10 +111,11 @@ export default function REFeedPage() {
       return cmp(av, bv);
     };
     return [...listings].sort((a, b) => {
-      if (sortBy === "price_asc")  return nullsLast(priceRon(a), priceRon(b), (x, y) => x - y);
-      if (sortBy === "price_desc") return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
-      if (sortBy === "ppm_asc")    return nullsLast(a.price_per_sqm, b.price_per_sqm, (x, y) => x - y);
-      if (sortBy === "score_desc") return nullsLast(a.score, b.score, (x, y) => y - x);
+      if (sortBy === "price_asc")   return nullsLast(priceRon(a), priceRon(b), (x, y) => x - y);
+      if (sortBy === "price_desc")  return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
+      if (sortBy === "ppm_asc")     return nullsLast(a.price_per_sqm, b.price_per_sqm, (x, y) => x - y);
+      if (sortBy === "score_desc")  return nullsLast(a.score, b.score, (x, y) => y - x);
+      if (sortBy === "listed_desc") return nullsLast(ts(a), ts(b), (x, y) => y - x);
       return 0;
     });
   }, [listings, sortBy]);
@@ -269,6 +271,7 @@ export default function REFeedPage() {
           <option value="price_desc">Preț descrescător</option>
           <option value="ppm_asc">Preț/mp crescător</option>
           <option value="score_desc">Scor descrescător</option>
+          <option value="listed_desc">Data postării (recente)</option>
         </select>
 
         <SelectFiniteControl
@@ -436,6 +439,7 @@ function RESpecs({ listing, size = "0.7rem", mt }) {
       {rooms && <div>{rooms}</div>}
       {locLine && <div style={{ color: "var(--text-muted)" }}>{locLine}</div>}
       {listing.price_per_sqm && <div>{Number(listing.price_per_sqm).toFixed(1)} {listing.currency}/mp</div>}
+      {listing.listed_at && <div style={{ color: "var(--text-muted)" }}>Postat: {new Date(listing.listed_at).toLocaleDateString("ro-RO")}</div>}
     </div>
   );
 }

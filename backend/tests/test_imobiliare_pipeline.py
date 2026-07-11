@@ -61,7 +61,7 @@ def test_seed_valori_lipsa_raman_none():
     # dict gol -> toate cheile None, fara exceptii
     seed = _seed_from_raw({})
     assert set(seed.keys()) == {"title", "description", "rooms", "area_sqm", "floor",
-                                "price", "currency", "property_type", "zone_hint"}
+                                "price", "currency", "property_type", "zone_hint", "listed_at"}
     assert all(v is None for v in seed.values())
     # "" e tratat ca None (nu ca valoare)
     seed2 = _seed_from_raw({"titlu": "", "pret": "", "moneda": ""})

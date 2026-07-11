@@ -224,7 +224,7 @@ def export_feed(
         "rooms": i.rooms, "area_sqm": i.area_sqm,
         "zone_normalized": i.zone_normalized, "zone_raw": i.zone_raw, "floor": i.floor,
         "seller_id": i.seller_id, "keyword_name": kw_map.get(i.keyword_id),
-        "found_at": i.found_at, "status": i.status, "url": i.url,
+        "found_at": i.found_at, "listed_at": i.listed_at, "status": i.status, "url": i.url,
     } for i in items]
 
     xlsx_bytes = build_re_xlsx(rows)

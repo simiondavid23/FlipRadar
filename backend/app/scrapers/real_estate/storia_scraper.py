@@ -131,6 +131,8 @@ def _parse_item(it: dict, tip_anunt: str, tip_proprietate: str) -> dict:
     slug = it.get("slug")
     src = f"{_BASE}/ro/oferta/{slug}" if slug else None
 
+    # VERIFY listed_at (IM-7): __NEXT_DATA__ ar putea expune dateCreated/pushedUpAt, dar semantica
+    # (postare initiala vs repromovare) e neclara — neconfirmat, NU se conecteaza fara o sonda.
     return make_re_listing(
         platform="storia", external_id=str(it.get("id")) if it.get("id") is not None else None,
         tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,

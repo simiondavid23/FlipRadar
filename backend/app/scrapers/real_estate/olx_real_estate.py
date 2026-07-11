@@ -1,5 +1,7 @@
 """OLX.ro — anunturi imobiliare. platform="olx"."""
 import re
+import unicodedata
+from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -17,6 +19,46 @@ _BASE = "https://www.olx.ro"
 def _olx_id(href: str):
     m = re.search(r"-ID([A-Za-z0-9]+)\.html", href or "")
     return m.group(1) if m else None
+
+
+# Parser de data OLX — logica adaptata din services/radar/olx_scraper._parse_olx_date
+# (copie locala, NU import cross-modul din radar/). `now` injectat pentru testabilitate.
+_OLX_RO_MONTHS = {
+    "ianuarie": 1, "februarie": 2, "martie": 3, "aprilie": 4,
+    "mai": 5, "iunie": 6, "iulie": 7, "august": 8,
+    "septembrie": 9, "octombrie": 10, "noiembrie": 11, "decembrie": 12,
+    "ian": 1, "feb": 2, "mar": 3, "apr": 4,
+    "iun": 6, "iul": 7, "aug": 8, "sep": 9, "oct": 10, "noi": 11, "dec": 12,
+}
+
+
+def _parse_olx_date(text, now: datetime):
+    """Data din cardul OLX ("Azi la HH:MM" / "Ieri la HH:MM" / "d luna yyyy") -> datetime | None.
+
+    `now` injectat (testabil). Diacriticele lunilor se normalizeaza NFKD->ascii inainte de match.
+    Ora lipsa la formatul cu data -> 00:00. Text nerecunoscut/None -> None. Rezultat NAIV (aceeasi
+    zona ca `now` — OLX afiseaza ora locala), consecvent cu coloanele TIMESTAMP naive (found_at).
+    """
+    if not text:
+        return None
+    t = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode().strip().lower()
+    m_time = re.search(r"(\d{1,2}):(\d{2})", t)
+    hour = int(m_time.group(1)) if m_time else 0
+    minute = int(m_time.group(2)) if m_time else 0
+    if t.startswith("azi"):
+        return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if t.startswith("ieri"):
+        d = now - timedelta(days=1)
+        return d.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    m = re.search(r"(\d{1,2})\s+([a-z]+)\s+(\d{4})", t)
+    if m:
+        month = _OLX_RO_MONTHS.get(m.group(2))
+        if month:
+            try:
+                return datetime(int(m.group(3)), month, int(m.group(1)))
+            except ValueError:
+                return None
+    return None
 
 
 def _olx_path(tip_anunt: str, tip_proprietate: str) -> str:
@@ -107,9 +149,16 @@ async def search_olx_real_estate(filters: dict = {}) -> list:
 
             loc_el = card.find(attrs={"data-testid": "location-date"})
             locatie = None
+            listed_at = None
             if loc_el:
                 raw = loc_el.get_text(" ", strip=True)
-                locatie = raw.split("-")[0].strip() if "-" in raw else raw.strip()
+                # Separatorul e " - "; split cu maxsplit=1 ca locatiile cu cratima interna
+                # ("Cluj-Napoca") sa NU fie taiate gresit. Partea 0 = locatia, restul = data.
+                parts = raw.split(" - ", 1)
+                locatie = parts[0].strip()
+                if len(parts) > 1:
+                    dt = _parse_olx_date(parts[1], datetime.now())
+                    listed_at = dt.isoformat() if dt else None
 
             img = card.find("img")
             thumb = (img.get("src") or img.get("data-src")) if img else None
@@ -119,7 +168,7 @@ async def search_olx_real_estate(filters: dict = {}) -> list:
                 tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,
                 camere=extract_rooms(titlu), suprafata_mp=extract_surface(titlu),
                 pret=pret, moneda=moneda, locatie_oras=locatie,
-                titlu=titlu, source_url=href, thumbnail_url=thumb,
+                titlu=titlu, source_url=href, thumbnail_url=thumb, listed_at=listed_at,
             ))
             if len(results) >= MAX_RESULTS:
                 break

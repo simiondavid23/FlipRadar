@@ -43,5 +43,7 @@ class RealEstateMonitorListing(Base):
     price_history             = Column(JSON, default=list)
     status                    = Column(String(20), default="active")
     found_at                  = Column(TIMESTAMP, server_default=func.now())
+    # Data postarii pe platforma; NULL cand sursa nu o expune (IM-7).
+    listed_at                 = Column(TIMESTAMP)
     last_checked_at           = Column(TIMESTAMP)
     last_price_change_at      = Column(TIMESTAMP)

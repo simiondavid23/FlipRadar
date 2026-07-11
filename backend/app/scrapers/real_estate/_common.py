@@ -15,10 +15,9 @@ MAX_RESULTS = 50
 def norm_city_slug(name) -> str:
     """Normalizeaza numele unui oras la slug ascii: fara diacritice, lowercase, spatii -> '-'.
 
-    ex. "București" -> "bucuresti", "Cluj-Napoca" -> "cluj-napoca". Aceeasi logica exacta ca
-    storia_scraper._loc_key (extrasa aici ca helper comun; storia isi pastreaza copia proprie —
-    nu o modificam in acest task). Necesara pentru path-urile de oras (site-urile .ro nu rezolva
-    slug-urile cu diacritice).
+    ex. "București" -> "bucuresti", "Cluj-Napoca" -> "cluj-napoca". Helper comun: storia_scraper
+    il foloseste direct (REF-1 a eliminat copia locala _loc_key). Necesara pentru path-urile de
+    oras (site-urile .ro nu rezolva slug-urile cu diacritice).
     """
     s = unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode()
     return s.strip().lower().replace(" ", "-")

@@ -167,6 +167,8 @@ async def search_imobiliare_ro(filters: dict = {}) -> list:
             img = card.find("img")
             thumb = (img.get("src") or img.get("data-src") or img.get("data-original")) if img else None
 
+            # VERIFY listed_at (IM-7): niciun atribut data-* parsat azi nu expune data postarii —
+            # neconfirmat, NU se conecteaza fara o sonda.
             results.append(make_re_listing(
                 platform="imobiliare", external_id=card.get("data-list-id") or card.get("data-url-id"),
                 tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,

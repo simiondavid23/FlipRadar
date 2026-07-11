@@ -20,9 +20,9 @@ _PLATFORM_LABELS = {
 
 _COLUMNS = [
     "Titlu", "Platformă", "Grad", "Preț", "Preț/mp", "Camere", "Suprafață",
-    "Zonă", "Etaj", "Vânzător", "Keyword", "Data găsirii", "Status", "URL",
+    "Zonă", "Etaj", "Vânzător", "Keyword", "Data găsirii", "Data postării", "Status", "URL",
 ]
-_URL_COL_IDX = len(_COLUMNS) - 1  # 13
+_URL_COL_IDX = len(_COLUMNS) - 1  # ultima coloana (URL) — recalculata automat
 
 
 def _price(item: dict) -> str:
@@ -43,7 +43,7 @@ def _price_sqm(item: dict):
 def build_re_xlsx(rows: Iterable[dict]) -> bytes:
     """rows = iterable de dict-uri cu cheile: title, platform, grade, price, currency,
     price_per_sqm, rooms, area_sqm, zone_normalized, zone_raw, floor, seller_id,
-    keyword_name, found_at, status, url."""
+    keyword_name, found_at, listed_at, status, url."""
     table = []
     for it in rows:
         table.append([
@@ -59,6 +59,7 @@ def build_re_xlsx(rows: Iterable[dict]) -> bytes:
             it.get("seller_id") or "",
             it.get("keyword_name") or "",
             fmt_dt(it.get("found_at")),
+            fmt_dt(it.get("listed_at")),
             it.get("status") or "",
             it.get("url") or "",
         ])

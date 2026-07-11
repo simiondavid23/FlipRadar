@@ -83,6 +83,16 @@ def _seed_from_raw(raw: dict) -> dict:
     except (TypeError, ValueError):
         price = None
 
+    # listed_at: string ISO (emis de scraperul OLX) -> datetime; lipsa/invalid -> None.
+    listed_at = raw.get("listed_at")
+    if listed_at:
+        try:
+            listed_at = datetime.fromisoformat(str(listed_at))
+        except (TypeError, ValueError):
+            listed_at = None
+    else:
+        listed_at = None
+
     return {
         "title":         pick("title", "titlu"),
         "description":   pick("description", "descriere"),
@@ -93,6 +103,7 @@ def _seed_from_raw(raw: dict) -> dict:
         "currency":      pick("currency", "moneda"),
         "property_type": pick("property_type", "tip_proprietate"),
         "zone_hint":     pick("location", "zone", "locatie_oras"),
+        "listed_at":     listed_at,
     }
 
 
@@ -326,6 +337,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         description     = desc[:2000],
         score           = score,
         grade           = grade,
+        listed_at       = seed["listed_at"],
         found_at        = datetime.now(timezone.utc),
         last_checked_at = datetime.now(timezone.utc),
     )
@@ -522,6 +534,7 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         description     = text[:2000],
         score           = score,
         grade           = grade,
+        listed_at       = post.get("created_at"),   # data postarii FB (deja pe post_dict)
         found_at        = datetime.now(timezone.utc),
         last_checked_at = datetime.now(timezone.utc),
     )
