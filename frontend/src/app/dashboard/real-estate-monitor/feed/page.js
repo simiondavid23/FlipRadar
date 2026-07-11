@@ -16,7 +16,6 @@ const PLATFORM_LABELS = {
   olx: "OLX", storia: "Storia", imobiliare_ro: "Imobiliare.ro",
   facebook_marketplace: "FB Marketplace", facebook_groups: "Grupuri FB",
 };
-const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov", "Constanța", "Sibiu", "Oradea", "Arad", "Pitești"];
 
 const gradeCfg = (g) => GRADE_COLORS[g] || GRADE_COLORS.C;
 // Culori platformă neutre (RE nu are branding per-sursă în card, ca Auto).
@@ -47,15 +46,18 @@ export default function REFeedPage() {
   const [toast, setToast] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);   // stergere inline din card
   const [sortBy, setSortBy] = useState("");   // "" = ordinea serverului (found_at desc)
+  const [filterOptions, setFilterOptions] = useState({ zones: [], cities: [] });   // dropdown zonă/oraș
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  // Serverul filtrează platform/grade/rooms/zone/keyword; orașul e client-side (vezi shownListings).
+  // Serverul filtrează acum tot: platform/grade/rooms/zone/oraș/keyword (IM-3 a mutat orașul
+  // pe server; paginarea offset/limit rămâne corectă pentru toate filtrele).
   const _feedParams = useCallback((offset) => {
     const params = { status: filters.status, limit: 100, offset };
     if (filters.platform) params.platform = filters.platform;
     if (filters.grade) params.grade = filters.grade;
     if (filters.rooms) params.rooms = filters.rooms;
     if (filters.zone) params.zone = filters.zone;
+    if (filters.city) params.city = filters.city;
     if (filters.keyword_id) params.keyword_id = filters.keyword_id;
     return params;
   }, [filters]);
@@ -93,22 +95,18 @@ export default function REFeedPage() {
     catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { realEstateMonitorAPI.getKeywords().then((r) => setKeywords(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    realEstateMonitorAPI.getKeywords().then((r) => setKeywords(r.data || [])).catch(() => {});
+    realEstateMonitorAPI.getFilterOptions().then((r) => setFilterOptions(r.data || { zones: [], cities: [] })).catch(() => {});
+  }, []);
   useEffect(() => { loadFeed(); loadStats(); }, [loadFeed, loadStats]);
 
-  // Filtru oraș client-side (serverul nu îl suportă) → aplicat la randare, ca paginarea
-  // offset/limit (pe lista brută `listings`) să rămână corectă.
-  const shownListings = useMemo(() => {
-    if (!filters.city) return listings;
-    return listings.filter((i) => (i.city || "") === filters.city);
-  }, [listings, filters.city]);
-
-  // Sortare client-side pe lista deja afișată (după filtrul de oraș). Nu mută elemente între
-  // pagini — paginarea offset/limit rămâne pe `listings` brute (aceeași limitare asumată ca
-  // RP-1/AA-3). Prețul se normalizează în RON (eurRonOf, mirror AA-3) pentru comparație corectă
-  // EUR/RON; valorile null ajung mereu la coadă, indiferent de direcție.
+  // Sortare client-side pe lista deja încărcată (orașul e filtrat acum pe server, IM-3 — nu mai
+  // există filtru client-side). Nu mută elemente între pagini — paginarea offset/limit rămâne pe
+  // `listings` brute (aceeași limitare asumată ca RP-1/AA-3). Prețul se normalizează în RON
+  // (eurRonOf, mirror AA-3) pentru comparație corectă EUR/RON; null ajunge mereu la coadă.
   const displayedListings = useMemo(() => {
-    if (!sortBy) return shownListings;
+    if (!sortBy) return listings;
     const priceRon = (l) => (l.price == null ? null : l.price * (l.currency === "EUR" ? eurRonOf(l) : 1));
     const nullsLast = (av, bv, cmp) => {
       if (av == null && bv == null) return 0;
@@ -116,14 +114,14 @@ export default function REFeedPage() {
       if (bv == null) return -1;
       return cmp(av, bv);
     };
-    return [...shownListings].sort((a, b) => {
+    return [...listings].sort((a, b) => {
       if (sortBy === "price_asc")  return nullsLast(priceRon(a), priceRon(b), (x, y) => x - y);
       if (sortBy === "price_desc") return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
       if (sortBy === "ppm_asc")    return nullsLast(a.price_per_sqm, b.price_per_sqm, (x, y) => x - y);
       if (sortBy === "score_desc") return nullsLast(a.score, b.score, (x, y) => y - x);
       return 0;
     });
-  }, [shownListings, sortBy]);
+  }, [listings, sortBy]);
 
   const setStatus = async (id, status) => {
     try { await realEstateMonitorAPI.updateStatus(id, status); setSelected(null); await loadFeed(); await loadStats(); }
@@ -162,6 +160,9 @@ export default function REFeedPage() {
       if (filters.platform) params.platform = filters.platform;
       if (filters.grade) params.grade = filters.grade;
       if (filters.status) params.status = filters.status;
+      if (filters.city) params.city = filters.city;
+      if (filters.zone) params.zone = filters.zone;
+      if (filters.rooms) params.rooms = filters.rooms;
       if (filters.keyword_id) params.keyword_id = filters.keyword_id;
       const r = await realEstateMonitorAPI.exportListings(params);
       const url = URL.createObjectURL(new Blob([r.data]));
@@ -248,10 +249,14 @@ export default function REFeedPage() {
           <option value="">Camere</option>
           {[1, 2, 3, 4].map((r) => <option key={r} value={r}>{r}{r === 4 ? "+" : ""} cam</option>)}
         </select>
-        <input placeholder="Zonă" value={filters.zone} onChange={(e) => setFilters((f) => ({ ...f, zone: e.target.value }))} style={{ ...selectStyle, width: "120px" }} />
+        {/* Zona: dropdown din zonele normalizate reale ale userului (egalitate exactă sigură). */}
+        <select value={filters.zone} onChange={(e) => setFilters((f) => ({ ...f, zone: e.target.value }))} style={selectStyle}>
+          <option value="">Toate zonele</option>
+          {filterOptions.zones.map((z) => <option key={z} value={z}>{z}</option>)}
+        </select>
         <select value={filters.city} onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} style={selectStyle}>
           <option value="">Toate orașele</option>
-          {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          {filterOptions.cities.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={filters.keyword_id} onChange={(e) => setFilters((f) => ({ ...f, keyword_id: e.target.value }))} style={selectStyle}>
           <option value="">Toate keyword-urile</option>

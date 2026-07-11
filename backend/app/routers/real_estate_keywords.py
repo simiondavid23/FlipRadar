@@ -139,6 +139,7 @@ def get_feed(
     grade: Optional[str] = None,
     status: str = "active",
     zone: Optional[str] = None,
+    city: Optional[str] = None,
     rooms: Optional[int] = None,
     keyword_id: Optional[int] = None,
     limit: int = 50,
@@ -153,7 +154,11 @@ def get_feed(
     if platform: q = q.filter(RealEstateListing.platform == platform)
     if grade:    q = q.filter(RealEstateListing.grade == grade)
     if zone:     q = q.filter(RealEstateListing.zone_normalized == zone)
-    if rooms:    q = q.filter(RealEstateListing.rooms == rooms)
+    if city:     q = q.filter(RealEstateListing.city == city)
+    # Camere: optiunea de UI "4+ cam" trimite rooms=4 -> match >= (si 5+ camere apar);
+    # 1..3 raman match EXACT.
+    if rooms:
+        q = q.filter(RealEstateListing.rooms >= rooms) if rooms >= 4 else q.filter(RealEstateListing.rooms == rooms)
     if keyword_id: q = q.filter(RealEstateListing.keyword_id == keyword_id)
     total = q.count()
     items = q.order_by(RealEstateListing.found_at.desc())\
@@ -186,17 +191,28 @@ def export_feed(
     platform: Optional[str] = Query(None),
     grade: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    zone: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    rooms: Optional[int] = Query(None),
     keyword_id: Optional[int] = Query(None),
     ids: Optional[str] = Query(None),  # CSV de id-uri — folosit de "Exporta selectia"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Export .xlsx al feed-ului Imobiliare — filtre platform/grad/status/keyword ca lista."""
+    """Export .xlsx al feed-ului Imobiliare — aceleasi filtre ca lista (platform/grad/status/
+    keyword/oras/zona/camere), ca exportul sa reflecte exact feed-ul vizibil."""
     q = db.query(RealEstateListing).filter(RealEstateListing.user_id == current_user.id)
     if platform:
         q = q.filter(RealEstateListing.platform == platform)
     if grade:
         q = q.filter(RealEstateListing.grade == grade)
+    if zone:
+        q = q.filter(RealEstateListing.zone_normalized == zone)
+    if city:
+        q = q.filter(RealEstateListing.city == city)
+    # Camere: aceeasi semantica 4+ ca la get_feed (rooms=4 -> >=; 1..3 exact).
+    if rooms:
+        q = q.filter(RealEstateListing.rooms >= rooms) if rooms >= 4 else q.filter(RealEstateListing.rooms == rooms)
     if keyword_id:
         q = q.filter(RealEstateListing.keyword_id == keyword_id)
     # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user
@@ -231,6 +247,29 @@ def export_feed(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# Definit ÎNAINTE de rutele parametrizate /feed/{listing_id}/... (același pattern ca /feed/export)
+# ca "filter-options" să nu fie prins drept listing_id.
+@router.get("/feed/filter-options")
+def get_feed_filter_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Opțiuni pentru dropdown-urile de filtrare a feed-ului (zonă + oraș), DISTINCT pe datele
+    userului. FĂRĂ filtrare pe status — dropdown-ul arată tot ce există în feed, indiferent de
+    status. Sortare în Python (locale-independent, .lower()), nu ORDER BY dependent de collation."""
+    zone_rows = db.query(RealEstateListing.zone_normalized).filter(
+        RealEstateListing.user_id == current_user.id,
+        RealEstateListing.zone_normalized.isnot(None),
+    ).distinct().all()
+    city_rows = db.query(RealEstateListing.city).filter(
+        RealEstateListing.user_id == current_user.id,
+        RealEstateListing.city.isnot(None),
+    ).distinct().all()
+    zones = sorted({r[0] for r in zone_rows}, key=lambda s: s.lower())
+    cities = sorted({r[0] for r in city_rows}, key=lambda s: s.lower())
+    return {"zones": zones, "cities": cities}
 
 
 class BulkAction(BaseModel):
@@ -314,8 +353,10 @@ def get_stats(
     current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import func
+    # Cardul "Total listinguri" reflectă feed-ul ACTIV (aliniat cu by_grade/by_platform).
     total = db.query(RealEstateListing).filter(
-        RealEstateListing.user_id == current_user.id).count()
+        RealEstateListing.user_id == current_user.id,
+        RealEstateListing.status == "active").count()
     by_grade = db.query(
         RealEstateListing.grade, func.count(RealEstateListing.id)
     ).filter(

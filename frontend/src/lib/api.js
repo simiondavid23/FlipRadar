@@ -220,6 +220,8 @@ export const realEstateMonitorAPI = {
   updateKeyword: (id, data) => api.put(`/api/real-estate-monitor/keywords/${id}`, data),
   deleteKeyword: (id)       => api.delete(`/api/real-estate-monitor/keywords/${id}`),
   getFeed:       (params)   => api.get("/api/real-estate-monitor/feed", { params }),
+  // Optiuni pentru dropdown-urile de filtrare a feed-ului (zone + orase distincte ale userului)
+  getFilterOptions: ()      => api.get("/api/real-estate-monitor/feed/filter-options"),
   updateStatus:  (id, st)   => api.patch(`/api/real-estate-monitor/feed/${id}/status`, { status: st }),
   deleteListing: (id)       => api.delete(`/api/real-estate-monitor/feed/${id}`),
   // Actiuni in masa pe selectie (saved/ignored/active/deleted) — mirror pe radarAPI/auto bulkAction
