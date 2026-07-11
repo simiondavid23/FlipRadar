@@ -4,7 +4,7 @@
 // Facebook Marketplace e exclus aici: endpoint-ul /api/real-estate/search îl apelează sincron
 // (rupe asyncio.gather) — rămâne disponibil prin monitorizarea cu keyword.
 import { useState, useMemo } from "react";
-import { realEstateAPI } from "@/lib/api";
+import { realEstateAPI, realEstateMonitorAPI } from "@/lib/api";
 import RealEstateCard from "@/components/RealEstateCard";
 import { TIP_ANUNT, TIP_PROPRIETATE, ROOMS, FACILITIES, JUDETE } from "@/lib/realEstateConstants";
 import { Home, Loader2, SlidersHorizontal } from "lucide-react";
@@ -107,7 +107,8 @@ export default function REManualSearch() {
     const key = liKey(listing);
     setSavingKey(key);
     try {
-      await realEstateAPI.saveListing(listing);
+      // IM-5: salvarea intra in tabelul monitor (status="saved") -> apare in Salvate & Ignorate.
+      await realEstateMonitorAPI.saveManualListing(listing);
       setSavedKeys((prev) => new Set(prev).add(key));
     } catch (err) {
       alert(err.response?.data?.detail || "Eroare la salvare.");
@@ -201,6 +202,9 @@ export default function REManualSearch() {
           <button type="submit" style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.5rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
             <Home style={{ width: "16px", height: "16px" }} /> Caută
           </button>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem", margin: "0.5rem 0 0" }}>
+            Anunțurile salvate apar în Salvate &amp; Ignorate.
+          </p>
         </div>
       </form>
 

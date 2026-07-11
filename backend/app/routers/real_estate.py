@@ -17,7 +17,6 @@ from app.utils.auth import get_current_user
 from app.scrapers.real_estate.olx_real_estate import search_olx_real_estate
 from app.scrapers.real_estate.storia_scraper import search_storia
 from app.scrapers.real_estate.imobiliare_ro_scraper import search_imobiliare_ro
-from app.scrapers.real_estate.facebook_real_estate import search_facebook_real_estate
 
 router = APIRouter(prefix="/api/real-estate", tags=["Real Estate"])
 
@@ -58,7 +57,10 @@ async def search(
         "olx": lambda: search_olx_real_estate(filters),
         "storia": lambda: search_storia(filters),
         "imobiliare": lambda: search_imobiliare_ro(filters),
-        "facebook": lambda: search_facebook_real_estate(filters),
+        # facebook SCOS (IM-5): search_facebook_real_estate e SINCRON (sync_playwright) — pasat
+        # in asyncio.gather ar crapa, iar builder-ul il apela pozitional (filters ajungea drept
+        # query). FB ramane disponibil prin monitorizarea cu keyword. platforms=facebook e acum
+        # ignorat de filtrul "p.strip() in builders" => selected gol => raspuns gol, nu 500.
     }
     selected = [p.strip().lower() for p in (platforms or "").split(",") if p.strip() in builders]
     if not selected:
@@ -142,6 +144,9 @@ def save_listing(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """DEPRECAT (IM-5): UI-ul salveaza acum in tabelul MONITOR prin
+    /api/real-estate-monitor/listings/save-manual. Acest endpoint + tabelul vechi
+    (real_estate_listing) raman doar pentru datele istorice — de eliminat la un cleanup viitor."""
     if not (data.platform or "").strip():
         raise HTTPException(status_code=400, detail="Platforma este obligatorie.")
 
@@ -193,6 +198,8 @@ def list_saved_listings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """DEPRECAT (IM-5): salvarile din UI merg acum in tabelul MONITOR (vezi
+    /api/real-estate-monitor). Ramane doar pentru datele istorice din tabelul vechi."""
     rows = (
         db.query(RealEstateListing)
         .filter(RealEstateListing.user_id == current_user.id, RealEstateListing.saved == True)  # noqa: E712
@@ -208,6 +215,8 @@ def delete_saved_listing(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """DEPRECAT (IM-5): salvarile din UI merg acum in tabelul MONITOR (vezi
+    /api/real-estate-monitor). Ramane doar pentru datele istorice din tabelul vechi."""
     li = (
         db.query(RealEstateListing)
         .filter(RealEstateListing.id == listing_id, RealEstateListing.user_id == current_user.id)

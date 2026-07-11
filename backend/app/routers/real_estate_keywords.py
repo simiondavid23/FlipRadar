@@ -1,5 +1,5 @@
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
@@ -345,6 +345,125 @@ def delete_listing(
         raise HTTPException(404, "Listing negăsit.")
     db.delete(listing); db.commit()
     return {"ok": True}
+
+
+class ManualListingSave(BaseModel):
+    # Cheile emise de make_re_listing (scraperele RE) — toate Optional in afara de platform.
+    platform: str
+    external_id: Optional[str] = None
+    tip_anunt: Optional[str] = None
+    tip_proprietate: Optional[str] = None
+    camere: Optional[int] = None
+    suprafata_mp: Optional[float] = None
+    etaj: Optional[str] = None
+    pret: Optional[float] = None
+    moneda: str = "EUR"
+    locatie_judet: Optional[str] = None
+    locatie_oras: Optional[str] = None
+    titlu: Optional[str] = None
+    descriere: Optional[str] = None
+    source_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+
+
+@router.post("/listings/save-manual")
+def save_manual_listing(
+    data: ManualListingSave,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Salvare din Căutarea Manuală în tabelul MONITOR (real_estate_listings) cu status="saved",
+    ca anunțul să apară în "Salvate & Ignorate". Înainte salvările manuale mergeau în tabelul
+    VECHI (real_estate_listing), fără UI care să le citească. IM-5."""
+    # Scraperul vechi emite platform="imobiliare"; monitorul folosește "imobiliare_ro".
+    platform = {"imobiliare": "imobiliare_ro"}.get(data.platform, data.platform)
+
+    # external_id efectiv: id-ul dat sau, în lipsă, source_url trunchiat la 200 (coloana e
+    # VARCHAR(200)). Fără niciunul nu putem deduplica -> 422.
+    external_id = data.external_id or (data.source_url[:200] if data.source_url else None)
+    if not external_id:
+        raise HTTPException(422, "Anunțul nu are nici external_id, nici URL — nu poate fi salvat (deduplicare imposibilă).")
+
+    # Idempotență: dacă există deja pentru (user, platformă normalizată, external_id) -> doar
+    # marchează saved (fără duplicat); redevine "saved" chiar dacă era "ignored".
+    existing = db.query(RealEstateListing).filter(
+        RealEstateListing.user_id == current_user.id,
+        RealEstateListing.platform == platform,
+        RealEstateListing.external_id == external_id,
+    ).first()
+    if existing:
+        existing.status = "saved"
+        db.commit()
+        return {"ok": True, "id": existing.id, "existing": True}
+
+    # Utilitare deja folosite de scanner (nu importăm scanner-ul, doar helperele lui).
+    from app.services.real_estate.extractor import extract_all
+    from app.services.real_estate.zones import normalize_zone
+    from app.services.real_estate.scorer import compute_re_score
+
+    titlu = data.titlu or ""
+    descriere = data.descriere or ""
+    text = f"{titlu} {descriere}"
+    # Extragere regex din text — FĂRĂ groq_extract (request sincron, fără apel LLM).
+    extracted = extract_all(text)
+    # Precedență payload (scraper) > regex, ca în _save_listing (IM-1).
+    if data.camere is not None:
+        extracted["rooms"] = data.camere
+    if data.suprafata_mp is not None:
+        extracted["area_sqm"] = data.suprafata_mp
+    if data.etaj is not None:
+        extracted["floor"] = data.etaj
+    if data.pret is not None:
+        extracted["price"] = data.pret
+        extracted["currency"] = data.moneda or "EUR"
+
+    price = extracted.get("price")
+    currency = extracted.get("currency") or "EUR"
+    area = extracted.get("area_sqm")
+    rooms = extracted.get("rooms")
+    price_per_sqm = round(price / area, 2) if price and area and area > 0 else None
+
+    zone_raw = data.locatie_oras or ""
+    # city None -> normalize_zone detectează orașul din text (comportament suportat de funcție).
+    zone_normalized = normalize_zone(zone_raw, None, {})
+    city = data.locatie_oras   # la manual nu există kw.city; folosim ce avem
+
+    tip_anunt = data.tip_anunt or "vanzare"
+    score, grade = (50, "C")
+    if tip_anunt == "inchiriere" and price and area:
+        score, grade = compute_re_score(
+            price, currency, area, rooms, zone_normalized, city, None, tip_anunt="inchiriere")
+
+    listing = RealEstateListing(
+        user_id         = current_user.id,
+        keyword_id      = None,
+        platform        = platform,
+        external_id     = external_id,
+        source          = "manual",
+        status          = "saved",
+        title           = titlu[:500],
+        price           = price,
+        currency        = currency,
+        price_per_sqm   = price_per_sqm,
+        property_type   = data.tip_proprietate,
+        rooms           = rooms,
+        area_sqm        = area,
+        floor           = extracted.get("floor"),
+        zone_raw        = zone_raw[:200] if zone_raw else None,
+        zone_normalized = zone_normalized,
+        city            = city,
+        image_url       = data.thumbnail_url or "",
+        url             = data.source_url or "",
+        description     = descriere[:2000],
+        score           = score,
+        grade           = grade,
+        found_at        = datetime.now(timezone.utc),
+        last_checked_at = datetime.now(timezone.utc),
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return {"ok": True, "id": listing.id, "existing": False}
 
 
 @router.get("/stats")

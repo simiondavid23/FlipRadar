@@ -226,6 +226,8 @@ export const realEstateMonitorAPI = {
   deleteListing: (id)       => api.delete(`/api/real-estate-monitor/feed/${id}`),
   // Actiuni in masa pe selectie (saved/ignored/active/deleted) — mirror pe radarAPI/auto bulkAction
   bulkAction:    (ids, action) => api.post("/api/real-estate-monitor/feed/bulk-action", { listing_ids: ids, action }),
+  // Salvare din Cautarea Manuala in tabelul monitor (status="saved") — apare in Salvate & Ignorate
+  saveManualListing: (data) => api.post("/api/real-estate-monitor/listings/save-manual", data),
   getStats:      ()         => api.get("/api/real-estate-monitor/stats"),
   scanNow:       ()         => api.post("/api/real-estate-monitor/scan-now"),
   // MODIFICARE 18 — impact stergere keyword (nr. listinguri asociate)
