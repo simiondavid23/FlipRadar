@@ -6,6 +6,7 @@ import { GRADE_COLORS, selectStyle, tabPillStyle } from "@/lib/uiStyles";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import ScanNowButton from "@/components/shared/ScanNowButton";
 import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
+import ActionBanner from "@/components/shared/ActionBanner";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
@@ -20,6 +21,13 @@ const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov", "
 const gradeCfg = (g) => GRADE_COLORS[g] || GRADE_COLORS.C;
 // Culori platformă neutre (RE nu are branding per-sursă în card, ca Auto).
 const RE_PLATFORM_CFG = { bg: "var(--bg-dark)", border: "var(--border-color)", text: "var(--text-secondary)" };
+// Curs EUR->RON pentru sortarea pe preț — refoloseste EXACT mecanismul din AA-3
+// (auto-listings/feed): rata din listing dacă există, altfel constanta 5.0. Anunțurile RE nu au
+// import_score_json, deci cade pe 5.0 (constantă), suficient pentru o ordonare EUR/RON stabilă.
+function eurRonOf(listing) {
+  return listing.import_score_json?.pe_roti?.eur_ron_rate
+    || listing.import_score_json?.pe_platforma?.eur_ron_rate || 5.0;
+}
 
 export default function REFeedPage() {
   const [listings, setListings] = useState([]);
@@ -36,6 +44,10 @@ export default function REFeedPage() {
   const toggleBulk = (id) => setSelectedBulk((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const reqIdRef = useRef(0);
   const [feedError, setFeedError] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);   // stergere inline din card
+  const [sortBy, setSortBy] = useState("");   // "" = ordinea serverului (found_at desc)
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   // Serverul filtrează platform/grade/rooms/zone/keyword; orașul e client-side (vezi shownListings).
   const _feedParams = useCallback((offset) => {
@@ -91,14 +103,52 @@ export default function REFeedPage() {
     return listings.filter((i) => (i.city || "") === filters.city);
   }, [listings, filters.city]);
 
+  // Sortare client-side pe lista deja afișată (după filtrul de oraș). Nu mută elemente între
+  // pagini — paginarea offset/limit rămâne pe `listings` brute (aceeași limitare asumată ca
+  // RP-1/AA-3). Prețul se normalizează în RON (eurRonOf, mirror AA-3) pentru comparație corectă
+  // EUR/RON; valorile null ajung mereu la coadă, indiferent de direcție.
+  const displayedListings = useMemo(() => {
+    if (!sortBy) return shownListings;
+    const priceRon = (l) => (l.price == null ? null : l.price * (l.currency === "EUR" ? eurRonOf(l) : 1));
+    const nullsLast = (av, bv, cmp) => {
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return cmp(av, bv);
+    };
+    return [...shownListings].sort((a, b) => {
+      if (sortBy === "price_asc")  return nullsLast(priceRon(a), priceRon(b), (x, y) => x - y);
+      if (sortBy === "price_desc") return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
+      if (sortBy === "ppm_asc")    return nullsLast(a.price_per_sqm, b.price_per_sqm, (x, y) => x - y);
+      if (sortBy === "score_desc") return nullsLast(a.score, b.score, (x, y) => y - x);
+      return 0;
+    });
+  }, [shownListings, sortBy]);
+
   const setStatus = async (id, status) => {
     try { await realEstateMonitorAPI.updateStatus(id, status); setSelected(null); await loadFeed(); await loadStats(); }
     catch (e) { alert(e.response?.data?.detail || "Eroare."); }
   };
-  const remove = async (id) => {
-    if (!confirm("Ștergi acest anunț?")) return;
-    try { await realEstateMonitorAPI.deleteListing(id); setSelected(null); await loadFeed(); await loadStats(); }
-    catch (e) { alert(e.response?.data?.detail || "Eroare."); }
+  // Ștergere reală (după confirmarea inline din card) — fără window.confirm.
+  const doDelete = async (id) => {
+    try {
+      await realEstateMonitorAPI.deleteListing(id);
+      setConfirmDeleteId(null);
+      setSelected(null);
+      await loadFeed(); await loadStats();
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere."); }
+  };
+
+  const applyBulkAction = async (action) => {
+    if (selectedBulk.size === 0) return;
+    try {
+      const r = await realEstateMonitorAPI.bulkAction(Array.from(selectedBulk), action);
+      showToast(r.data?.message || `${r.data?.updated || 0} listinguri actualizate.`);
+      setSelectedBulk(new Set());
+      await loadFeed(); await loadStats();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la acțiune în masă.");
+    }
   };
   const handleScanNow = async () => {
     setScanning(true);
@@ -212,12 +262,21 @@ export default function REFeedPage() {
           ))}
         </select>
 
+        {/* Sortare client-side pe lista deja încărcată (mirror AA-3/RP-1). */}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
+          <option value="">Sortare: implicită</option>
+          <option value="price_asc">Preț crescător</option>
+          <option value="price_desc">Preț descrescător</option>
+          <option value="ppm_asc">Preț/mp crescător</option>
+          <option value="score_desc">Scor descrescător</option>
+        </select>
+
         <SelectFiniteControl
-          totalVisible={shownListings.length}
+          totalVisible={displayedListings.length}
           selectedCount={selectedBulk.size}
           onSelect={(count) => {
             if (count === 0) { setSelectedBulk(new Set()); return; }
-            setSelectedBulk(new Set(shownListings.slice(0, count).map((l) => l.id)));
+            setSelectedBulk(new Set(displayedListings.slice(0, count).map((l) => l.id)));
           }}
         />
 
@@ -239,24 +298,59 @@ export default function REFeedPage() {
         </button>
       </div>
 
+      {/* Bară de acțiuni în masă — apare animat când există selecție (mirror radar/page.js). */}
+      <div style={{ position: "sticky", top: 0, zIndex: 20, marginBottom: selectedBulk.size > 0 ? "0.75rem" : 0 }}>
+        <div style={{
+          maxHeight: selectedBulk.size > 0 ? "160px" : "0px",
+          overflow: "hidden",
+          opacity: selectedBulk.size > 0 ? 1 : 0,
+          transition: "max-height 0.2s ease, opacity 0.15s ease",
+        }}>
+          <ActionBanner
+            bulkCount={selectedBulk.size}
+            totalVisible={displayedListings.length}
+            onBulkSave={() => applyBulkAction("saved")}
+            onBulkIgnore={() => applyBulkAction("ignored")}
+            onBulkDelete={() => applyBulkAction("deleted")}
+            onBulkExport={async () => {
+              try {
+                const r = await realEstateMonitorAPI.exportListings({ ids: Array.from(selectedBulk).join(",") });
+                const url = URL.createObjectURL(new Blob([r.data]));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `imobiliare_selectie_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                document.body.appendChild(a); a.click(); a.remove();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                alert(e.response?.data?.detail || "Eroare la export Excel.");
+              }
+            }}
+            onBulkClear={() => setSelectedBulk(new Set())}
+          />
+        </div>
+      </div>
+
       <FeedErrorBanner message={feedError} onRetry={loadFeed} />
 
       {loading ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
-      ) : shownListings.length === 0 ? (
+      ) : displayedListings.length === 0 ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem" }}>
           Niciun anunț. Adaugă keyword-uri și așteaptă scanarea (la 30 min) sau apasă „Scanează acum”.
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1rem" }}>
-          {shownListings.map((l) => (
+          {displayedListings.map((l) => (
             <REListingCard
               key={l.id}
               listing={l}
               onOpen={() => setSelected(l)}
               onSave={() => setStatus(l.id, l.status === "saved" ? "active" : "saved")}
               onIgnore={() => setStatus(l.id, l.status === "ignored" ? "active" : "ignored")}
-              onDelete={() => remove(l.id)}
+              onDelete={() => setConfirmDeleteId(l.id)}
+              confirmingDelete={confirmDeleteId === l.id}
+              onConfirmDelete={() => doDelete(l.id)}
+              onCancelDelete={() => setConfirmDeleteId(null)}
               isSelected={selectedBulk.has(l.id)}
               onToggleSelect={() => toggleBulk(l.id)}
             />
@@ -285,6 +379,18 @@ export default function REFeedPage() {
         />
       )}
       </>)}
+
+      {/* Notificare toast (succes bulk) — mirror pe radar/page.js; erorile rămân pe alert. */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: "5rem", left: "50%", transform: "translateX(-50%)",
+          backgroundColor: "var(--bg-card)", color: "var(--text-primary)",
+          border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+          padding: "0.5rem 0.875rem", fontSize: "0.8125rem",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          zIndex: 200,
+        }}>{toast}</div>
+      )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -350,8 +456,11 @@ function REPriceHistory({ listing }) {
   );
 }
 
-// Card imobiliar peste ListingFeedCard (mirror pe AutoListingCard).
-export function REListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect }) {
+// Card imobiliar peste ListingFeedCard (mirror pe AutoListingCard). Props de confirmare inline
+// la ștergere sunt OPȚIONALE și se forwardează către ListingFeedCard (care le suportă deja) —
+// pagina Salvate & Ignorate nu le trimite, deci acolo comportamentul rămâne neschimbat.
+export function REListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isSelected, onToggleSelect,
+  confirmingDelete, onConfirmDelete, onCancelDelete }) {
   const label = PLATFORM_LABELS[listing.platform] || listing.platform;
   const img = listing.image_url || (Array.isArray(listing.images_json) ? listing.images_json[0] : null);
   return (
@@ -372,6 +481,9 @@ export function REListingCard({ listing, onOpen, onSave, onIgnore, onDelete, isS
       onSave={onSave}
       onIgnore={onIgnore}
       onDelete={onDelete}
+      confirmingDelete={confirmingDelete}
+      onConfirmDelete={onConfirmDelete}
+      onCancelDelete={onCancelDelete}
     />
   );
 }

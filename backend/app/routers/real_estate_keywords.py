@@ -161,6 +161,25 @@ def get_feed(
     return {"total": total, "items": [_listing_dict(i) for i in items]}
 
 
+def _parse_id_csv(ids):
+    """CSV de id-uri -> list[int] tolerant: split pe virgula, strip, pastreaza doar tokenii
+    care trec int(); ignora restul. [] daca None/gol (fara filtrare pe id).
+
+    Duplicat mic din radar.py — de unificat la refactorizarea shared."""
+    if not ids:
+        return []
+    out = []
+    for tok in str(ids).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            out.append(int(tok))
+        except ValueError:
+            continue
+    return out
+
+
 # Definit ÎNAINTE de /feed/{listing_id}/... ca "export" să nu fie prins de rutele cu param.
 @router.get("/feed/export")
 def export_feed(
@@ -168,6 +187,7 @@ def export_feed(
     grade: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     keyword_id: Optional[int] = Query(None),
+    ids: Optional[str] = Query(None),  # CSV de id-uri — folosit de "Exporta selectia"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -177,10 +197,16 @@ def export_feed(
         q = q.filter(RealEstateListing.platform == platform)
     if grade:
         q = q.filter(RealEstateListing.grade == grade)
-    if status and status != "all":
-        q = q.filter(RealEstateListing.status == status)
     if keyword_id:
         q = q.filter(RealEstateListing.keyword_id == keyword_id)
+    # "Exporta selectia" — filtreaza pe id-urile date (CSV tolerant), PESTE filtrul pe user
+    # (id-urile altui user pica din intersectie). Selectia poate traversa statusuri, deci cand
+    # exista ids NU aplicam filtrul de status; absent/gol -> feedul filtrat curent (cu status).
+    id_list = _parse_id_csv(ids)
+    if id_list:
+        q = q.filter(RealEstateListing.id.in_(id_list))
+    elif status and status != "all":
+        q = q.filter(RealEstateListing.status == status)
     items = q.order_by(RealEstateListing.found_at.desc()).limit(5000).all()
 
     kw_ids = {i.keyword_id for i in items if i.keyword_id}
@@ -205,6 +231,47 @@ def export_feed(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class BulkAction(BaseModel):
+    listing_ids: list[int]
+    action: str  # "saved" | "ignored" | "active" | "deleted"
+
+
+# Definit ÎNAINTE de rutele parametrizate /feed/{listing_id}/... (același pattern ca /feed/export
+# de mai sus și ca radar.py/auto) ca "bulk-action" să nu fie prins drept listing_id.
+@router.post("/feed/bulk-action")
+def bulk_feed_action(
+    data: BulkAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Acțiuni în masă pe feed-ul Imobiliare — mirror pe radar.py::bulk_listing_action / auto.
+    Toate query-urile sunt scopate pe user_id == current_user.id, deci ID-urile altui user sunt
+    IGNORATE silențios (nu 403, nu leak). "active" scoate în masă din Salvate/Ignorate înapoi în
+    feed. "deleted" șterge FIZIC rândul (RE nu are status "deleted" — la fel ca DELETE /feed/{id}).
+    listing_ids gol → {"updated": 0}. Commit o singură dată la final."""
+    if data.action not in ("saved", "ignored", "active", "deleted"):
+        raise HTTPException(status_code=400, detail="Acțiune invalidă.")
+    if not data.listing_ids:
+        return {"updated": 0, "message": "Niciun listing selectat."}
+
+    rows = db.query(RealEstateListing).filter(
+        RealEstateListing.user_id == current_user.id,
+        RealEstateListing.id.in_(data.listing_ids),
+    ).all()
+    n = len(rows)
+
+    if data.action == "deleted":
+        for row in rows:
+            db.delete(row)   # ștergere fizică (RE nu are status "deleted")
+        db.commit()
+        return {"updated": n, "message": f"{n} listinguri șterse."}
+
+    for row in rows:
+        row.status = data.action
+    db.commit()
+    return {"updated": n, "message": f"{n} listinguri actualizate."}
 
 
 @router.patch("/feed/{listing_id}/status")
