@@ -229,11 +229,11 @@ export default function ReportsPage() {
               valueColor={summary.profit_total >= 0 ? "#4ade80" : "#f87171"}
             />
             <StatCard
-              title="ROI mediu"
+              title="ROI"
               value={`${(summary.roi_mediu || 0).toFixed(2)}%`}
               icon={Target}
               color="#9333ea"
-              subtitle="Marja medie pe vanzare"
+              subtitle="profit / cost, doar vanzari cu cost declarat"
               valueColor="#a78bfa"
             />
             <StatCard
@@ -288,7 +288,6 @@ export default function ReportsPage() {
                     </p>
                   );
                 }
-                const hasDays = top3.some((p) => p.days_to_sell != null);
                 return (
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                     <thead>
@@ -296,7 +295,6 @@ export default function ReportsPage() {
                         <th style={thLeft}>Produs</th>
                         <th style={thRight}>Profit net</th>
                         <th style={thRight}>ROI%</th>
-                        {hasDays && <th style={thRight}>Zile</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -307,7 +305,6 @@ export default function ReportsPage() {
                             {Number(p.profit).toFixed(2)} EUR
                           </td>
                           <td style={tdRight}>{Number(p.roi).toFixed(2)}%</td>
-                          {hasDays && <td style={tdRight}>{p.days_to_sell != null ? p.days_to_sell : "—"}</td>}
                         </tr>
                       ))}
                     </tbody>

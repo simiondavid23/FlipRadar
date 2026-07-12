@@ -199,6 +199,10 @@ async def import_inventory_excel(
             return val or None
         return val
 
+    if len(rows) > 2000:
+        raise HTTPException(status_code=400,
+            detail="Fisierul depaseste limita de 2000 de randuri per import.")
+
     for i, row in enumerate(rows[1:], start=2):
         try:
             name = cell(row, col_name)

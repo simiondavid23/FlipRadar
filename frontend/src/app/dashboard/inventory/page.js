@@ -42,7 +42,14 @@ const emptyForm = {
   currency: "RON",
   source: "",
   notes: "",
+  purchased_at: "",
 };
+
+// Data locala YYYY-MM-DD fara conversie UTC (toISOString ar da ziua gresita dupa miezul noptii).
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function InventoryPage() {
   const router = useRouter();
@@ -90,7 +97,7 @@ export default function InventoryPage() {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, purchased_at: todayIso() });
     setError("");
     setShowForm(true);
   };
@@ -106,6 +113,7 @@ export default function InventoryPage() {
       currency: item.currency || "RON",
       source: item.source || "",
       notes: item.notes || "",
+      purchased_at: (item.purchased_at || "").slice(0, 10),
     });
     setError("");
     setShowForm(true);
@@ -119,6 +127,11 @@ export default function InventoryPage() {
         ...form,
         quantity: parseInt(form.quantity) || 1,
         purchase_price: parseFloat(form.purchase_price) || 0,
+        category: form.category.trim() || null,
+        sku: form.sku.trim() || null,
+        source: form.source.trim() || null,
+        notes: form.notes.trim() || null,
+        purchased_at: form.purchased_at || null,
       };
       if (editingId) {
         await inventoryAPI.updateItem(editingId, payload);
@@ -322,6 +335,10 @@ export default function InventoryPage() {
                   <option value="EUR">EUR</option>
                   <option value="USD">USD</option>
                 </select>
+              </div>
+              <div>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Data achizitiei</label>
+                <input type="date" max={todayIso()} style={inputStyle} value={form.purchased_at} onChange={(e) => setForm({ ...form, purchased_at: e.target.value })} />
               </div>
               <div>
                 <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Sursa / Magazin</label>

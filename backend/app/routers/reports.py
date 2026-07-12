@@ -67,7 +67,8 @@ def get_reports_summary(
     venit_total = 0.0
     cost_total = 0.0
     vanzari_fara_cost = 0
-    roi_values: list[float] = []
+    roi_cost_total = 0.0
+    roi_profit_total = 0.0
     cat_buckets: dict[str, dict] = {}
     prod_buckets: dict[str, dict] = {}
     day_buckets: dict[str, dict] = {}
@@ -86,9 +87,11 @@ def get_reports_summary(
         if s.cost_price is None:
             vanzari_fara_cost += 1
 
-        # ROI doar pentru vanzarile cu cost de achizitie declarat (cele doar cu extra nu intra).
+        # ROI AGREGAT (GE-6b): acumulam cost si profit doar pentru vanzarile cu cost de
+        # achizitie declarat (cele doar cu extra nu intra).
         if s.cost_price is not None and cost_linie > 0:
-            roi_values.append((profit / cost_linie) * 100.0)
+            roi_cost_total += cost_linie
+            roi_profit_total += profit
 
         # Categoria denormalizata pe vanzare (GE-3); fallback pe join-ul de nume pentru
         # vanzarile vechi sau manuale fara categorie.
@@ -110,7 +113,6 @@ def get_reports_summary(
             db_b["profit"] += profit
 
     profit_total = venit_total - cost_total
-    roi_mediu = round(sum(roi_values) / len(roi_values), 2) if roi_values else 0.0
 
     # FlipRadar — adaugam `roi` per categorie (profit/cost*100) pe langa profit,
     # pentru graficul "Categorii dupa ROI mediu" si cardul de pe dashboard.
@@ -157,7 +159,7 @@ def get_reports_summary(
         "vanzari_fara_cost": vanzari_fara_cost,
         "venit_total": round(venit_total, 2),
         "profit_total": round(profit_total, 2),
-        "roi_mediu": roi_mediu,
+        "roi_mediu": round((roi_profit_total / roi_cost_total * 100), 1) if roi_cost_total > 0 else 0,
         "top_categorii": top_categorii,
         "top_produse": top_produse,
         "vanzari_pe_zi": vanzari_pe_zi,

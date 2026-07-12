@@ -4,8 +4,10 @@ from app.startup_checks import validate_env
 validate_env()
 
 import asyncio
+import os
 import subprocess
 import sys
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -400,6 +402,17 @@ async def lifespan(app: FastAPI):
         + (" + ML collectors (6h/12h) + retrain (luni 03:00)" if _ml_jobs_ok else "")
         + (" + facebook_group_checks (30m) + cookie_expiry (09:00)." if _fb_jobs_ok else ".")
     )
+
+    # FlipRadar — pre-warm curs BNR EUR->RON: prima cerere de stats dupa restart altfel
+    # blocheaza pana la ~10s pe fetch-ul sincron. Fire-and-forget; gardat pentru teste.
+    if os.getenv("FLIPRADAR_TESTING") != "1":
+        def _prewarm_bnr():
+            try:
+                from app.services.currency_service import get_eur_ron_rate
+                get_eur_ron_rate()
+            except Exception:
+                pass  # doar incalzim cache-ul; esecul nu blocheaza pornirea
+        threading.Thread(target=_prewarm_bnr, daemon=True, name="bnr-prewarm").start()
 
     # MODIFICARE 7 — la pornire marcam ca 'failed' itemele Discord ramase 'pending'
     # mai vechi de 1h (dintr-un run anterior intrerupt), ca sa nu blocheze coada.

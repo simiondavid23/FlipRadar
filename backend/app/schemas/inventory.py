@@ -13,7 +13,7 @@ class InventoryItemCreate(BaseModel):
     sku: Optional[str] = None
     quantity: int = Field(1, ge=0, description="Cantitatea nu poate fi negativa")
     purchase_price: float = Field(..., ge=0, description="Pretul nu poate fi negativ")
-    currency: str = "EUR"
+    currency: str = "RON"
     source: Optional[str] = None
     notes: Optional[str] = None
     purchased_at: Optional[datetime] = None

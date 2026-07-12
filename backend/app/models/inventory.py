@@ -14,7 +14,7 @@ class InventoryItem(Base):
     sku = Column(String, nullable=True)
     quantity = Column(Integer, default=1, nullable=False)
     purchase_price = Column(Float, nullable=False)
-    currency = Column(String, default="EUR", nullable=False)
+    currency = Column(String, default="RON", nullable=False)
     source = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     purchased_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
