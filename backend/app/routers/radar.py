@@ -11,6 +11,7 @@ import json
 import os
 import re
 import threading
+import contextvars
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -38,6 +39,7 @@ from app.services.radar.excel_exporter import build_listings_xlsx
 from app.services.radar.facebook_auth import start_facebook_login_session
 from app.services.radar.facebook_scraper import is_facebook_session_valid
 from app.services.radar.scorer import calculate_fee_ceiling, calculate_score
+from app.services.log_manager import set_log_user
 from app.utils.auth import get_current_user
 from app.utils.id_csv import parse_id_csv
 from app.utils.radar_scanner import (
@@ -1077,9 +1079,13 @@ def search_manual(
             print(f"[RadarManualSearch] Scraperul {platform} a crapat: {exc}")
         return []
 
+    # MON-4 — jurnalele scraperelor (emise din workerii executorului) apartin user-ului
+    # care a cerut cautarea; workerii NU mostenesc contextul, deci il copiem explicit.
+    set_log_user(current_user.id)
+    _ctx = contextvars.copy_context()
     combined: list[dict] = []
     with ThreadPoolExecutor(max_workers=min(len(platforms), 6)) as executor:
-        future_map = {executor.submit(_run, p): p for p in platforms}
+        future_map = {executor.submit(_ctx.run, _run, p): p for p in platforms}
         for future in as_completed(future_map):
             platform = future_map[future]
             try:
@@ -1108,6 +1114,7 @@ def search_manual(
                     "margin_pct": round(score_data.get("margin_pct") or 0, 1),
                 })
 
+    set_log_user(None)  # MON-4 — curatam contextul pe thread-ul de request (pooled)
     return combined
 
 
@@ -1285,6 +1292,7 @@ def facebook_connect(
     db.commit()
 
     def _bg():
+        set_log_user(current_user.id)  # MON-4 — jurnalele conectarii FB apartin acestui user
         try:
             start_facebook_login_session(path)
         except Exception as exc:
@@ -1384,6 +1392,7 @@ def radar_scan_now(
     user_id = current_user.id
 
     def _background_scan():
+        set_log_user(user_id)  # MON-4 — jurnalele scanului manual apartin acestui user
         _db = SessionLocal()
         try:
             _user = _db.query(User).filter(User.id == user_id).first()

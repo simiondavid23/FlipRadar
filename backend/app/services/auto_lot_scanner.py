@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.auto_lot_keyword import AutoLotKeyword
 from app.models.auto_lot import AutoLot
 from app.models.user import User
-from app.services.log_manager import log_manager
+from app.services.log_manager import log_manager, set_log_user
 from app.scrapers.auto.lots.copart_public import search_copart_lots
 from app.scrapers.auto.lots.iaai_public import search_iaai_lots
 from app.scrapers.auto.lots.sca_auctions import search_sca_lots
@@ -282,6 +282,7 @@ def run_auto_lot_scan_for_user(db: Session, user_id: int) -> dict:
 def run_auto_lot_scan_global(db: Session) -> None:
     """Apelat de APScheduler la fiecare 15 min. Itereaza toti userii cu keyword-uri
     active si deleaga per-user (la fel ca _scan_user vs run_radar_scan)."""
+    set_log_user(None)  # MON-4 — reset defensiv la intrarea in job (thread de pool reutilizat)
     user_ids = {
         row[0] for row in db.query(AutoLotKeyword.user_id)
         .join(User, AutoLotKeyword.user_id == User.id)
@@ -291,6 +292,7 @@ def run_auto_lot_scan_global(db: Session) -> None:
         return
     total_new = 0
     for uid in user_ids:
+        set_log_user(uid)  # MON-4 — jurnalele acestui user (via _for_user) ii apartin
         try:
             stats = run_auto_lot_scan_for_user(db, uid)
             total_new += stats["new_lots"]
@@ -300,4 +302,5 @@ def run_auto_lot_scan_global(db: Session) -> None:
                 db.rollback()
             except Exception:
                 pass
+    set_log_user(None)  # MON-4 — agregatul de mai jos e system
     log_manager.emit("auto_lots", "OK", f"Scan global loturi: {total_new} loturi noi")

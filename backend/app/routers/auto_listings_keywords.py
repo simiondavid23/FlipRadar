@@ -507,10 +507,12 @@ def scan_now(
     import threading
     from app.database import SessionLocal
     from app.services.auto_listings_scanner import run_auto_scan
+    from app.services.log_manager import set_log_user
 
     user_id = current_user.id
 
     def _background_scan():
+        set_log_user(user_id)  # MON-4 — jurnalele scanului manual apartin acestui user
         _db = SessionLocal()
         try:
             run_auto_scan(_db, user_id=user_id)

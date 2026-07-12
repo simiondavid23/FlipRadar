@@ -13,7 +13,7 @@ from app.services.bnr_exchange import get_eur_ron
 # Gradare identica cu Radar: acelasi calculate_score (marja fata de pretul de
 # revanzare + praguri A/B/C). scorer.py nu importa nimic din app -> fara ciclu.
 from app.services.radar.scorer import calculate_score
-from app.services.log_manager import log_manager
+from app.services.log_manager import log_manager, set_log_user
 from app.services.ml.feed_ml_bridge import try_save_to_ml
 
 _CURRENT_YEAR = 2026
@@ -261,6 +261,7 @@ def _send_email_alert_auto(user, kw, listing, send_email) -> None:
 def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
     """Called by APScheduler every 10 minutes (global) sau din butonul „Scanează
     acum” cu user_id setat (atunci scaneaza DOAR keyword-urile acelui user)."""
+    set_log_user(user_id)  # MON-4 — scheduler: user_id=None (reset defensiv); manual: user-ul care a declansat
     query = db.query(AutoKeyword).join(User, AutoKeyword.user_id == User.id).filter(AutoKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(AutoKeyword.user_id == user_id)
@@ -273,6 +274,7 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
         f"Auto scan pornit: {len(keywords)} keyword-uri active")
 
     for kw in keywords:
+        set_log_user(kw.user_id)  # MON-4 — jurnalele acestui keyword apartin user-ului lui
         # TASK 1 — logging REAL in consola (log_manager.emit NU apare in consola) la
         # inceputul procesarii FIECARUI keyword, ca sa nu existe tacere neexplicata.
         print(f"[AutoScan] procesez keyword {kw.id} platforma={kw.platform} "
@@ -357,3 +359,4 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
             print(f"[AutoScan] EROARE la keyword {kw.id} ({kw.platform}): {exc}\n"
                   f"{traceback.format_exc()}")
             continue
+    set_log_user(None)  # MON-4 — dupa bucla, emit-urile redevin system

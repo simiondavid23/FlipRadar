@@ -30,7 +30,7 @@ from app.services.push_service import is_push_configured, notify_user_push
 from app.services.radar.cleanup_service import cleanup_sold_listings
 from app.services.radar import health_watchdog
 from app.services.discord_service import send_radar_notification
-from app.services.log_manager import log_manager
+from app.services.log_manager import log_manager, set_log_user
 from app.services.ml.feed_ml_bridge import try_save_to_ml
 from app.services.radar.autovit_scraper import search_autovit
 from app.services.radar.facebook_scraper import search_facebook
@@ -2391,6 +2391,7 @@ def _scan_user(db: Session, user: User) -> dict:
 
 def run_radar_scan() -> None:
     """Punctul de intrare apelat de APScheduler la fiecare 5 minute."""
+    set_log_user(None)  # MON-4 — reset defensiv: thread de pool reutilizat poate mosteni context
     print(f"[RadarScanner] Pornit la {datetime.now().strftime('%H:%M:%S')}")
     db: Session = SessionLocal()
     total_new = 0
@@ -2413,6 +2414,7 @@ def run_radar_scan() -> None:
 
         users = db.query(User).filter(User.id.in_(active_user_ids), User.is_active == True).all()
         for user in users:
+            set_log_user(user.id)  # MON-4 — jurnalele emise in _scan_user apartin acestui user
             try:
                 stats = _scan_user(db, user)
                 total_new += stats["new_listings"]
@@ -2423,6 +2425,7 @@ def run_radar_scan() -> None:
                     db.rollback()
                 except Exception:
                     pass
+        set_log_user(None)  # MON-4 — dupa bucla, emit-urile (watchdog etc.) redevin system
 
         # RP-6 — evaluarea watchdog-ului la finalul ciclului complet.
         try:

@@ -16,7 +16,7 @@ from app.models.user import User
 from app.services.real_estate.extractor import extract_all, groq_extract
 from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
-from app.services.log_manager import log_manager
+from app.services.log_manager import log_manager, set_log_user
 
 
 def _within_hours(kw: RealEstateKeyword) -> bool:
@@ -546,6 +546,7 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
 
 def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                          force_polling: bool = False) -> None:
+    set_log_user(user_id)  # MON-4 — scheduler: user_id=None (reset defensiv); manual: user-ul care a declansat
     query = db.query(RealEstateKeyword).join(User, RealEstateKeyword.user_id == User.id).filter(RealEstateKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(RealEstateKeyword.user_id == user_id)
@@ -574,6 +575,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
         eur_ron = None
 
     for kw in keywords:
+        set_log_user(kw.user_id)  # MON-4 — jurnalele acestui keyword apartin user-ului lui
         if not _within_hours(kw):
             log_manager.emit("real_estate", "INFO",
                 f"Skip {kw.name!r} — interval orar inactiv")
@@ -654,6 +656,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
         # ajunge aici, deci NU "consuma" intervalul.
         kw.last_scan_at = datetime.now(timezone.utc)
         db.commit()
+    set_log_user(None)  # MON-4 — dupa bucla, emit-urile redevin system
 
 
 def _notify_re(listing: RealEstateListing, kw: RealEstateKeyword,

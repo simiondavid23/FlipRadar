@@ -57,14 +57,16 @@ async def stream_logs(
         raise HTTPException(status_code=400, detail=f"Modul necunoscut: {module}")
 
     async def generate():
-        existing = log_manager.get_all(module)
+        # MON-4 — DOAR intrarile user-ului curent (filtrare per user.id in log_manager;
+        # formele JSON trimise raman {id, ts, level, msg}, fara user_id).
+        existing = log_manager.get_all(module, user.id)
         for entry in existing:
             yield f"data: {json.dumps(entry)}\n\n"
         last_id = existing[-1]["id"] if existing else 0
         while True:
             if await request.is_disconnected():
                 break
-            new = log_manager.get_since(module, last_id)
+            new = log_manager.get_since(module, last_id, user.id)
             for entry in new:
                 yield f"data: {json.dumps(entry)}\n\n"
                 last_id = max(last_id, entry["id"])
@@ -86,7 +88,8 @@ def get_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return log_manager.get_stats()
+    # MON-4 — statistici DOAR pe intrarile user-ului curent.
+    return log_manager.get_stats(current_user.id)
 
 
 @router.post("/test-emit")
