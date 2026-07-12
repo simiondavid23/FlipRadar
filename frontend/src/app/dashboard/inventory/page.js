@@ -54,6 +54,7 @@ function todayIso() {
 export default function InventoryPage() {
   const router = useRouter();
   const [items, setItems] = useState([]);
+  const [search, setSearch] = useState("");
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -230,6 +231,16 @@ export default function InventoryPage() {
     return { totalCost, totalRevenue, profit, roi, margin, extraTotal };
   })();
 
+  // GE-6c: filtrare client-side DOAR pe lista afisata (statisticile raman pe items complet).
+  const q = search.trim().toLowerCase();
+  const visibleItems = q
+    ? items.filter((it) =>
+        [it.name, it.category, it.sku, it.source].some((v) =>
+          (v || "").toLowerCase().includes(q)
+        )
+      )
+    : items;
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem", flexWrap: "wrap", gap: "1rem" }}>
@@ -365,6 +376,10 @@ export default function InventoryPage() {
 
       <FeedErrorBanner message={loadError} onRetry={loadAll} />
 
+      <input type="text" style={{ ...inputStyle, marginBottom: "1rem" }}
+        placeholder="Cauta dupa nume, categorie, SKU sau sursa..."
+        value={search} onChange={(e) => setSearch(e.target.value)} />
+
       {/* List */}
       {loading ? (
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "3rem", textAlign: "center" }}>
@@ -376,6 +391,11 @@ export default function InventoryPage() {
           <p style={{ color: "var(--text-primary)", marginBottom: "0.5rem" }}>Inventarul tau este gol</p>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Adauga primele produse pentru a urmari stocul si valoarea.</p>
         </div>
+      ) : visibleItems.length === 0 ? (
+        <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "3rem", textAlign: "center" }}>
+          <Boxes style={{ width: "3.5rem", height: "3.5rem", color: "var(--text-secondary)", margin: "0 auto 1rem" }} />
+          <p style={{ color: "var(--text-primary)", marginBottom: "0.5rem" }}>Niciun rezultat pentru cautarea curenta.</p>
+        </div>
       ) : (
         <div style={{ ...cardStyle, borderRadius: "0.875rem", overflow: "hidden" }}>
           <div style={{ ...gridCols, padding: "0.75rem 1rem", borderBottom: "1px solid var(--border-color)" }}>
@@ -383,12 +403,12 @@ export default function InventoryPage() {
               <span key={h || "actions"} style={headerColStyle}>{h}</span>
             ))}
           </div>
-          {items.map((item, idx) => (
+          {visibleItems.map((item, idx) => (
             <div key={item.id}
               style={{
                 ...gridCols,
                 padding: "0.875rem 1rem",
-                borderBottom: idx === items.length - 1 ? "none" : "1px solid rgba(51,65,85,0.5)",
+                borderBottom: idx === visibleItems.length - 1 ? "none" : "1px solid rgba(51,65,85,0.5)",
                 alignItems: "center",
               }}
             >

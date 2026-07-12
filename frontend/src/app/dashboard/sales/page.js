@@ -54,6 +54,7 @@ export default function SalesPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [search, setSearch] = useState("");
 
   const loadAll = async () => {
     setLoading(true);
@@ -237,6 +238,16 @@ export default function SalesPage() {
     }
   };
 
+  // GE-6c: filtrare client-side DOAR pe lista afisata (statisticile vin din /api/sales/stats).
+  const q = search.trim().toLowerCase();
+  const visibleSales = q
+    ? sales.filter((s) =>
+        [s.product_name, s.platform, s.buyer, s.category].some((v) =>
+          (v || "").toLowerCase().includes(q)
+        )
+      )
+    : sales;
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem", flexWrap: "wrap", gap: "1rem" }}>
@@ -394,6 +405,10 @@ export default function SalesPage() {
 
       <FeedErrorBanner message={loadError} onRetry={loadAll} />
 
+      <input type="text" style={{ ...inputStyle, marginBottom: "1rem" }}
+        placeholder="Cauta dupa produs, platforma, cumparator sau categorie..."
+        value={search} onChange={(e) => setSearch(e.target.value)} />
+
       {/* List */}
       {loading ? (
         <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "3rem", textAlign: "center" }}>
@@ -405,9 +420,14 @@ export default function SalesPage() {
           <p style={{ color: "var(--text-primary)", marginBottom: "0.5rem" }}>Nicio vanzare inregistrata</p>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>Adauga prima vanzare pentru a monitoriza performanta ta.</p>
         </div>
+      ) : visibleSales.length === 0 ? (
+        <div style={{ ...cardStyle, borderRadius: "0.75rem", padding: "3rem", textAlign: "center" }}>
+          <Receipt style={{ width: "3.5rem", height: "3.5rem", color: "var(--text-secondary)", margin: "0 auto 1rem" }} />
+          <p style={{ color: "var(--text-primary)", marginBottom: "0.5rem" }}>Niciun rezultat pentru cautarea curenta.</p>
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {sales.map((sale) => {
+          {visibleSales.map((sale) => {
             const lineRevenue = (sale.sale_price || 0) * (sale.quantity || 0);
             const lineProfit = sale.cost_price != null ? ((sale.sale_price || 0) - sale.cost_price) * (sale.quantity || 0) - (sale.extra_costs || 0) : null;
             return (
