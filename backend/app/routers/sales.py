@@ -16,6 +16,7 @@ from app.models.sale import Sale
 from app.models.inventory import InventoryItem
 from app.schemas.sale import SaleCreate, SaleUpdate, SaleResponse
 from app.utils.auth import get_current_user
+from app.utils.pdf_fonts import ensure_pdf_fonts
 from app.services.currency_service import convert
 
 router = APIRouter(prefix="/api/sales", tags=["Sales"])
@@ -171,6 +172,7 @@ def export_sales_pdf(
     current_user: User = Depends(get_current_user),
 ):
     """Generate a PDF report of the current user's sales."""
+    font_regular, font_bold = ensure_pdf_fonts()
     sales = (
         db.query(Sale)
         .filter(Sale.user_id == current_user.id)
@@ -186,8 +188,8 @@ def export_sales_pdf(
     )
 
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("title", parent=styles["Title"], fontSize=18, spaceAfter=6, textColor=colors.HexColor("#1e40af"))
-    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#475569"))
+    title_style = ParagraphStyle("title", parent=styles["Title"], fontSize=18, spaceAfter=6, textColor=colors.HexColor("#1e40af"), fontName=font_bold)
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#475569"), fontName=font_regular)
 
     elements = []
     elements.append(Paragraph("Raport Vanzari - FlipRadar", title_style))
@@ -224,7 +226,8 @@ def export_sales_pdf(
     summary_tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
         ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), font_regular),
+        ("FONTNAME", (0, 0), (0, -1), font_bold),
         ("FONTSIZE", (0, 0), (-1, -1), 10),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ("PADDING", (0, 0), (-1, -1), 6),
@@ -258,7 +261,8 @@ def export_sales_pdf(
         tbl.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, -1), font_regular),
+            ("FONTNAME", (0, 0), (-1, 0), font_bold),
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
             ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")),
