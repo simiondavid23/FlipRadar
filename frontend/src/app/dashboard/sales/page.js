@@ -23,8 +23,10 @@ const emptyForm = {
   sale_price: "",
   currency: "RON",
   cost_price: "",
+  extra_costs: "",
   platform: "",
   buyer: "",
+  category: "",
   notes: "",
   sold_at: "",
   inventory_item_id: "",
@@ -92,8 +94,10 @@ export default function SalesPage() {
       sale_price: sale.sale_price ?? "",
       currency: sale.currency || "RON",
       cost_price: sale.cost_price ?? "",
+      extra_costs: sale.extra_costs != null ? String(sale.extra_costs) : "",
       platform: sale.platform || "",
       buyer: sale.buyer || "",
+      category: sale.category || "",
       notes: sale.notes || "",
       sold_at: (sale.sold_at || "").slice(0, 10),
       inventory_item_id: "",
@@ -115,6 +119,7 @@ export default function SalesPage() {
       product_name: item.name,
       cost_price: String(item.purchase_price ?? ""),
       currency: item.currency || prev.currency,
+      category: item.category || "",
       quantity: prev.quantity > item.quantity ? item.quantity : prev.quantity,
     }));
   };
@@ -134,14 +139,23 @@ export default function SalesPage() {
         quantity: parseInt(form.quantity) || 1,
         sale_price: parseFloat(form.sale_price) || 0,
         cost_price: form.cost_price === "" ? null : parseFloat(form.cost_price),
+        extra_costs: form.extra_costs === "" ? null : parseFloat(form.extra_costs),
         sold_at: form.sold_at,
         inventory_item_id: form.inventory_item_id ? Number(form.inventory_item_id) : null,
       };
       if (editingId) {
         // La edit nu permitem schimbarea legaturii cu inventarul.
         delete payload.inventory_item_id;
+        // GE-3: golirea campului Categorie sterge intentionat categoria (NULL in DB).
+        payload.category = (form.category || "").trim() || null;
         await salesAPI.updateSale(editingId, payload);
       } else {
+        // GE-3: trimitem category DOAR daca userul a completat-o; altfel o eliminam, ca
+        // setdefault-ul din backend sa poata copia categoria din inventar (category=""
+        // ar trece de exclude_none si ar bloca copierea).
+        const cat = (form.category || "").trim();
+        if (cat) payload.category = cat;
+        else delete payload.category;
         await salesAPI.createSale(payload);
       }
       setShowForm(false);
@@ -233,7 +247,7 @@ export default function SalesPage() {
           <p style={{ fontSize: "1.75rem", fontWeight: 700, color: "#a78bfa" }}>
             {(stats?.total_profit_eur ?? 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR
           </p>
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>Venit minus cost declarat</p>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>Venit minus cost declarat{stats?.sales_without_cost > 0 ? ` · ${stats.sales_without_cost} fara cost declarat` : ""}</p>
         </div>
       </div>
 
@@ -308,6 +322,14 @@ export default function SalesPage() {
                 <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Cumparator</label>
                 <input style={inputStyle} value={form.buyer} onChange={(e) => setForm({ ...form, buyer: e.target.value })} placeholder="Nume sau email (optional)" />
               </div>
+              <div>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Categorie</label>
+                <input type="text" style={inputStyle} value={form.category} placeholder="ex: Electronice" onChange={(e) => setForm({ ...form, category: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Costuri suplimentare</label>
+                <input type="number" step="0.01" min="0" style={inputStyle} value={form.extra_costs} placeholder="transport, taxe, comision" onChange={(e) => setForm({ ...form, extra_costs: e.target.value })} />
+              </div>
             </div>
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Note</label>
@@ -344,7 +366,7 @@ export default function SalesPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {sales.map((sale) => {
             const lineRevenue = (sale.sale_price || 0) * (sale.quantity || 0);
-            const lineProfit = sale.cost_price != null ? ((sale.sale_price || 0) - sale.cost_price) * (sale.quantity || 0) : null;
+            const lineProfit = sale.cost_price != null ? ((sale.sale_price || 0) - sale.cost_price) * (sale.quantity || 0) - (sale.extra_costs || 0) : null;
             return (
               <div key={sale.id} style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1rem 1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -357,6 +379,7 @@ export default function SalesPage() {
                   <div style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginTop: "0.25rem" }}>
                     {formatRoDate(sale.sold_at)} · {sale.quantity} x {sale.sale_price?.toFixed?.(2) ?? sale.sale_price} {sale.currency}
                     {sale.buyer ? ` · ${sale.buyer}` : ""}
+                    {sale.category ? ` · ${sale.category}` : ""}
                   </div>
                   {sale.notes && (
                     <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginTop: "0.375rem" }}>{sale.notes}</p>

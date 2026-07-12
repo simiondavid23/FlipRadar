@@ -13,7 +13,9 @@ class SaleCreate(BaseModel):
     sale_price: float = Field(..., ge=0, description="Pretul de vanzare nu poate fi negativ")
     currency: Optional[str] = None
     cost_price: Optional[float] = Field(None, ge=0)
+    extra_costs: Optional[float] = Field(None, ge=0)
     platform: Optional[str] = None
+    category: Optional[str] = None
     buyer: Optional[str] = None
     notes: Optional[str] = None
     sold_at: Optional[datetime] = None
@@ -44,7 +46,9 @@ class SaleUpdate(BaseModel):
     sale_price: Optional[float] = Field(None, ge=0)
     currency: Optional[str] = None
     cost_price: Optional[float] = Field(None, ge=0)
+    extra_costs: Optional[float] = Field(None, ge=0)
     platform: Optional[str] = None
+    category: Optional[str] = None
     buyer: Optional[str] = None
     notes: Optional[str] = None
     sold_at: Optional[datetime] = None
@@ -77,7 +81,9 @@ class SaleResponse(BaseModel):
     sale_price: float
     currency: str
     cost_price: Optional[float] = None
+    extra_costs: Optional[float] = None
     platform: Optional[str] = None
+    category: Optional[str] = None
     buyer: Optional[str] = None
     notes: Optional[str] = None
     sold_at: Optional[datetime] = None

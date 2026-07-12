@@ -46,6 +46,7 @@ def get_sales_stats(
             Sale.currency,
             func.coalesce(func.sum(Sale.sale_price * Sale.quantity), 0.0),
             func.coalesce(func.sum(Sale.cost_price * Sale.quantity), 0.0),
+            func.coalesce(func.sum(Sale.extra_costs), 0.0),
             func.coalesce(func.sum(Sale.quantity), 0),
             func.count(Sale.id),
         )
@@ -56,22 +57,34 @@ def get_sales_stats(
 
     total_revenue_eur = 0.0
     total_cost_eur = 0.0
+    total_extra_eur = 0.0
     total_units = 0
     total_sales = 0
-    for currency, revenue, cost, units, sale_count in rows:
+    for currency, revenue, cost, extra, units, sale_count in rows:
         total_revenue_eur += convert(float(revenue or 0), currency or "EUR", "EUR")
         total_cost_eur += convert(float(cost or 0), currency or "EUR", "EUR")
+        total_extra_eur += convert(float(extra or 0), currency or "EUR", "EUR")
         total_units += int(units or 0)
         total_sales += int(sale_count or 0)
 
-    total_profit_eur = total_revenue_eur - total_cost_eur
+    # extra_costs e total pe vanzare (nu per unitate): intra in profit, dar total_cost_eur
+    # ramane doar costul de achizitie.
+    total_profit_eur = total_revenue_eur - total_cost_eur - total_extra_eur
+
+    sales_without_cost = (
+        db.query(func.count(Sale.id))
+        .filter(Sale.user_id == current_user.id, Sale.cost_price.is_(None))
+        .scalar() or 0
+    )
 
     return {
         "total_sales": total_sales,
         "total_units_sold": total_units,
         "total_revenue_eur": round(total_revenue_eur, 2),
         "total_cost_eur": round(total_cost_eur, 2),
+        "total_extra_costs_eur": round(total_extra_eur, 2),
         "total_profit_eur": round(total_profit_eur, 2),
+        "sales_without_cost": int(sales_without_cost),
     }
 
 
@@ -109,6 +122,7 @@ def create_sale(
         payload.setdefault("product_name", inventory_item.name)
         payload.setdefault("cost_price", float(inventory_item.purchase_price))
         payload.setdefault("currency", inventory_item.currency)
+        payload.setdefault("category", inventory_item.category)
 
     if not payload.get("product_name"):
         raise HTTPException(status_code=400, detail="Numele produsului este obligatoriu.")
@@ -188,18 +202,23 @@ def export_sales_pdf(
     # Summary totals (EUR)
     total_revenue_eur = 0.0
     total_cost_eur = 0.0
+    total_extra_eur = 0.0
     total_units = 0
     for s in sales:
         total_revenue_eur += convert(float(s.sale_price or 0) * int(s.quantity or 0), s.currency or "EUR", "EUR")
         total_cost_eur += convert(float(s.cost_price or 0) * int(s.quantity or 0), s.currency or "EUR", "EUR")
+        total_extra_eur += convert(float(s.extra_costs or 0), s.currency or "EUR", "EUR")
         total_units += int(s.quantity or 0)
-    total_profit_eur = total_revenue_eur - total_cost_eur
+    fara_cost = sum(1 for s in sales if s.cost_price is None)
+    total_profit_eur = total_revenue_eur - total_cost_eur - total_extra_eur
 
     summary_data = [
         ["Venit total (EUR)", f"{total_revenue_eur:.2f}"],
         ["Cost total (EUR)", f"{total_cost_eur:.2f}"],
+        ["Costuri suplimentare (EUR)", f"{total_extra_eur:.2f}"],
         ["Profit total (EUR)", f"{total_profit_eur:.2f}"],
         ["Unitati vandute", f"{total_units}"],
+        ["Vanzari fara cost declarat", f"{fara_cost}"],
     ]
     summary_tbl = Table(summary_data, colWidths=[6 * cm, 4 * cm])
     summary_tbl.setStyle(TableStyle([
@@ -214,18 +233,20 @@ def export_sales_pdf(
     elements.append(Spacer(1, 0.6 * cm))
 
     # Details table
-    header = ["Data", "Produs", "Cant.", "Pret vanzare", "Cost", "Moneda", "Profit"]
+    header = ["Data", "Produs", "Cant.", "Pret vanzare", "Cost", "Extra", "Moneda", "Profit"]
     rows = [header]
     for s in sales:
         revenue = float(s.sale_price or 0) * int(s.quantity or 0)
         cost = float(s.cost_price or 0) * int(s.quantity or 0)
-        profit = revenue - cost
+        extra = float(s.extra_costs or 0)
+        profit = revenue - cost - extra
         rows.append([
             s.sold_at.strftime("%d.%m.%Y") if s.sold_at else "-",
             (s.product_name or "-")[:40],
             str(s.quantity or 0),
             f"{float(s.sale_price or 0):.2f}",
             f"{float(s.cost_price or 0):.2f}",
+            f"{extra:.2f}" if s.extra_costs is not None else "-",
             s.currency or "EUR",
             f"{profit:.2f}",
         ])
@@ -233,7 +254,7 @@ def export_sales_pdf(
     if len(rows) == 1:
         elements.append(Paragraph("Nu exista vanzari inregistrate.", sub_style))
     else:
-        tbl = Table(rows, colWidths=[2.2 * cm, 5.5 * cm, 1.3 * cm, 2.3 * cm, 2.3 * cm, 1.8 * cm, 2 * cm], repeatRows=1)
+        tbl = Table(rows, colWidths=[2.2 * cm, 3.9 * cm, 1.3 * cm, 2.3 * cm, 2.3 * cm, 1.6 * cm, 1.8 * cm, 2 * cm], repeatRows=1)
         tbl.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),

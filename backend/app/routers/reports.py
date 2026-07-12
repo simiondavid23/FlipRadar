@@ -66,6 +66,7 @@ def get_reports_summary(
     total_vanzari = len(sales)
     venit_total = 0.0
     cost_total = 0.0
+    vanzari_fara_cost = 0
     roi_values: list[float] = []
     cat_buckets: dict[str, dict] = {}
     prod_buckets: dict[str, dict] = {}
@@ -75,23 +76,32 @@ def get_reports_summary(
         qty = int(s.quantity or 1)
         rev = _to_eur(float(s.sale_price or 0) * qty, s.currency)
         cost = _to_eur(float(s.cost_price or 0) * qty, s.currency)
-        profit = rev - cost
+        # extra_costs = total pe vanzare (nu per unitate); intra in cost_linie pentru profit.
+        extra = _to_eur(float(s.extra_costs or 0), s.currency)
+        cost_linie = cost + extra
+        profit = rev - cost_linie
         venit_total += rev
-        cost_total += cost
+        cost_total += cost_linie
 
-        if cost > 0:
-            roi_values.append((profit / cost) * 100.0)
+        if s.cost_price is None:
+            vanzari_fara_cost += 1
 
-        category = name_to_category.get(s.product_name, "Necunoscut")
+        # ROI doar pentru vanzarile cu cost de achizitie declarat (cele doar cu extra nu intra).
+        if s.cost_price is not None and cost_linie > 0:
+            roi_values.append((profit / cost_linie) * 100.0)
+
+        # Categoria denormalizata pe vanzare (GE-3); fallback pe join-ul de nume pentru
+        # vanzarile vechi sau manuale fara categorie.
+        category = s.category or name_to_category.get(s.product_name) or "Necunoscut"
         cb = cat_buckets.setdefault(category, {"categorie": category, "profit": 0.0, "cost": 0.0, "count": 0})
         cb["profit"] += profit
-        cb["cost"] += cost
+        cb["cost"] += cost_linie
         cb["count"] += qty
 
         pb = prod_buckets.setdefault(s.product_name or "Necunoscut", {"name": s.product_name or "Necunoscut", "profit": 0.0, "revenue": 0.0, "cost": 0.0})
         pb["profit"] += profit
         pb["revenue"] += rev
-        pb["cost"] += cost
+        pb["cost"] += cost_linie
 
         if s.sold_at:
             day_key = s.sold_at.date().isoformat()
@@ -144,6 +154,7 @@ def get_reports_summary(
 
     return {
         "total_vanzari": total_vanzari,
+        "vanzari_fara_cost": vanzari_fara_cost,
         "venit_total": round(venit_total, 2),
         "profit_total": round(profit_total, 2),
         "roi_mediu": roi_mediu,

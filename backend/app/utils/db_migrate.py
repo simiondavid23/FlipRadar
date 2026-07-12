@@ -808,6 +808,16 @@ def run_migrations():
             "ALTER TABLE real_estate_listings "
             "ADD COLUMN IF NOT EXISTS listed_at TIMESTAMP")
 
+        # FlipRadar — Gestiune (GE-3): categoria denormalizata pe vanzari (copiata din inventar
+        # la creare; vanzarile manuale o pot seta din formular). Fara backfill — decizie explicita.
+        _migrate(conn, "add_sales_category",
+            "ALTER TABLE sales ADD COLUMN IF NOT EXISTS category VARCHAR")
+
+        # FlipRadar — Gestiune (GE-4): costuri suplimentare totale pe vanzare (transport, taxe,
+        # comision), in moneda vanzarii. Intra in profit, nu in ROI. Fara backfill.
+        _migrate(conn, "add_sales_extra_costs",
+            "ALTER TABLE sales ADD COLUMN IF NOT EXISTS extra_costs FLOAT")
+
     _backfill_product_sources()
 
 
