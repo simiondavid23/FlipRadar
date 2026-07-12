@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
@@ -13,15 +13,22 @@ router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
 @router.get("/", response_model=List[NotificationResponse])
 def get_notifications(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all notifications for current user."""
+    """Get a page of the current user's notifications, newest first.
+
+    Paginare prin `skip`/`limit` (default 50, max 100) — compatibil inapoi cu
+    apelul fara parametri (aceleasi 50 cele mai noi ca inainte).
+    """
     notifications = (
         db.query(Notification)
         .filter(Notification.user_id == current_user.id)
         .order_by(Notification.created_at.desc())
-        .limit(50)
+        .offset(skip)
+        .limit(limit)
         .all()
     )
     return notifications

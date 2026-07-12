@@ -299,7 +299,7 @@ export const trackedProductsAPI = {
 
 // Notificări
 export const notificationsAPI = {
-  getNotifications: () => api.get("/api/notifications/"),
+  getNotifications: (params) => api.get("/api/notifications/", { params }),
   getUnreadCount: () => api.get("/api/notifications/unread-count"),
   markAsRead: (id) => api.put(`/api/notifications/${id}/read`),
   markAllAsRead: () => api.put("/api/notifications/read-all"),

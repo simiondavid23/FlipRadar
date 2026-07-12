@@ -1,40 +1,65 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { notificationsAPI } from "@/lib/api";
-import { Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle, BellOff } from "lucide-react";
+import { Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle, BellOff, Users, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE = 50;
 
 const typeIcons = {
   info: { icon: Info, color: "#3b82f6" },
   alert: { icon: AlertTriangle, color: "#f59e0b" },
   success: { icon: CheckCircle, color: "#22c55e" },
   warning: { icon: AlertTriangle, color: "#ef4444" },
+  facebook_group: { icon: Users, color: "#3b82f6" },
 };
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const router = useRouter();
 
-  useEffect(() => { loadNotifications(); }, []);
+  useEffect(() => {
+    loadNotifications(true);
+    loadUnread();
+  }, []);
 
-  const loadNotifications = async () => {
+  const loadUnread = async () => {
     try {
-      const res = await notificationsAPI.getNotifications();
-      setNotifications(res.data);
+      const res = await notificationsAPI.getUnreadCount();
+      setUnreadCount(res.data.unread_count ?? 0);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+  };
+
+  // reset -> inlocuieste lista (skip 0); altfel apenduieste transa urmatoare.
+  const loadNotifications = async (reset = false) => {
+    const skip = reset ? 0 : notifications.length;
+    if (reset) setLoading(true); else setLoadingMore(true);
+    try {
+      const res = await notificationsAPI.getNotifications({ skip, limit: PAGE_SIZE });
+      const batch = res.data || [];
+      setNotifications((prev) => (reset ? batch : [...prev, ...batch]));
+      setHasMore(batch.length === PAGE_SIZE);
+    } catch (e) { console.error(e); }
+    finally { if (reset) setLoading(false); else setLoadingMore(false); }
   };
 
   const markAsRead = async (id) => {
     try {
       await notificationsAPI.markAsRead(id);
-      setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n));
+      setNotifications((prev) => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+      loadUnread();
     } catch (e) { console.error(e); }
   };
 
   const markAllAsRead = async () => {
     try {
       await notificationsAPI.markAllAsRead();
-      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+      setNotifications((prev) => prev.map(n => ({ ...n, is_read: true })));
+      loadUnread();
     } catch (e) { console.error(e); }
   };
 
@@ -43,10 +68,17 @@ export default function NotificationsPage() {
     try {
       await notificationsAPI.clearAll();
       setNotifications([]);
+      setHasMore(false);
+      loadUnread();
     } catch (e) { console.error(e); }
   };
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  // Click: marcheaza citit daca e necitita; navigheaza daca exista link (si pe cele deja citite).
+  const handleClick = (notif) => {
+    if (!notif.is_read) markAsRead(notif.id);
+    if (notif.link) router.push(notif.link);
+  };
+
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)" };
 
   if (loading) {
@@ -69,7 +101,7 @@ export default function NotificationsPage() {
                 backgroundColor: "#dc2626", color: "var(--text-primary)" }}>{unreadCount}</span>
             )}
           </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>{notifications.length} notificari totale</p>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>{notifications.length} incarcate · {unreadCount} necitite</p>
         </div>
         {notifications.length > 0 && (
           <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -96,8 +128,8 @@ export default function NotificationsPage() {
             const isFlashDeal = notif.notification_type === "flash_deal";
             const accentColor = isFlashDeal ? "#fb923c" : typeInfo.color;
             return (
-              <div key={notif.id} onClick={() => !notif.is_read && markAsRead(notif.id)}
-                style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1rem 1.25rem", cursor: notif.is_read ? "default" : "pointer",
+              <div key={notif.id} onClick={() => handleClick(notif)}
+                style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1rem 1.25rem", cursor: notif.link ? "pointer" : "default",
                   opacity: notif.is_read ? 0.6 : 1, borderLeft: `3px solid ${accentColor}`, position: "relative" }}>
                 {isFlashDeal && (
                   <span style={{
@@ -121,10 +153,21 @@ export default function NotificationsPage() {
                   {!notif.is_read && (
                     <div style={{ width: "0.5rem", height: "0.5rem", borderRadius: "50%", backgroundColor: "#3b82f6", flexShrink: 0, marginTop: "0.375rem" }} />
                   )}
+                  {notif.link && (
+                    <ChevronRight style={{ width: "1rem", height: "1rem", color: "var(--text-secondary)", flexShrink: 0, marginTop: "0.25rem" }} />
+                  )}
                 </div>
               </div>
             );
           })}
+          {hasMore && (
+            <button onClick={() => loadNotifications(false)} disabled={loadingMore}
+              style={{ alignSelf: "center", marginTop: "0.25rem", padding: "0.625rem 1.25rem", borderRadius: "0.5rem",
+                fontSize: "0.875rem", border: "1px solid var(--border-color)", backgroundColor: "transparent",
+                color: "var(--text-secondary)", cursor: loadingMore ? "default" : "pointer", opacity: loadingMore ? 0.6 : 1 }}>
+              {loadingMore ? "Se incarca..." : "Incarca mai multe"}
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ ...cardStyle, borderRadius: "1rem", padding: "3rem", textAlign: "center" }}>
