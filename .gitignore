@@ -22,3 +22,4 @@ Thumbs.db
 # FlipRadar — date locale sensibile (sesiuni scrapere etc.) + output health-check
 backend/data/
 backend/scripts/snapshot_out/
+scripts/diagnostics/
