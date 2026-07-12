@@ -1,0 +1,1746 @@
+..FF........E...................E.....................E................. [ 35%]
+................E......E..............E.....................E........... [ 71%]
+..........................................................               [100%]
+=================================== ERRORS ====================================
+_____________ ERROR at setup of test_active_moves_back_from_saved _____________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_active_moves_back_from_saved>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0A6C6030>
+instance = <app.models.user.User object at 0x0000027E0A6C66C0>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0a6c66c0>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+____________ ERROR at setup of test_radar_export_ids_doua_din_trei ____________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_radar_export_ids_doua_din_trei>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0ADC59A0>
+instance = <app.models.user.User object at 0x0000027E0ADC5E50>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0adc5e50>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+_______________ ERROR at setup of test_stats_total_doar_active ________________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_stats_total_doar_active>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0B159D60>
+instance = <app.models.user.User object at 0x0000027E0B15A120>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0b15a120>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+____________ ERROR at setup of test_search_vechi_facebook_nu_crapa ____________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_search_vechi_facebook_nu_crapa>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0A6A3980>
+instance = <app.models.user.User object at 0x0000027E0A625400>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0a625400>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+____________________ ERROR at setup of test_makes_endpoint ____________________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_makes_endpoint>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0A626120>
+instance = <app.models.user.User object at 0x0000027E0A625310>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0a625310>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+___________ ERROR at setup of test_detail_fetched_true_pe_descriere ___________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_detail_fetched_true_pe_descriere>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0B15BF20>
+instance = <app.models.user.User object at 0x0000027E0B15BA70>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0b15ba70>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+________________ ERROR at setup of test_simple_mode_unchanged _________________
+
+fixturedef = <FixtureDef argname='auth_client' scope='function' baseid='tests'>
+request = <SubRequest 'auth_client' for <Function test_simple_mode_unchanged>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+venv\Lib\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\conftest.py:144: in auth_client
+    r = client.post("/api/auth/register", json=payload)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:546: in post
+    return super().post(
+venv\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+venv\Lib\site-packages\starlette\testclient.py:445: in request
+    return super().request(
+venv\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+venv\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+venv\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\testclient.py:348: in handle_request
+    raise exc
+venv\Lib\site-packages\starlette\testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+venv\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:450: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\david\AppData\Local\Python\pythoncore-3.14-64\Lib\concurrent\futures\_base.py:395: in __get_result
+    raise self._exception
+venv\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\applications.py:1160: in __call__
+    await super().__call__(scope, receive, send)
+venv\Lib\site-packages\starlette\applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+venv\Lib\site-packages\starlette\middleware\cors.py:87: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:736: in app
+    await route.handle(scope, receive, send)
+venv\Lib\site-packages\starlette\routing.py:290: in handle
+    await self.app(scope, receive, send)
+venv\Lib\site-packages\fastapi\routing.py:130: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+venv\Lib\site-packages\fastapi\routing.py:116: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\fastapi\routing.py:670: in app
+    raw_response = await run_endpoint_function(
+venv\Lib\site-packages\fastapi\routing.py:326: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\starlette\concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+venv\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\slowapi\extension.py:766: in sync_wrapper
+    response = func(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^
+app\routers\auth.py:48: in register
+    db.refresh(new_user)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.orm.session.Session object at 0x0000027E0A91B200>
+instance = <app.models.user.User object at 0x0000027E0A91B5C0>
+attribute_names = None, with_for_update = None
+
+    def refresh(
+        self,
+        instance: object,
+        attribute_names: Optional[Iterable[str]] = None,
+        with_for_update: ForUpdateParameter = None,
+    ) -> None:
+        """Expire and refresh attributes on the given instance.
+    
+        The selected attributes will first be expired as they would when using
+        :meth:`_orm.Session.expire`; then a SELECT statement will be issued to
+        the database to refresh column-oriented attributes with the current
+        value available in the current transaction.
+    
+        :func:`_orm.relationship` oriented attributes will also be immediately
+        loaded if they were already eagerly loaded on the object, using the
+        same eager loading strategy that they were loaded with originally.
+    
+        .. versionadded:: 1.4 - the :meth:`_orm.Session.refresh` method
+           can also refresh eagerly loaded attributes.
+    
+        :func:`_orm.relationship` oriented attributes that would normally
+        load using the ``select`` (or "lazy") loader strategy will also
+        load **if they are named explicitly in the attribute_names
+        collection**, emitting a SELECT statement for the attribute using the
+        ``immediate`` loader strategy.  If lazy-loaded relationships are not
+        named in :paramref:`_orm.Session.refresh.attribute_names`, then
+        they remain as "lazy loaded" attributes and are not implicitly
+        refreshed.
+    
+        .. versionchanged:: 2.0.4  The :meth:`_orm.Session.refresh` method
+           will now refresh lazy-loaded :func:`_orm.relationship` oriented
+           attributes for those which are named explicitly in the
+           :paramref:`_orm.Session.refresh.attribute_names` collection.
+    
+        .. tip::
+    
+            While the :meth:`_orm.Session.refresh` method is capable of
+            refreshing both column and relationship oriented attributes, its
+            primary focus is on refreshing of local column-oriented attributes
+            on a single instance. For more open ended "refresh" functionality,
+            including the ability to refresh the attributes on many objects at
+            once while having explicit control over relationship loader
+            strategies, use the
+            :ref:`populate existing <orm_queryguide_populate_existing>` feature
+            instead.
+    
+        Note that a highly isolated transaction will return the same values as
+        were previously read in that same transaction, regardless of changes
+        in database state outside of that transaction.   Refreshing
+        attributes usually only makes sense at the start of a transaction
+        where database rows have not yet been accessed.
+    
+        :param attribute_names: optional.  An iterable collection of
+          string attribute names indicating a subset of attributes to
+          be refreshed.
+    
+        :param with_for_update: optional boolean ``True`` indicating FOR UPDATE
+          should be used, or may be a dictionary containing flags to
+          indicate a more specific set of FOR UPDATE flags for the SELECT;
+          flags should match the parameters of
+          :meth:`_query.Query.with_for_update`.
+          Supersedes the :paramref:`.Session.refresh.lockmode` parameter.
+    
+        .. seealso::
+    
+            :ref:`session_expire` - introductory material
+    
+            :meth:`.Session.expire`
+    
+            :meth:`.Session.expire_all`
+    
+            :ref:`orm_queryguide_populate_existing` - allows any ORM query
+            to refresh objects as they would be loaded normally.
+    
+        """
+        try:
+            state = attributes.instance_state(instance)
+        except exc.NO_STATE as err:
+            raise exc.UnmappedInstanceError(instance) from err
+    
+        self._expire_state(state, attribute_names)
+    
+        # this autoflush previously used to occur as a secondary effect
+        # of the load_on_ident below.   Meaning we'd organize the SELECT
+        # based on current DB pks, then flush, then if pks changed in that
+        # flush, crash.  this was unticketed but discovered as part of
+        # #8703.  So here, autoflush up front, dont autoflush inside
+        # load_on_ident.
+        self._autoflush()
+    
+        if with_for_update == {}:
+            raise sa_exc.ArgumentError(
+                "with_for_update should be the boolean value "
+                "True, or a dictionary with options.  "
+                "A blank dictionary is ambiguous."
+            )
+    
+        with_for_update = ForUpdateArg._from_argument(with_for_update)
+    
+        stmt: Select[Any] = sql.select(object_mapper(instance))
+        if (
+            loading.load_on_ident(
+                self,
+                stmt,
+                state.key,
+                refresh_state=state,
+                with_for_update=with_for_update,
+                only_load_props=attribute_names,
+                require_pk_cols=True,
+                # technically unnecessary as we just did autoflush
+                # above, however removes the additional unnecessary
+                # call to _autoflush()
+                no_autoflush=True,
+                is_user_refresh=True,
+            )
+            is None
+        ):
+>           raise sa_exc.InvalidRequestError(
+                "Could not refresh instance '%s'" % instance_str(instance)
+            )
+E           sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<User at 0x27e0a91b5c0>'
+
+venv\Lib\site-packages\sqlalchemy\orm\session.py:3170: InvalidRequestError
+================================== FAILURES ===================================
+_______________ test_tracked_products_autentificat_lista_goala ________________
+
+auth_client = <starlette.testclient.TestClient object at 0x0000027E08FED1D0>
+
+    def test_tracked_products_autentificat_lista_goala(auth_client):
+        r = auth_client.get("/api/tracked-products/")
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\test_api_smoke.py:18: AssertionError
+_________________ test_facebook_status_nu_expune_session_path _________________
+
+auth_client = <starlette.testclient.TestClient object at 0x0000027E0A568770>
+
+    def test_facebook_status_nu_expune_session_path(auth_client):
+        # Ingheata fixul F6: raspunsul NU mai contine calea absoluta `session_path`.
+        r = auth_client.get("/api/radar/facebook/status")
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\test_api_smoke.py:25: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_api_smoke.py::test_tracked_products_autentificat_lista_goala
+FAILED tests/test_api_smoke.py::test_facebook_status_nu_expune_session_path
+ERROR tests/test_auto_bulk_action.py::test_active_moves_back_from_saved - sql...
+ERROR tests/test_export_by_ids.py::test_radar_export_ids_doua_din_trei - sqla...
+ERROR tests/test_imobiliare_feed_filters.py::test_stats_total_doar_active - s...
+ERROR tests/test_imobiliare_save_manual.py::test_search_vechi_facebook_nu_crapa
+ERROR tests/test_mobile_de_make_resolve.py::test_makes_endpoint - sqlalchemy....
+ERROR tests/test_mobile_de_relevance.py::test_detail_fetched_true_pe_descriere
+ERROR tests/test_radar_exclusion_api.py::test_simple_mode_unchanged - sqlalch...
