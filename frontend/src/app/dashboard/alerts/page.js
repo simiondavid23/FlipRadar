@@ -1,11 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { alertsAPI } from "@/lib/api";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import { Trash2, ToggleLeft, ToggleRight, BellOff, CheckCircle } from "lucide-react";
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     loadAlerts();
@@ -15,21 +18,23 @@ export default function AlertsPage() {
     try {
       const response = await alertsAPI.getAlerts();
       setAlerts(response.data);
-    } catch (error) {
-      console.error("Error loading alerts:", error);
+      setError(null);
+    } catch (err) {
+      console.error("Error loading alerts:", err);
+      setError("Nu am putut incarca alertele. Reincearca.");
     } finally {
       setLoading(false);
     }
   };
 
+  // Dupa toggle/delete reincarcam din server (fara update optimist cu closure stale).
   const handleToggle = async (alertId) => {
     try {
       await alertsAPI.toggleAlert(alertId);
-      setAlerts(alerts.map((a) =>
-        a.id === alertId ? { ...a, is_active: !a.is_active } : a
-      ));
-    } catch (error) {
-      console.error("Error toggling alert:", error);
+      await loadAlerts();
+    } catch (err) {
+      console.error("Error toggling alert:", err);
+      setError("Nu am putut actualiza alerta. Reincearca.");
     }
   };
 
@@ -37,9 +42,10 @@ export default function AlertsPage() {
     if (!confirm("Esti sigur ca vrei sa stergi aceasta alerta?")) return;
     try {
       await alertsAPI.deleteAlert(alertId);
-      setAlerts(alerts.filter((a) => a.id !== alertId));
-    } catch (error) {
-      console.error("Error deleting alert:", error);
+      await loadAlerts();
+    } catch (err) {
+      console.error("Error deleting alert:", err);
+      setError("Nu am putut sterge alerta. Reincearca.");
     }
   };
 
@@ -63,6 +69,8 @@ export default function AlertsPage() {
         </div>
       </div>
 
+      <FeedErrorBanner message={error} onRetry={loadAlerts} />
+
       {alerts.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {alerts.map((alert) => (
@@ -79,9 +87,16 @@ export default function AlertsPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
-                    <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-                      {alert.product?.name || `Produs #${alert.product_id}`}
-                    </h3>
+                    <Link
+                      href={`/dashboard/products/${alert.product_id}`}
+                      style={{ textDecoration: "none", color: "inherit", display: "inline-flex", alignItems: "center" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
+                    >
+                      <h3 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                        {alert.product?.name || `Produs #${alert.product_id}`}
+                      </h3>
+                    </Link>
                     {alert.is_triggered && (
                       <span style={{
                         display: "inline-flex", alignItems: "center", gap: "0.25rem",
@@ -104,6 +119,11 @@ export default function AlertsPage() {
                     <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
                       Pret tinta: <span style={{ color: "#facc15", fontWeight: 600 }}>{alert.target_price} {alert.currency || "EUR"}</span>
                     </span>
+                    {alert.product && alert.product.current_price != null && (
+                      <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                        Curent: <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{alert.product.current_price} {alert.product.currency}</span>
+                      </span>
+                    )}
                     <span style={{
                       padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
                       backgroundColor: alert.alert_type === "price_rise" ? "rgba(239,68,68,0.15)" : "rgba(59,130,246,0.15)",
@@ -115,11 +135,16 @@ export default function AlertsPage() {
                   <p style={{ fontSize: "0.75rem", marginTop: "0.375rem", color: "var(--text-secondary)" }}>
                     Creata la: {new Date(alert.created_at).toLocaleDateString("ro-RO")}
                   </p>
+                  {alert.is_triggered && alert.triggered_at && (
+                    <p style={{ fontSize: "0.75rem", marginTop: "0.25rem", color: "var(--text-secondary)" }}>
+                      Declansata la {new Date(alert.triggered_at).toLocaleString("ro-RO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   <button
                     onClick={() => handleToggle(alert.id)}
-                    title={alert.is_active ? "Dezactiveaza" : "Activeaza"}
+                    title={alert.is_triggered ? "Rearmeaza" : alert.is_active ? "Dezactiveaza" : "Activeaza"}
                     style={{ padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}

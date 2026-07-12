@@ -72,7 +72,13 @@ def toggle_alert(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Activează sau dezactivează o alertă."""
+    """Activează / dezactivează o alertă, sau o REARMEAZĂ dacă e declanșată.
+
+    O alertă declanșată (is_triggered) nu s-ar mai declanșa din nou; toggle-ul o
+    rearmează: șterge starea de declanșare (is_triggered=False, triggered_at=None)
+    și o reactivează, ca să poată declanșa iar. Pentru alertele nedeclanșate,
+    toggle-ul doar comută is_active ca înainte.
+    """
 
     alert = (
         db.query(Alert)
@@ -85,7 +91,13 @@ def toggle_alert(
             detail="Alerta nu a fost gasita"
         )
 
-    alert.is_active = not alert.is_active
+    if alert.is_triggered:
+        # Rearmare: o alerta declansata redevine activa si poate declansa din nou.
+        alert.is_triggered = False
+        alert.triggered_at = None
+        alert.is_active = True
+    else:
+        alert.is_active = not alert.is_active
     db.commit()
 
     status_text = "activata" if alert.is_active else "dezactivata"
