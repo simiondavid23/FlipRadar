@@ -26,8 +26,21 @@ const emptyForm = {
   platform: "",
   buyer: "",
   notes: "",
+  sold_at: "",
   inventory_item_id: "",
 };
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatRoDate(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = String(iso).slice(0, 10).split("-");
+  if (!y || !m || !d) return "—";
+  return `${d}.${m}.${y}`;
+}
 
 export default function SalesPage() {
   const [sales, setSales] = useState([]);
@@ -66,7 +79,7 @@ export default function SalesPage() {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, sold_at: todayIso() });
     setError("");
     setShowForm(true);
   };
@@ -82,6 +95,7 @@ export default function SalesPage() {
       platform: sale.platform || "",
       buyer: sale.buyer || "",
       notes: sale.notes || "",
+      sold_at: (sale.sold_at || "").slice(0, 10),
       inventory_item_id: "",
     });
     setError("");
@@ -120,6 +134,7 @@ export default function SalesPage() {
         quantity: parseInt(form.quantity) || 1,
         sale_price: parseFloat(form.sale_price) || 0,
         cost_price: form.cost_price === "" ? null : parseFloat(form.cost_price),
+        sold_at: form.sold_at,
         inventory_item_id: form.inventory_item_id ? Number(form.inventory_item_id) : null,
       };
       if (editingId) {
@@ -285,7 +300,11 @@ export default function SalesPage() {
                 <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Platforma vanzare</label>
                 <input style={inputStyle} value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} placeholder="eMAG, OLX, Okazii, magazin propriu..." />
               </div>
-              <div style={{ gridColumn: "span 2" }}>
+              <div>
+                <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Data vanzarii *</label>
+                <input required type="date" max={todayIso()} style={inputStyle} value={form.sold_at} onChange={(e) => setForm({ ...form, sold_at: e.target.value })} />
+              </div>
+              <div>
                 <label style={{ color: "var(--text-secondary)", fontSize: "0.75rem", display: "block", marginBottom: "0.25rem" }}>Cumparator</label>
                 <input style={inputStyle} value={form.buyer} onChange={(e) => setForm({ ...form, buyer: e.target.value })} placeholder="Nume sau email (optional)" />
               </div>
@@ -336,7 +355,7 @@ export default function SalesPage() {
                     )}
                   </div>
                   <div style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", marginTop: "0.25rem" }}>
-                    {sale.quantity} x {sale.sale_price?.toFixed?.(2) ?? sale.sale_price} {sale.currency}
+                    {formatRoDate(sale.sold_at)} · {sale.quantity} x {sale.sale_price?.toFixed?.(2) ?? sale.sale_price} {sale.currency}
                     {sale.buyer ? ` · ${sale.buyer}` : ""}
                   </div>
                   {sale.notes && (

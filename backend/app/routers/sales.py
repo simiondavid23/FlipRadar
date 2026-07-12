@@ -30,7 +30,7 @@ def get_sales(
     return (
         db.query(Sale)
         .filter(Sale.user_id == current_user.id)
-        .order_by(Sale.sold_at.desc())
+        .order_by(Sale.sold_at.desc(), Sale.id.desc())
         .all()
     )
 
@@ -160,7 +160,7 @@ def export_sales_pdf(
     sales = (
         db.query(Sale)
         .filter(Sale.user_id == current_user.id)
-        .order_by(Sale.sold_at.desc())
+        .order_by(Sale.sold_at.desc(), Sale.id.desc())
         .all()
     )
 

@@ -119,6 +119,7 @@ def get_products(
     price_min: Optional[float] = Query(None),
     price_max: Optional[float] = Query(None),
     roi_min: Optional[float] = Query(None),
+    roi_max: Optional[float] = Query(None),
     source: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
@@ -167,6 +168,15 @@ def get_products(
             Product.current_price.isnot(None),
             Product.current_price > 0,
             ((Product.resale_price - Product.current_price) / Product.current_price * 100) >= roi_min,
+        )
+
+    if roi_max is not None:
+        # ROI = ((revanzare - curent) / curent) * 100 — oglinda lui roi_min, prag superior (<=)
+        query = query.filter(
+            Product.resale_price.isnot(None),
+            Product.current_price.isnot(None),
+            Product.current_price > 0,
+            ((Product.resale_price - Product.current_price) / Product.current_price * 100) <= roi_max,
         )
 
     sort_key = (sort_by or "").lower()

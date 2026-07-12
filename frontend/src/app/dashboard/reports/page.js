@@ -70,19 +70,11 @@ export default function ReportsPage() {
     load();
   }, []); // initial load with 30-day preset
 
-  // FlipRadar — B: numara produsele din catalog cu ROI estimat sub 10% (pentru callout).
+  // FlipRadar — B: numara produsele din CATALOG cu ROI <= 10% (filtrare server-side prin roi_max, GE-2).
   useEffect(() => {
     let active = true;
-    productsAPI.getProducts({ limit: 500 })
-      .then((res) => {
-        if (!active) return;
-        const count = (res.data || []).filter((p) => {
-          const cp = Number(p.current_price), rp = Number(p.resale_price);
-          if (p.resale_price == null || !isFinite(cp) || cp <= 0) return false;
-          return ((rp - cp) / cp) * 100 < 10;
-        }).length;
-        setLowRoiCount(count);
-      })
+    productsAPI.getProducts({ roi_max: 10, limit: 500 })
+      .then((res) => { if (active) setLowRoiCount((res.data || []).length); })
       .catch(() => { if (active) setLowRoiCount(0); });
     return () => { active = false; };
   }, []);
@@ -268,7 +260,7 @@ export default function ReportsPage() {
               <AlertTriangle style={{ width: "20px", height: "20px", color: "#fb923c", flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#fb923c", margin: 0 }}>
-                  {lowRoiCount} {lowRoiCount === 1 ? "produs din inventar are" : "produse din inventar au"} profit estimat sub 10%
+                  {lowRoiCount} {lowRoiCount === 1 ? "produs din catalog are" : "produse din catalog au"} profit estimat sub 10%
                 </p>
                 <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>
                   Vezi produsele cu marja mica si ajusteaza preturile de revanzare →

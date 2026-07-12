@@ -50,7 +50,7 @@ export default function ProductsPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [filters, setFilters] = useState({
-    source: "", brand: "", category: "", price_min: "", price_max: "",
+    source: "", brand: "", category: "", price_min: "", price_max: "", roi_min: "", roi_max: "",
   });
   // FlipRadar — input brand cu autocomplete (sugestii filtrate din filterOptions.brands)
   const [brandInput, setBrandInput] = useState("");
@@ -87,7 +87,27 @@ export default function ProductsPage() {
   };
 
   useEffect(() => {
-    loadProducts();
+    // FlipRadar — GE-2: deep-link ?roi_min= / ?roi_max= (ex. callout-ul din Statistici & Profit).
+    // Citire one-shot din window.location la mount — pagina nu foloseste useSearchParams
+    // (ar cere Suspense la build); nu reactionam la schimbari ulterioare de URL fara remount.
+    let initial = null;
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const overrides = {};
+      for (const key of ["roi_min", "roi_max"]) {
+        const raw = sp.get(key);
+        if (raw !== null && raw !== "" && isFinite(parseFloat(raw))) overrides[key] = String(parseFloat(raw));
+      }
+      if (Object.keys(overrides).length > 0) initial = { ...filters, ...overrides };
+    } catch { /* URL invalid — ignoram, incarcam normal */ }
+
+    if (initial) {
+      setFilters(initial);
+      setShowFilters(true); // panoul deschis, ca filtrul aplicat sa fie vizibil utilizatorului
+      loadProducts({ filtersOverride: initial }); // pattern BUG 1: evita race-ul setState/request
+    } else {
+      loadProducts();
+    }
     loadFilterOptions(filters.source);
   }, []);
 
@@ -121,6 +141,8 @@ export default function ProductsPage() {
       if (f.category) params.category = f.category;
       if (f.price_min !== "" && f.price_min != null) params.price_min = parseFloat(f.price_min);
       if (f.price_max !== "" && f.price_max != null) params.price_max = parseFloat(f.price_max);
+      if (f.roi_min !== "" && f.roi_min != null) params.roi_min = parseFloat(f.roi_min);
+      if (f.roi_max !== "" && f.roi_max != null) params.roi_max = parseFloat(f.roi_max);
       if (effectiveSortBy) params.sort_by = effectiveSortBy;
       const response = await productsAPI.getProducts(params);
       setProducts(response.data);
@@ -139,7 +161,7 @@ export default function ProductsPage() {
   const handleApplyFilters = () => loadProducts();
 
   const handleResetFilters = () => {
-    const cleared = { source: "", brand: "", category: "", price_min: "", price_max: "" };
+    const cleared = { source: "", brand: "", category: "", price_min: "", price_max: "", roi_min: "", roi_max: "" };
     setFilters(cleared);
     setBrandInput("");
     setShowBrandDropdown(false);
@@ -319,7 +341,8 @@ export default function ProductsPage() {
 
   const hasActiveFilters =
     filters.source || filters.brand || filters.category ||
-    filters.price_min !== "" || filters.price_max !== "";
+    filters.price_min !== "" || filters.price_max !== "" ||
+    filters.roi_min !== "" || filters.roi_max !== "";
 
   // FlipRadar — sugestii brand din filterOptions.brands (filtrate dupa textul tastat).
   const brandSuggestions = (filterOptions.brands || [])
@@ -522,6 +545,28 @@ export default function ProductsPage() {
                 type="number" step="0.01" value={filters.price_max}
                 onChange={(e) => setFilters({ ...filters, price_max: e.target.value })}
                 placeholder="ex: 1000"
+                style={inputBaseStyle}
+              />
+            </div>
+          </div>
+
+          {/* Rand 5: ROI min / max (%) — GE-2 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+            <div>
+              <label style={labelSmall}>ROI minim (%)</label>
+              <input
+                type="number" step="0.1" value={filters.roi_min}
+                onChange={(e) => setFilters({ ...filters, roi_min: e.target.value })}
+                placeholder="ex: 15"
+                style={inputBaseStyle}
+              />
+            </div>
+            <div>
+              <label style={labelSmall}>ROI maxim (%)</label>
+              <input
+                type="number" step="0.1" value={filters.roi_max}
+                onChange={(e) => setFilters({ ...filters, roi_max: e.target.value })}
+                placeholder="ex: 10"
                 style={inputBaseStyle}
               />
             </div>
