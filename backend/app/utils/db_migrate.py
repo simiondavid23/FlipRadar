@@ -818,6 +818,11 @@ def run_migrations():
         _migrate(conn, "add_sales_extra_costs",
             "ALTER TABLE sales ADD COLUMN IF NOT EXISTS extra_costs FLOAT")
 
+        # FlipRadar — Gestiune (GE-6a): legatura persistata cu articolul de inventar, ca
+        # stergerea vanzarii sa poata restitui stocul. Integer simplu (fara FK). Fara backfill.
+        _migrate(conn, "add_sales_inventory_item_id",
+            "ALTER TABLE sales ADD COLUMN IF NOT EXISTS inventory_item_id INTEGER")
+
     _backfill_product_sources()
 
 

@@ -206,10 +206,14 @@ export default function SalesPage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Sigur vrei sa stergi aceasta vanzare?")) return;
+  const handleDelete = async (sale) => {
+    let msg = "Sigur vrei sa stergi aceasta vanzare?";
+    if (sale.inventory_item_id) {
+      msg += " Stocul (" + sale.quantity + " buc.) va fi restituit in inventar.";
+    }
+    if (!confirm(msg)) return;
     try {
-      await salesAPI.deleteSale(id);
+      await salesAPI.deleteSale(sale.id);
       await loadAll();
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la stergere");
@@ -439,7 +443,7 @@ export default function SalesPage() {
                     style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
                     <Pencil style={{ width: "1.125rem", height: "1.125rem" }} />
                   </button>
-                  <button onClick={() => handleDelete(sale.id)} title="Sterge"
+                  <button onClick={() => handleDelete(sale)} title="Sterge"
                     style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "#f87171", cursor: "pointer" }}>
                     <Trash2 style={{ width: "1.125rem", height: "1.125rem" }} />
                   </button>

@@ -84,6 +84,7 @@ class SaleResponse(BaseModel):
     extra_costs: Optional[float] = None
     platform: Optional[str] = None
     category: Optional[str] = None
+    inventory_item_id: Optional[int] = None
     buyer: Optional[str] = None
     notes: Optional[str] = None
     sold_at: Optional[datetime] = None

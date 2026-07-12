@@ -9,6 +9,10 @@ class Sale(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Legatura cu articolul de inventar la momentul crearii (GE-6a). Integer simplu, fara
+    # FK: articolele se sterg la stoc 0, iar id-ul ramas e markerul ca vanzarea a fost din
+    # inventar — necesar la restaurarea stocului.
+    inventory_item_id = Column(Integer, nullable=True)
     product_name = Column(String, nullable=False)
     category = Column(String, nullable=True)
     quantity = Column(Integer, default=1, nullable=False)

@@ -103,7 +103,9 @@ def create_sale(
     se sterge automat din inventar.
     """
     payload = data.model_dump(exclude_none=True)
-    inventory_id = payload.pop("inventory_item_id", None)
+    # GE-6a: NU mai scoatem inventory_item_id din payload — ramane pe calea de succes ca
+    # Sale(**payload) sa persiste legatura. Vanzarile manuale nu-l au (exclude_none).
+    inventory_id = payload.get("inventory_item_id")
 
     inventory_item = None
     if inventory_id is not None:
@@ -296,6 +298,30 @@ def delete_sale(
     )
     if not sale:
         raise HTTPException(status_code=404, detail="Vanzarea nu a fost gasita")
+
+    # GE-6a: restituim stocul daca vanzarea a fost legata de un articol de inventar.
+    if sale.inventory_item_id:
+        item = (
+            db.query(InventoryItem)
+            .filter(
+                InventoryItem.id == sale.inventory_item_id,
+                InventoryItem.user_id == current_user.id,
+            )
+            .first()
+        )
+        if item:
+            item.quantity += sale.quantity
+        else:
+            # Articolul a fost auto-sters la stoc 0: il recreem din datele vanzarii.
+            db.add(InventoryItem(
+                user_id=current_user.id,
+                name=sale.product_name,
+                category=sale.category,
+                quantity=sale.quantity,
+                purchase_price=float(sale.cost_price) if sale.cost_price is not None else 0.0,
+                currency=sale.currency or "RON",
+                notes=f"Recreat automat la stergerea vanzarii #{sale.id}",
+            ))
 
     db.delete(sale)
     db.commit()
