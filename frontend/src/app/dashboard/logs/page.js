@@ -228,10 +228,9 @@ export default function LogsPage() {
 
   const totals = stats.__totals__ || {};
   const statCards = [
-    { label: "Active scans", value: totals.active_modules ?? 0 },
     { label: "Listinguri noi (60 min)", value: totals.new_listings_hour ?? 0 },
     { label: "Evenimente azi", value: totals.events_today ?? 0 },
-    { label: "Module active", value: `${totals.active_modules ?? 0} / 5` },
+    { label: "Module active", value: `${totals.active_modules ?? 0} / ${MODULES.length}` },
   ];
 
   return (
@@ -347,7 +346,7 @@ export default function LogsPage() {
                   className="log-row"
                   style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.1875rem 0.875rem", lineHeight: 1.45 }}
                 >
-                  <span style={{ width: "68px", flexShrink: 0, color: "var(--text-muted)" }}>{e.ts}</span>
+                  <span style={{ width: "68px", flexShrink: 0, color: "var(--text-muted)" }}>{e.id ? new Date(e.id).toLocaleTimeString("ro-RO", { hour12: false }) : e.ts}</span>
                   <span
                     style={{
                       width: "38px", flexShrink: 0, textAlign: "center",

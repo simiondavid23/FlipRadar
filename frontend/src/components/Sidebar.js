@@ -166,6 +166,18 @@ export default function Sidebar() {
   const dashboardActive = pathname === "/dashboard";
   const isLight = theme === "light";
 
+  // Badge necitite reutilizabil (item Centru Notificari + header categorie colapsata).
+  const renderUnreadBadge = () => (
+    <span style={{
+      marginLeft: "auto", minWidth: "1.125rem", height: "1.125rem",
+      padding: "0 0.3rem", borderRadius: "9999px", fontSize: "0.625rem",
+      fontWeight: 700, display: "inline-flex", alignItems: "center",
+      justifyContent: "center", backgroundColor: "#dc2626", color: "white",
+    }}>
+      {unreadCount > 99 ? "99+" : unreadCount}
+    </span>
+  );
+
   return (
     <div
       style={{
@@ -225,6 +237,7 @@ export default function Sidebar() {
                 onMouseLeave={(e) => { e.currentTarget.style.color = hasActiveChild ? TEXT_PRIMARY : TEXT_MUTED; }}
               >
                 <span>{cat.label}</span>
+                {cat.id === "monitorizare" && !isOpen && unreadCount > 0 && renderUnreadBadge()}
                 {isOpen ? (
                   <ChevronDown style={{ width: "14px", height: "14px" }} />
                 ) : (
@@ -252,16 +265,7 @@ export default function Sidebar() {
                       >
                         <Icon style={{ width: "16px", height: "16px", flexShrink: 0 }} />
                         <span>{item.name}</span>
-                        {item.href === "/dashboard/notifications" && unreadCount > 0 && (
-                          <span style={{
-                            marginLeft: "auto", minWidth: "1.125rem", height: "1.125rem",
-                            padding: "0 0.3rem", borderRadius: "9999px", fontSize: "0.625rem",
-                            fontWeight: 700, display: "inline-flex", alignItems: "center",
-                            justifyContent: "center", backgroundColor: "#dc2626", color: "white",
-                          }}>
-                            {unreadCount > 99 ? "99+" : unreadCount}
-                          </span>
-                        )}
+                        {item.href === "/dashboard/notifications" && unreadCount > 0 && renderUnreadBadge()}
                       </Link>
                     );
                   })}

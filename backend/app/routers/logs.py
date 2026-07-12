@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.user import User
 from app.services.log_manager import log_manager
 from app.utils.auth import get_current_user
+from app.routers.admin import require_admin
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 
@@ -89,9 +90,9 @@ def get_stats(
 
 
 @router.post("/test-emit")
-def test_emit(current_user: User = Depends(get_current_user)):
-    """Debug — emite cate o pereche de evenimente in fiecare modul si
-    raporteaza dimensiunile bufferelor (verifica singleton-ul + maparea)."""
+def test_emit(admin: User = Depends(require_admin)):
+    """Debug (doar admin) — emite cate o pereche de evenimente in fiecare modul
+    si raporteaza dimensiunile bufferelor (verifica singleton-ul + maparea)."""
     from app.services.log_manager import log_manager, LogManager
     for module in LogManager.MODULES:
         log_manager.emit(module, "INFO",
