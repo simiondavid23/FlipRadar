@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from app.schemas._types import UTCDateTime
 
 
 class NotificationCreate(BaseModel):
@@ -18,7 +18,7 @@ class NotificationResponse(BaseModel):
     notification_type: str
     is_read: bool
     link: Optional[str] = None
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True

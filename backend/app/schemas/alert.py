@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from app.schemas._types import UTCDateTime
 from app.schemas.product import ProductResponse
 
 
@@ -40,8 +40,8 @@ class AlertResponse(BaseModel):
     alert_type: str
     is_active: bool
     is_triggered: bool
-    triggered_at: Optional[datetime] = None
-    created_at: datetime
+    triggered_at: Optional[UTCDateTime] = None
+    created_at: UTCDateTime
     product: Optional[ProductResponse] = None
 
     class Config:

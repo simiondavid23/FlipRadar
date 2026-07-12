@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from app.schemas._types import UTCDateTime
 from app.schemas.product import ProductResponse
 
 
@@ -16,7 +16,7 @@ class FavoriteResponse(BaseModel):
     product_id: int
     is_blacklisted: bool
     notes: Optional[str] = None
-    added_at: datetime
+    added_at: UTCDateTime
     product: Optional[ProductResponse] = None
 
     class Config:

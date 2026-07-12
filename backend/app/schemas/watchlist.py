@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from app.schemas._types import UTCDateTime
 from app.schemas.product import ProductResponse
 
 
@@ -18,7 +18,7 @@ class WatchlistItemResponse(BaseModel):
     user_id: int
     product_id: int
     notes: Optional[str] = None
-    added_at: datetime
+    added_at: UTCDateTime
     product: Optional[ProductResponse] = None
 
     class Config:

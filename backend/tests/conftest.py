@@ -4,6 +4,10 @@ Reguli dure (nu ocoli):
 - Testele ruleaza DOAR pe TEST_DATABASE_URL, niciodata pe baza reala (DATABASE_URL).
 - Env-ul se pregateste ÎNAINTE de orice import din `app` (app/config.py valideaza
   DATABASE_URL + SECRET_KEY chiar la import; startup_checks cere si GROQ_API_KEY).
+- O SINGURA suita pytest ruleaza pe baza de test la un moment dat (advisory lock,
+  vezi guard-ul de mai jos). Motiv (H3, TI-1b): doua procese simultane pe aceeasi
+  baza se distrug reciproc prin TRUNCATE-ul din clean_db — rândurile unuia dispar
+  din testul celuilalt ("Could not refresh instance User" / 401 "Token invalid").
 """
 import os
 import sys
@@ -47,6 +51,9 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-pentru-pytest-0123456789abc
 os.environ.setdefault("GROQ_API_KEY", "test-dummy-groq-key")
 # De acum, tot `app.*` vede DOAR baza de test.
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+# Semnal ca rulam sub pytest: discord_service NU porneste worker-ul de fundal
+# (ar accesa baza de test concurent cu suita). In productie variabila nu exista.
+os.environ["FLIPRADAR_TESTING"] = "1"
 
 
 # ── 2. Auto-creare baza de test daca lipseste ────────────────────────────────────
@@ -84,6 +91,37 @@ def _ensure_test_database() -> None:
 
 
 _ensure_test_database()
+
+
+# ── 2b. Guard anti-concurenta: o SINGURA suita pytest pe baza de test ─────────────
+# H3 (TI-1b, confirmat): doua procese pytest simultane pe aceeasi baza se distrug
+# reciproc prin TRUNCATE-ul din clean_db. Nu suportam concurenta — o facem imposibila
+# TACIT cu un advisory lock cluster-wide, tinut cat traieste procesul. E session-scoped
+# in Postgres → se elibereaza automat inclusiv la crash/kill al procesului pytest.
+# Cheia include numele bazei (hashtext(current_database())) fiindca advisory lock-urile
+# NU sunt per-database, ci per-cluster.
+def _acquire_session_guard():
+    import psycopg2
+    from urllib.parse import urlparse
+
+    conn = psycopg2.connect(TEST_DATABASE_URL)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(hashtext(current_database()), 424242)")
+        got = cur.fetchone()[0]
+    if not got:
+        db_name = (urlparse(TEST_DATABASE_URL).path or "/").lstrip("/")
+        conn.close()
+        pytest.exit(
+            f"O alta suita pytest ruleaza deja pe {db_name}. Suitele se ruleaza DOAR "
+            f"secvential - asteapta sa se termine cealalta.",
+            returncode=1,
+        )
+    return conn
+
+
+# Pastrat la nivel de modul → conexiunea (si lock-ul) traiesc cat procesul pytest.
+_SESSION_GUARD_CONN = _acquire_session_guard()
 
 
 # ── 3. Schema pe baza de test (session, autouse) ─────────────────────────────────

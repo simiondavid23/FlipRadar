@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
+from app.schemas._types import UTCDateTime
 
 
 class RecentUser(BaseModel):
@@ -11,7 +12,7 @@ class RecentUser(BaseModel):
     email: str
     full_name: Optional[str] = None
     is_active: bool
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
 
 
 class AdminStats(BaseModel):
@@ -41,8 +42,8 @@ class TicketSummary(BaseModel):
     subject: str
     status: str
     priority: str
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
+    updated_at: Optional[UTCDateTime] = None
     user: TicketUser
     message_count: int
 
@@ -52,7 +53,7 @@ class TicketMessageResponse(BaseModel):
     content: str
     is_admin: bool
     sender_name: str
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
 
 
 class TicketDetail(BaseModel):
@@ -60,7 +61,7 @@ class TicketDetail(BaseModel):
     subject: str
     status: str
     priority: str
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
     user: TicketUser
     messages: List[TicketMessageResponse]
 
@@ -112,8 +113,8 @@ class AdminUserSummary(BaseModel):
     can_use_scraping: bool
     can_use_alerts: bool
     can_use_import_export: bool
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
+    updated_at: Optional[UTCDateTime] = None
     # preview counts — computed by router, not read from ORM
     products_count: int = 0
     watchlist_count: int = 0
@@ -148,7 +149,7 @@ class AdminProductItem(BaseModel):
     current_price: Optional[float] = None
     currency: Optional[str] = None
     image_url: Optional[str] = None
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
     # Product.user_id is nullable (legacy rows), so keep the owner optional.
     owner: Optional[AdminMiniUser] = None
 
@@ -158,7 +159,7 @@ class AdminWatchlistItem(BaseModel):
 
     id: int
     notes: Optional[str] = None
-    added_at: Optional[datetime] = None
+    added_at: Optional[UTCDateTime] = None
     product: Optional[AdminProductItem] = None
     owner: AdminMiniUser
 
@@ -172,8 +173,8 @@ class AdminAlertItem(BaseModel):
     alert_type: str
     is_active: bool
     is_triggered: bool
-    triggered_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    triggered_at: Optional[UTCDateTime] = None
+    created_at: Optional[UTCDateTime] = None
     product: Optional[AdminProductItem] = None
     owner: AdminMiniUser
 
@@ -193,7 +194,7 @@ class AdminInventoryItem(BaseModel):
     source: Optional[str] = None
     notes: Optional[str] = None
     purchased_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
     owner: AdminMiniUser
 
 
@@ -212,7 +213,7 @@ class AdminSaleItem(BaseModel):
     buyer: Optional[str] = None
     notes: Optional[str] = None
     sold_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
     owner: AdminMiniUser
 
 
@@ -224,7 +225,7 @@ class AdminFavoriteItem(BaseModel):
     id: int
     is_blacklisted: bool
     notes: Optional[str] = None
-    added_at: Optional[datetime] = None
+    added_at: Optional[UTCDateTime] = None
     product: Optional[AdminProductItem] = None
     owner: AdminMiniUser
 
@@ -238,7 +239,7 @@ class AdminChatMessageItem(BaseModel):
     role: str  # "user" or "assistant"
     content: str
     needs_staff: bool
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
     owner: AdminMiniUser
 
 
@@ -254,8 +255,8 @@ class AdminUserDetail(BaseModel):
     full_name: Optional[str] = None
     is_active: bool
     is_admin: bool
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
+    updated_at: Optional[UTCDateTime] = None
     # flags
     can_use_ai: bool
     can_use_scraping: bool
@@ -278,5 +279,5 @@ class AdminUserDetail(BaseModel):
     open_tickets: int = 0
     chat_messages_count: int = 0
     unread_notifications: int = 0
-    last_sale_at: Optional[datetime] = None
-    last_chat_at: Optional[datetime] = None
+    last_sale_at: Optional[UTCDateTime] = None
+    last_chat_at: Optional[UTCDateTime] = None

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from app.schemas._types import UTCDateTime
 
 
 class UserCreate(BaseModel):
@@ -41,7 +41,7 @@ class UserResponse(BaseModel):
     flash_deal_threshold: Optional[float] = 0.15
     # FlipRadar — config per-functionalitate AI (cheile False = dezactivate)
     ai_features_config: Optional[dict] = None
-    created_at: Optional[datetime] = None
+    created_at: Optional[UTCDateTime] = None
 
     class Config:
         from_attributes = True

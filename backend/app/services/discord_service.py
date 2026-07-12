@@ -13,6 +13,7 @@ regresam (canalul C/D + campurile bogate). Coada globala de aici e folosita de
 modulele noi (Auto + Imobiliare). send_radar_notification e pastrat corect (pe
 field-urile reale discord_webhook_all/buy_now) pentru completitudine.
 """
+import os
 import json
 import time
 import threading
@@ -30,7 +31,11 @@ class DiscordNotificationService:
     def __init__(self):
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="discord-queue-worker")
-        self._thread.start()
+        # Sub pytest (FLIPRADAR_TESTING=1) NU pornim worker-ul de fundal: ar accesa
+        # baza de test concurent cu suita. enqueue() ramane functional; doar flush-ul
+        # cozii lipseste in teste. In productie variabila nu exista → worker-ul porneste.
+        if os.getenv("FLIPRADAR_TESTING") != "1":
+            self._thread.start()
 
     def enqueue(self, webhook_url: str, embed: dict, listing_id: str,
                 module: str, grade: str, mention_here: bool = False,

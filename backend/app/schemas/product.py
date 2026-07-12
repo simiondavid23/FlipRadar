@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from app.schemas._types import UTCDateTime
 
 
 class ProductCreate(BaseModel):
@@ -43,7 +43,7 @@ class ProductSourceResponse(BaseModel):
     source_url: str
     current_price: Optional[float] = None
     currency: str
-    last_checked_at: Optional[datetime] = None
+    last_checked_at: Optional[UTCDateTime] = None
 
     class Config:
         from_attributes = True
@@ -56,7 +56,7 @@ class ProductSourceSuggestionResponse(BaseModel):
     name: Optional[str] = None
     price: Optional[float] = None
     currency: str
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -78,7 +78,7 @@ class ProductResponse(BaseModel):
     original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str
-    created_at: datetime
+    created_at: UTCDateTime
     sources: List[ProductSourceResponse] = []
 
     class Config:
@@ -119,7 +119,7 @@ class PriceHistoryResponse(BaseModel):
     price: float
     currency: str
     source: Optional[str] = None
-    recorded_at: datetime
+    recorded_at: UTCDateTime
 
     class Config:
         from_attributes = True
