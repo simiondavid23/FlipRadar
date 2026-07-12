@@ -77,6 +77,45 @@ export default function SalesPage() {
 
   useEffect(() => {
     loadAll();
+
+    // FlipRadar — GE-4b: deep-link din calculatorul de inventar (?inv=&qty=&pret=&extra=).
+    // Citire one-shot din window.location (pattern GE-2); fetch propriu de inventar ca sa nu
+    // depindem de ordinea incarcarii state-ului.
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const invId = parseInt(sp.get("inv"));
+      if (invId > 0) {
+        const qtyP = parseInt(sp.get("qty")) || 1;
+        const pretP = sp.get("pret") || "";
+        const extraP = sp.get("extra") || "";
+        inventoryAPI.getItems()
+          .then((res) => {
+            const item = (res.data || []).find((it) => it.id === invId);
+            if (item) {
+              setForm({
+                ...emptyForm,
+                sold_at: todayIso(),
+                inventory_item_id: String(item.id),
+                product_name: item.name,
+                cost_price: String(item.purchase_price ?? ""),
+                currency: item.currency || "RON",
+                category: item.category || "",
+                quantity: Math.min(qtyP, item.quantity),
+                sale_price: pretP,
+                extra_costs: extraP,
+              });
+            } else {
+              // Articolul a fost sters intre timp: formular fara legatura, cu ce avem.
+              setForm({ ...emptyForm, sold_at: todayIso(), quantity: qtyP,
+                        sale_price: pretP, extra_costs: extraP });
+            }
+            setEditingId(null);
+            setError("");
+            setShowForm(true);
+          })
+          .catch(() => {});
+      }
+    } catch { /* URL invalid — ignoram */ }
   }, []);
 
   const openCreate = () => {

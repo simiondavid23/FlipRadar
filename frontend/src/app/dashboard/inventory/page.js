@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { inventoryAPI } from "@/lib/api";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import { Boxes, Plus, Trash2, Pencil, Package, Euro, Calculator, X, TrendingUp, TrendingDown, Upload, FileDown } from "lucide-react";
@@ -44,6 +45,7 @@ const emptyForm = {
 };
 
 export default function InventoryPage() {
+  const router = useRouter();
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -560,6 +562,24 @@ export default function InventoryPage() {
                 <span>Marja: <strong style={{ color: calcResult.profit >= 0 ? "#4ade80" : "#f87171" }}>{calcResult.margin.toFixed(1)}%</strong></span>
               </div>
             </div>
+
+            <button
+              onClick={() => {
+                const params = new URLSearchParams({ inv: String(calcItem.id) });
+                const q = parseInt(calcForm.qty); if (q > 0) params.set("qty", String(q));
+                const p = parseFloat(calcForm.sell_price); if (p > 0) params.set("pret", String(p));
+                if (calcResult && calcResult.extraTotal > 0) params.set("extra", String(calcResult.extraTotal));
+                router.push(`/dashboard/sales?${params.toString()}`);
+              }}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+                width: "100%", padding: "0.625rem 1rem", borderRadius: "0.5rem",
+                backgroundColor: "#22c55e", color: "var(--text-primary)", fontWeight: 500,
+                border: "none", cursor: "pointer",
+              }}
+            >
+              Inregistreaza vanzarea
+            </button>
           </div>
         </div>
       )}
