@@ -225,7 +225,7 @@ export default function ReportsPage() {
               value={`${(summary.profit_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
               icon={TrendingUp}
               color="#16a34a"
-              subtitle="Dupa scaderea costurilor"
+              subtitle={`Dupa scaderea costurilor${summary.vanzari_fara_cost > 0 ? ` · ${summary.vanzari_fara_cost} fara cost declarat` : ""}`}
               valueColor={summary.profit_total >= 0 ? "#4ade80" : "#f87171"}
             />
             <StatCard
