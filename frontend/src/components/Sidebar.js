@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard, Search, Bell, LogOut,
-  Heart, Globe, FileSpreadsheet, Boxes, Receipt,
+  Heart, Globe, Boxes, Receipt,
   ChevronDown, ChevronRight, BarChart2,
   Radar, Target, Bookmark, Settings, MessageSquare,
   Calculator, Car, Home, Activity, Rss, Tag
@@ -88,13 +88,6 @@ const categories = [
     items: [
       { name: "Jurnale Live", href: "/dashboard/logs", icon: Activity },
       { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
-    ],
-  },
-  {
-    id: "date",
-    label: "Date",
-    items: [
-      { name: "Gestionare Date", href: "/dashboard/import-export", icon: FileSpreadsheet, flag: "can_use_import_export" },
     ],
   },
 ];

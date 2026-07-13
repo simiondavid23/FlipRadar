@@ -262,27 +262,6 @@ export const scrapingAPI = {
   searchAll: (query, max, searchType) => api.get("/api/scraping/search-all", { params: _scrapeParams(query, max, searchType) }),
 };
 
-// Import/Export date
-export const importExportAPI = {
-  importCSV: (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return api.post("/api/import-export/import-csv", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-  },
-  importExcel: (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return api.post("/api/import-export/import-excel", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-  },
-  exportProducts: () => api.get("/api/import-export/export-products", { responseType: "blob" }),
-  exportWatchlist: () => api.get("/api/import-export/export-watchlist", { responseType: "blob" }),
-  downloadTemplate: () => api.get("/api/import-export/template", { responseType: "blob" }),
-};
-
 // Valute (cursuri BNR)
 export const currencyAPI = {
   getRates: () => api.get("/api/currency/rates"),
