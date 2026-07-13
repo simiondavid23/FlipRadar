@@ -14,7 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import auth, products, watchlist, alerts, dashboard, ai_chat, ai_analysis, support
+from app.routers import auth, products, watchlist, alerts, dashboard
 from app.routers import favorites, scraping, import_export
 from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
@@ -34,7 +34,7 @@ from app.models import user, product, price_history, product_source
 # FlipRadar — sugestii cross-shop (potrivire pe nume, asteapta confirmare)
 from app.models import product_source_suggestion
 from app.models import watchlist as watchlist_model
-from app.models import alert, chat_message, support_ticket
+from app.models import alert
 from app.models import favorite
 from app.models import inventory as inventory_model
 from app.models import sale as sale_model
@@ -496,9 +496,6 @@ app.include_router(products.router)
 app.include_router(watchlist.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)
-app.include_router(ai_chat.router)
-app.include_router(ai_analysis.router)
-app.include_router(support.router)
 app.include_router(favorites.router)
 app.include_router(scraping.router)
 app.include_router(import_export.router)

@@ -829,6 +829,11 @@ def run_migrations():
         # -- Cleanup post-licenta (NOTIF-1): sistemul de notificari in-app a fost
         # eliminat complet; tabela nu mai e folosita de nicio parte a aplicatiei.
         _migrate(conn, "drop_notifications_table", "DROP TABLE IF EXISTS notifications")
+        # -- Cleanup post-licenta (AI-1): chat AI + suport/tickete eliminate.
+        # Ordinea FK conteaza: ticket_messages (FK -> support_tickets) se sterge prima.
+        _migrate(conn, "drop_ticket_messages_table", "DROP TABLE IF EXISTS ticket_messages")
+        _migrate(conn, "drop_support_tickets_table", "DROP TABLE IF EXISTS support_tickets")
+        _migrate(conn, "drop_chat_messages_table", "DROP TABLE IF EXISTS chat_messages")
 
     _backfill_product_sources()
 

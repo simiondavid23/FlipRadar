@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import {
   LayoutDashboard, Search, Bell, LogOut,
-  MessageCircle, Sparkles, FileText, FileBarChart,
   Heart, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
   Radar, Target, Bookmark, Settings, MessageSquare,
@@ -90,16 +89,6 @@ const categories = [
     items: [
       { name: "Jurnale Live", href: "/dashboard/logs", icon: Activity },
       { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
-    ],
-  },
-  {
-    id: "ai",
-    label: "AI",
-    items: [
-      { name: "Asistent AI", href: "/dashboard/support", icon: MessageCircle, flag: "can_use_ai" },
-      { name: "Consilier AI", href: "/dashboard/ai-analyze", icon: Sparkles, flag: "can_use_ai" },
-      { name: "Creator Anunturi", href: "/dashboard/ai-listing", icon: FileText, flag: "can_use_ai" },
-      { name: "Raport Piata", href: "/dashboard/ai-report", icon: FileBarChart, flag: "can_use_ai" },
     ],
   },
   {

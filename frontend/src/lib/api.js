@@ -115,16 +115,6 @@ export const dashboardAPI = {
   getSchedulerStatus: () => api.get("/api/dashboard/scheduler-status"),
 };
 
-// Inteligență Artificială
-export const aiAPI = {
-  analyzeProduct: (data) => api.post("/api/ai/analyze-product", data),
-  generateListing: (data) => api.post("/api/ai/generate-listing", data),
-  getReport: () => api.get("/api/ai/report"),
-  chat: (data) => api.post("/api/ai/chat", data),
-  getChatHistory: () => api.get("/api/ai/chat/history"),
-  clearChatHistory: () => api.delete("/api/ai/chat/history"),
-};
-
 // Setari utilizator (FlipRadar — ITEM 16)
 export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),
@@ -245,14 +235,6 @@ export const facebookGroupsAPI = {
     api.post(`/api/facebook-groups/${id}/cookies`, { cookies_json: cookiesJson }),
   deleteCookies: (id) => api.delete(`/api/facebook-groups/${id}/cookies`),
   testRun: (id) => api.post(`/api/facebook-groups/${id}/test-run`),
-};
-
-// Tickete de suport
-export const ticketsAPI = {
-  getMyTickets: () => api.get("/api/support/tickets"),
-  createTicket: (data) => api.post("/api/support/tickets", data),
-  getTicket: (id) => api.get(`/api/support/tickets/${id}`),
-  replyTicket: (id, data) => api.post(`/api/support/tickets/${id}/reply`, data),
 };
 
 // Favorite și Blacklist
