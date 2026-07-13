@@ -171,6 +171,7 @@ export default function SettingsPage() {
         discord_webhook_imob_all: settings.discord_webhook_imob_all || "",
         discord_webhook_imob_a: settings.discord_webhook_imob_a || "",
         discord_webhook_imob_b: settings.discord_webhook_imob_b || "",
+        discord_webhook_alerts: settings.discord_webhook_alerts || "",
       });
       alert("Webhook-uri Discord salvate.");
     } catch (e) {
@@ -500,6 +501,9 @@ export default function SettingsPage() {
                   <WebhookInput label="Imobiliare — Doar Grade B" value={settings.discord_webhook_imob_b || ""} onChange={(v) => update({ discord_webhook_imob_b: v })} onTest={() => testWebhook(settings.discord_webhook_imob_b)} />
                   <PlatformToggle label="Menționează @here pentru Grade A în Imobiliare" enabled={!!settings.discord_here_imob} onToggle={() => togglePlatform("discord_here_imob")} />
                   <PlatformToggle label="Menționează @here pentru Grade A în Radar Piață" enabled={!!settings.discord_here_radar} onToggle={() => togglePlatform("discord_here_radar")} />
+
+                  <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Alerte Pret</div>
+                  <WebhookInput label="Alerte pret & Flash Deals" value={settings.discord_webhook_alerts || ""} onChange={(v) => update({ discord_webhook_alerts: v })} onTest={() => testWebhook(settings.discord_webhook_alerts)} />
 
                   <div style={{ marginTop: "0.625rem" }}>
                     <button onClick={saveDiscord} disabled={saving} style={primaryBtn(saving)}>

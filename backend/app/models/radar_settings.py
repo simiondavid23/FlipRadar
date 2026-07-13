@@ -18,6 +18,8 @@ class RadarSettings(Base):
     discord_webhook_imob_all = Column(Text, nullable=True)
     discord_webhook_imob_a = Column(Text, nullable=True)
     discord_webhook_imob_b = Column(Text, nullable=True)
+    # ALERT-1 — webhook dedicat pentru alerte de pret + flash deals
+    discord_webhook_alerts = Column(Text, nullable=True)
     discord_here_radar = Column(Boolean, default=False)
     discord_here_auto = Column(Boolean, default=False)
     discord_here_imob = Column(Boolean, default=False)

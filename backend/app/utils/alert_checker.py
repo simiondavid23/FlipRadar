@@ -20,9 +20,13 @@ from app.models.user import User
 from app.models.notification import Notification
 from app.models.price_history import PriceHistory
 from app.models.watchlist import WatchlistItem
+from app.models.radar_settings import RadarSettings
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
 from app.services.scraper_service import refresh_price_from_source
+from app.services.discord_service import (
+    build_alert_embed, build_flash_deal_embed, send_price_alert_notification,
+)
 
 _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
@@ -109,6 +113,23 @@ def _check_and_create_flash_deal_notifications(db, product, old_price: float, ne
             link=link,
         ))
 
+        # ALERT-1 — Flash Deal si pe Discord (webhook dedicat de alerte). Bloc
+        # independent: dedup-ul in-app de mai sus (6h/produs) ramane neatins, iar
+        # dedup-ul Discord e 24h pe (produs, user, pret nou) — semantici intentionat
+        # diferite, un pret nou diferit retrimite pe Discord.
+        try:
+            st = db.query(RadarSettings).filter(RadarSettings.user_id == user_id).first()
+            if st is not None:
+                fd_embed = build_flash_deal_embed(
+                    product_name=product.name, old_price=float(old_price),
+                    new_price=float(new_price), currency=product.currency or "EUR",
+                    drop_pct=drop_pct, source=source, product_url=product.source_url,
+                )
+                fd_lid = f"flashdeal-{product.id}-{user_id}-{new_price}"
+                send_price_alert_notification(fd_embed, st, fd_lid)
+        except Exception as exc:
+            print(f"[AlertChecker] Discord flash deal esuat (user {user_id}): {exc}")
+
 
 def _refresh_all_scrapeable_products(db: Session) -> int:
     """Re-scrape pretul pentru fiecare ProductSource din DB. Cererile sunt
@@ -164,6 +185,13 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
     return refreshed
 
 
+def _get_user_settings(db, user_id, cache):
+    """ALERT-1 — RadarSettings per user, cache-uit pe durata unei rulari check_alerts."""
+    if user_id not in cache:
+        cache[user_id] = db.query(RadarSettings).filter(RadarSettings.user_id == user_id).first()
+    return cache[user_id]
+
+
 def check_alerts() -> int:
     """Compare product prices against active user alerts.
 
@@ -185,6 +213,8 @@ def check_alerts() -> int:
         )
 
         smtp_on = email_is_configured()
+        # ALERT-1 — cache per-rulare de RadarSettings (1 query/user) pentru webhook Discord.
+        settings_cache = {}
 
         # Pas 2: verifica fiecare alerta. Query-ul pe Product re-citeste
         # din DB, deci preturile actualizate la pasul 1 sunt vizibile aici.
@@ -215,6 +245,25 @@ def check_alerts() -> int:
                 alert.triggered_at = datetime.utcnow()
                 db.add(_make_notification(alert, product, price_in_alert_currency))
                 triggered_count += 1
+
+                # ALERT-1 — notificare Discord pe webhook-ul dedicat (bloc independent:
+                # o eroare aici NU afecteaza notificarea in-app / emailul de mai jos).
+                try:
+                    st = _get_user_settings(db, alert.user_id, settings_cache)
+                    if st is not None:
+                        embed = build_alert_embed(
+                            product_name=product.name,
+                            current_price=float(price_in_alert_currency),
+                            target_price=float(alert.target_price),
+                            currency=alert_currency,
+                            alert_type=alert_type,
+                            product_url=product.source_url,
+                        )
+                        lid = f"alert-{alert.id}-{int(alert.triggered_at.timestamp())}"
+                        if send_price_alert_notification(embed, st, lid):
+                            print(f"[AlertChecker] Alerta {alert.id} pusa in coada Discord.")
+                except Exception as exc:
+                    print(f"[AlertChecker] Discord esuat pentru alerta {alert.id}: {exc}")
 
                 if smtp_on:
                     user = db.query(User).filter(User.id == alert.user_id).first()

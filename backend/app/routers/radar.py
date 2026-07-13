@@ -134,6 +134,7 @@ class SettingsUpdate(BaseModel):
     discord_webhook_imob_all: Optional[str] = None
     discord_webhook_imob_a: Optional[str] = None
     discord_webhook_imob_b: Optional[str] = None
+    discord_webhook_alerts: Optional[str] = None
     discord_here_radar: Optional[bool] = None
     discord_here_auto: Optional[bool] = None
     discord_here_imob: Optional[bool] = None
@@ -378,6 +379,7 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "discord_webhook_imob_all": getattr(s, "discord_webhook_imob_all", None),
         "discord_webhook_imob_a": getattr(s, "discord_webhook_imob_a", None),
         "discord_webhook_imob_b": getattr(s, "discord_webhook_imob_b", None),
+        "discord_webhook_alerts": getattr(s, "discord_webhook_alerts", None),
         "discord_here_radar": bool(getattr(s, "discord_here_radar", False)),
         "discord_here_auto": bool(getattr(s, "discord_here_auto", False)),
         "discord_here_imob": bool(getattr(s, "discord_here_imob", False)),
@@ -1157,6 +1159,8 @@ def update_settings(
         s.discord_webhook_imob_a = data.discord_webhook_imob_a or None
     if data.discord_webhook_imob_b is not None:
         s.discord_webhook_imob_b = data.discord_webhook_imob_b or None
+    if data.discord_webhook_alerts is not None:
+        s.discord_webhook_alerts = data.discord_webhook_alerts or None
     if data.discord_here_radar is not None:
         s.discord_here_radar = bool(data.discord_here_radar)
     if data.discord_here_auto is not None:

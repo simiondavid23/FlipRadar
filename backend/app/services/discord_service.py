@@ -326,6 +326,65 @@ def build_imob_embed(listing: dict, grade: str, score: int,
     return embed
 
 
+# ── ALERT-1 — Alerte de pret + Flash Deals ──────────────────────────
+
+ALERT_COLORS = {"price_drop": 0x22c55e, "price_rise": 0x3b82f6}
+FLASH_DEAL_COLOR = 0xf59e0b
+
+
+def build_alert_embed(product_name: str, current_price: float, target_price: float,
+                      currency: str, alert_type: str, product_url: str = None) -> dict:
+    emoji = "📉" if alert_type == "price_drop" else "📈"
+    embed = {
+        "title": f"{emoji} Alerta pret: {product_name}"[:200],
+        "color": ALERT_COLORS.get(alert_type, ALERT_COLORS["price_drop"]),
+        "fields": [
+            {"name": "💰 Pret curent",
+             "value": f"{current_price:.2f} {currency}", "inline": True},
+            {"name": "🎯 Tinta",
+             "value": f"{target_price:.2f} {currency}", "inline": True},
+        ],
+        "footer": {"text": "FlipRadar Alerte"},
+    }
+    if product_url:
+        embed["url"] = product_url
+    return embed
+
+
+def build_flash_deal_embed(product_name: str, old_price: float, new_price: float,
+                           currency: str, drop_pct: float, source: str,
+                           product_url: str = None) -> dict:
+    fields = [
+        {"name": "💰 Pret",
+         "value": f"{old_price} {currency} -> {new_price} {currency}", "inline": True},
+        {"name": "📉 Scadere",
+         "value": f"-{drop_pct * 100:.1f}%", "inline": True},
+    ]
+    if source:
+        fields.append({"name": "🏪 Sursa", "value": source.upper(), "inline": True})
+    embed = {
+        "title": f"⚡ Flash Deal: {product_name}"[:200],
+        "color": FLASH_DEAL_COLOR,
+        "fields": fields,
+        "footer": {"text": "FlipRadar Alerte"},
+    }
+    if product_url:
+        embed["url"] = product_url
+    return embed
+
+
+def send_price_alert_notification(embed: dict, settings, listing_id: str) -> bool:
+    """Enqueue pe webhook-ul dedicat de alerte. Returneaza True daca a fost pus in coada."""
+    wh = getattr(settings, "discord_webhook_alerts", None)
+    if not wh:
+        return False
+    # grade e doar eticheta stocata in coada (nu e folosita la rutare); coloana
+    # discord_queue.grade e VARCHAR(2), asa ca folosim "AL" (alert), nu "alert".
+    discord_service.enqueue(webhook_url=wh, embed=embed, listing_id=listing_id,
+                            module="alerts", grade="AL", mention_here=False)
+    return True
+
+
 def send_radar_notification(listing: dict, grade: str, score: int,
                             keyword_name: str, settings,
                             listing_id: str, db: Session) -> int:

@@ -630,6 +630,9 @@ def run_migrations():
             "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS discord_here_auto BOOLEAN DEFAULT FALSE")
         _migrate(conn, "add_discord_here_imob",
             "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS discord_here_imob BOOLEAN DEFAULT FALSE")
+        # ALERT-1 — webhook dedicat pentru alerte de pret + flash deals
+        _migrate(conn, "add_discord_webhook_alerts",
+            "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS discord_webhook_alerts TEXT")
         _migrate(conn, "add_custom_zone_aliases",
             "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS custom_zone_aliases JSON DEFAULT '{}'")
 
