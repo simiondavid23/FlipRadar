@@ -4,33 +4,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
-import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle, TrendingUp, ShieldCheck, Zap, HelpCircle, Key, Sun, Moon } from "lucide-react";
-
-function ThemeToggleFloating() {
-  const { theme, toggleTheme } = useTheme();
-  return (
-    <button
-      onClick={toggleTheme}
-      title={theme === "light" ? "Comuta la tema intunecata" : "Comuta la tema luminoasa"}
-      style={{
-        position: "fixed", top: "1rem", right: "1rem", zIndex: 100,
-        padding: "0.5rem", borderRadius: "0.5rem",
-        border: "1px solid var(--border-color)",
-        backgroundColor: "var(--bg-card)",
-        color: "var(--text-secondary)",
-        cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
-    >
-      {theme === "light" ? (
-        <Moon style={{ width: "20px", height: "20px" }} />
-      ) : (
-        <Sun style={{ width: "20px", height: "20px" }} />
-      )}
-    </button>
-  );
-}
+import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle, TrendingUp, ShieldCheck, Zap, HelpCircle, Key } from "lucide-react";
 
 const SECURITY_QUESTIONS = [
   "Care este numele primului tau animal de companie?",
@@ -57,7 +31,6 @@ function RegisterForm() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
-  const { theme } = useTheme();
   const router = useRouter();
 
   const handleChange = (e) => {
@@ -145,10 +118,9 @@ function RegisterForm() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
-      <ThemeToggleFloating />
       <div className="register-topbar" style={{ alignItems: "center", padding: "1.5rem", position: "relative", zIndex: 10 }}>
         <Image
-          src={theme === "light" ? "/flipradar-logo-light.svg" : "/flipradar-logo.svg"}
+          src="/flipradar-logo.svg"
           alt="FlipRadar"
           width={180}
           height={39}

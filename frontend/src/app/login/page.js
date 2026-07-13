@@ -3,38 +3,11 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import axios from "axios";
-import { useTheme } from "@/lib/theme";
-import { Mail, Lock, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap, Sun, Moon } from "lucide-react";
+import { Mail, Lock, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-function ThemeToggleFloating() {
-  const { theme, toggleTheme } = useTheme();
-  return (
-    <button
-      onClick={toggleTheme}
-      title={theme === "light" ? "Comuta la tema intunecata" : "Comuta la tema luminoasa"}
-      style={{
-        position: "fixed", top: "1rem", right: "1rem", zIndex: 100,
-        padding: "0.5rem", borderRadius: "0.5rem",
-        border: "1px solid var(--border-color)",
-        backgroundColor: "var(--bg-card)",
-        color: "var(--text-secondary)",
-        cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
-    >
-      {theme === "light" ? (
-        <Moon style={{ width: "20px", height: "20px" }} />
-      ) : (
-        <Sun style={{ width: "20px", height: "20px" }} />
-      )}
-    </button>
-  );
-}
-
 export default function LoginPage() {
-  const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -81,10 +54,9 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
-      <ThemeToggleFloating />
       <div className="login-topbar" style={{ alignItems: "center", padding: "1.5rem", position: "relative", zIndex: 10 }}>
         <Image
-          src={theme === "light" ? "/flipradar-logo-light.svg" : "/flipradar-logo.svg"}
+          src="/flipradar-logo.svg"
           alt="FlipRadar"
           width={180}
           height={39}

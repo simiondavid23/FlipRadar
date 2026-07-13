@@ -4,11 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
 import {
   LayoutDashboard, Search, Bell, LogOut,
   Heart, Globe, FileSpreadsheet, Boxes, Receipt,
-  ChevronDown, ChevronRight, Sun, Moon, BarChart2,
+  ChevronDown, ChevronRight, BarChart2,
   Radar, Target, Bookmark, Settings, MessageSquare,
   Calculator, Car, Home, Activity, Rss, Tag
 } from "lucide-react";
@@ -118,7 +117,6 @@ function findInitiallyOpenCategory(pathname) {
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const [openCategory, setOpenCategory] = useState(() => findInitiallyOpenCategory(pathname));
 
   const toggleCategory = (id) => {
@@ -126,7 +124,6 @@ export default function Sidebar() {
   };
 
   const dashboardActive = pathname === "/dashboard";
-  const isLight = theme === "light";
 
   return (
     <div
@@ -248,21 +245,6 @@ export default function Sidebar() {
           <Settings style={{ width: "16px", height: "16px", flexShrink: 0 }} />
           <span>Setari</span>
         </Link>
-        <button onClick={toggleTheme}
-          title={isLight ? "Comuta la tema intunecata" : "Comuta la tema luminoasa"}
-          style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
-            fontSize: "0.8125rem", fontWeight: 500, color: TEXT_SECONDARY, backgroundColor: "transparent",
-            border: "none", cursor: "pointer", width: "100%", marginBottom: "0.25rem", transition: "all 0.15s ease" }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = HOVER_BG; e.currentTarget.style.color = TEXT_PRIMARY; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = TEXT_SECONDARY; }}
-        >
-          {isLight ? (
-            <Moon style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-          ) : (
-            <Sun style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-          )}
-          <span>{isLight ? "Tema intunecata" : "Tema luminoasa"}</span>
-        </button>
         <button onClick={logout}
           style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
             fontSize: "0.8125rem", fontWeight: 500, color: TEXT_SECONDARY, backgroundColor: "transparent",
