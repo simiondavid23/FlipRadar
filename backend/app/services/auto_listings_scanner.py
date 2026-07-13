@@ -14,7 +14,6 @@ from app.services.bnr_exchange import get_eur_ron
 # revanzare + praguri A/B/C). scorer.py nu importa nimic din app -> fara ciclu.
 from app.services.radar.scorer import calculate_score
 from app.services.log_manager import log_manager, set_log_user
-from app.services.ml.feed_ml_bridge import try_save_to_ml
 
 _CURRENT_YEAR = 2026
 
@@ -319,26 +318,6 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
                         ).first()
                         if saved:
                             _notify(kw, saved, db)
-                            # MODULE 5b — bridge ML: salveaza in market_listings daca
-                            # titlul matchuieste o categorie. Erorile nu rup scanul auto.
-                            try:
-                                try_save_to_ml(
-                                    db=db,
-                                    title=saved.title or "",
-                                    price=float(saved.price or 0),
-                                    currency=getattr(saved, "currency", "EUR") or "EUR",
-                                    external_id=saved.external_id or str(saved.id),
-                                    platform=saved.platform,
-                                    source_url=getattr(saved, "url", "") or "",
-                                    thumbnail_url=getattr(saved, "image_url", "") or "",
-                                    description=getattr(saved, "description", "") or "",
-                                    year=getattr(saved, "year", None),
-                                    km=getattr(saved, "km", None),
-                                    fuel_type=getattr(saved, "fuel_type", None),
-                                    transmission=getattr(saved, "transmission", None),
-                                )
-                            except Exception:
-                                pass
 
                 log_manager.emit("auto_listings", "INFO",
                     f"{kw.platform} pagina {page}: {len(results)} rezultate · {new_on_page} noi")

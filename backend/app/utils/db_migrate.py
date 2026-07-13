@@ -834,6 +834,8 @@ def run_migrations():
         _migrate(conn, "drop_ticket_messages_table", "DROP TABLE IF EXISTS ticket_messages")
         _migrate(conn, "drop_support_tickets_table", "DROP TABLE IF EXISTS support_tickets")
         _migrate(conn, "drop_chat_messages_table", "DROP TABLE IF EXISTS chat_messages")
+        # -- Cleanup post-licenta (ML-1): subsistemul ML eliminat, tabela nefolosita.
+        _migrate(conn, "drop_market_listings_table", "DROP TABLE IF EXISTS market_listings")
 
     _backfill_product_sources()
 

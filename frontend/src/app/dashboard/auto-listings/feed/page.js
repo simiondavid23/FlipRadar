@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { autoListingsAPI, autoAPI, mlAPI, radarAPI } from "@/lib/api";
+import { autoListingsAPI, autoAPI, radarAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Car, RefreshCw, Loader2, AlertTriangle, Info, FileSpreadsheet, X, ImageOff, Check, Bookmark, EyeOff } from "lucide-react";
 import { GRADE_COLORS, selectStyle, tabPillStyle, inputStyle, labelStyle } from "@/lib/uiStyles";
@@ -499,54 +499,6 @@ export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, i
   );
 }
 
-// Slot ML BMW (mutat 1:1 din vechiul modal Auto).
-function AutoMLSection({ listing }) {
-  // mlState reține DOAR rezultatul fetch-ului, etichetat cu id-ul listing-ului pentru
-  // care a fost calculat. loading/prediction se derivă în render (fără setState sincron
-  // în efect); rezultatul vechi cade automat când se schimbă listing-ul.
-  const [mlState, setMlState] = useState({ id: null, data: null });
-  const isBmw = /\bbmw\b/i.test(listing.title || "");
-  useEffect(() => {
-    if (!isBmw) return;
-    let cancelled = false;
-    mlAPI.predict({
-      category: "auto_bmw",
-      features: { make: "BMW", price: listing.price, year: listing.year, km: listing.km, platform: listing.platform },
-    })
-      .then((r) => { if (!cancelled) setMlState({ id: listing.id, data: r.data }); })
-      .catch((err) => {
-        if (cancelled) return;
-        const msg = err.response?.data?.detail;
-        setMlState({ id: listing.id, data: msg === "model_not_trained" ? { error: "model_not_trained" }
-          : msg === "features_incomplete" ? { error: "features_incomplete" } : { error: "unavailable" } });
-      });
-    return () => { cancelled = true; };
-  }, [listing.id, isBmw, listing.price, listing.year, listing.km, listing.platform]);
-  if (!isBmw) return null;
-  const mlLoading = mlState.id !== listing.id;
-  const mlPrediction = mlState.id === listing.id ? mlState.data : null;
-  return (
-    <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", margin: "0 1.25rem 1rem" }}>
-      <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.5rem" }}>PREDICȚIE ML</div>
-      {mlLoading && <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Se calculează...</p>}
-      {!mlLoading && mlPrediction && !mlPrediction.error && (
-        <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-          Estimat ML: {mlPrediction.price?.toLocaleString("ro-RO")} RON
-          {mlPrediction.days && <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>· ~{mlPrediction.days} zile</span>}
-        </p>
-      )}
-      {!mlLoading && mlPrediction?.error === "model_not_trained" && (
-        <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
-          Date insuficiente.{" "}<a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>Vezi progresul →</a>
-        </p>
-      )}
-      {!mlLoading && (mlPrediction?.error === "features_incomplete" || mlPrediction?.error === "unavailable") && (
-        <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>Date insuficiente pentru predicție.</p>
-      )}
-    </div>
-  );
-}
-
 // Import Score (breakdown RAR/ITP/transport) — mutat 1:1 din vechiul modal Auto. La FINAL (children).
 function AutoImportScore({ listing }) {
   const [importMode, setImportMode] = useState("pe_platforma");
@@ -673,7 +625,6 @@ export function AutoListingModal({ listing, onClose, onSave, onIgnore, templates
           Unele detalii (poze, descriere, vânzător) se pot completa la prima deschidere.
         </div>
       ) : null}
-      mlSlot={<AutoMLSection listing={enriched} />}
     >
       <AutoImportScore listing={listing} />
     </ListingDetailModal>

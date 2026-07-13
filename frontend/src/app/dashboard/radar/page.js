@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { radarAPI, mlAPI } from "@/lib/api";
+import { radarAPI } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   Radar, RefreshCw, ImageOff, ExternalLink, Bookmark, EyeOff,
@@ -13,32 +13,6 @@ import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import ActionBanner from "@/components/shared/ActionBanner";
-
-// ── ML Predictor: detectie categorie + construire features din anunt ──
-function detectMLCategory(title = "") {
-  const t = title.toLowerCase();
-  if (/iphone|ipad|macbook|airpod/.test(t)) return "electronics_apple";
-  if (/\bbmw\b/.test(t)) return "auto_bmw";
-  return null;
-}
-
-function buildFeaturesFromListing(listing, category) {
-  const title = listing.title || "";
-  if (category === "electronics_apple") {
-    return {
-      product_line: /iphone/i.test(title) ? "iPhone"
-        : /ipad/i.test(title) ? "iPad"
-          : /macbook/i.test(title) ? "MacBook"
-            : "iPhone",
-      price: listing.price,
-      platform: listing.platform,
-    };
-  }
-  if (category === "auto_bmw") {
-    return { make: "BMW", price: listing.price, platform: listing.platform };
-  }
-  return {};
-}
 
 const PLATFORMS = [
   { value: "", label: "Toate platformele" },
@@ -744,7 +718,6 @@ export default function RadarFeedPage() {
           onRenderTemplate={radarAPI.renderTemplate}
           templatesHref="/dashboard/settings"
           detailBannerSlot={<RadarDetailBanner listing={selected} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
-          mlSlot={<RadarMLSection listing={selected} />}
         />
       )}
 
@@ -1058,92 +1031,6 @@ function ManualResultCard({ listing }) {
             {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// Slot ML pentru modalul partajat — mutat 1:1 din ListingModal (hooks + JSX identice).
-export function RadarMLSection({ listing }) {
-  // mlCategory e pur derivat din titlu; mlState reține DOAR rezultatul fetch-ului
-  // (etichetat cu id-ul listing-ului). loading/prediction se derivă în render, deci
-  // singurul setState e în .then/.catch (asincron), nu sincron în efect.
-  const mlCategory = listing ? detectMLCategory(listing.title) : null;
-  const [mlState, setMlState] = useState({ id: null, data: null });
-
-  useEffect(() => {
-    if (!listing || !mlCategory) return;
-    let cancelled = false;
-    mlAPI.predict({
-      category: mlCategory,
-      features: buildFeaturesFromListing(listing, mlCategory),
-    })
-      .then((r) => { if (!cancelled) setMlState({ id: listing.id, data: r.data }); })
-      .catch((err) => {
-        if (cancelled) return;
-        const msg = err.response?.data?.detail;
-        setMlState({ id: listing.id, data:
-          msg === "model_not_trained" ? { error: "model_not_trained" }
-            : msg === "features_incomplete" ? { error: "features_incomplete" }
-              : { error: "unavailable" }
-        });
-      });
-    return () => { cancelled = true; };
-  }, [listing?.id, mlCategory]);
-
-  if (!mlCategory) return null;
-  const mlLoading = mlState.id !== listing.id;
-  const mlPrediction = mlState.id === listing.id ? mlState.data : null;
-  return (
-    <div style={{ margin: "0 1.25rem 1rem" }}>
-      <div style={{
-        padding: "0.875rem 1rem",
-        backgroundColor: "rgba(124,58,237,0.07)",
-        border: "0.5px solid rgba(124,58,237,0.25)",
-        borderRadius: "0.625rem",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-          <span style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, letterSpacing: "0.04em" }}>
-            PREDICȚIE ML
-          </span>
-        </div>
-
-        {mlLoading && (
-          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-            Se calculează...
-          </p>
-        )}
-
-        {!mlLoading && mlPrediction && !mlPrediction.error && (
-          <div>
-            <p style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-              Estimat: {mlPrediction.price?.toLocaleString("ro-RO")} RON
-              {mlPrediction.days && (
-                <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>
-                  · vândut în ~{mlPrediction.days} zile
-                </span>
-              )}
-            </p>
-            <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-              Predicție separată de prețul de revânzare introdus manual.
-            </p>
-          </div>
-        )}
-
-        {!mlLoading && mlPrediction?.error === "model_not_trained" && (
-          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-            Model neantrenat — date insuficiente.{" "}
-            <a href="/dashboard/ml-predictor" style={{ color: "#a78bfa" }}>
-              Vezi progresul →
-            </a>
-          </p>
-        )}
-
-        {!mlLoading && mlPrediction?.error === "features_incomplete" && (
-          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-            Features insuficiente pentru predicție (titlu prea vag).
-          </p>
-        )}
       </div>
     </div>
   );

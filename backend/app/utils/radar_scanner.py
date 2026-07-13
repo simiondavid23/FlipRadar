@@ -30,7 +30,6 @@ from app.services.radar.cleanup_service import cleanup_sold_listings
 from app.services.radar import health_watchdog
 from app.services.discord_service import send_radar_notification
 from app.services.log_manager import log_manager, set_log_user
-from app.services.ml.feed_ml_bridge import try_save_to_ml
 from app.services.radar.autovit_scraper import search_autovit
 from app.services.radar.facebook_scraper import search_facebook
 from app.services.radar.lajumate_scraper import search_lajumate
@@ -2256,24 +2255,6 @@ def _scan_user(db: Session, user: User) -> dict:
                     db.add(listing_db)
                     db.flush()
                     stats["new_listings"] += 1
-
-                    # MODULE 5 — bridge ML: daca titlul matchuieste o categorie
-                    # (Apple/BMW), salveaza si in market_listings. Erorile ML nu
-                    # trebuie sa rupa niciodata scanul Radar.
-                    try:
-                        try_save_to_ml(
-                            db=db,
-                            title=listing.get("title") or "",
-                            price=float(listing.get("price") or 0),
-                            currency=listing.get("currency") or "RON",
-                            external_id=listing.get("external_id") or str(listing_db.id),
-                            platform=platform,
-                            source_url=listing.get("url") or "",
-                            thumbnail_url=(listing.get("images") or [None])[0] or "",
-                            description=listing.get("description") or "",
-                        )
-                    except Exception:
-                        pass
 
                     if score_data["score"] == "A":
                         log_manager.emit("radar", "OK",

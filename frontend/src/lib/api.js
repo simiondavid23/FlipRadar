@@ -129,14 +129,6 @@ export const logsAPI = {
   getLogs: (module) => api.get(`/api/logs/stats`),
 };
 
-// ML Predictor — statistici colectare date + predictie pret/timp + reantrenare
-export const mlAPI = {
-  getStats: () => api.get("/api/ml/stats"),
-  predict: (payload) => api.post("/api/ml/predict", payload),
-  retrain: () => api.post("/api/ml/retrain"),
-  runSoldDetection: () => api.post("/api/ml/sold-detection"),
-};
-
 // Auto Anunturi — keyword-uri + feed monitorizat (scoring + import cost)
 export const autoListingsAPI = {
   // Keywords

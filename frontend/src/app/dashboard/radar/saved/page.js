@@ -8,7 +8,7 @@ import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import SavedIgnoredView from "@/components/shared/SavedIgnoredView";
 import {
   SCORE_COLORS, PLATFORM_COLORS, PLATFORM_LABELS, SCORE_EXPLANATIONS,
-  RadarMLSection, RadarDetailBanner,
+  RadarDetailBanner,
 } from "../page";
 
 const scoreCfgOf = (s) => SCORE_COLORS[s] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
@@ -63,7 +63,6 @@ function RadarSavedModal({ listing, onClose, onSave, onIgnore, templates, review
       onRenderTemplate={radarAPI.renderTemplate}
       templatesHref="/dashboard/settings"
       detailBannerSlot={<RadarDetailBanner listing={detail} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
-      mlSlot={<RadarMLSection listing={detail} />}
     />
   );
 }
