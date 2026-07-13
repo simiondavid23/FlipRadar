@@ -826,6 +826,10 @@ def run_migrations():
         _migrate(conn, "add_sales_inventory_item_id",
             "ALTER TABLE sales ADD COLUMN IF NOT EXISTS inventory_item_id INTEGER")
 
+        # -- Cleanup post-licenta (NOTIF-1): sistemul de notificari in-app a fost
+        # eliminat complet; tabela nu mai e folosita de nicio parte a aplicatiei.
+        _migrate(conn, "drop_notifications_table", "DROP TABLE IF EXISTS notifications")
+
     _backfill_product_sources()
 
 

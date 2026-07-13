@@ -418,9 +418,8 @@ export default function AdminUsersPage() {
 
                 <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
                   {detail.sales_count > 0 && (
-                    <span>Profit total: <strong style={{ color: "var(--text-primary)" }}>{formatMoney(detail.sales_profit)}</strong> · </span>
+                    <span>Profit total: <strong style={{ color: "var(--text-primary)" }}>{formatMoney(detail.sales_profit)}</strong></span>
                   )}
-                  <span>Notificari necitite: <strong style={{ color: "var(--text-primary)" }}>{detail.unread_notifications}</strong></span>
                 </div>
 
                 {/* Feature flags */}

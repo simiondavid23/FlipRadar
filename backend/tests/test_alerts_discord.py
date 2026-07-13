@@ -56,15 +56,14 @@ def test_build_flash_deal_embed_fields():
 
 
 def test_flash_deal_enqueues_discord(auth_client):
-    """Un Flash Deal creeaza notificarea in-app (comportament vechi) SI pune un item
-    in coada Discord pe webhook-ul dedicat de alerte (module="alerts")."""
+    """Un Flash Deal pune un item in coada Discord pe webhook-ul dedicat de alerte
+    (module="alerts"). Notificarea in-app a fost eliminata in NOTIF-1."""
     from app.database import SessionLocal
     from app.models.user import User
     from app.models.product import Product
     from app.models.radar_settings import RadarSettings
-    from app.models.notification import Notification
     from app.models.discord_queue_db import DiscordQueueItem
-    from app.utils.alert_checker import _check_and_create_flash_deal_notifications
+    from app.utils.alert_checker import _check_and_send_flash_deals
 
     db = SessionLocal()
     try:
@@ -87,7 +86,7 @@ def test_flash_deal_enqueues_discord(auth_client):
         db.refresh(product)
 
         # 100 -> 50 = scadere de 50% (peste pragul implicit de 15%).
-        _check_and_create_flash_deal_notifications(db, product, 100.0, 50.0, "emag")
+        _check_and_send_flash_deals(db, product, 100.0, 50.0, "emag")
         db.commit()
 
         # Exact un item Discord, pe modulul "alerts", cu listing_id de flash deal.
@@ -96,12 +95,5 @@ def test_flash_deal_enqueues_discord(auth_client):
         ).all()
         assert len(items) == 1
         assert items[0].listing_id.startswith(f"flashdeal-{product.id}-")
-
-        # Comportamentul vechi neatins: notificarea in-app flash_deal exista.
-        notifs = db.query(Notification).filter(
-            Notification.user_id == user.id,
-            Notification.notification_type == "flash_deal",
-        ).all()
-        assert len(notifs) == 1
     finally:
         db.close()

@@ -2,7 +2,6 @@ from datetime import datetime, timedelta
 from app.database import SessionLocal
 from app.models.facebook_group_config import FacebookGroupConfig
 from app.models.facebook_group_post import FacebookGroupPost
-from app.models.notification import Notification
 from app.scrapers.facebook_group_scraper import scrape_facebook_group
 from app.services.real_estate.extractor import (
     extract_real_estate_data,
@@ -67,25 +66,6 @@ async def _process_config(db, config) -> int:
             db.add(new_post)
             db.flush()
 
-            # Notificare in-app
-            pret_str = (
-                f"{int(new_post.pret)} {new_post.moneda}"
-                if new_post.pret else "Pret negasit"
-            )
-            zona_str = f" · {new_post.zona}" if new_post.zona else ""
-            tip_str = f" · {new_post.tip_proprietate}" if new_post.tip_proprietate else ""
-
-            db.add(Notification(
-                user_id=config.user_id,
-                title=f"Postare noua: {config.group_name}",
-                message=(
-                    f"{pret_str}{tip_str}{zona_str} — "
-                    f"{post['text'][:100]}..."
-                ),
-                notification_type="facebook_group",
-                link=f"/dashboard/real-estate/facebook-groups/posts?config={config.id}",
-            ))
-
             new_count += 1
 
         config.last_run_at = now
@@ -110,18 +90,6 @@ async def _process_config(db, config) -> int:
         )
         db.commit()
 
-        if "COOKIES_EXPIRATE" in error_msg:
-            db.add(Notification(
-                user_id=config.user_id,
-                title="Cookies Facebook expirate",
-                message=(
-                    f"Cookies-urile pentru grupul '{config.group_name}' "
-                    f"au expirat. Reinnoieste-le din setarile grupului."
-                ),
-                notification_type="warning",
-                link="/dashboard/real-estate/facebook-groups",
-            ))
-            db.commit()
         return 0
 
 
@@ -171,30 +139,11 @@ async def run_single_config_check(config_id: int, user_id: int) -> int:
 
 
 def check_cookie_expiry():
-    """
-    Job zilnic: avertizeaza cu 7 zile inainte de expirarea cookies.
-    """
-    db = SessionLocal()
-    try:
-        configs = db.query(FacebookGroupConfig).filter(
-            FacebookGroupConfig.is_active == True,  # noqa: E712
-            FacebookGroupConfig.cookies_saved_at.isnot(None),
-        ).all()
+    """Job zilnic — dezactivat in NOTIF-1.
 
-        for config in configs:
-            days_old = (datetime.utcnow() - config.cookies_saved_at).days
-            if 53 <= days_old <= 54:   # avertizare la ~53 zile (expira la ~60)
-                db.add(Notification(
-                    user_id=config.user_id,
-                    title="Reinnoire cookies necesara in curand",
-                    message=(
-                        f"Cookies-urile pentru '{config.group_name}' expira "
-                        f"in aproximativ 7 zile. Reinnoieste-le din "
-                        f"Imobiliare → Grupuri Facebook → Setari."
-                    ),
-                    notification_type="warning",
-                    link="/dashboard/real-estate/facebook-groups",
-                ))
-        db.commit()
-    finally:
-        db.close()
+    Avertizarea de expirare a cookie-urilor Facebook era o notificare in-app,
+    eliminata complet in NOTIF-1. Functia e pastrata ca no-op fiindca scheduler-ul
+    (app/main.py) o refera; la esec de scraping statusul 'cookies_expirate' se
+    seteaza in continuare in _process_config.
+    """
+    return

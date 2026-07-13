@@ -297,15 +297,6 @@ export const trackedProductsAPI = {
   remove: (id) => api.delete(`/api/tracked-products/${id}`),
 };
 
-// Notificări
-export const notificationsAPI = {
-  getNotifications: (params) => api.get("/api/notifications/", { params }),
-  getUnreadCount: () => api.get("/api/notifications/unread-count"),
-  markAsRead: (id) => api.put(`/api/notifications/${id}/read`),
-  markAllAsRead: () => api.put("/api/notifications/read-all"),
-  clearAll: () => api.delete("/api/notifications/clear"),
-};
-
 // Web Scraping
 const _scrapeParams = (query, max, searchType) => {
   const params = { q: query };

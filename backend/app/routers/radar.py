@@ -25,7 +25,6 @@ from app.config import VAPID_PUBLIC_KEY
 from app.rate_limit import limiter
 from app.database import get_db
 from app.services.crypto_service import encrypt_cookie, decrypt_cookie
-from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing

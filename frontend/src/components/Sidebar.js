@@ -1,15 +1,14 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
-import { notificationsAPI } from "@/lib/api";
 import {
   LayoutDashboard, Search, Bell, LogOut,
   MessageCircle, Sparkles, FileText, FileBarChart, Shield,
-  Heart, BellDot, Globe, FileSpreadsheet, Boxes, Receipt,
+  Heart, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
   Radar, Target, Bookmark, Settings, MessageSquare,
   Calculator, Car, Home, Activity, Brain, TrendingUp, Rss, Tag
@@ -91,7 +90,6 @@ const categories = [
     items: [
       { name: "Jurnale Live", href: "/dashboard/logs", icon: Activity },
       { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
-      { name: "Centru Notificari", href: "/dashboard/notifications", icon: BellDot },
     ],
   },
   {
@@ -141,23 +139,6 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [openCategory, setOpenCategory] = useState(() => findInitiallyOpenCategory(pathname));
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  // Badge necitite: fetch la mount, la schimbarea rutei si la fiecare 60s.
-  useEffect(() => {
-    let cancelled = false;
-    const fetchUnread = async () => {
-      try {
-        const res = await notificationsAPI.getUnreadCount();
-        if (!cancelled) setUnreadCount(res.data.unread_count ?? 0);
-      } catch {
-        if (!cancelled) setUnreadCount(0);
-      }
-    };
-    fetchUnread();
-    const id = setInterval(fetchUnread, 60000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [pathname]);
 
   const toggleCategory = (id) => {
     setOpenCategory((prev) => (prev === id ? null : id));
@@ -165,18 +146,6 @@ export default function Sidebar() {
 
   const dashboardActive = pathname === "/dashboard";
   const isLight = theme === "light";
-
-  // Badge necitite reutilizabil (item Centru Notificari + header categorie colapsata).
-  const renderUnreadBadge = () => (
-    <span style={{
-      marginLeft: "auto", minWidth: "1.125rem", height: "1.125rem",
-      padding: "0 0.3rem", borderRadius: "9999px", fontSize: "0.625rem",
-      fontWeight: 700, display: "inline-flex", alignItems: "center",
-      justifyContent: "center", backgroundColor: "#dc2626", color: "white",
-    }}>
-      {unreadCount > 99 ? "99+" : unreadCount}
-    </span>
-  );
 
   return (
     <div
@@ -237,7 +206,6 @@ export default function Sidebar() {
                 onMouseLeave={(e) => { e.currentTarget.style.color = hasActiveChild ? TEXT_PRIMARY : TEXT_MUTED; }}
               >
                 <span>{cat.label}</span>
-                {cat.id === "monitorizare" && !isOpen && unreadCount > 0 && renderUnreadBadge()}
                 {isOpen ? (
                   <ChevronDown style={{ width: "14px", height: "14px" }} />
                 ) : (
@@ -265,7 +233,6 @@ export default function Sidebar() {
                       >
                         <Icon style={{ width: "16px", height: "16px", flexShrink: 0 }} />
                         <span>{item.name}</span>
-                        {item.href === "/dashboard/notifications" && unreadCount > 0 && renderUnreadBadge()}
                       </Link>
                     );
                   })}

@@ -12,7 +12,6 @@ from app.models.inventory import InventoryItem
 from app.models.sale import Sale
 from app.models.support_ticket import SupportTicket, TicketMessage
 from app.models.chat_message import ChatMessage
-from app.models.notification import Notification
 from app.models.favorite import FavoriteItem
 from app.schemas.admin import (
     AdminStats, RecentUser, TicketSummary, TicketUser,
@@ -867,7 +866,6 @@ def get_user_detail(
         tickets_count=_count(db, SupportTicket, user_id=user_id),
         open_tickets=_count(db, SupportTicket, user_id=user_id, status="open"),
         chat_messages_count=_count(db, ChatMessage, user_id=user_id),
-        unread_notifications=_count(db, Notification, user_id=user_id, is_read=False),
         last_sale_at=last_sale_at,
         last_chat_at=last_chat_at,
     )

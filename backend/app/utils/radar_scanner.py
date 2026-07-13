@@ -19,7 +19,6 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models.notification import Notification
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing
 from app.models.radar_seen_id import RadarSeenId
@@ -1886,22 +1885,6 @@ def _send_email_alert(
         print(f"[RadarScanner] Email esuat: {exc}")
 
 
-def _create_inapp_notification(db: Session, user_id: int, listing_db: RadarListing, keyword: RadarKeyword) -> None:
-    title = f"Radar [{listing_db.score or '?'}]: {listing_db.title[:60]}"
-    message = (
-        f"Anunț nou pe {listing_db.platform.upper()} pentru \"{keyword.name}\": "
-        f"{listing_db.price} {listing_db.currency} "
-        f"(marjă ~{int(listing_db.margin_pct or 0)}%)."
-    )
-    db.add(Notification(
-        user_id=user_id,
-        title=title,
-        message=message,
-        notification_type="alert",
-        link=f"/dashboard/radar?listing={listing_db.id}",
-    ))
-
-
 def _is_within_active_hours(kw) -> bool:
     """Returns True if the keyword should be scanned at the current time.
     Supports overnight ranges: e.g. start=22, end=6 → active 22:00–05:59.
@@ -2325,8 +2308,6 @@ def _scan_user(db: Session, user: User) -> dict:
                             stats["alerts_sent"] += queued or 0
                             if queued:
                                 log_manager.emit("radar", "NOTIF", f"Discord în coadă → {queued} canal(e)")
-                        # In-app intotdeauna (independent de setari)
-                        _create_inapp_notification(db, user.id, listing_db, kw)
                         # Email doar daca scor A/B SI keyword-ul are notify_email activ
                         if score_data["score"] in ("A", "B") and getattr(kw, "notify_email", False):
                             _send_email_alert(

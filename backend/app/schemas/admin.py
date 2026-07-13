@@ -278,6 +278,5 @@ class AdminUserDetail(BaseModel):
     tickets_count: int = 0
     open_tickets: int = 0
     chat_messages_count: int = 0
-    unread_notifications: int = 0
     last_sale_at: Optional[UTCDateTime] = None
     last_chat_at: Optional[UTCDateTime] = None
