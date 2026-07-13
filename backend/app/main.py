@@ -14,7 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import auth, products, watchlist, alerts, dashboard, ai_chat, ai_analysis, admin, support
+from app.routers import auth, products, watchlist, alerts, dashboard, ai_chat, ai_analysis, support
 from app.routers import favorites, scraping, import_export
 from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
@@ -498,7 +498,6 @@ app.include_router(alerts.router)
 app.include_router(dashboard.router)
 app.include_router(ai_chat.router)
 app.include_router(ai_analysis.router)
-app.include_router(admin.router)
 app.include_router(support.router)
 app.include_router(favorites.router)
 app.include_router(scraping.router)

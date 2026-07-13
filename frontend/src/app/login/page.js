@@ -51,11 +51,7 @@ export default function LoginPage() {
         { email, password },
         { withCredentials: true }
       );
-      if (loginRes.data?.user?.is_admin) {
-        window.location.href = "/admin";
-      } else {
-        window.location.href = "/dashboard";
-      }
+      window.location.href = "/dashboard";
     } catch (err) {
       const detail = err.response?.data?.detail;
       if (typeof detail === "string") {

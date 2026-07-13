@@ -22,8 +22,6 @@ function DashboardContent({ children }) {
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
-    } else if (!loading && user && user.is_admin) {
-      router.push("/admin");
     }
   }, [user, loading, router]);
 
@@ -35,7 +33,7 @@ function DashboardContent({ children }) {
     );
   }
 
-  if (!user || user.is_admin) return null;
+  if (!user) return null;
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg-dark)" }}>

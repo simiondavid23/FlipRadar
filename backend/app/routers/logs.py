@@ -12,7 +12,6 @@ from app.database import get_db
 from app.models.user import User
 from app.services.log_manager import log_manager
 from app.utils.auth import get_current_user
-from app.routers.admin import require_admin
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 
@@ -90,22 +89,3 @@ def get_stats(
 ):
     # MON-4 — statistici DOAR pe intrarile user-ului curent.
     return log_manager.get_stats(current_user.id)
-
-
-@router.post("/test-emit")
-def test_emit(admin: User = Depends(require_admin)):
-    """Debug (doar admin) — emite cate o pereche de evenimente in fiecare modul
-    si raporteaza dimensiunile bufferelor (verifica singleton-ul + maparea)."""
-    from app.services.log_manager import log_manager, LogManager
-    for module in LogManager.MODULES:
-        log_manager.emit(module, "INFO",
-                         f"Test emit → modul {module} functioneaza corect")
-        log_manager.emit(module, "OK",
-                         f"Buffer activ · {len(log_manager.get_all(module))} intrari")
-    return {
-        "emitted_to": LogManager.MODULES,
-        "buffer_sizes": {
-            m: len(log_manager.get_all(m))
-            for m in LogManager.MODULES
-        },
-    }

@@ -125,32 +125,6 @@ export const aiAPI = {
   clearChatHistory: () => api.delete("/api/ai/chat/history"),
 };
 
-// Administrare
-export const adminAPI = {
-  getStats: () => api.get("/api/admin/stats"),
-  // tickets acceptă filtre { user_id, status }
-  getTickets: (params) => api.get("/api/admin/tickets", { params }),
-  getTicket: (id) => api.get(`/api/admin/tickets/${id}`),
-  replyTicket: (id, data) => api.post(`/api/admin/tickets/${id}/reply`, data),
-  closeTicket: (id) => api.put(`/api/admin/tickets/${id}/close`),
-  runAlertCheck: () => api.post("/api/admin/run-alert-check"),
-  // Administrare per utilizator
-  getUsers: () => api.get("/api/admin/users"),
-  getUser: (id) => api.get(`/api/admin/users/${id}`),
-  setUserActive: (id, isActive) => api.put(`/api/admin/users/${id}/active`, { is_active: isActive }),
-  updateUserFeatures: (id, flags) => api.put(`/api/admin/users/${id}/features`, flags),
-  getProducts: (params) => api.get("/api/admin/products", { params }),
-  getProductsReport: (params) => api.get("/api/admin/products/report", { params }),
-  // FlipRadar — ITEM 17: export PDF al raportului de produse (acelasi filtru)
-  exportProductsReportPdf: (params) => api.get("/api/admin/products/report/pdf", { params, responseType: "blob" }),
-  getWatchlist: (params) => api.get("/api/admin/watchlist", { params }),
-  getAlerts: (params) => api.get("/api/admin/alerts", { params }),
-  getInventory: (params) => api.get("/api/admin/inventory", { params }),
-  getSales: (params) => api.get("/api/admin/sales", { params }),
-  getFavorites: (params) => api.get("/api/admin/favorites", { params }),
-  getChatMessages: (params) => api.get("/api/admin/chat-messages", { params }),
-};
-
 // Setari utilizator (FlipRadar — ITEM 16)
 export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),

@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import {
   LayoutDashboard, Search, Bell, LogOut,
-  MessageCircle, Sparkles, FileText, FileBarChart, Shield,
+  MessageCircle, Sparkles, FileText, FileBarChart,
   Heart, Globe, FileSpreadsheet, Boxes, Receipt,
   ChevronDown, ChevronRight, Sun, Moon, BarChart2,
   Radar, Target, Bookmark, Settings, MessageSquare,
@@ -242,18 +242,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      {user?.is_admin && (
-        <div style={{ padding: "0 0.75rem 0.5rem" }}>
-          <Link href="/admin"
-            style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
-              fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none",
-              backgroundColor: "rgba(220,38,38,0.1)", color: "#f87171", border: "1px solid rgba(220,38,38,0.2)" }}>
-            <Shield style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-            <span>Panou Administrare</span>
-          </Link>
-        </div>
-      )}
 
       <div style={{ padding: "0.75rem", borderTop: `1px solid ${SIDEBAR_BORDER}` }}>
         {user && (
