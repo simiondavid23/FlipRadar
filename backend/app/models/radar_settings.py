@@ -32,9 +32,5 @@ class RadarSettings(Base):
     platform_publi24_enabled = Column(Boolean, default=True, nullable=False)
     platform_autovit_enabled = Column(Boolean, default=True, nullable=False)
     platform_mobilede_enabled = Column(Boolean, default=True, nullable=False)
-    lajumate_cookie = Column(Text, nullable=True)
-    okazii_cookie = Column(Text, nullable=True)
     facebook_session_path = Column(String, nullable=True)
-    # MODIFICARE 9 — dimensiunea batch-ului pentru jobul ML de detectie vanzari.
-    sold_detection_batch_size = Column(Integer, default=100)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

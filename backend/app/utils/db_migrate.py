@@ -361,19 +361,20 @@ def run_migrations():
                 if not _column_exists(inspector, "radar_settings", col):
                     _migrate(conn, f"add_radar_settings_{col}",
                              f"ALTER TABLE radar_settings ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT TRUE")
-            # FlipRadar — cookie-uri de sesiune LaJumate + Okazii (Module 1)
-            _migrate(conn, "add_lajumate_cookie",
-                     "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS lajumate_cookie TEXT")
-            _migrate(conn, "add_okazii_cookie",
-                     "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS okazii_cookie TEXT")
             # Vinted: mecanismul de cookie a fost eliminat (folosim libraria vinted-scraper,
             # care gestioneaza DataDome automat). Renuntam la coloana ca sa nu ramana date moarte.
             _migrate(conn, "drop_radar_settings_vinted_cookie",
                      "ALTER TABLE radar_settings DROP COLUMN IF EXISTS vinted_cookie")
-            # MODIFICARE 9 — batch size configurabil pentru jobul ML de detectie vanzari.
-            _migrate(conn, "add_sold_detection_batch_size",
-                     "ALTER TABLE radar_settings ADD COLUMN IF NOT EXISTS "
-                     "sold_detection_batch_size INTEGER DEFAULT 100")
+            # COOK-1: cookie-urile Okazii/LaJumate sunt complet neutilizate — scraperele
+            # au fost rescrise fara cookie (nici macar nu primesc parametrul). Eliminam
+            # coloanele ca sa nu ramana date criptate moarte in DB (idem vinted_cookie).
+            _migrate(conn, "drop_radar_settings_lajumate_okazii_cookies",
+                     "ALTER TABLE radar_settings "
+                     "DROP COLUMN IF EXISTS lajumate_cookie, "
+                     "DROP COLUMN IF EXISTS okazii_cookie")
+            # Ramasita subsistemului ML (eliminat in ML-1): batch size necitit de nimeni.
+            _migrate(conn, "drop_radar_settings_sold_detection_batch_size",
+                     "ALTER TABLE radar_settings DROP COLUMN IF EXISTS sold_detection_batch_size")
 
         # FlipRadar — populeaza coloana `brand` din primul cuvant al numelui pentru
         # produsele vechi care nu au brand setat inca. Rulata o singura data prin

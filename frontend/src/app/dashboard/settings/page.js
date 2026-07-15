@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { radarAPI, usersAPI, facebookGroupsAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Save, Send, ToggleLeft, ToggleRight,
-  CheckCircle2, AlertCircle, Activity,
+  CheckCircle2, AlertCircle,
   BellRing, BellOff,
   Plus, Pencil, Trash2, RefreshCw, X, ExternalLink, Play, AlertTriangle, Clock
 } from "lucide-react";
@@ -16,15 +16,11 @@ const EMPTY_PROXY = { enabled: false, host: "", port: "", username: "", password
 export default function SettingsPage() {
   // ── Radar settings state (copiat din vechea pagina /dashboard/radar/settings) ──
   const [settings, setSettings] = useState(null);
-  const [fbStatus, setFbStatus] = useState({ valid: false });
+  const [fbStatus, setFbStatus] = useState({ status: null });
   const [proxy, setProxy] = useState(EMPTY_PROXY);
   const [pushStatus, setPushStatus] = useState({ subscribed: false, configured: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [lajumateTestResult, setLajumateTestResult] = useState(null);
-  const [testingLajumate, setTestingLajumate] = useState(false);
-  const [okaziiTestResult, setOkaziiTestResult] = useState(null);
-  const [testingOkazii, setTestingOkazii] = useState(false);
   const [aiFeatures, setAiFeatures] = useState({});
   const [newAlias, setNewAlias] = useState("");
   const [newZone, setNewZone] = useState("");
@@ -57,56 +53,6 @@ export default function SettingsPage() {
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la actualizare.");
       update({ [key]: !newVal });
-    }
-  };
-
-  const saveLajumateCookie = async () => {
-    setSaving(true);
-    try {
-      await radarAPI.updateSettings({ lajumate_cookie: settings.lajumate_cookie || "" });
-      alert("Cookie LaJumate salvat.");
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la salvare.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testLajumate = async () => {
-    setTestingLajumate(true);
-    setLajumateTestResult(null);
-    try {
-      const r = await radarAPI.testLaJumateCookie();
-      setLajumateTestResult(r.data);
-    } catch {
-      setLajumateTestResult({ valid: false, message: "Eroare la testare." });
-    } finally {
-      setTestingLajumate(false);
-    }
-  };
-
-  const saveOkaziiCookie = async () => {
-    setSaving(true);
-    try {
-      await radarAPI.updateSettings({ okazii_cookie: settings.okazii_cookie || "" });
-      alert("Cookie Okazii salvat.");
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la salvare.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testOkazii = async () => {
-    setTestingOkazii(true);
-    setOkaziiTestResult(null);
-    try {
-      const r = await radarAPI.testOkaziiCookie();
-      setOkaziiTestResult(r.data);
-    } catch {
-      setOkaziiTestResult({ valid: false, message: "Eroare la testare." });
-    } finally {
-      setTestingOkazii(false);
     }
   };
 
@@ -256,8 +202,6 @@ export default function SettingsPage() {
         </div>
       ) : (
         <>
-          {/* MODIFICARE 13 — status sesiuni platforme (badge-uri OK/Lipsă/Expirat) */}
-          <SessionStatusPanel />
           {/* Platforms */}
           <Section title="Platforme active — Radar Piață">
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
@@ -294,11 +238,19 @@ export default function SettingsPage() {
             />
 
             <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem", border: "1px solid var(--border-color)" }}>
-              {fbStatus.valid ? (
+              {fbStatus.status === "active" ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
                   <span style={{ color: "#4ade80", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
                     <CheckCircle2 style={{ width: "14px", height: "14px" }} />
-                    Sesiune Facebook activă
+                    Sesiune Facebook activă{fbStatus.age_hours != null ? ` — conectată acum ${fbStatus.age_hours < 48 ? Math.round(fbStatus.age_hours) + "h" : Math.round(fbStatus.age_hours / 24) + " zile"}` : ""}
+                  </span>
+                  <button onClick={connectFacebook} style={smallBtn("#60a5fa")}>Reconectează</button>
+                </div>
+              ) : fbStatus.status === "expired" ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <span style={{ color: "#fb923c", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+                    <AlertCircle style={{ width: "14px", height: "14px" }} />
+                    Sesiune Facebook expirată{fbStatus.age_hours != null ? ` (acum ${Math.round(fbStatus.age_hours / 24)} zile)` : ""} — reconectare necesară
                   </span>
                   <button onClick={connectFacebook} style={smallBtn("#60a5fa")}>Reconectează</button>
                 </div>
@@ -319,74 +271,6 @@ export default function SettingsPage() {
 
           {/* Șabloane Mesaje (mutat din pagina standalone radar/templates; generalizat pe toate modulele) */}
           <MessageTemplatesSection />
-
-          {/* Cookie LaJumate */}
-          <Section title="Cookie LaJumate">
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
-              Cookie-ul de sesiune de pe LaJumate.ro. Intră în Chrome → F12 → Network →
-              orice request → Request Headers → copiază valoarea de după &quot;Cookie:&quot;
-            </p>
-            <textarea
-              value={settings.lajumate_cookie || ""}
-              onChange={(e) => update({ lajumate_cookie: e.target.value })}
-              placeholder="Lipește cookie-ul LaJumate aici..."
-              rows={3}
-              style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}
-            />
-            <div style={{ marginTop: "0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button onClick={saveLajumateCookie} disabled={saving} style={primaryBtn(saving)}>
-                <Save style={{ width: "14px", height: "14px" }} />
-                Salvează cookie
-              </button>
-              <button
-                onClick={testLajumate}
-                disabled={testingLajumate}
-                style={{ ...primaryBtn(testingLajumate), backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)" }}
-              >
-                <Activity style={{ width: "14px", height: "14px" }} />
-                {testingLajumate ? "Se testează..." : "Testează cookie"}
-              </button>
-            </div>
-            {lajumateTestResult && (
-              <div style={{ fontSize: "0.8125rem", marginTop: "0.375rem", color: lajumateTestResult.valid ? "#4ade80" : "#f87171" }}>
-                {lajumateTestResult.valid ? "✓ " : "✗ "}{lajumateTestResult.message}
-              </div>
-            )}
-          </Section>
-
-          {/* Cookie Okazii */}
-          <Section title="Cookie Okazii">
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
-              Cookie-ul de sesiune de pe Okazii.ro. Același proces: F12 → Network →
-              Request Headers → copiază &quot;Cookie:&quot;
-            </p>
-            <textarea
-              value={settings.okazii_cookie || ""}
-              onChange={(e) => update({ okazii_cookie: e.target.value })}
-              placeholder="Lipește cookie-ul Okazii aici..."
-              rows={3}
-              style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}
-            />
-            <div style={{ marginTop: "0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button onClick={saveOkaziiCookie} disabled={saving} style={primaryBtn(saving)}>
-                <Save style={{ width: "14px", height: "14px" }} />
-                Salvează cookie
-              </button>
-              <button
-                onClick={testOkazii}
-                disabled={testingOkazii}
-                style={{ ...primaryBtn(testingOkazii), backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)" }}
-              >
-                <Activity style={{ width: "14px", height: "14px" }} />
-                {testingOkazii ? "Se testează..." : "Testează cookie"}
-              </button>
-            </div>
-            {okaziiTestResult && (
-              <div style={{ fontSize: "0.8125rem", marginTop: "0.375rem", color: okaziiTestResult.valid ? "#4ade80" : "#f87171" }}>
-                {okaziiTestResult.valid ? "✓ " : "✗ "}{okaziiTestResult.message}
-              </div>
-            )}
-          </Section>
 
           {/* Discord */}
           <Section title="Discord Webhooks">
@@ -579,62 +463,6 @@ export default function SettingsPage() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
-  );
-}
-
-// MODIFICARE 13 — panou status sesiuni platforme (Vinted/Okazii/LaJumate/Facebook).
-function SessionStatusPanel() {
-  const [status, setStatus] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    usersAPI.getSessionStatus()
-      .then((r) => { if (!cancelled) setStatus(r.data); })
-      .catch(() => { if (!cancelled) setStatus(null); });
-    return () => { cancelled = true; };
-  }, []);
-
-  const badge = (st) => {
-    if (st === "ok") return { bg: "var(--bg-success, rgba(34,197,94,0.15))", fg: "var(--text-success, #16a34a)", label: "OK" };
-    if (st === "expired") return { bg: "var(--bg-warning, rgba(245,158,11,0.15))", fg: "var(--text-warning, #d97706)", label: "Expirat" };
-    return { bg: "var(--bg-danger, rgba(239,68,68,0.15))", fg: "var(--text-danger, #dc2626)", label: "Lipsă" };
-  };
-
-  const rows = status ? [
-    { key: "vinted", label: "Vinted", info: status.vinted },
-    { key: "okazii", label: "Okazii", info: status.okazii },
-    { key: "lajumate", label: "LaJumate", info: status.lajumate },
-    { key: "facebook", label: "Facebook", info: status.facebook },
-  ] : [];
-
-  return (
-    <Section title="Status sesiuni platforme">
-      {!status ? (
-        <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Se încarcă...</p>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.625rem" }}>
-          {rows.map(({ key, label, info }) => {
-            const b = badge(info?.status);
-            return (
-              <div key={key} style={{ display: "flex", flexDirection: "column", gap: "0.375rem", padding: "0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
-                  <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.5rem", borderRadius: "999px", background: b.bg, color: b.fg }}>{b.label}</span>
-                </div>
-                {key === "vinted" && info?.status === "ok" && info?.token_preview && (
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace" }}>token: {info.token_preview}</span>
-                )}
-                {key === "facebook" && info?.age_hours != null && (
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>sesiune: acum {info.age_hours}h</span>
-                )}
-                {info?.detail && (
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{info.detail}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Section>
   );
 }
 

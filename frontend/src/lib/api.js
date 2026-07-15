@@ -119,8 +119,6 @@ export const dashboardAPI = {
 export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),
   getSettings: () => api.get("/api/users/settings"),
-  // MODIFICARE 13 — status sesiuni platforme (Vinted/Okazii/LaJumate/Facebook)
-  getSessionStatus: () => api.get("/api/users/settings/session-status"),
   updateAIFeatures: (config) => api.patch("/api/users/settings", { ai_features_config: config }),
 };
 
@@ -308,8 +306,6 @@ export const radarAPI = {
   updateSettings: (data) => api.put("/api/radar/settings", data),
   testDiscord: (webhook_url) =>
     api.post("/api/radar/settings/test-discord", { webhook_url }),
-  testLaJumateCookie: () => api.get("/api/radar/lajumate/test"),
-  testOkaziiCookie: () => api.get("/api/radar/okazii/test"),
   getFacebookStatus: () => api.get("/api/radar/facebook/status"),
   connectFacebook: () => api.post("/api/radar/facebook/connect"),
   getStats: () => api.get("/api/radar/stats"),

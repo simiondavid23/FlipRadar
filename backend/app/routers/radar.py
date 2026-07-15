@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 from app.config import VAPID_PUBLIC_KEY
 from app.rate_limit import limiter
 from app.database import get_db
-from app.services.crypto_service import encrypt_cookie, decrypt_cookie
 from app.models.push_subscription import PushSubscription
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing
@@ -146,8 +145,6 @@ class SettingsUpdate(BaseModel):
     platform_publi24_enabled: Optional[bool] = None
     platform_autovit_enabled: Optional[bool] = None
     platform_mobilede_enabled: Optional[bool] = None
-    lajumate_cookie: Optional[str] = None
-    okazii_cookie: Optional[str] = None
 
 
 class ManualSearchRequest(BaseModel):
@@ -391,9 +388,6 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "platform_publi24_enabled": bool(getattr(s, "platform_publi24_enabled", True)),
         "platform_autovit_enabled": bool(getattr(s, "platform_autovit_enabled", True)),
         "platform_mobilede_enabled": bool(getattr(s, "platform_mobilede_enabled", True)),
-        # MODIFICARE 4 — decriptăm pentru afișare în UI (backward compatible cu plain text).
-        "lajumate_cookie": decrypt_cookie(getattr(s, "lajumate_cookie", None) or ""),
-        "okazii_cookie": decrypt_cookie(getattr(s, "okazii_cookie", None) or ""),
         "facebook_session_path": s.facebook_session_path,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
@@ -1184,11 +1178,6 @@ def update_settings(
         s.platform_autovit_enabled = bool(data.platform_autovit_enabled)
     if data.platform_mobilede_enabled is not None:
         s.platform_mobilede_enabled = bool(data.platform_mobilede_enabled)
-    # MODIFICARE 4 — criptăm cookie-urile de sesiune înainte de stocare în DB.
-    if data.lajumate_cookie is not None:
-        s.lajumate_cookie = encrypt_cookie(data.lajumate_cookie) or None
-    if data.okazii_cookie is not None:
-        s.okazii_cookie = encrypt_cookie(data.okazii_cookie) or None
     s.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(s)
@@ -1208,66 +1197,6 @@ def test_discord_webhook(
     return {"message": "Mesaj de test trimis cu succes."}
 
 
-@router.get("/lajumate/test")
-async def test_lajumate_token(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    settings = db.query(RadarSettings).filter(
-        RadarSettings.user_id == current_user.id).first()
-    cookie = decrypt_cookie((settings.lajumate_cookie or "").strip()) if settings else ""
-    if not cookie:
-        return {"valid": False, "message": "Niciun cookie salvat."}
-    try:
-        from curl_cffi.requests import Session as CSession
-        headers = {
-            "Cookie": cookie,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,*/*",
-        }
-        with CSession(impersonate="chrome124") as s:
-            resp = s.get("https://www.lajumate.ro/anunturi/?q=test",
-                         headers=headers, timeout=12)
-        if resp.status_code == 200 and "lajumate" in resp.text.lower():
-            return {"valid": True,
-                    "message": "Cookie valid — LaJumate accesibil."}
-        return {"valid": False,
-                "message": f"HTTP {resp.status_code} — cookie invalid sau expirat."}
-    except Exception as exc:
-        return {"valid": False, "message": f"Eroare: {str(exc)[:80]}"}
-
-
-@router.get("/okazii/test")
-async def test_okazii_token(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    settings = db.query(RadarSettings).filter(
-        RadarSettings.user_id == current_user.id).first()
-    cookie = decrypt_cookie((settings.okazii_cookie or "").strip()) if settings else ""
-    if not cookie:
-        return {"valid": False, "message": "Niciun cookie salvat."}
-    try:
-        from curl_cffi.requests import Session as CSession
-        headers = {
-            "Cookie": cookie,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,*/*",
-        }
-        with CSession(impersonate="chrome124") as s:
-            resp = s.get("https://www.okazii.ro/cautare?q=test",
-                         headers=headers, timeout=12)
-        if resp.status_code == 200 and "okazii" in resp.text.lower():
-            return {"valid": True,
-                    "message": "Cookie valid — Okazii accesibil."}
-        return {"valid": False,
-                "message": f"HTTP {resp.status_code} — cookie invalid sau expirat."}
-    except Exception as exc:
-        return {"valid": False, "message": f"Eroare: {str(exc)[:80]}"}
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # FACEBOOK AUTH
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1278,10 +1207,19 @@ def facebook_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    import time
     s = _get_or_create_settings(db, current_user.id)
     path = s.facebook_session_path or _default_facebook_session_path(current_user.id)
     valid = is_facebook_session_valid(path)
-    return {"valid": valid}
+    exists = bool(path) and os.path.isfile(path)
+    if valid:
+        status = "active"
+    elif exists:
+        status = "expired"   # fisier prezent dar invalid: prea vechi (>30 zile) sau fara c_user
+    else:
+        status = "missing"
+    age_hours = round((time.time() - os.path.getmtime(path)) / 3600, 1) if exists else None
+    return {"valid": valid, "status": status, "age_hours": age_hours}
 
 
 @router.post("/facebook/connect")
