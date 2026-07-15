@@ -120,6 +120,7 @@ export const usersAPI = {
   updateSettings: (data) => api.patch("/api/users/settings", data),
   getSettings: () => api.get("/api/users/settings"),
   updateAIFeatures: (config) => api.patch("/api/users/settings", { ai_features_config: config }),
+  updateFlashDealThreshold: (fraction) => api.patch("/api/users/settings", { flash_deal_threshold: fraction }),
 };
 
 // Jurnale Live — statistici per modul (stream-ul SSE se consuma direct cu EventSource)

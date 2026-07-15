@@ -21,6 +21,8 @@ export default function SettingsPage() {
   const [pushStatus, setPushStatus] = useState({ subscribed: false, configured: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [flashThreshold, setFlashThreshold] = useState(15);
+  const [savingThreshold, setSavingThreshold] = useState(false);
   const [aiFeatures, setAiFeatures] = useState({});
   const [newAlias, setNewAlias] = useState("");
   const [newZone, setNewZone] = useState("");
@@ -38,6 +40,7 @@ export default function SettingsPage() {
     if (px?.data) setProxy({ ...EMPTY_PROXY, ...px.data, password: "" });
     if (ps?.data) setPushStatus(ps.data);
     if (us?.data?.ai_features_config) setAiFeatures(us.data.ai_features_config);
+    if (us?.data?.flash_deal_threshold != null) setFlashThreshold(Math.round(us.data.flash_deal_threshold * 100));
     setLoading(false);
   }, []);
 
@@ -76,6 +79,23 @@ export default function SettingsPage() {
       alert(e.response?.data?.detail || "Eroare la salvare.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveFlashThreshold = async () => {
+    const pct = Number(flashThreshold);
+    if (!Number.isFinite(pct) || pct < 5 || pct > 50) {
+      alert("Pragul trebuie să fie între 5 și 50%.");
+      return;
+    }
+    setSavingThreshold(true);
+    try {
+      await usersAPI.updateFlashDealThreshold(pct / 100);
+      alert("Pragul Flash Deal a fost salvat.");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la salvare.");
+    } finally {
+      setSavingThreshold(false);
     }
   };
 
@@ -309,6 +329,21 @@ export default function SettingsPage() {
 
             <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Alerte preț</div>
             <WebhookInput label="Alerte preț & Flash Deals" value={settings.discord_webhook_alerts || ""} onChange={(v) => update({ discord_webhook_alerts: v })} onTest={() => testWebhook(settings.discord_webhook_alerts)} />
+
+            <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem", border: "1px solid var(--border-color)" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>Prag Flash Deal</label>
+              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
+                Un produs urmărit care scade brusc cu cel puțin acest procent declanșează o alertă Flash Deal pe webhook-ul de mai sus.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <input type="number" min={5} max={50} value={flashThreshold} onChange={(e) => setFlashThreshold(e.target.value)}
+                  style={{ width: "5rem", padding: "0.375rem 0.5rem", backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.8125rem" }} />
+                <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>%</span>
+                <button onClick={saveFlashThreshold} disabled={savingThreshold} style={smallBtn("#4ade80")}>
+                  {savingThreshold ? "Se salvează..." : "Salvează pragul"}
+                </button>
+              </div>
+            </div>
 
             <div style={{ marginTop: "0.625rem" }}>
               <button onClick={saveDiscord} disabled={saving} style={primaryBtn(saving)}>

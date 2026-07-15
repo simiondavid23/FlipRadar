@@ -17,7 +17,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import cast, func, Date
 from sqlalchemy.orm import Session
 
@@ -118,6 +118,23 @@ class KeywordUpdate(BaseModel):
     exclude_exceptions: Optional[list[str]] = None
 
 
+_DISCORD_WEBHOOK_PREFIX = "https://discord.com/api/webhooks/"
+
+
+def _validate_discord_webhook(v):
+    """Anti-SSRF: acceptam doar webhook-uri Discord reale. Gol/None = stergere, permis.
+
+    Serverul face POST catre aceasta valoare (coada Discord + test-discord), deci un URL
+    arbitrar ar fi un vector SSRF. Validarea sta la granita API (schema); constructia ORM
+    directa din teste nu trece prin validator si ramane neatinsa.
+    """
+    if v is None or v == "":
+        return v
+    if not v.startswith(_DISCORD_WEBHOOK_PREFIX):
+        raise ValueError("URL-ul trebuie sa fie un webhook Discord valid (https://discord.com/api/webhooks/...).")
+    return v
+
+
 class ListingStatusUpdate(BaseModel):
     status: str
 
@@ -133,6 +150,17 @@ class SettingsUpdate(BaseModel):
     discord_webhook_imob_a: Optional[str] = None
     discord_webhook_imob_b: Optional[str] = None
     discord_webhook_alerts: Optional[str] = None
+
+    @field_validator(
+        "discord_webhook_all", "discord_webhook_buy_now", "discord_webhook_maybe",
+        "discord_webhook_auto", "discord_webhook_auto_all", "discord_webhook_auto_b",
+        "discord_webhook_imob_all", "discord_webhook_imob_a", "discord_webhook_imob_b",
+        "discord_webhook_alerts",
+    )
+    @classmethod
+    def _check_webhooks(cls, v):
+        return _validate_discord_webhook(v)
+
     discord_here_radar: Optional[bool] = None
     discord_here_auto: Optional[bool] = None
     discord_here_imob: Optional[bool] = None
@@ -159,6 +187,11 @@ class ManualSearchRequest(BaseModel):
 
 class DiscordTestRequest(BaseModel):
     webhook_url: str
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _check_webhook(cls, v):
+        return _validate_discord_webhook(v)
 
 
 class ProxyConfig(BaseModel):
