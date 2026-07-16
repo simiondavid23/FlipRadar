@@ -9,7 +9,7 @@ Teste pure de functie: nu ating reteaua si nu au nevoie de DB.
 """
 import pytest
 
-from app.services.scraper_service import _is_allowed_ean_url, fetch_ean_from_url
+from app.services.scraper_service import _is_allowed_shop_url, fetch_ean_from_url
 
 
 class _FakeResponse:
@@ -52,7 +52,7 @@ _JSONLD_EAN = (
     "not a url",
 ])
 def test_url_neautorizat_e_respins(url):
-    assert _is_allowed_ean_url(url) is False
+    assert _is_allowed_shop_url(url) is False
 
 
 # Domeniile magazinelor, inclusiv subdomenii legitime.
@@ -64,7 +64,7 @@ def test_url_neautorizat_e_respins(url):
     "https://pcgarage.ro/w",
 ])
 def test_url_magazin_e_acceptat(url):
-    assert _is_allowed_ean_url(url) is True
+    assert _is_allowed_shop_url(url) is True
 
 
 def test_fetch_ean_nu_face_request_pe_url_neautorizat(monkeypatch):
@@ -96,7 +96,7 @@ def test_allow_list_e_derivata_din_scrapere():
     from app.services.scraper_service import _SCRAPERS_BY_SOURCE
 
     for domain in _SCRAPERS_BY_SOURCE:
-        assert _is_allowed_ean_url(f"https://{domain}/produs") is True
+        assert _is_allowed_shop_url(f"https://{domain}/produs") is True
 
 
 # ── C-14b: validarea per-hop a redirecturilor ────────────────────────────────────
@@ -180,3 +180,57 @@ def test_redirect_relativ_nu_poate_evada_domeniul(monkeypatch):
 
     assert fetch_ean_from_url("https://www.emag.ro/x") is None
     assert calls == ["https://www.emag.ro/x"]
+
+
+# ── C-14c: aceeasi garda pe refresh-ul de pret PCGarage ──────────────────────────
+# source_url vine tot din produsul creat de user (refresh_price_from_source), iar
+# lantul e declansat si automat din scheduler (alert_checker) — deci SSRF-ul era
+# direct, fara sa fie nevoie macar de un open-redirect.
+def test_pcgarage_url_intern_respins(monkeypatch):
+    """URL interzis: zero request-uri si fara consum de retry-uri (fail-fast)."""
+    from app.services.scraper_service import fetch_pcgarage_price_from_url
+
+    calls = []
+    monkeypatch.setattr("app.services.scraper_service.curl_requests.get",
+                        _fake_get({}, calls))
+    # Daca fail-fast-ul n-ar exista, cele 3 retry-uri ar dormi 1-3s fiecare.
+    monkeypatch.setattr("app.services.scraper_service.time.sleep", lambda *_: None)
+
+    assert fetch_pcgarage_price_from_url("http://169.254.169.254/x") is None
+    assert calls == [], f"S-a facut request server-side pe URL interzis: {calls}"
+
+
+def test_pcgarage_redirect_intern_oprit(monkeypatch):
+    """Open-redirect de pe pcgarage.ro catre loopback: hop-ul nu e urmat."""
+    from app.services.scraper_service import fetch_pcgarage_price_from_url
+
+    calls = []
+    responses = {
+        "https://www.pcgarage.ro/produs": _FakeResponse(
+            status_code=302, headers={"location": "http://127.0.0.1/"}
+        ),
+    }
+    monkeypatch.setattr("app.services.scraper_service.curl_requests.get",
+                        _fake_get(responses, calls))
+    monkeypatch.setattr("app.services.scraper_service.time.sleep", lambda *_: None)
+
+    assert fetch_pcgarage_price_from_url("https://www.pcgarage.ro/produs") is None
+    assert "http://127.0.0.1/" not in calls, f"Redirect intern urmat: {calls}"
+
+
+def test_pcgarage_legitim(monkeypatch):
+    """Fluxul normal nu se schimba: 200 + selector de pret -> float."""
+    from app.services.scraper_service import fetch_pcgarage_price_from_url
+
+    calls = []
+    responses = {
+        "https://www.pcgarage.ro/produs": _FakeResponse(
+            status_code=200,
+            text='<html><body><span class="price_num">1.234,56 RON</span></body></html>',
+        ),
+    }
+    monkeypatch.setattr("app.services.scraper_service.curl_requests.get",
+                        _fake_get(responses, calls))
+
+    assert fetch_pcgarage_price_from_url("https://www.pcgarage.ro/produs") == 1234.56
+    assert calls == ["https://www.pcgarage.ro/produs"]

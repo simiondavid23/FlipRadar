@@ -796,9 +796,9 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
     return products
 
 
-def _is_allowed_ean_url(url: str) -> bool:
-    """C-14 (anti-SSRF): `source_url` vine liber din formularul userului, iar
-    fetch_ean_from_url il cere server-side. Fara allow-list, un URL intern
+def _is_allowed_shop_url(url: str) -> bool:
+    """C-14 (anti-SSRF): `source_url` vine liber din formularul userului si e cerut
+    server-side (backfill EAN, refresh pret). Fara allow-list, un URL intern
     (169.254.169.254, localhost) ar transforma backend-ul in proxy de scanare
     interna. Permitem DOAR domeniile magazinelor pe care le stim scrapa.
 
@@ -825,6 +825,43 @@ def _is_allowed_ean_url(url: str) -> bool:
         return False  # fail-closed: orice URL neparsabil e respins
 
 
+def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: int = 3):
+    """C-14b/C-14c: fetch cu allow-list per-hop, partajat de toate fetch-urile pe
+    URL-uri controlate de user.
+
+    Allow-list-ul pe URL-ul initial nu e suficient: un open-redirect pe un magazin
+    permis ar duce curl catre o tinta interna. De aceea allow_redirects=False si
+    urmarim manual, validand FIECARE hop prin _is_allowed_shop_url inainte de a-l cere.
+
+    Intoarce response-ul final (non-redirect) sau None daca: URL neautorizat pe orice
+    hop, prea multe redirecturi, sau eroare de retea. NU verifica `url` gol si NU
+    parseaza continutul — alea raman la apelanti.
+    """
+    current_url = url
+    for _hop in range(max_hops + 1):  # 1 request initial + max_hops redirecturi
+        if not _is_allowed_shop_url(current_url):
+            return None
+        try:
+            response = curl_requests.get(
+                current_url,
+                headers=headers,
+                impersonate=_IMPERSONATE,
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        except Exception:
+            return None
+        if response.status_code in (301, 302, 303, 307, 308):
+            loc = response.headers.get("location") or response.headers.get("Location")
+            if not loc:
+                return None
+            # Location poate fi cale relativa -> rezolvam fata de URL-ul curent.
+            current_url = urllib.parse.urljoin(current_url, loc)
+            continue
+        return response
+    return None  # hop-uri epuizate fara raspuns final
+
+
 def fetch_ean_from_url(source_url: str) -> Optional[str]:
     """Încearcă să preia EAN-ul/GTIN-ul din pagina de detalii a unui produs.
 
@@ -832,11 +869,11 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
     sole.ro (text simplu "Cod EAN:"), altex.ro (JSON-LD gtin13).
     Returnează None dacă nu se găsește sau în caz de eroare.
     URL-urile din afara domeniilor magazin sunt respinse INAINTE de orice request
-    (vezi _is_allowed_ean_url).
+    (vezi _is_allowed_shop_url).
     """
     if not source_url:
         return None
-    if not _is_allowed_ean_url(source_url):
+    if not _is_allowed_shop_url(source_url):
         try:
             log_manager.emit("catalog", "WARN",
                              f"EAN skip URL neautorizat: {source_url[:80]}")
@@ -844,36 +881,15 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
             pass  # logging-ul nu trebuie sa rupa fluxul
         return None
     try:
-        # C-14b: NU urmarim redirecturile automat. Allow-list-ul de mai sus valideaza
-        # doar URL-ul initial; un open-redirect pe un magazin permis (ex.
-        # emag.ro/...?url=http://169.254.169.254/) ar duce curl catre o tinta interna.
-        # Urmarim manual, revalidand FIECARE hop inainte de a-l cere.
-        current_url = source_url
-        for _hop in range(4):  # 1 request initial + maxim 3 redirecturi
-            if not _is_allowed_ean_url(current_url):
-                return None
-            response = curl_requests.get(
-                current_url,
-                headers={
-                    "Accept": "text/html,application/xhtml+xml",
-                    "Accept-Language": "ro-RO,ro;q=0.9",
-                },
-                impersonate=_IMPERSONATE,
-                timeout=15,
-                allow_redirects=False,
-            )
-            if response.status_code in (301, 302, 303, 307, 308):
-                loc = response.headers.get("location") or response.headers.get("Location")
-                if not loc:
-                    return None
-                # Location poate fi cale relativa -> rezolvam fata de URL-ul curent.
-                current_url = urllib.parse.urljoin(current_url, loc)
-                continue
-            break
-        else:
-            return None  # prea multe redirecturi
-
-        if response.status_code != 200:
+        response = _fetch_shop_url_guarded(
+            source_url,
+            headers={
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "ro-RO,ro;q=0.9",
+            },
+            timeout=15,
+        )
+        if response is None or response.status_code != 200:
             return None
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -971,22 +987,24 @@ def fetch_pcgarage_price_from_url(source_url: str, max_retries: int = 3) -> Opti
     cand nimerim interstitiul. Selectorii de pret sunt cei ai paginii de DETALIU
     (.price_num / .ps_sell_price), diferiti de selectorii de lista din
     _sync_scrape_pcgarage.
+
+    C-14c: `source_url` vine din produsul creat de user (via refresh_price_from_source,
+    chemat si din scheduler), deci trece prin _fetch_shop_url_guarded — allow-list pe
+    URL-ul initial si pe fiecare redirect.
     """
     if not source_url:
         return None
     for attempt in range(1, max_retries + 1):
         if attempt > 1:
             time.sleep(random.uniform(1, 3))
-        try:
-            response = curl_requests.get(
-                source_url,
-                headers=_PCGARAGE_HEADERS,
-                impersonate=_IMPERSONATE,
-                timeout=25,
-                allow_redirects=True,
-            )
-        except Exception:
-            continue
+        response = _fetch_shop_url_guarded(source_url, headers=_PCGARAGE_HEADERS, timeout=25)
+        if response is None:
+            # None = URL neautorizat (SSRF blocat) SAU eroare de retea / redirect invalid.
+            if not _is_allowed_shop_url(source_url):
+                # Fail-fast: pe un URL interzis nu are rost sa consumam retry-uri —
+                # nu devine permis daca mai asteptam.
+                return None
+            continue  # eroare tranzitorie -> mai incercam (comportamentul vechi)
 
         # Cloudflare Managed Challenge: 403 si/sau header cf-mitigated=challenge si/sau
         # <title>Just a moment... -> nu e pagina reala, mai incercam.
