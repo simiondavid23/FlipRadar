@@ -707,25 +707,47 @@ def _send_email_alert_re(user, kw, listing, send_email) -> None:
 
 
 def run_cleanup(db: Session) -> int:
-    """Daily cleanup: HEAD check URLs, remove 404, flag price drops."""
-    import requests as req
+    """Daily cleanup: HEAD check URLs, remove 404.
+
+    CLEAN-1: ordonare pe last_checked_at (rotatie reala — inainte, fara ordering,
+    aceleasi ~200 randuri arbitrare erau verificate zilnic si restul niciodata),
+    curl_cffi cu impersonate in loc de `requests` gol (blocat de platforme), si
+    ambele platforme facebook excluse (login-wall neautentificat = neverificabil).
+    Doar 404/410 sterge; orice altceva sau exceptie inseamna doar ca randul a fost
+    atins (last_checked_at=now), ca rotatia sa treaca mai departe.
+    """
+    import random
+    import time
+
+    from curl_cffi import requests as curl_requests
+
     listings = db.query(RealEstateListing).filter(
         RealEstateListing.status == "active",
-        RealEstateListing.platform != "facebook_groups",
+        RealEstateListing.platform.notin_(("facebook_groups", "facebook_marketplace")),
         RealEstateListing.url.isnot(None),
-    ).limit(200).all()
+    ).order_by(RealEstateListing.last_checked_at.asc().nullsfirst()).limit(200).all()
 
     deleted = 0
     for listing in listings:
+        gone = False
         try:
-            resp = req.head(listing.url, timeout=8, allow_redirects=True)
-            if resp.status_code in (404, 410):
-                db.delete(listing)
-                deleted += 1
-            else:
-                listing.last_checked_at = datetime.now(timezone.utc)
+            resp = curl_requests.head(listing.url, impersonate="chrome110",
+                                      timeout=10, allow_redirects=True)
+            status = resp.status_code
+            if status >= 400 and status not in (404, 410):
+                # HEAD blocat/nesuportat -> confirmam cu GET (doar statusul conteaza).
+                resp = curl_requests.get(listing.url, impersonate="chrome110",
+                                         timeout=10, allow_redirects=True)
+                status = resp.status_code
+            gone = status in (404, 410)
         except Exception:
-            pass
+            gone = False   # eroare de retea != anunt disparut
+        if gone:
+            db.delete(listing)
+            deleted += 1
+        else:
+            listing.last_checked_at = datetime.now(timezone.utc)
+        time.sleep(random.uniform(0.4, 1.0))
 
     db.commit()
     if deleted:

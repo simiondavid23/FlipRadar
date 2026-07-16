@@ -216,7 +216,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] RE cleanup setup failed: {exc}")
 
-    # FlipRadar — cleanup zilnic (04:00): sterge definitiv anunturile disparute
+    # FlipRadar — cleanup zilnic (12:00): sterge definitiv anunturile disparute
     # de pe marketplace (404 / sold/removed), inclusiv cele salvate/ignorate.
     def _daily_radar_cleanup():
         from app.database import SessionLocal
@@ -234,6 +234,24 @@ async def lifespan(app: FastAPI):
         minute=0,
         id="radar_daily_cleanup",
         replace_existing=True,
+    )
+
+    # CLEAN-1 — verificarea sold/removed era "la 10 cicluri" de radar_scan, adica
+    # imprevizibil de rar cand ciclurile sunt lente. Acum e job propriu, la 30 min.
+    def _radar_sold_check():
+        from app.database import SessionLocal
+        from app.services.radar.cleanup_service import cleanup_sold_listings
+        _db = SessionLocal()
+        try:
+            cleanup_sold_listings(_db)
+        except Exception as exc:
+            print(f"[RadarSoldCheck] eroare: {exc}")
+        finally:
+            _db.close()
+
+    scheduler.add_job(
+        _radar_sold_check, "interval", minutes=30,
+        id="radar_sold_check", replace_existing=True,
     )
 
     # FlipRadar — Grupuri Facebook: verifica la 30 min daca e timpul pentru vreun

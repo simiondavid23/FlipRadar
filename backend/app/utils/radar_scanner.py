@@ -26,7 +26,6 @@ from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.email_service import is_configured as smtp_configured, send_email
 from app.services.push_service import is_push_configured, notify_user_push
-from app.services.radar.cleanup_service import cleanup_sold_listings
 from app.services.radar import health_watchdog
 from app.services.discord_service import send_radar_notification
 from app.services.log_manager import log_manager, set_log_user
@@ -2455,11 +2454,6 @@ def run_radar_scan() -> None:
             print(f"[RadarScanner] Watchdog esuat: {exc}")
 
         _cycle_counter["n"] += 1
-        if _cycle_counter["n"] % 10 == 0:
-            try:
-                cleanup_sold_listings(db)
-            except Exception as exc:
-                print(f"[RadarScanner] Cleanup esuat: {exc}")
 
         print(f"[RadarScanner] Scan completat: {total_new} listinguri noi, {total_alerts} alerte trimise")
     except Exception as exc:

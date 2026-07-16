@@ -37,6 +37,7 @@ def scheduler_status(current_user: User = Depends(get_current_user)):
         "log_entries_cleanup": "Cleanup logs DB",
         "check_alerts": "Verificare alerte",
         "radar_daily_cleanup": "Cleanup Radar",
+        "radar_sold_check": "Verificare anunțuri vândute",
         "vinted_catalog_refresh": "Refresh catalog Vinted",
         "vinted_catalog_bootstrap": "Bootstrap catalog Vinted",
         "facebook_group_checks": "Grupuri Facebook",
