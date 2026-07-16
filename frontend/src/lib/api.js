@@ -72,17 +72,11 @@ export const productsAPI = {
   getProducts: (params) => api.get("/api/products/", { params }),
   getProduct: (id) => api.get(`/api/products/${id}`),
   getFilterOptions: (params) => api.get("/api/products/filter-options", { params }),
-  // FlipRadar — autocomplete brand server-side + taxonomie categorii per sursa
-  getBrands: (params) => api.get("/api/products/brands", { params }),
-  getCategoriesBySource: (source) => api.get("/api/products/categories-by-source", { params: { source } }),
-  getSourceCategories: (source) =>
-    api.get("/api/products/source-categories", { params: source ? { source } : {} }),
   getStats: () => api.get("/api/products/stats"),
   createProduct: (data) => api.post("/api/products/", data),
   updateProduct: (id, data) => api.put(`/api/products/${id}`, data),
   refreshPrice: (id) => api.post(`/api/products/${id}/refresh-price`),
   deleteProduct: (id) => api.delete(`/api/products/${id}`),
-  calculateProfit: (data) => api.post("/api/products/calculate-profit", data),
   // Sugestii de surse cross-shop (potrivire pe nume) — confirmare / respingere.
   confirmSuggestion: (productId, suggestionId) =>
     api.post(`/api/products/${productId}/suggestions/${suggestionId}/confirm`),
@@ -92,10 +86,7 @@ export const productsAPI = {
 
 // Lista de urmărit
 export const watchlistAPI = {
-  getWatchlist: () => api.get("/api/watchlist/"),
   addToWatchlist: (data) => api.post("/api/watchlist/", data),
-  updateWatchlist: (id, data) => api.put(`/api/watchlist/${id}`, data),
-  removeFromWatchlist: (id) => api.delete(`/api/watchlist/${id}`),
 };
 
 // Alerte

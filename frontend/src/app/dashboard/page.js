@@ -435,7 +435,7 @@ export default function DashboardPage() {
           color="#9333ea"
           bgGlow="radial-gradient(circle, rgba(147,51,234,0.5), transparent)"
           subtitle="Produse urmarite de tine"
-          href="/dashboard/watchlist"
+          href="/dashboard/tracked-products"
         />
         <StatCard
           title="Alerte active"
@@ -556,7 +556,7 @@ export default function DashboardPage() {
               color="#16a34a"
             />
             <QuickAction
-              href="/dashboard/watchlist"
+              href="/dashboard/tracked-products"
               icon={Eye}
               title="Watchlist"
               description="Vezi produsele urmarite"
