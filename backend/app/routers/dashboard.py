@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date
 from app.database import get_db
 from app.models.product import Product
-from app.models.watchlist import WatchlistItem
+from app.models.tracked_product import TrackedProduct
 from app.models.alert import Alert
 from app.models.price_history import PriceHistory
 from app.models.user import User
@@ -61,8 +61,11 @@ def get_dashboard_stats(
     )
 
     watchlist_count = (
-        db.query(func.count(WatchlistItem.id))
-        .filter(WatchlistItem.user_id == current_user.id)
+        db.query(func.count(TrackedProduct.id))
+        .filter(
+            TrackedProduct.user_id == current_user.id,
+            TrackedProduct.monitoring_active == True,
+        )
         .scalar() or 0
     )
 
@@ -125,8 +128,11 @@ def get_dashboard_stats(
             Product.currency,
             func.coalesce(func.sum(Product.current_price), 0.0),
         )
-        .join(WatchlistItem, WatchlistItem.product_id == Product.id)
-        .filter(WatchlistItem.user_id == current_user.id)
+        .join(TrackedProduct, TrackedProduct.product_id == Product.id)
+        .filter(
+            TrackedProduct.user_id == current_user.id,
+            TrackedProduct.monitoring_active == True,
+        )
         .group_by(Product.currency)
         .all()
     )

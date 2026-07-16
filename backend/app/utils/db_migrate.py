@@ -10,6 +10,7 @@ sunt pastrate ca strat suplimentar de siguranta pe baze de date existente, unde
 coloanele pot exista deja (adaugate inainte sa existe tabela de tracking).
 """
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
 from app.database import engine
 
 
@@ -839,6 +840,121 @@ def run_migrations():
         _migrate(conn, "drop_market_listings_table", "DROP TABLE IF EXISTS market_listings")
 
     _backfill_product_sources()
+    # Izolare per-migrare, ca la _migrate(): un esec (tipic: lock_timeout pe DROP,
+    # cu aplicatia veche inca pornita) nu blocheaza startup-ul. Totul e idempotent,
+    # deci se reia la boot-ul urmator.
+    try:
+        _merge_favorites_watchlist_into_tracked()
+    except Exception as e:
+        print(f"[DB Migrate] Failed: tracked_products_merge_favorites_watchlist -> {e}")
+
+
+def _merge_favorites_watchlist_into_tracked():
+    """Catalog (CAT-3a): FavoriteItem + WatchlistItem -> TrackedProduct.
+
+    Merge in Python (fara ON CONFLICT / LEAST — SQL portabil), fiindca regulile
+    de fuziune nu se exprima curat in SQL: favorite -> monitoring_active False,
+    watchlist -> True, prezent in ambele -> True + cel mai vechi added_at.
+    Randurile din blacklist NU se migreaza (D1 — functia a fost eliminata).
+    Perechile orfane sau cross-user (reziduuri ale gaurii IDOR din PATCH-ul vechi)
+    se filtreaza: se pastreaza doar produsele care exista si apartin userului.
+
+    DROP-urile cer ACCESS EXCLUSIVE pe tabele pe care aplicatia vie le interogheaza
+    (dashboard, alert_checker). Daca o alta sesiune tine lock (tipic: una `idle in
+    transaction`), DROP-ul se aseaza la coada — si, coada fiind FIFO, blocheaza in
+    spatele lui ORICE alt query pe acele tabele, adica ingheata aplicatia. De aceea
+    `lock_timeout`: preferam sa esuam rapid si sa reincercam la boot-ul urmator
+    (totul e idempotent) decat sa tinem baza blocata la nesfarsit.
+    """
+    inspector = inspect(engine)
+    has_fav = _table_exists(inspector, "favorite_items")
+    has_watch = _table_exists(inspector, "watchlist_items")
+    if not has_fav and not has_watch:
+        return  # Deja migrat (sau instalare noua) -> no-op.
+
+    from app.models.tracked_product import TrackedProduct
+
+    # Belt-and-suspenders: in fluxul normal create_all a rulat deja inaintea
+    # migratiilor, dar nu ne bazam pe ordinea aceea.
+    if not _table_exists(inspector, "tracked_products"):
+        TrackedProduct.__table__.create(bind=engine)
+
+    merged: dict = {}
+
+    def _absorb(rows, monitoring: bool):
+        for user_id, product_id, added_at in rows:
+            if user_id is None or product_id is None:
+                continue
+            key = (user_id, product_id)
+            current = merged.get(key)
+            if current is None:
+                merged[key] = {"monitoring_active": monitoring, "added_at": added_at}
+                continue
+            # Prezent in ambele -> monitorizat, cu cel mai vechi added_at.
+            current["monitoring_active"] = current["monitoring_active"] or monitoring
+            if added_at is not None and (
+                current["added_at"] is None or added_at < current["added_at"]
+            ):
+                current["added_at"] = added_at
+
+    to_insert: dict = {}
+    with engine.begin() as conn:
+        # Fail-fast in loc de coada de lock-uri (vezi docstring). Postgres-only ca
+        # sintaxa, dar `SET LOCAL` necunoscut nu trebuie sa rupa alte dialecte.
+        try:
+            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+        except Exception:
+            pass
+
+        if has_fav:
+            _absorb(conn.execute(text(
+                "SELECT user_id, product_id, added_at FROM favorite_items "
+                "WHERE is_blacklisted IS NOT TRUE"
+            )).fetchall(), monitoring=False)
+        if has_watch:
+            _absorb(conn.execute(text(
+                "SELECT user_id, product_id, added_at FROM watchlist_items"
+            )).fetchall(), monitoring=True)
+
+        # Ownership: pastreaza doar perechile la care produsul exista si e al userului.
+        owner_by_pid = {
+            row[0]: row[1]
+            for row in conn.execute(text("SELECT id, user_id FROM products")).fetchall()
+        }
+        merged = {
+            (uid, pid): data
+            for (uid, pid), data in merged.items()
+            if owner_by_pid.get(pid) == uid
+        }
+
+        # Idempotenta la re-rulare partiala: sarim peste cheile deja prezente.
+        existing = {
+            (row[0], row[1])
+            for row in conn.execute(
+                text("SELECT user_id, product_id FROM tracked_products")
+            ).fetchall()
+        }
+
+        to_insert = {k: v for k, v in merged.items() if k not in existing}
+        # INSERT prin ORM, in ACEEASI tranzactie (sesiune legata de conexiune):
+        # added_at NULL pe randurile vechi primeste astfel default-ul modelului.
+        with Session(bind=conn) as session:
+            for (user_id, product_id), data in to_insert.items():
+                session.add(TrackedProduct(
+                    user_id=user_id,
+                    product_id=product_id,
+                    monitoring_active=data["monitoring_active"],
+                    added_at=data["added_at"],
+                ))
+            session.flush()
+
+        conn.execute(text("DROP TABLE IF EXISTS favorite_items"))
+        conn.execute(text("DROP TABLE IF EXISTS watchlist_items"))
+
+    print(
+        f"[DB Migrate] tracked_products: migrate {len(to_insert)} randuri "
+        f"(favorite+watchlist fuzionate); tabelele vechi sterse"
+    )
 
 
 def _backfill_product_sources():

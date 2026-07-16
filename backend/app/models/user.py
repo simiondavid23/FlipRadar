@@ -33,5 +33,5 @@ class User(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    watchlist_items = relationship("WatchlistItem", back_populates="user", cascade="all, delete-orphan")
+    tracked_items = relationship("TrackedProduct", back_populates="user", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")

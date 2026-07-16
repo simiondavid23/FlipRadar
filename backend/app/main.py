@@ -14,15 +14,16 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import auth, products, watchlist, alerts, dashboard
-from app.routers import favorites, scraping
+from app.routers import auth, products, alerts, dashboard
+from app.routers import scraping
+from app.routers import legacy_compat  # TEMPORAR — aliasuri frontend vechi, se elimina in CAT-3b
 from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
 from app.routers import marketplace  # FlipRadar — Modulul 1 Marketplace (scrapere live)
 from app.routers import auto  # FlipRadar — Loturi & Licitatii (Copart/IAAI/SCA/OpenLane)
 from app.routers import real_estate  # FlipRadar — Modul Imobiliare (OLX/Storia/Imobiliare.ro)
 from app.routers.facebook_groups import router as facebook_groups_router  # FlipRadar — Grupuri Facebook
-from app.routers.tracked_products import router as tracked_router  # FlipRadar — Produse Urmarite (favorite + watchlist)
+from app.routers.tracked_products import router as tracked_router  # FlipRadar — Produse Urmarite (model unificat TrackedProduct)
 from app.routers.logs import router as logs_router  # FlipRadar — Jurnale Live (SSE)
 from app.routers.auto_listings_keywords import router as auto_listings_router  # FlipRadar — Auto Anunturi (keyword-uri + feed)
 from app.routers.auto_lot_keywords import router as auto_lot_router  # FlipRadar — Loturi Auto (keyword-uri + feed monitorizat)
@@ -32,9 +33,8 @@ from app.routers.real_estate_keywords import router as re_monitor_router  # Flip
 from app.models import user, product, price_history, product_source
 # FlipRadar — sugestii cross-shop (potrivire pe nume, asteapta confirmare)
 from app.models import product_source_suggestion
-from app.models import watchlist as watchlist_model
+from app.models import tracked_product  # Catalog (CAT-3a) — unifica favorite + watchlist
 from app.models import alert
-from app.models import favorite
 from app.models import inventory as inventory_model
 from app.models import sale as sale_model
 from app.models import radar_keyword, radar_listing, radar_seen_id
@@ -392,10 +392,8 @@ from app.routers import health
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(products.router)
-app.include_router(watchlist.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)
-app.include_router(favorites.router)
 app.include_router(scraping.router)
 app.include_router(currency.router)
 app.include_router(inventory.router)
@@ -408,6 +406,7 @@ app.include_router(auto.router)
 app.include_router(real_estate.router)
 app.include_router(facebook_groups_router)
 app.include_router(tracked_router, prefix="/api/tracked-products")
+app.include_router(legacy_compat.router)  # TEMPORAR — se elimina in CAT-3b
 app.include_router(logs_router)
 app.include_router(auto_listings_router)
 app.include_router(auto_lot_router)

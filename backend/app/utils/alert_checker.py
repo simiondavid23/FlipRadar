@@ -18,7 +18,7 @@ from app.models.product import Product
 from app.models.product_source import ProductSource
 from app.models.user import User
 from app.models.price_history import PriceHistory
-from app.models.watchlist import WatchlistItem
+from app.models.tracked_product import TrackedProduct
 from app.models.radar_settings import RadarSettings
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
@@ -56,9 +56,12 @@ def _recompute_primary_snapshot(product: Product) -> None:
 def _check_and_send_flash_deals(db, product, old_price: float, new_price: float, source: str):
     drop_pct = (old_price - new_price) / old_price
 
-    # Gaseste user_id-urile care au produsul in catalog (owner) sau in watchlist
+    # Gaseste user_id-urile care au produsul in catalog (owner) sau il monitorizeaza
     owner_ids = [r[0] for r in db.query(Product.user_id).filter(Product.id == product.id).all()]
-    watcher_ids = [r[0] for r in db.query(WatchlistItem.user_id).filter(WatchlistItem.product_id == product.id).all()]
+    watcher_ids = [r[0] for r in db.query(TrackedProduct.user_id).filter(
+        TrackedProduct.product_id == product.id,
+        TrackedProduct.monitoring_active == True,
+    ).all()]
     user_ids = set(owner_ids + watcher_ids)
 
     for user_id in user_ids:

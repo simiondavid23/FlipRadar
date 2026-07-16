@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends
+import math
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.favorite import FavoriteItem
-from app.models.watchlist import WatchlistItem
+from app.models.tracked_product import TrackedProduct
+from app.models.alert import Alert
 from app.models.product import Product
 from app.models.price_history import PriceHistory
 from app.models.user import User
@@ -17,52 +19,23 @@ def get_tracked_products(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returneaza lista unificata: favorite + watchlist, cu statusul
-    de monitorizare per produs. Deduplicare dupa product_id."""
+    """Returneaza produsele urmarite de user, cu statusul de monitorizare si
+    pragul de alerta (citit din modelul Alert, nu din randul de tracking)."""
 
-    # Preia favoritele (doar cele reale, nu produsele din blacklist)
-    favorites = db.query(FavoriteItem).filter(
-        FavoriteItem.user_id == current_user.id,
-        FavoriteItem.is_blacklisted == False,
-    ).all()
+    tracked_rows = (
+        db.query(TrackedProduct)
+        .filter(TrackedProduct.user_id == current_user.id)
+        .all()
+    )
+    pids = [t.product_id for t in tracked_rows]
 
-    # Preia watchlist-ul
-    watchlist = db.query(WatchlistItem).filter(
-        WatchlistItem.user_id == current_user.id
-    ).all()
-
-    # Combina si deduplica
-    tracked = {}
-
-    for fav in favorites:
-        product = db.query(Product).filter(Product.id == fav.product_id).first()
-        if product:
-            tracked[product.id] = {
-                "product": product,
-                "saved_at": fav.added_at,
-                "monitoring_active": False,
-                "alert_threshold": None,
-                "source": "favorite",
-            }
-
-    for item in watchlist:
-        product = db.query(Product).filter(Product.id == item.product_id).first()
-        if product:
-            if product.id in tracked:
-                tracked[product.id]["monitoring_active"] = True
-                tracked[product.id]["alert_threshold"] = getattr(item, "alert_price", None)
-                tracked[product.id]["source"] = "both"
-            else:
-                tracked[product.id] = {
-                    "product": product,
-                    "saved_at": item.added_at,
-                    "monitoring_active": True,
-                    "alert_threshold": getattr(item, "alert_price", None),
-                    "source": "watchlist",
-                }
+    # Produsele intr-un singur query (fara N+1).
+    products_by_id = {}
+    if pids:
+        for p in db.query(Product).filter(Product.id.in_(pids)).all():
+            products_by_id[p.id] = p
 
     # BH-02 — istoricul de preț pentru sparkline, într-un SINGUR query (evită N+1).
-    pids = list(tracked.keys())
     history_by_pid: dict = {}
     if pids:
         _hist_rows = (
@@ -74,9 +47,30 @@ def get_tracked_products(
         for _h in _hist_rows:
             history_by_pid.setdefault(_h.product_id, []).append(_h)
 
+    # Pragul de alerta, batch: ultima alerta price_drop activa per produs.
+    thresholds_by_pid: dict = {}
+    if pids:
+        _alert_rows = (
+            db.query(Alert)
+            .filter(
+                Alert.user_id == current_user.id,
+                Alert.product_id.in_(pids),
+                Alert.alert_type == "price_drop",
+                Alert.is_active == True,
+                Alert.is_triggered == False,
+            )
+            .order_by(Alert.product_id, Alert.id)
+            .all()
+        )
+        for _a in _alert_rows:
+            # Ordonat crescator dupa id -> ultima alerta per produs castiga.
+            thresholds_by_pid[_a.product_id] = float(_a.target_price)
+
     result = []
-    for pid, data in tracked.items():
-        p = data["product"]
+    for t in tracked_rows:
+        p = products_by_id.get(t.product_id)
+        if not p:
+            continue
         result.append({
             "id": p.id,
             "name": p.name,
@@ -89,15 +83,13 @@ def get_tracked_products(
             "category": p.category,
             "subcategory": getattr(p, "subcategory", None),
             "brand": getattr(p, "brand", None),
-            "saved_at": data["saved_at"].isoformat() if data["saved_at"] else None,
-            "monitoring_active": data["monitoring_active"],
-            "alert_threshold": float(data["alert_threshold"])
-                if data["alert_threshold"] else None,
-            "tracked_source": data["source"],
+            "saved_at": t.added_at.isoformat() if t.added_at else None,
+            "monitoring_active": t.monitoring_active,
+            "alert_threshold": thresholds_by_pid.get(p.id),
             "price_history": [
                 {"price": float(h.price),
                  "recorded_at": h.recorded_at.isoformat() if h.recorded_at else None}
-                for h in history_by_pid.get(pid, [])[-7:]
+                for h in history_by_pid.get(p.id, [])[-7:]
             ],
         })
 
@@ -111,27 +103,78 @@ def toggle_monitoring(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Activeaza sau dezactiveaza monitorizarea pentru un produs."""
-    activate = body.get("active", False)
+    """Activeaza sau dezactiveaza monitorizarea pentru un produs.
+    Pragul de alerta se persista in modelul Alert (price_drop), singurul citit
+    de alert_checker — randul de tracking nu tine praguri."""
+    activate = bool(body.get("active", False))
     alert_threshold = body.get("alert_threshold")
 
-    existing = db.query(WatchlistItem).filter(
-        WatchlistItem.user_id == current_user.id,
-        WatchlistItem.product_id == product_id,
-    ).first()
-
-    if activate and not existing:
-        new_item = WatchlistItem(
-            user_id=current_user.id,
-            product_id=product_id,
+    # Ownership INTAI: un produs al altui user (sau inexistent) nu e atins.
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.user_id == current_user.id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Produsul nu a fost gasit",
         )
-        if alert_threshold:
-            setattr(new_item, "alert_price", alert_threshold)
-        db.add(new_item)
-    elif not activate and existing:
-        db.delete(existing)
-    elif activate and existing and alert_threshold is not None:
-        setattr(existing, "alert_price", alert_threshold)
+
+    tracked = (
+        db.query(TrackedProduct)
+        .filter(
+            TrackedProduct.user_id == current_user.id,
+            TrackedProduct.product_id == product_id,
+        )
+        .first()
+    )
+    if not tracked:
+        tracked = TrackedProduct(user_id=current_user.id, product_id=product_id)
+        db.add(tracked)
+    tracked.monitoring_active = activate
+
+    if activate and alert_threshold is not None:
+        try:
+            threshold = float(alert_threshold)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Pragul de alerta trebuie sa fie un numar pozitiv",
+            )
+        if not math.isfinite(threshold) or threshold <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Pragul de alerta trebuie sa fie un numar pozitiv",
+            )
+
+        existing_alert = (
+            db.query(Alert)
+            .filter(
+                Alert.user_id == current_user.id,
+                Alert.product_id == product_id,
+                Alert.alert_type == "price_drop",
+            )
+            .order_by(Alert.id.desc())
+            .first()
+        )
+        if existing_alert:
+            existing_alert.target_price = threshold
+            existing_alert.currency = product.currency or existing_alert.currency or "EUR"
+            existing_alert.is_active = True
+            existing_alert.is_triggered = False
+            existing_alert.triggered_at = None
+        else:
+            db.add(Alert(
+                user_id=current_user.id,
+                product_id=product_id,
+                target_price=threshold,
+                currency=product.currency or "EUR",
+                alert_type="price_drop",
+                is_active=True,
+                is_triggered=False,
+                triggered_at=None,
+            ))
 
     db.commit()
     return {"status": "ok", "monitoring_active": activate}
@@ -143,14 +186,10 @@ def remove_from_tracked(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Elimina produsul din favorite SI din watchlist."""
-    db.query(FavoriteItem).filter(
-        FavoriteItem.user_id == current_user.id,
-        FavoriteItem.product_id == product_id,
-    ).delete()
-    db.query(WatchlistItem).filter(
-        WatchlistItem.user_id == current_user.id,
-        WatchlistItem.product_id == product_id,
+    """Elimina produsul din Produse Urmarite. Alertele raman (comportament vechi)."""
+    db.query(TrackedProduct).filter(
+        TrackedProduct.user_id == current_user.id,
+        TrackedProduct.product_id == product_id,
     ).delete()
     db.commit()
     return {"status": "ok"}

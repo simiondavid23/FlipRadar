@@ -31,7 +31,7 @@ class Product(Base):
 
     user = relationship("User")
     price_history = relationship("PriceHistory", back_populates="product", cascade="all, delete-orphan")
-    watchlist_items = relationship("WatchlistItem", back_populates="product", cascade="all, delete-orphan")
+    tracked_items = relationship("TrackedProduct", back_populates="product", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="product", cascade="all, delete-orphan")
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
     # FlipRadar — sugestii de surse (potrivire pe nume) care asteapta confirmarea userului.
