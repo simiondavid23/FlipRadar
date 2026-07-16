@@ -23,6 +23,9 @@ class RadarKeyword(Base):
     platform = Column(String(50), nullable=True)
     platforms = Column(Text, nullable=False, default='["olx","vinted","okazii"]')
     poll_interval_minutes = Column(Integer, default=5, nullable=False)
+    # RAD-1 — vechimea maxima acceptata a unui anunt (zile), pe baza listed_at.
+    # NULL = fara limita. Aplicat pe orice platforma unde listed_at e cunoscut.
+    max_age_days = Column(Integer, nullable=True)
     judet = Column(String, nullable=True)
     oras = Column(String, nullable=True)
     condition = Column(String, default="all", nullable=False)

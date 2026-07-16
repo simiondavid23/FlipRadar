@@ -279,6 +279,9 @@ def fetch_item_page(item_id_or_url) -> dict | None:
     sau un URL complet. `get_html` poate intoarce None (guard: breaker/plafon) — il
     tratam ca orice esec (None), deci contractul lui `get_vinted_item_detail` (si al
     router-ului/frontend-ului) ramane neschimbat.
+
+    RAD-1: itemul sters/vandut (404 curat, fara semnatura de blocare) intoarce
+    {"gone": True} — distinct de None, care ramane "esec, reincearca".
     """
     s = str(item_id_or_url or "").strip()
     if not s:
@@ -291,6 +294,11 @@ def fetch_item_page(item_id_or_url) -> dict | None:
         status = resp.status_code
         html = resp.text or ""
         if status != 200 or _looks_blocked(status, html):
+            if status == 404 and not _looks_blocked(status, html):
+                # RAD-1 — item sters/vandut pe Vinted: propagam distinct, ca apelantul sa
+                # marcheze listingul removed si sa-l scoata din coada de enrichment (altfel
+                # e reincercat la nesfarsit si arde plafonul zilnic).
+                return {"gone": True}
             log_manager.emit("radar", "WARN",
                 f"Vinted HTML: item inaccesibil (HTTP {status}, blocat={_looks_blocked(status, html)})")
             return None

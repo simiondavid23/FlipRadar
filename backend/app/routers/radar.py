@@ -68,6 +68,7 @@ class KeywordCreate(BaseModel):
     active_hours_end: Optional[int] = None
     platforms: list[str] = ["olx", "vinted", "okazii"]
     poll_interval_minutes: int = 5
+    max_age_days: Optional[int] = None
     judet: Optional[str] = None
     oras: Optional[str] = None
     condition: str = "all"
@@ -100,6 +101,7 @@ class KeywordUpdate(BaseModel):
     active_hours_end: Optional[int] = None
     platforms: Optional[list[str]] = None
     poll_interval_minutes: Optional[int] = None
+    max_age_days: Optional[int] = None
     judet: Optional[str] = None
     oras: Optional[str] = None
     condition: Optional[str] = None
@@ -286,6 +288,7 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "active_hours_end": getattr(kw, "active_hours_end", None),
         "platforms": _parse_json_list(kw.platforms),
         "poll_interval_minutes": kw.poll_interval_minutes,
+        "max_age_days": kw.max_age_days,
         "judet": kw.judet,
         "oras": kw.oras,
         "condition": kw.condition,
@@ -491,6 +494,7 @@ def create_keyword(
         active_hours_end=data.active_hours_end,
         platforms=json.dumps(data.platforms or ["olx"], ensure_ascii=False),
         poll_interval_minutes=max(1, int(data.poll_interval_minutes or 5)),
+        max_age_days=(int(data.max_age_days) if data.max_age_days and int(data.max_age_days) > 0 else None),
         judet=data.judet,
         oras=data.oras,
         condition=data.condition or "all",
@@ -552,6 +556,9 @@ def update_keyword(
         kw.platforms = json.dumps(data.platforms, ensure_ascii=False)
     if data.poll_interval_minutes is not None:
         kw.poll_interval_minutes = max(1, int(data.poll_interval_minutes))
+    # RAD-1 — 0 = dezactivare explicita a limitei de vechime -> NULL.
+    if data.max_age_days is not None:
+        kw.max_age_days = int(data.max_age_days) if int(data.max_age_days) > 0 else None
     if data.judet is not None:
         kw.judet = data.judet
     if data.oras is not None:
@@ -817,6 +824,17 @@ def get_vinted_listing_detail(
         try:
             item_id = (listing.external_id or "").replace("vinted_", "", 1)
             detail = get_vinted_item_detail(item_id) if item_id else None
+            if isinstance(detail, dict) and detail.get("_gone"):
+                # RAD-1 — 404 curat: anuntul nu mai exista pe Vinted. Il scoatem din
+                # coada de enrichment (fetched=True) si il trecem pe removed, ca la scanner.
+                if listing.status == "active":
+                    listing.status = "removed"
+                listing.vinted_detail_fetched = True
+                db.commit()
+                db.refresh(listing)
+                resp = _listing_to_dict(listing, keyword)
+                resp["enrichment_message"] = "Anunțul nu mai există pe Vinted"
+                return resp
             if detail:
                 # Persista poze/descriere/data/atribute/vanzator + recalculeaza risc.
                 # La esec (403/None) NU marcam fetched -> reincercare data viitoare.

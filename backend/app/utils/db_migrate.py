@@ -813,6 +813,11 @@ def run_migrations():
             "ALTER TABLE real_estate_listings "
             "ADD COLUMN IF NOT EXISTS listed_at TIMESTAMP")
 
+        # RAD-1: vechimea maxima acceptata a unui anunt (zile) per keyword Radar; NULL = fara limita.
+        _migrate(conn, "radar_keywords_add_max_age_days",
+            "ALTER TABLE radar_keywords "
+            "ADD COLUMN IF NOT EXISTS max_age_days INTEGER")
+
         # FlipRadar — Gestiune (GE-3): categoria denormalizata pe vanzari (copiata din inventar
         # la creare; vanzarile manuale o pot seta din formular). Fara backfill — decizie explicita.
         _migrate(conn, "add_sales_category",

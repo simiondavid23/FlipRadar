@@ -1123,6 +1123,10 @@ def get_vinted_item_detail(item_id: str) -> Optional[dict]:
         page = vinted_html.fetch_item_page(item_id)
         if not page:
             return None
+        # RAD-1 — 404 curat: itemul nu mai exista pe Vinted. Propagam marcajul
+        # inainte de orice parsare; apelantul il trece pe status removed.
+        if isinstance(page, dict) and page.get("gone"):
+            return {"_gone": True}
         html = page.get("html") or ""
         rsc = page.get("decoded") or ""
 

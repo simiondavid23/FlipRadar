@@ -81,6 +81,7 @@ const EMPTY_FORM = {
   exclude_words: [],
   platforms: ["olx", "vinted", "okazii"],
   poll_interval_minutes: 5,
+  max_age_days: "",
   judet: "",
   oras: "",
   condition: "all",
@@ -635,6 +636,7 @@ export default function RadarKeywordsPage() {
       exclude_words: kw.exclude_words || [],
       platforms: kw.platforms || [],
       poll_interval_minutes: kw.poll_interval_minutes,
+      max_age_days: kw.max_age_days ?? "",
       judet: kw.judet || "",
       oras: kw.oras || "",
       condition: kw.condition,
@@ -746,6 +748,7 @@ export default function RadarKeywordsPage() {
       exclude_description_words: excludeDescChips,
       platforms: formPlatform ? [formPlatform] : [],
       poll_interval_minutes: parseInt(form.poll_interval_minutes) || 5,
+      max_age_days: form.max_age_days !== "" ? parseInt(form.max_age_days) : null,
       judet: form.judet || null,
       oras: form.oras || null,
       condition: form.condition,
@@ -1707,6 +1710,20 @@ export default function RadarKeywordsPage() {
                   </select>
                 </Field>
               </div>
+
+              <Field label="Vechime maximă anunț (zile)">
+                <input
+                  type="number"
+                  min="0"
+                  value={form.max_age_days}
+                  onChange={(e) => setForm({ ...form, max_age_days: e.target.value })}
+                  placeholder="fără limită"
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                  Anunțurile mai vechi sunt ignorate (unde platforma expune data). Gol sau 0 = fără limită.
+                </div>
+              </Field>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                 <Field label="Județ (opțional)">

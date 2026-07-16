@@ -80,6 +80,23 @@ def _get_platform_delay(platform: str) -> float:
     return random.uniform(lo, hi)
 
 
+# RAD-1 — plafon de pagini per platforma in bucla de paginare a scannerului.
+# Vinted NU are plafon intern (spre deosebire de OLX/Okazii/LaJumate) si sorteaza
+# newest_first: la prima scanare a unui keyword totul e "nou" si bucla trage tot
+# catalogul (pagini de 96, din ce in ce mai vechi). Platformele absente = nelimitat
+# (isi au plafonul intern in scraper).
+_PLATFORM_MAX_PAGES: dict[str, int] = {"vinted": 10}
+_FIRST_SCAN_MAX_PAGES = 3  # keyword nou (last_scan_at None): plafon si mai strans
+
+
+def _page_cap_for(platform: str, first_scan: bool) -> Optional[int]:
+    """Plafonul de pagini pentru platforma; None = nelimitat (plafon intern in scraper)."""
+    cap = _PLATFORM_MAX_PAGES.get((platform or "").lower())
+    if cap is None:
+        return None
+    return min(cap, _FIRST_SCAN_MAX_PAGES) if first_scan else cap
+
+
 # Seturi globale partajate cu router-ul: cand userul dezactiveaza/sterge un
 # keyword in timp ce scanul ruleaza, marcam id-ul aici si bucla principala
 # verifica la fiecare iteratie ca sa iasa imediat.
@@ -1697,6 +1714,19 @@ def _should_scan_keyword(keyword: RadarKeyword) -> bool:
     return elapsed >= timedelta(minutes=keyword.poll_interval_minutes or 5)
 
 
+def _too_old(listed_at, max_age_days, now=None) -> bool:
+    """RAD-1 — True daca listed_at exista si e mai vechi de max_age_days zile.
+    listed_at e naiv local (conventia scraperelor); now injectabil pentru teste.
+    Lipsa datei sau a limitei -> False (tolerant)."""
+    if not listed_at or not max_age_days:
+        return False
+    now = now or datetime.now()
+    try:
+        return (now - listed_at) > timedelta(days=int(max_age_days))
+    except TypeError:
+        return False
+
+
 def _run_scraper(
     platform: str,
     keyword: RadarKeyword,
@@ -1991,6 +2021,13 @@ def _enrich_vinted_background(db: Session, user: User) -> None:
         except Exception as exc:
             log_manager.emit("radar", "WARN", f"Vinted enrichment {row.id}: {str(exc)[:80]}")
             detail = None
+        if isinstance(detail, dict) and detail.get("_gone"):
+            if row.status == "active":
+                row.status = "removed"
+            row.vinted_detail_fetched = True  # iese din coada indiferent de status
+            log_manager.emit("radar", "INFO",
+                f"Vinted: anunț dispărut (404) → removed ({(row.title or '')[:50]})")
+            continue
         if not detail:
             # RP-1.1 — daca fetch-ul a esuat SI breaker-ul tocmai s-a deschis, opreste
             # batch-ul imediat (nu continua cu restul itemilor din ciclul curent).
@@ -2121,6 +2158,8 @@ def _scan_user(db: Session, user: User) -> dict:
                 time.sleep(random.uniform(*_PLATFORM_DELAY_RANGE))
 
             log_manager.emit("radar", "SCAN", f'Keyword "{kw.name}" · {platform} · ciclu #{_cycle_counter["n"]}')
+            _first_scan = kw.last_scan_at is None
+            _page_cap = _page_cap_for(platform, _first_scan)
             # FlipRadar — RP-3: enrichment doar pe anunturi noi. Setul de external_id
             # deja vazute (per user+platforma) e pasat in search_* ca buclele de
             # enrichment sa sara fetch-urile de detaliu pentru ele.
@@ -2178,6 +2217,16 @@ def _scan_user(db: Session, user: User) -> dict:
                          if r.get("external_id") and r.get("external_id") not in _seen_ext]
                 for r in fresh:
                     _seen_ext.add(r.get("external_id"))
+                # RAD-1 — Vinted sorteaza newest_first: daca TOATE anunturile proaspete de pe
+                # pagina au listed_at si sunt peste vechimea maxima, paginile urmatoare sunt
+                # garantat mai vechi -> oprim paginarea.
+                if (platform == "vinted" and getattr(kw, "max_age_days", None) and fresh
+                        and all(r.get("listed_at") for r in fresh)
+                        and all(_too_old(r.get("listed_at"), kw.max_age_days) for r in fresh)):
+                    log_manager.emit("radar", "INFO",
+                        f"vinted: pagina {_page} integral peste vechimea maximă ({kw.max_age_days} zile) — opresc paginarea")
+                    listings.extend(fresh)
+                    break
                 new_on_page = [r for r in fresh
                                if not _already_seen(db, user.id, platform, r.get("external_id"))]
                 listings.extend(fresh)
@@ -2190,6 +2239,10 @@ def _scan_user(db: Session, user: User) -> dict:
                 if not new_on_page:
                     break
                 _page += 1
+                if _page_cap is not None and _page > _page_cap:
+                    log_manager.emit("radar", "INFO",
+                        f"{platform}: plafon paginare atins ({_page_cap} pagini{' — prima scanare' if _first_scan else ''}) — opresc")
+                    break
                 # MODIFICARE 6 — delay aleator proaspăt la fiecare pagină (nu fix).
                 time.sleep(_get_platform_delay(platform))
             _new_before = stats["new_listings"]
@@ -2203,6 +2256,12 @@ def _scan_user(db: Session, user: User) -> dict:
                     if not ext_id:
                         continue
                     if _already_seen(db, user.id, platform, ext_id):
+                        continue
+
+                    # RAD-1 — filtru de vechime per keyword: anunturile prea vechi se marcheaza
+                    # seen (ca la marja negativa) ca sa nu fie reprocesate ciclu de ciclu.
+                    if _too_old(listing.get("listed_at"), getattr(kw, "max_age_days", None)):
+                        _mark_seen(db, user.id, platform, ext_id)
                         continue
 
                     score_data = calculate_score(
