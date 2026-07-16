@@ -796,14 +796,52 @@ def _sync_scrape_pcgarage(query: str, max_results: int) -> list:
     return products
 
 
+def _is_allowed_ean_url(url: str) -> bool:
+    """C-14 (anti-SSRF): `source_url` vine liber din formularul userului, iar
+    fetch_ean_from_url il cere server-side. Fara allow-list, un URL intern
+    (169.254.169.254, localhost) ar transforma backend-ul in proxy de scanare
+    interna. Permitem DOAR domeniile magazinelor pe care le stim scrapa.
+
+    Domeniile se citesc din _SCRAPERS_BY_SOURCE (singura sursa de adevar).
+    Citirea e la apel, nu la import, fiindca dict-ul e definit mai jos in fisier
+    decat functia asta — o constanta la nivel de modul ar da NameError.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # Doar http/https: taie file://, gopher://, ftp:// etc.
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            return False
+        for domain in _SCRAPERS_BY_SOURCE:
+            # Egalitatea acopera domeniul gol de subdomeniu; endswith pe "."+domain
+            # accepta subdomenii legitime (comenzi.farmaciatei.ro) dar respinge
+            # sufixele inselatoare (evil-altex.ro.attacker.com).
+            if hostname == domain or hostname.endswith("." + domain):
+                return True
+        return False
+    except Exception:
+        return False  # fail-closed: orice URL neparsabil e respins
+
+
 def fetch_ean_from_url(source_url: str) -> Optional[str]:
     """Încearcă să preia EAN-ul/GTIN-ul din pagina de detalii a unui produs.
 
     Suportă: farmaciatei.ro (JSON-LD gtin13 / sku),
     sole.ro (text simplu "Cod EAN:"), altex.ro (JSON-LD gtin13).
     Returnează None dacă nu se găsește sau în caz de eroare.
+    URL-urile din afara domeniilor magazin sunt respinse INAINTE de orice request
+    (vezi _is_allowed_ean_url).
     """
     if not source_url:
+        return None
+    if not _is_allowed_ean_url(source_url):
+        try:
+            log_manager.emit("catalog", "WARN",
+                             f"EAN skip URL neautorizat: {source_url[:80]}")
+        except Exception:
+            pass  # logging-ul nu trebuie sa rupa fluxul
         return None
     try:
         response = curl_requests.get(
@@ -851,11 +889,6 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
     except Exception:
         pass
     return None
-
-
-async def fetch_ean_from_url_async(source_url: str) -> Optional[str]:
-    """Wrapper async pentru fetch_ean_from_url."""
-    return await asyncio.to_thread(fetch_ean_from_url, source_url)
 
 
 def _emit_catalog(shop_name: str, query: str, products: list) -> None:
