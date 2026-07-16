@@ -134,6 +134,21 @@ def toggle_monitoring(
         db.add(tracked)
     tracked.monitoring_active = activate
 
+    if not activate:
+        # C-18: toggle-ul OFF stinge si alertele price_drop ale produsului —
+        # simetric cu re-arm-ul de la activare. Alert.is_active ramane unica
+        # sursa de adevar pentru alert_checker (care NU filtreaza pe
+        # monitoring_active), deci fara pasul asta alerta continua sa traga
+        # dupa "oprirea monitorizarii", iar GET re-afisa pragul "sters".
+        # price_rise si alertele altor produse nu sunt atinse; reactivarea
+        # ramane posibila din pagina Alerte Pret sau prin toggle ON cu prag.
+        db.query(Alert).filter(
+            Alert.user_id == current_user.id,
+            Alert.product_id == product_id,
+            Alert.alert_type == "price_drop",
+            Alert.is_active == True,
+        ).update({"is_active": False}, synchronize_session=False)
+
     if activate and alert_threshold is not None:
         try:
             threshold = float(alert_threshold)

@@ -173,8 +173,8 @@ def test_delete_scoate_din_tracking_dar_pastreaza_alerta(auth_client):
     assert len(_price_drop_alerts(product_id)) == 1
 
 
-# ── t8 — dezactivarea monitorizarii nu atinge alertele ───────────────────────────
-def test_patch_inactiv_lasa_alerta_activa(auth_client):
+# ── t8 (rescris de C-18) — toggle OFF dezactiveaza alerta price_drop ─────────────
+def test_patch_inactiv_dezactiveaza_alerta_price_drop(auth_client):
     product_id = _mk_product(auth_client)
     auth_client.patch(f"/api/tracked-products/{product_id}/monitoring",
                       json={"active": True, "alert_threshold": 90})
@@ -186,7 +186,63 @@ def test_patch_inactiv_lasa_alerta_activa(auth_client):
     item = _item_in_feed(auth_client, product_id)
     assert item is not None
     assert item["monitoring_active"] is False
+    # GET citeste pragul doar din alerte active -> dupa OFF nu mai exista prag.
+    assert item["alert_threshold"] is None
+
+    alerts = _price_drop_alerts(product_id)
+    assert len(alerts) == 1
+    assert alerts[0]["is_active"] is False
+
+
+def test_patch_inactiv_nu_atinge_price_rise(auth_client):
+    """C-18 stinge DOAR price_drop; o alerta price_rise pe acelasi produs ramane activa."""
+    from app.database import SessionLocal
+    from app.models.alert import Alert
+
+    product_id = _mk_product(auth_client)
+    auth_client.patch(f"/api/tracked-products/{product_id}/monitoring",
+                      json={"active": True, "alert_threshold": 90})
+    owner_id = _tracked_rows(product_id)[0]["user_id"]
+
+    db = SessionLocal()
+    try:
+        db.add(Alert(user_id=owner_id, product_id=product_id, target_price=999,
+                     currency="EUR", alert_type="price_rise",
+                     is_active=True, is_triggered=False))
+        db.commit()
+    finally:
+        db.close()
+
+    r = auth_client.patch(f"/api/tracked-products/{product_id}/monitoring",
+                          json={"active": False})
+    assert r.status_code == 200, r.text
+
+    assert _price_drop_alerts(product_id)[0]["is_active"] is False
+
+    db = SessionLocal()
+    try:
+        rise = db.query(Alert).filter(Alert.product_id == product_id,
+                                      Alert.alert_type == "price_rise").one()
+        assert rise.is_active is True
+    finally:
+        db.close()
+
+
+def test_reactivare_dupa_off_rearmeaza_aceeasi_alerta(auth_client):
+    """OFF -> ON cu prag nou: aceeasi alerta (fara duplicat) revine activa, ne-declansata."""
+    product_id = _mk_product(auth_client)
+    auth_client.patch(f"/api/tracked-products/{product_id}/monitoring",
+                      json={"active": True, "alert_threshold": 90})
+    auth_client.patch(f"/api/tracked-products/{product_id}/monitoring",
+                      json={"active": False})
+
+    r = auth_client.patch(f"/api/tracked-products/{product_id}/monitoring",
+                          json={"active": True, "alert_threshold": 75})
+    assert r.status_code == 200, r.text
 
     alerts = _price_drop_alerts(product_id)
     assert len(alerts) == 1
     assert alerts[0]["is_active"] is True
+    assert alerts[0]["is_triggered"] is False
+    assert float(alerts[0]["target_price"]) == 75.0
+    assert _item_in_feed(auth_client, product_id)["alert_threshold"] == 75.0

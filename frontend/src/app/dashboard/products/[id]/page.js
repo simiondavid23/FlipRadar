@@ -63,7 +63,7 @@ export default function ProductDetailPage() {
     if (productId) loadProduct();
   }, [productId, loadProduct]);
 
-  const handleAddToWatchlist = async () => {
+  const handleTrackProduct = async () => {
     try {
       await trackedProductsAPI.toggleMonitoring(parseInt(productId), true, null);
       alert("Produs adaugat in Produse Urmarite — monitorizare activata!");
@@ -312,7 +312,7 @@ export default function ProductDetailPage() {
               {refreshing ? "Se actualizeaza..." : `Refresh pret (${product.sources?.length || 0})`}
             </button>
             <button
-              onClick={handleAddToWatchlist}
+              onClick={handleTrackProduct}
               title="Adauga in Produse Urmarite"
               style={{
                 display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",

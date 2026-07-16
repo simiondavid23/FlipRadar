@@ -274,7 +274,7 @@ export default function DashboardPage() {
       </div>
 
       {/* FlipRadar — C.1: cardurile financiare (Valoare vanzari + profit) sunt primele,
-          inaintea cardurilor de produse/watchlist (mutate mai jos). */}
+          inaintea cardurilor de produse/urmarite (mutate mai jos). */}
       {/* Purchase Summary Row — Valoare vanzari prima, + Cea mai profitabila categorie */}
       <div
         style={{

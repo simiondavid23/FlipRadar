@@ -142,8 +142,13 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
             print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
     for product in touched_products.values():
         _recompute_primary_snapshot(product)
-    if refreshed > 0 or touched_products:
-        db.commit()
+    # C-17: commit NECONDITIONAT — ps.last_checked_at e setat pe TOATE sursele
+    # mai sus, chiar si cand niciun pret nu s-a schimbat. Conditia veche il
+    # pierdea la db.close() in ciclurile "linistite" (si il salva doar
+    # accidental cand Pasul 2 comitea o alerta declansata), iar UI-ul de pe
+    # pagina de detaliu ("Verificat: ...") ramanea inghetat. Early-return-ul
+    # pe total==0 exista deja mai sus, deci nu comitem niciodata pe gol.
+    db.commit()
     # C-15: o eroare de watchdog nu trebuie sa rupa check_alerts.
     try:
         catalog_health_watchdog.close_cycle(db)
@@ -209,7 +214,7 @@ def check_alerts() -> int:
 
             if triggered:
                 alert.is_triggered = True
-                alert.triggered_at = datetime.utcnow()
+                alert.triggered_at = datetime.now(timezone.utc)
                 triggered_count += 1
 
                 # ALERT-1 — notificare Discord pe webhook-ul dedicat (bloc independent:
