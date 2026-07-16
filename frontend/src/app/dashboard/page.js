@@ -5,7 +5,8 @@ import { dashboardAPI, productsAPI, reportsAPI } from "@/lib/api";
 import Link from "next/link";
 import {
   Package, Eye, Bell, TrendingUp, AlertTriangle, Database,
-  Search, Boxes, ArrowRight, CalendarDays, ShoppingCart, Euro, Target
+  Search, Boxes, ArrowRight, CalendarDays, ShoppingCart, Euro, Target,
+  Radar, Car, Building2
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -471,6 +472,44 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* DASH-2: rândul modulelor de scanare — anunțuri noi în 24h per modul */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: "1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <StatCard
+          title="Radar Piață"
+          value={stats?.modules?.radar?.new_24h ?? 0}
+          icon={Radar}
+          color="#0ea5e9"
+          bgGlow="radial-gradient(circle, rgba(14,165,233,0.5), transparent)"
+          subtitle={`Anunțuri noi în 24h · ${stats?.modules?.radar?.active_keywords ?? 0} keyword-uri active`}
+          href="/dashboard/radar"
+        />
+        <StatCard
+          title="Auto Anunțuri"
+          value={stats?.modules?.auto?.new_24h ?? 0}
+          icon={Car}
+          color="#f97316"
+          bgGlow="radial-gradient(circle, rgba(249,115,22,0.5), transparent)"
+          subtitle={`Anunțuri noi în 24h · ${stats?.modules?.auto?.active_keywords ?? 0} keyword-uri active`}
+          href="/dashboard/auto-listings/feed"
+        />
+        <StatCard
+          title="Imobiliare"
+          value={stats?.modules?.imobiliare?.new_24h ?? 0}
+          icon={Building2}
+          color="#14b8a6"
+          bgGlow="radial-gradient(circle, rgba(20,184,166,0.5), transparent)"
+          subtitle={`Anunțuri noi în 24h · ${stats?.modules?.imobiliare?.active_keywords ?? 0} keyword-uri active`}
+          href="/dashboard/real-estate-monitor/feed"
+        />
+      </div>
+
       {/* Sales chart (last 30 days) */}
       <div
         style={{
@@ -506,6 +545,10 @@ export default function DashboardPage() {
                 labelStyle={{ color: "var(--text-secondary)" }}
                 itemStyle={{ color: "var(--text-primary)" }}
                 formatter={(v, name) => [`${Number(v).toFixed(2)} EUR`, name === "revenue_eur" ? "Venit" : "Profit"]}
+                labelFormatter={(label, payload) => {
+                  const units = payload?.[0]?.payload?.units ?? 0;
+                  return `${label} — ${units} buc. vândute`;
+                }}
               />
               <Area type="monotone" dataKey="revenue_eur" stroke="#3b82f6" strokeWidth={2} fill="url(#revGrad)" />
               <Area type="monotone" dataKey="profit_eur" stroke="#22c55e" strokeWidth={2} fill="url(#profitGrad)" />

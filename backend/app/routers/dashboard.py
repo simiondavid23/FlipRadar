@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Date
+from sqlalchemy import func, cast, Date, text
 from app.database import get_db
 from app.models.product import Product
 from app.models.tracked_product import TrackedProduct
@@ -10,6 +10,12 @@ from app.models.price_history import PriceHistory
 from app.models.user import User
 from app.models.inventory import InventoryItem
 from app.models.sale import Sale
+from app.models.radar_listing import RadarListing
+from app.models.radar_keyword import RadarKeyword
+from app.models.auto_feed_listing import AutoFeedListing
+from app.models.auto_keyword import AutoKeyword
+from app.models.real_estate_monitor_listing import RealEstateMonitorListing
+from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword
 from app.utils.auth import get_current_user
 from app.services.currency_service import convert
 
@@ -122,6 +128,44 @@ def get_dashboard_stats(
         sales_total_eur += convert(float(subtotal or 0), currency or "RON", "EUR")
         sales_count += int(count or 0)
 
+    # DASH-2 — rezumat module de scanare: anunturi noi in ultimele 24h +
+    # keyword-uri active, per modul. Cutoff pe conventia fiecarei coloane:
+    # RadarListing.found_at e scris in UTC de aplicatie (aceeasi conventie ca
+    # filtrul `since` din radar.py), iar AutoFeedListing / RealEstateMonitorListing
+    # au server_default func.now() — le comparam cu ceasul serverului DB.
+    radar_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    db_cutoff_24h = func.now() - text("interval '24 hours'")
+
+    def _cnt(q):
+        return int(q.scalar() or 0)
+
+    modules = {
+        "radar": {
+            "new_24h": _cnt(db.query(func.count(RadarListing.id)).filter(
+                RadarListing.user_id == current_user.id,
+                RadarListing.found_at >= radar_cutoff)),
+            "active_keywords": _cnt(db.query(func.count(RadarKeyword.id)).filter(
+                RadarKeyword.user_id == current_user.id,
+                RadarKeyword.is_active == True)),
+        },
+        "auto": {
+            "new_24h": _cnt(db.query(func.count(AutoFeedListing.id)).filter(
+                AutoFeedListing.user_id == current_user.id,
+                AutoFeedListing.found_at >= db_cutoff_24h)),
+            "active_keywords": _cnt(db.query(func.count(AutoKeyword.id)).filter(
+                AutoKeyword.user_id == current_user.id,
+                AutoKeyword.is_active == True)),
+        },
+        "imobiliare": {
+            "new_24h": _cnt(db.query(func.count(RealEstateMonitorListing.id)).filter(
+                RealEstateMonitorListing.user_id == current_user.id,
+                RealEstateMonitorListing.found_at >= db_cutoff_24h)),
+            "active_keywords": _cnt(db.query(func.count(RealEstateMonitorKeyword.id)).filter(
+                RealEstateMonitorKeyword.user_id == current_user.id,
+                RealEstateMonitorKeyword.is_active == True)),
+        },
+    }
+
     return {
         "total_products": total_products,
         "monitored_count": monitored_count,
@@ -132,6 +176,7 @@ def get_dashboard_stats(
         "inventory_items_count": inventory_items_count,
         "sales_total_eur": round(sales_total_eur, 2),
         "sales_count": sales_count,
+        "modules": modules,
     }
 
 
