@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { productsAPI, watchlistAPI, alertsAPI } from "@/lib/api";
+import { productsAPI, trackedProductsAPI, alertsAPI } from "@/lib/api";
 import {
   ArrowLeft, ExternalLink, Eye, Bell, Package, TrendingUp, TrendingDown, Minus, Trash2, RefreshCw, Check, X,
 } from "lucide-react";
@@ -65,7 +65,7 @@ export default function ProductDetailPage() {
 
   const handleAddToWatchlist = async () => {
     try {
-      await watchlistAPI.addToWatchlist({ product_id: parseInt(productId) });
+      await trackedProductsAPI.toggleMonitoring(parseInt(productId), true, null);
       alert("Produs adaugat in Produse Urmarite — monitorizare activata!");
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare");

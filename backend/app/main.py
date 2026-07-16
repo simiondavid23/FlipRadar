@@ -16,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import auth, products, alerts, dashboard
 from app.routers import scraping
-from app.routers import legacy_compat  # TEMPORAR — aliasuri frontend vechi, se elimina in CAT-3b
 from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
 from app.routers import marketplace  # FlipRadar — Modulul 1 Marketplace (scrapere live)
@@ -406,7 +405,6 @@ app.include_router(auto.router)
 app.include_router(real_estate.router)
 app.include_router(facebook_groups_router)
 app.include_router(tracked_router, prefix="/api/tracked-products")
-app.include_router(legacy_compat.router)  # TEMPORAR — se elimina in CAT-3b
 app.include_router(logs_router)
 app.include_router(auto_listings_router)
 app.include_router(auto_lot_router)

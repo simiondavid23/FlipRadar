@@ -84,11 +84,6 @@ export const productsAPI = {
     api.delete(`/api/products/${productId}/suggestions/${suggestionId}`),
 };
 
-// Lista de urmărit
-export const watchlistAPI = {
-  addToWatchlist: (data) => api.post("/api/watchlist/", data),
-};
-
 // Alerte
 export const alertsAPI = {
   getAlerts: () => api.get("/api/alerts/"),
@@ -217,14 +212,6 @@ export const facebookGroupsAPI = {
     api.post(`/api/facebook-groups/${id}/cookies`, { cookies_json: cookiesJson }),
   deleteCookies: (id) => api.delete(`/api/facebook-groups/${id}/cookies`),
   testRun: (id) => api.post(`/api/facebook-groups/${id}/test-run`),
-};
-
-// Favorite și Blacklist
-export const favoritesAPI = {
-  getFavorites: () => api.get("/api/favorites/"),
-  getBlacklist: () => api.get("/api/favorites/blacklist"),
-  addFavorite: (data) => api.post("/api/favorites/", data),
-  removeFavorite: (id) => api.delete(`/api/favorites/${id}`),
 };
 
 // FlipRadar — Produse Urmarite (fuziune favorite + watchlist)

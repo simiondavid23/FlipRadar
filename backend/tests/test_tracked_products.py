@@ -173,33 +173,6 @@ def test_delete_scoate_din_tracking_dar_pastreaza_alerta(auth_client):
     assert len(_price_drop_alerts(product_id)) == 1
 
 
-# ── t6 — aliasul de blacklist e mort, nu simulat ─────────────────────────────────
-def test_alias_favorites_cu_blacklist_da_410(auth_client):
-    product_id = _mk_product(auth_client)
-
-    r = auth_client.post("/api/favorites/",
-                         json={"product_id": product_id, "is_blacklisted": True})
-    assert r.status_code == 410, r.text
-    assert "blacklist" in r.json()["detail"].lower()
-    assert _tracked_rows(product_id) == []
-
-
-# ── t7 — aliasul de watchlist e idempotent la nivel de contract (400 la duplicat) ─
-def test_alias_watchlist_de_doua_ori_da_400(auth_client):
-    product_id = _mk_product(auth_client)
-
-    r1 = auth_client.post("/api/watchlist/", json={"product_id": product_id})
-    assert r1.status_code == 200, r1.text
-    assert r1.json() == {"status": "ok"}
-
-    r2 = auth_client.post("/api/watchlist/", json={"product_id": product_id})
-    assert r2.status_code == 400, r2.text
-
-    rows = _tracked_rows(product_id)
-    assert len(rows) == 1
-    assert rows[0]["monitoring_active"] is True
-
-
 # ── t8 — dezactivarea monitorizarii nu atinge alertele ───────────────────────────
 def test_patch_inactiv_lasa_alerta_activa(auth_client):
     product_id = _mk_product(auth_client)

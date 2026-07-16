@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { scrapingAPI, productsAPI, favoritesAPI } from "@/lib/api";
+import { scrapingAPI, productsAPI, trackedProductsAPI } from "@/lib/api";
 import { Globe, Search, Plus, Heart, ExternalLink, ShoppingBag } from "lucide-react";
 
 const SOURCE_STYLES = {
@@ -87,7 +87,7 @@ export default function ScrapingPage() {
     }
   };
 
-  const addToFavorites = async (product) => {
+  const saveAndTrack = async (product) => {
     try {
       const saved = await productsAPI.createProduct({
         name: product.name, current_price: product.price, currency: product.currency || "RON",
@@ -95,12 +95,12 @@ export default function ScrapingPage() {
         ean: product.ean || null, sku: product.sku || null,
         category: product.category || null, subcategory: product.subcategory || null,
       });
-      await favoritesAPI.addFavorite({ product_id: saved.data.id, is_blacklisted: false });
+      await trackedProductsAPI.toggleMonitoring(saved.data.id, true, null);
       const status = saved.data.is_new
-        ? "Produs nou salvat si adaugat la favorite!"
+        ? "Produs nou salvat si adaugat in Produse Urmarite!"
         : (saved.data.price_changed
-            ? `Produsul exista deja — pretul a fost actualizat (${Number(saved.data.previous_price).toFixed(2)} -> ${Number(saved.data.current_price).toFixed(2)} ${saved.data.currency}) si adaugat la favorite.`
-            : "Produsul exista deja in baza de date si a fost adaugat la favorite.");
+            ? `Produsul exista deja — pretul a fost actualizat (${Number(saved.data.previous_price).toFixed(2)} -> ${Number(saved.data.current_price).toFixed(2)} ${saved.data.currency}) si adaugat in Produse Urmarite.`
+            : "Produsul exista deja in baza de date si a fost adaugat in Produse Urmarite.");
       alert(status);
     } catch (e) { alert(e.response?.data?.detail || "Eroare"); }
   };
@@ -273,7 +273,7 @@ export default function ScrapingPage() {
                           style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
                           <Plus style={{ width: "1.25rem", height: "1.25rem" }} />
                         </button>
-                        <button onClick={() => addToFavorites(product)} title="Adauga la favorite"
+                        <button onClick={() => saveAndTrack(product)} title="Salveaza si urmareste"
                           style={{ padding: "0.5rem", borderRadius: "0.5rem", border: "none", backgroundColor: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
                           <Heart style={{ width: "1.25rem", height: "1.25rem" }} />
                         </button>

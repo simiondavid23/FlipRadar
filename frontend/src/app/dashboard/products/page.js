@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { productsAPI, watchlistAPI, favoritesAPI } from "@/lib/api";
+import { productsAPI, trackedProductsAPI } from "@/lib/api";
 import Link from "next/link";
-import { Search, Plus, Eye, ExternalLink, Package, X, ChevronRight, Trash2, Heart, Ban, Pencil, Tag, Save, Filter, RefreshCcw } from "lucide-react";
+import { Search, Plus, Eye, ExternalLink, Package, X, ChevronRight, Trash2, Pencil, Tag, Save, Filter, RefreshCcw } from "lucide-react";
 
 // FlipRadar — ITEM 9: optiuni fixe pentru selectorul de sursa. Valorile trebuie
 // sa coincida exact cu cele salvate de scrapere (domeniul magazinului).
@@ -203,31 +203,12 @@ export default function ProductsPage() {
     }
   };
 
-  const handleAddToWatchlist = async (productId) => {
+  const handleTrackProduct = async (productId) => {
     try {
-      await watchlistAPI.addToWatchlist({ product_id: productId });
+      await trackedProductsAPI.toggleMonitoring(productId, true, null);
       alert("Produs adaugat in Produse Urmarite — monitorizare activata!");
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare");
-    }
-  };
-
-  const handleAddToFavorites = async (productId) => {
-    try {
-      await favoritesAPI.addFavorite({ product_id: productId, is_blacklisted: false });
-      alert("Produs salvat in Produse Urmarite!");
-    } catch (error) {
-      alert(error.response?.data?.detail || "Eroare la salvare");
-    }
-  };
-
-  const handleAddToBlacklist = async (productId) => {
-    if (!window.confirm("Adaugi produsul in blacklist? Acesta nu va mai aparea in recomandari.")) return;
-    try {
-      await favoritesAPI.addFavorite({ product_id: productId, is_blacklisted: true });
-      alert("Produs adaugat in blacklist!");
-    } catch (error) {
-      alert(error.response?.data?.detail || "Eroare la adaugarea in blacklist");
     }
   };
 
@@ -865,7 +846,7 @@ export default function ProductsPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   <button
-                    onClick={() => handleAddToWatchlist(product.id)}
+                    onClick={() => handleTrackProduct(product.id)}
                     title="Urmareste produsul (monitorizare pret)"
                     style={{
                       padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent",
@@ -875,30 +856,6 @@ export default function ProductsPage() {
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
                   >
                     <Eye style={{ width: "18px", height: "18px" }} />
-                  </button>
-                  <button
-                    onClick={() => handleAddToFavorites(product.id)}
-                    title="Salveaza oportunitatea"
-                    style={{
-                      padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent",
-                      border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "#f472b6"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-                  >
-                    <Heart style={{ width: "18px", height: "18px" }} />
-                  </button>
-                  <button
-                    onClick={() => handleAddToBlacklist(product.id)}
-                    title="Adauga in blacklist"
-                    style={{
-                      padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent",
-                      border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "#fb923c"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-                  >
-                    <Ban style={{ width: "18px", height: "18px" }} />
                   </button>
                   {product.source_url && (
                     <a
