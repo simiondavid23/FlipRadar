@@ -115,7 +115,7 @@ def get_reports_summary(
     profit_total = venit_total - cost_total
 
     # FlipRadar — adaugam `roi` per categorie (profit/cost*100) pe langa profit,
-    # pentru graficul "Categorii dupa ROI mediu" si cardul de pe dashboard.
+    # pentru graficul "Categorii dupa ROI mediu".
     top_categorii = sorted(
         (
             {
@@ -128,6 +128,24 @@ def get_reports_summary(
         ),
         key=lambda x: x["profit"], reverse=True
     )[:5]
+
+    # DASH-1 — categoria cu cel mai mare ROI, calculata pe TOATE categoriile cu
+    # cost declarat (top_categorii e top-5 dupa profit, deci o categorie cu ROI
+    # mare dar profit mic putea lipsi). None daca nu exista cost > 0 sau daca
+    # ROI-ul maxim e <= 0 — cardul de pe dashboard se ascunde in acest caz.
+    best_roi_categorie = None
+    best_roi_val = 0.0
+    for c in cat_buckets.values():
+        if c["cost"] > 0:
+            roi_c = c["profit"] / c["cost"] * 100.0
+            if roi_c > best_roi_val:
+                best_roi_val = roi_c
+                best_roi_categorie = {
+                    "categorie": c["categorie"],
+                    "roi": round(roi_c, 2),
+                    "profit": round(c["profit"], 2),
+                    "count": c["count"],
+                }
 
     top_produse = []
     for p in sorted(prod_buckets.values(), key=lambda x: x["profit"], reverse=True)[:5]:
@@ -161,6 +179,7 @@ def get_reports_summary(
         "profit_total": round(profit_total, 2),
         "roi_mediu": round((roi_profit_total / roi_cost_total * 100), 1) if roi_cost_total > 0 else 0,
         "top_categorii": top_categorii,
+        "best_roi_categorie": best_roi_categorie,
         "top_produse": top_produse,
         "vanzari_pe_zi": vanzari_pe_zi,
     }

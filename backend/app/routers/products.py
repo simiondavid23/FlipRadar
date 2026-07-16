@@ -243,9 +243,12 @@ def get_products_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Statistici de profitabilitate din catalogul utilizatorului (folosește resale_price)."""
+    """Statistici de profitabilitate din catalogul utilizatorului (folosește resale_price).
+
+    profit_estimat_total e in EUR (convertit per produs din moneda produsului).
+    """
     rows = (
-        db.query(Product.current_price, Product.resale_price)
+        db.query(Product.current_price, Product.resale_price, Product.currency)
         .filter(Product.user_id == current_user.id)
         .all()
     )
@@ -255,7 +258,7 @@ def get_products_stats(
     produse_fara_pret_revanzare = 0
     total = len(rows)
 
-    for current_price, resale_price in rows:
+    for current_price, resale_price, currency in rows:
         if resale_price is None:
             produse_fara_pret_revanzare += 1
             continue
@@ -263,7 +266,9 @@ def get_products_stats(
             continue
         diff = float(resale_price) - float(current_price)
         if diff > 0:
-            profit_estimat_total += diff
+            # DASH-1: diferenta e in moneda produsului — convertim per produs
+            # ca totalul sa fie EUR (scraperele Catalog scriu RON, default EUR).
+            profit_estimat_total += convert(diff, currency or "EUR", "EUR")
             produse_profitabile += 1
         roi_values.append((diff / float(current_price)) * 100.0)
 

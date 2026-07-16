@@ -24,15 +24,15 @@ def scheduler_status(current_user: User = Depends(get_current_user)):
     job_names = {
         "radar_scan": "Radar Piață",
         "auto_listings_scan": "Auto Anunțuri",
+        "auto_lots_scan": "Scanare loturi auto",
         "real_estate_scan": "Imobiliare",
         "re_daily_cleanup": "Cleanup imobiliare",
         "discord_queue_cleanup": "Cleanup Discord queue",
         "log_entries_cleanup": "Cleanup logs DB",
         "check_alerts": "Verificare alerte",
-        "real_estate_alerts": "Alerte imobiliare",
         "radar_daily_cleanup": "Cleanup Radar",
-        "ml_sold_detection": "ML detecție vânzări",
-        "retrain_models": "Reantrenare ML",
+        "vinted_catalog_refresh": "Refresh catalog Vinted",
+        "vinted_catalog_bootstrap": "Bootstrap catalog Vinted",
         "facebook_group_checks": "Grupuri Facebook",
         "facebook_cookie_expiry_check": "Expirare cookies FB",
     }
@@ -122,36 +122,16 @@ def get_dashboard_stats(
         sales_total_eur += convert(float(subtotal or 0), currency or "RON", "EUR")
         sales_count += int(count or 0)
 
-    # Total products value (user-scoped) grouped by currency
-    products_rows = (
-        db.query(
-            Product.currency,
-            func.coalesce(func.sum(Product.current_price), 0.0),
-        )
-        .filter(Product.user_id == current_user.id)
-        .group_by(Product.currency)
-        .all()
-    )
-    total_products_value = 0.0
-    for currency, subtotal in products_rows:
-        total_products_value += convert(float(subtotal or 0), currency or "EUR", "EUR")
-
     return {
         "total_products": total_products,
         "monitored_count": monitored_count,
         "active_alerts": active_alerts,
         "triggered_alerts": triggered_alerts,
         "total_price_records": total_price_records,
-        "total_products_value_eur": round(total_products_value, 2),
         "inventory_total_eur": round(inventory_total_eur, 2),
         "inventory_items_count": inventory_items_count,
         "sales_total_eur": round(sales_total_eur, 2),
         "sales_count": sales_count,
-        "user": {
-            "username": current_user.username,
-            "full_name": current_user.full_name,
-            "member_since": current_user.created_at.isoformat() if current_user.created_at else None,
-        },
     }
 
 

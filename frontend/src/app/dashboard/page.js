@@ -162,6 +162,7 @@ export default function DashboardPage() {
   const [timeseries, setTimeseries] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [bestCategory, setBestCategory] = useState(null); // FlipRadar — C.2
+  const [schedulerStatus, setSchedulerStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -176,13 +177,15 @@ export default function DashboardPage() {
       from.setDate(to.getDate() - 29);
       const isoDate = (d) => d.toISOString().slice(0, 10);
 
-      const [statsRes, tsRes, topRes, productsStatsRes, reportsRes] = await Promise.all([
-        dashboardAPI.getStats(),
-        dashboardAPI.getSalesTimeseries(30),
-        dashboardAPI.getTopProducts(5),
-        productsAPI.getStats().catch(() => ({ data: null })),
-        reportsAPI.getSummary({ date_from: isoDate(from), date_to: isoDate(to) }).catch(() => ({ data: null })),
-      ]);
+      const [statsRes, tsRes, topRes, productsStatsRes, reportsRes, schedRes] =
+        await Promise.all([
+          dashboardAPI.getStats().catch(() => ({ data: null })),
+          dashboardAPI.getSalesTimeseries(30).catch(() => ({ data: null })),
+          dashboardAPI.getTopProducts(5).catch(() => ({ data: null })),
+          productsAPI.getStats().catch(() => ({ data: null })),
+          reportsAPI.getSummary({ date_from: isoDate(from), date_to: isoDate(to) }).catch(() => ({ data: null })),
+          dashboardAPI.getSchedulerStatus().catch(() => ({ data: null })),
+        ]);
       setStats(statsRes.data);
       setTimeseries((tsRes.data?.data || []).map((d) => ({
         ...d,
@@ -190,14 +193,11 @@ export default function DashboardPage() {
       })));
       setTopProducts(topRes.data || []);
       setProductsStats(productsStatsRes.data);
+      setSchedulerStatus(schedRes.data);
 
-      // C.2 — cea mai profitabila categorie (ROI mediu cel mai mare), daca exista date
-      const cats = reportsRes.data?.top_categorii || [];
-      const best = cats.reduce(
-        (acc, c) => (acc == null || Number(c.roi) > Number(acc.roi) ? c : acc),
-        null
-      );
-      setBestCategory(best);
+      // DASH-1: backend-ul calculeaza acum categoria cu cel mai mare ROI pe
+      // TOATE categoriile cu cost declarat (null daca nu exista sau ROI <= 0).
+      setBestCategory(reportsRes.data?.best_roi_categorie || null);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     } finally {
@@ -213,12 +213,17 @@ export default function DashboardPage() {
   if (roiMediu < 10) {
     roiColor = "#f87171";
     roiBgGlow = "radial-gradient(circle, rgba(239,68,68,0.6), transparent)";
-    roiSubtitle = "Necesita optimizare";
+    roiSubtitle = "Necesită optimizare";
   } else if (roiMediu < 25) {
     roiColor = "#facc15";
     roiBgGlow = "radial-gradient(circle, rgba(250,204,21,0.6), transparent)";
     roiSubtitle = "Portofoliu bun";
   }
+
+  // DASH-1: status real din scheduler (era hardcodat pe verde).
+  const schedRunning = schedulerStatus?.scheduler_running;
+  const schedColor = schedRunning === true ? "#34d399" : schedRunning === false ? "#f87171" : "var(--text-muted)";
+  const schedLabel = schedRunning === true ? "● Activ" : schedRunning === false ? "● Oprit" : "Necunoscut";
 
   if (loading) {
     return (
@@ -233,6 +238,24 @@ export default function DashboardPage() {
             animation: "spin 1s linear infinite",
           }}
         />
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+        <div style={{ padding: "1.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", textAlign: "center" }}>
+          <p style={{ color: "#f87171", fontSize: "0.875rem", margin: "0 0 0.75rem" }}>
+            Nu am putut încărca datele tabloului de bord. Verifică dacă serverul răspunde.
+          </p>
+          <button
+            onClick={() => { setLoading(true); loadAll(); }}
+            style={{ padding: "0.5rem 1rem", borderRadius: "0.5rem", border: "none", backgroundColor: "#2563eb", color: "#fff", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}
+          >
+            Reîncearcă
+          </button>
+        </div>
       </div>
     );
   }
@@ -254,7 +277,7 @@ export default function DashboardPage() {
             Bine ai venit, {user?.full_name || user?.username}! 👋
           </h1>
           <p style={{ color: "var(--text-secondary)", marginTop: "0.375rem", fontSize: "0.875rem" }}>
-            Iata o privire de ansamblu asupra activitatii tale.
+            Iată o privire de ansamblu asupra activității tale.
           </p>
         </div>
         <div
@@ -285,23 +308,23 @@ export default function DashboardPage() {
         }}
       >
         <StatCard
-          title="Valoare vanzari"
+          title="Valoare vânzări"
           value={`${(stats?.sales_total_eur || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
           icon={Euro}
           color="#9333ea"
           bgGlow="radial-gradient(circle, rgba(147,51,234,0.6), transparent)"
-          subtitle={`${stats?.sales_count || 0} vanzari inregistrate`}
+          subtitle={`${stats?.sales_count || 0} vânzări înregistrate`}
           href="/dashboard/sales"
           valueColor="#a78bfa"
           valueSize="2rem"
         />
         <StatCard
-          title="Volum total produse"
+          title="Valoare inventar (cost achiziție)"
           value={`${(stats?.inventory_total_eur || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
           icon={ShoppingCart}
           color="#16a34a"
           bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
-          subtitle={`${stats?.inventory_items_count || 0} articole in inventar`}
+          subtitle={`${stats?.inventory_items_count || 0} articole în inventar`}
           href="/dashboard/inventory"
           valueColor="#4ade80"
           valueSize="2rem"
@@ -309,12 +332,12 @@ export default function DashboardPage() {
         {/* C.2 — afisat doar daca exista date din rapoarte */}
         {bestCategory && (
           <StatCard
-            title="Cea mai profitabila categorie"
+            title="Cea mai profitabilă categorie"
             value={bestCategory.categorie}
             icon={Target}
             color="#16a34a"
             bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
-            subtitle={`ROI mediu ${Number(bestCategory.roi).toFixed(0)}% — ultimele 30 zile`}
+            subtitle={`ROI mediu ${Number(bestCategory.roi).toFixed(0)}% — ultimele 30 de zile`}
             href="/dashboard/reports"
             valueColor="#4ade80"
             valueSize="1.25rem"
@@ -334,7 +357,7 @@ export default function DashboardPage() {
         {hasResaleData ? (
           <StatCard
             title="Profit estimat total"
-            value={`${Number(productsStats.profit_estimat_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })}`}
+            value={`${Number(productsStats.profit_estimat_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
             icon={TrendingUp}
             color="#16a34a"
             bgGlow="radial-gradient(circle, rgba(34,197,94,0.6), transparent)"
@@ -358,7 +381,7 @@ export default function DashboardPage() {
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>Profit estimat total</p>
               <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.5rem 0 0", lineHeight: 1.5 }}>
-                Adauga preturi de revanzare pentru a vedea profitabilitatea
+                Adaugă prețuri de revânzare pentru a vedea profitabilitatea
               </p>
               <Link href="/dashboard/products" style={{
                 display: "inline-block", marginTop: "0.5rem",
@@ -397,7 +420,7 @@ export default function DashboardPage() {
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>ROI mediu portofoliu</p>
               <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.5rem 0 0", lineHeight: 1.5 }}>
-                Adauga preturi de revanzare pentru a vedea profitabilitatea
+                Adaugă prețuri de revânzare pentru a vedea profitabilitatea
               </p>
               <Link href="/dashboard/products" style={{
                 display: "inline-block", marginTop: "0.5rem",
@@ -425,16 +448,16 @@ export default function DashboardPage() {
           icon={Package}
           color="#2563eb"
           bgGlow="radial-gradient(circle, rgba(37,99,235,0.5), transparent)"
-          subtitle="Total produse in baza de date"
+          subtitle="Total produse în catalogul tău"
           href="/dashboard/products"
         />
         <StatCard
-          title="Produse Urmarite"
+          title="Produse Urmărite"
           value={stats?.monitored_count || 0}
           icon={Eye}
           color="#9333ea"
           bgGlow="radial-gradient(circle, rgba(147,51,234,0.5), transparent)"
-          subtitle="Produse urmarite de tine"
+          subtitle="Produse urmărite de tine"
           href="/dashboard/tracked-products"
         />
         <StatCard
@@ -443,7 +466,7 @@ export default function DashboardPage() {
           icon={Bell}
           color="#16a34a"
           bgGlow="radial-gradient(circle, rgba(22,163,74,0.5), transparent)"
-          subtitle="Alerte de pret configurate"
+          subtitle="Alerte de preț configurate"
           href="/dashboard/alerts"
         />
       </div>
@@ -459,8 +482,8 @@ export default function DashboardPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Vanzari si profit (ultimele 30 de zile)</h2>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Valori in EUR</span>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Vânzări și profit (ultimele 30 de zile)</h2>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Valori în EUR</span>
         </div>
         <div style={{ width: "100%", height: 240 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -502,7 +525,7 @@ export default function DashboardPage() {
             marginBottom: "1.5rem",
           }}
         >
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Top produse dupa venit</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Top produse după venit</h2>
           <div style={{ width: "100%", height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topProducts} layout="vertical" margin={{ top: 5, right: 16, left: 16, bottom: 0 }}>
@@ -539,27 +562,27 @@ export default function DashboardPage() {
             padding: "1.5rem",
           }}
         >
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Actiuni rapide</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Acțiuni rapide</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             <QuickAction
               href="/dashboard/products"
               icon={Search}
-              title="Cauta produse"
-              description="Gaseste produse profitabile"
+              title="Caută produse"
+              description="Găsește produse profitabile"
               color="#2563eb"
             />
             <QuickAction
               href="/dashboard/inventory"
               icon={Boxes}
               title="Inventar"
-              description="Gestioneaza produsele pe stoc"
+              description="Gestionează produsele pe stoc"
               color="#16a34a"
             />
             <QuickAction
               href="/dashboard/tracked-products"
               icon={Eye}
-              title="Produse Urmarite"
-              description="Vezi produsele urmarite"
+              title="Produse Urmărite"
+              description="Vezi produsele urmărite"
               color="#9333ea"
             />
           </div>
@@ -576,10 +599,10 @@ export default function DashboardPage() {
         >
           <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>Rezumat activitate</h2>
           <div>
-            <ActivityItem icon={AlertTriangle} label="Alerte declansate" value={stats?.triggered_alerts || 0} color="#facc15" />
-            <ActivityItem icon={Database} label="Inregistrari de pret" value={stats?.total_price_records || 0} color="#22d3ee" />
+            <ActivityItem icon={AlertTriangle} label="Alerte declanșate" value={stats?.triggered_alerts || 0} color="#facc15" />
+            <ActivityItem icon={Database} label="Înregistrări de preț" value={stats?.total_price_records || 0} color="#22d3ee" />
             <ActivityItem icon={Package} label="Produse monitorizate" value={stats?.total_products || 0} color="#60a5fa" />
-            <ActivityItem icon={Eye} label="Urmarite" value={stats?.monitored_count || 0} color="#a78bfa" />
+            <ActivityItem icon={Eye} label="Urmărite" value={stats?.monitored_count || 0} color="#a78bfa" />
             <div
               style={{
                 display: "flex",
@@ -589,10 +612,10 @@ export default function DashboardPage() {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-                <TrendingUp style={{ width: "15px", height: "15px", color: "#34d399" }} />
+                <TrendingUp style={{ width: "15px", height: "15px", color: schedColor }} />
                 <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>Status sistem</span>
               </div>
-              <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#34d399" }}>● Activ</span>
+              <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: schedColor }}>{schedLabel}</span>
             </div>
           </div>
         </div>
