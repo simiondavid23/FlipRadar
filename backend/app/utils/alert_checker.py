@@ -23,6 +23,7 @@ from app.models.radar_settings import RadarSettings
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
 from app.services.scraper_service import refresh_price_from_source
+from app.services import catalog_health_watchdog
 from app.services.discord_service import (
     build_alert_embed, build_flash_deal_embed, send_price_alert_notification,
 )
@@ -101,6 +102,8 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
     if total == 0:
         return 0
     print(f"[AlertChecker] Refresh preturi pentru {total} sursa(e) scrapeabila(e)...")
+    # C-15: ciclu de watchdog — deschis DUPA total==0, ca un ciclu gol sa nu se deschida.
+    catalog_health_watchdog.open_cycle()
 
     refreshed = 0
     touched_products: dict[int, Product] = {}
@@ -116,6 +119,7 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
             sku=product.sku,
         )
         ps.last_checked_at = now
+        catalog_health_watchdog.note_refresh(ps.source, success=(new_price is not None))
         if new_price is None:
             print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({ps.source}). Folosesc pretul stocat: {ps.current_price} {ps.currency}")
             continue
@@ -140,6 +144,11 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
         _recompute_primary_snapshot(product)
     if refreshed > 0 or touched_products:
         db.commit()
+    # C-15: o eroare de watchdog nu trebuie sa rupa check_alerts.
+    try:
+        catalog_health_watchdog.close_cycle(db)
+    except Exception as exc:
+        print(f"[Watchdog Catalog] close esuat: {exc}")
     return refreshed
 
 
