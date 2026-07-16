@@ -844,16 +844,35 @@ def fetch_ean_from_url(source_url: str) -> Optional[str]:
             pass  # logging-ul nu trebuie sa rupa fluxul
         return None
     try:
-        response = curl_requests.get(
-            source_url,
-            headers={
-                "Accept": "text/html,application/xhtml+xml",
-                "Accept-Language": "ro-RO,ro;q=0.9",
-            },
-            impersonate=_IMPERSONATE,
-            timeout=15,
-            allow_redirects=True,
-        )
+        # C-14b: NU urmarim redirecturile automat. Allow-list-ul de mai sus valideaza
+        # doar URL-ul initial; un open-redirect pe un magazin permis (ex.
+        # emag.ro/...?url=http://169.254.169.254/) ar duce curl catre o tinta interna.
+        # Urmarim manual, revalidand FIECARE hop inainte de a-l cere.
+        current_url = source_url
+        for _hop in range(4):  # 1 request initial + maxim 3 redirecturi
+            if not _is_allowed_ean_url(current_url):
+                return None
+            response = curl_requests.get(
+                current_url,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "ro-RO,ro;q=0.9",
+                },
+                impersonate=_IMPERSONATE,
+                timeout=15,
+                allow_redirects=False,
+            )
+            if response.status_code in (301, 302, 303, 307, 308):
+                loc = response.headers.get("location") or response.headers.get("Location")
+                if not loc:
+                    return None
+                # Location poate fi cale relativa -> rezolvam fata de URL-ul curent.
+                current_url = urllib.parse.urljoin(current_url, loc)
+                continue
+            break
+        else:
+            return None  # prea multe redirecturi
+
         if response.status_code != 200:
             return None
         soup = BeautifulSoup(response.text, "html.parser")
