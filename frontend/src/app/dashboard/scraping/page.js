@@ -132,7 +132,7 @@ export default function ScrapingPage() {
       <div style={{ marginBottom: "2rem" }}>
         <h1 style={{ fontSize: "1.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <Globe style={{ width: "2rem", height: "2rem", color: "#06b6d4" }} />
-          Web Scraping
+          Scanare Magazine
         </h1>
         <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem" }}>Cauta produse pe Altex.ro, Sole.ro, Farmacia Tei, eMAG.ro si PCGarage.ro</p>
       </div>

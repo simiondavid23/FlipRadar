@@ -15,6 +15,8 @@ const SOURCE_COLORS = {
   "altex.ro": { bg: "rgba(59,130,246,0.2)", fg: "#60a5fa" },
   "sole.ro": { bg: "rgba(236,72,153,0.2)", fg: "#f472b6" },
   "farmaciatei.ro": { bg: "rgba(34,197,94,0.2)", fg: "#4ade80" },
+  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#facc15" },
+  "pcgarage.ro": { bg: "rgba(168,85,247,0.2)", fg: "#c084fc" },
 };
 
 export default function ProductDetailPage() {
@@ -64,7 +66,7 @@ export default function ProductDetailPage() {
   const handleAddToWatchlist = async () => {
     try {
       await watchlistAPI.addToWatchlist({ product_id: parseInt(productId) });
-      alert("Produs adaugat in watchlist!");
+      alert("Produs adaugat in Produse Urmarite — monitorizare activata!");
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare");
     }
@@ -152,7 +154,7 @@ export default function ProductDetailPage() {
   const handleDeleteProduct = async () => {
     const name = data?.product?.name || "acest produs";
     const ok = window.confirm(
-      `Esti sigur ca vrei sa stergi produsul "${name}"?\n\nAceasta actiune este ireversibila si va sterge si:\n- Istoricul de preturi\n- Alertele asociate\n- Intrarile din watchlist`
+      `Esti sigur ca vrei sa stergi produsul "${name}"?\n\nAceasta actiune este ireversibila si va sterge si:\n- Istoricul de preturi\n- Alertele asociate\n- Intrarea din Produse Urmarite`
     );
     if (!ok) return;
     try {
@@ -311,14 +313,14 @@ export default function ProductDetailPage() {
             </button>
             <button
               onClick={handleAddToWatchlist}
-              title="Adauga in watchlist"
+              title="Adauga in Produse Urmarite"
               style={{
                 display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
                 borderRadius: "0.5rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa",
                 border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
               }}
             >
-              <Eye style={{ width: "14px", height: "14px" }} /> Watchlist
+              <Eye style={{ width: "14px", height: "14px" }} /> Urmareste
             </button>
             <button
               onClick={() => setAlertForm({ ...alertForm, show: !alertForm.show })}

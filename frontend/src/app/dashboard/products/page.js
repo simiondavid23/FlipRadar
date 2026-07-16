@@ -206,7 +206,7 @@ export default function ProductsPage() {
   const handleAddToWatchlist = async (productId) => {
     try {
       await watchlistAPI.addToWatchlist({ product_id: productId });
-      alert("Produs adaugat in Radar Preturi!");
+      alert("Produs adaugat in Produse Urmarite — monitorizare activata!");
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare");
     }
@@ -215,7 +215,7 @@ export default function ProductsPage() {
   const handleAddToFavorites = async (productId) => {
     try {
       await favoritesAPI.addFavorite({ product_id: productId, is_blacklisted: false });
-      alert("Produs adaugat la oportunitati salvate!");
+      alert("Produs salvat in Produse Urmarite!");
     } catch (error) {
       alert(error.response?.data?.detail || "Eroare la salvare");
     }
@@ -312,7 +312,7 @@ export default function ProductsPage() {
 
   const handleDeleteProduct = async (product) => {
     const ok = window.confirm(
-      `Esti sigur ca vrei sa stergi produsul "${product.name}"?\n\nAceasta actiune este ireversibila si va sterge si:\n- Istoricul de preturi\n- Alertele asociate\n- Intrarile din Radar Preturi ale tuturor utilizatorilor`
+      `Esti sigur ca vrei sa stergi produsul "${product.name}"?\n\nAceasta actiune este ireversibila si va sterge si:\n- Istoricul de preturi\n- Alertele asociate\n- Intrarea din Produse Urmarite`
     );
     if (!ok) return;
     try {
@@ -473,7 +473,7 @@ export default function ProductsPage() {
               value={brandInput}
               onChange={(e) => {
                 setBrandInput(e.target.value);
-                setFilters({ ...filters, brand: e.target.value });
+                setFilters((prev) => ({ ...prev, brand: e.target.value }));
                 setShowBrandDropdown(true);
               }}
               onFocus={() => setShowBrandDropdown(true)}
@@ -518,7 +518,7 @@ export default function ProductsPage() {
             <label style={labelSmall}>Categorie</label>
             <select
               value={filters.category || ""}
-              onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+              onChange={(e) => setFilters((prev) => ({ ...prev, category: e.target.value }))}
               style={inputBaseStyle}
             >
               <option value="">Toate categoriile</option>
@@ -534,7 +534,7 @@ export default function ProductsPage() {
               <label style={labelSmall}>Pret minim</label>
               <input
                 type="number" step="0.01" value={filters.price_min}
-                onChange={(e) => setFilters({ ...filters, price_min: e.target.value })}
+                onChange={(e) => setFilters((prev) => ({ ...prev, price_min: e.target.value }))}
                 placeholder="ex: 50"
                 style={inputBaseStyle}
               />
@@ -543,7 +543,7 @@ export default function ProductsPage() {
               <label style={labelSmall}>Pret maxim</label>
               <input
                 type="number" step="0.01" value={filters.price_max}
-                onChange={(e) => setFilters({ ...filters, price_max: e.target.value })}
+                onChange={(e) => setFilters((prev) => ({ ...prev, price_max: e.target.value }))}
                 placeholder="ex: 1000"
                 style={inputBaseStyle}
               />
@@ -556,7 +556,7 @@ export default function ProductsPage() {
               <label style={labelSmall}>ROI minim (%)</label>
               <input
                 type="number" step="0.1" value={filters.roi_min}
-                onChange={(e) => setFilters({ ...filters, roi_min: e.target.value })}
+                onChange={(e) => setFilters((prev) => ({ ...prev, roi_min: e.target.value }))}
                 placeholder="ex: 15"
                 style={inputBaseStyle}
               />
@@ -565,7 +565,7 @@ export default function ProductsPage() {
               <label style={labelSmall}>ROI maxim (%)</label>
               <input
                 type="number" step="0.1" value={filters.roi_max}
-                onChange={(e) => setFilters({ ...filters, roi_max: e.target.value })}
+                onChange={(e) => setFilters((prev) => ({ ...prev, roi_max: e.target.value }))}
                 placeholder="ex: 10"
                 style={inputBaseStyle}
               />
@@ -866,7 +866,7 @@ export default function ProductsPage() {
                 <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   <button
                     onClick={() => handleAddToWatchlist(product.id)}
-                    title="Adauga in Radar Preturi"
+                    title="Urmareste produsul (monitorizare pret)"
                     style={{
                       padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent",
                       border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease",
