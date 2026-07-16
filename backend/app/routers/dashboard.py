@@ -60,7 +60,7 @@ def get_dashboard_stats(
         .scalar() or 0
     )
 
-    watchlist_count = (
+    monitored_count = (
         db.query(func.count(TrackedProduct.id))
         .filter(
             TrackedProduct.user_id == current_user.id,
@@ -122,24 +122,6 @@ def get_dashboard_stats(
         sales_total_eur += convert(float(subtotal or 0), currency or "RON", "EUR")
         sales_count += int(count or 0)
 
-    # Watchlist total: sum of product current_price for this user's watchlist, grouped by currency
-    watchlist_rows = (
-        db.query(
-            Product.currency,
-            func.coalesce(func.sum(Product.current_price), 0.0),
-        )
-        .join(TrackedProduct, TrackedProduct.product_id == Product.id)
-        .filter(
-            TrackedProduct.user_id == current_user.id,
-            TrackedProduct.monitoring_active == True,
-        )
-        .group_by(Product.currency)
-        .all()
-    )
-    watchlist_total_value = 0.0
-    for currency, subtotal in watchlist_rows:
-        watchlist_total_value += convert(float(subtotal or 0), currency or "EUR", "EUR")
-
     # Total products value (user-scoped) grouped by currency
     products_rows = (
         db.query(
@@ -156,12 +138,11 @@ def get_dashboard_stats(
 
     return {
         "total_products": total_products,
-        "watchlist_count": watchlist_count,
+        "monitored_count": monitored_count,
         "active_alerts": active_alerts,
         "triggered_alerts": triggered_alerts,
         "total_price_records": total_price_records,
         "total_products_value_eur": round(total_products_value, 2),
-        "watchlist_total_value_eur": round(watchlist_total_value, 2),
         "inventory_total_eur": round(inventory_total_eur, 2),
         "inventory_items_count": inventory_items_count,
         "sales_total_eur": round(sales_total_eur, 2),

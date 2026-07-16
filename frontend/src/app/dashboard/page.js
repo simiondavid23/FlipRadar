@@ -430,7 +430,7 @@ export default function DashboardPage() {
         />
         <StatCard
           title="Produse Urmarite"
-          value={stats?.watchlist_count || 0}
+          value={stats?.monitored_count || 0}
           icon={Eye}
           color="#9333ea"
           bgGlow="radial-gradient(circle, rgba(147,51,234,0.5), transparent)"
@@ -579,7 +579,7 @@ export default function DashboardPage() {
             <ActivityItem icon={AlertTriangle} label="Alerte declansate" value={stats?.triggered_alerts || 0} color="#facc15" />
             <ActivityItem icon={Database} label="Inregistrari de pret" value={stats?.total_price_records || 0} color="#22d3ee" />
             <ActivityItem icon={Package} label="Produse monitorizate" value={stats?.total_products || 0} color="#60a5fa" />
-            <ActivityItem icon={Eye} label="Urmarite" value={stats?.watchlist_count || 0} color="#a78bfa" />
+            <ActivityItem icon={Eye} label="Urmarite" value={stats?.monitored_count || 0} color="#a78bfa" />
             <div
               style={{
                 display: "flex",
