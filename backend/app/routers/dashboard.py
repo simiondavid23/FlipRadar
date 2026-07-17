@@ -146,10 +146,10 @@ def get_dashboard_stats(
         sales_count += int(count or 0)
 
     # DASH-2 — rezumat module de scanare: anunturi noi in ultimele 24h +
-    # keyword-uri active, per modul. Cutoff pe conventia fiecarei coloane:
+    # keyword-uri active, per modul. Cutoff-ul e calculat in Python in UTC:
     # RadarListing.found_at e scris in UTC de aplicatie (aceeasi conventie ca
     # filtrul `since` din radar.py), iar AutoFeedListing / RealEstateMonitorListing
-    # au server_default func.now() — le comparam cu ceasul serverului DB.
+    # au server_default func.now() care pe SQLite (CURRENT_TIMESTAMP) scrie tot UTC — aceeasi conventie.
     radar_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     # cutoff calculat in Python — portabil intre dialecte
     db_cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)

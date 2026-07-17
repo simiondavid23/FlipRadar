@@ -8,7 +8,7 @@ Lucrare de licenta.
 
 ## Stack
 
-- **Backend:** FastAPI, SQLAlchemy + PostgreSQL, Pydantic v2, APScheduler, Playwright + curl_cffi + BeautifulSoup (scraping), JWT + bcrypt
+- **Backend:** FastAPI, SQLAlchemy + SQLite, Pydantic v2, APScheduler, Playwright + curl_cffi + BeautifulSoup (scraping), JWT + bcrypt
 - **Frontend:** Next.js 16 (App Router), React 19, Recharts, Lucide icons, inline styles
 - **AI:** Groq (chat support, analiza produs, generator listing, raport AI)
 - **Email:** SMTP optional (alerte / notificari)
@@ -30,6 +30,8 @@ uvicorn app.main:app --reload
 
 API: `http://127.0.0.1:8000` · docs: `/docs`
 
+Baza de date e un fisier SQLite (`backend/flipradar.db`) creat automat la prima pornire — nu se instaleaza niciun server de baza de date. Backup: copiaza fisierul cu backend-ul oprit.
+
 ### Frontend
 
 ```bash
@@ -46,18 +48,15 @@ App: `http://localhost:3000`
 
 ## Rulare teste local
 
-Testele backend folosesc o baza PostgreSQL **dedicata** (`flipradar_test`), niciodata cea reala.
+Testele backend ruleaza pe un fisier SQLite temporar, unic per rulare — nu ating baza reala si nu au nevoie de niciun server de baza de date.
 
 ```bash
 cd backend
 pip install -r requirements-dev.txt
-# In backend/.env adauga linia (cu parola ta reala de postgres):
-#   TEST_DATABASE_URL=postgresql://postgres:parola@localhost:5432/flipradar_test
 pytest
 ```
 
-`conftest.py` creeaza singur baza `flipradar_test` la prima rulare daca nu exista si
-refuza sa porneasca daca `TEST_DATABASE_URL` lipseste sau e egala cu `DATABASE_URL`.
+`conftest.py` creeaza singur fisierul SQLite temporar la pornire si il sterge la final; izolarea intre rulari concurente e structurala (fiecare proces are propriul fisier).
 
 ## Functionalitati
 
