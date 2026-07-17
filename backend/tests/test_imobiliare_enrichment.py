@@ -15,28 +15,45 @@ from app.scrapers.real_estate.olx_real_estate import (
 from app.services.real_estate_scanner import _matches_re_keyword, _olx_query_with_zone
 
 
+_CDN = "https://frankfurt.apollo.olxcdn.com:443/v1/files"
+
+
 def _offer():
-    """Raspuns complet (data) de la /api/v1/offers/{id}."""
+    """Raspuns (data) de la /api/v1/offers/{id} — forma REALA, capturata live de
+    sonda IMO-DIAG (07.2026) pe un anunt din categoria 1165 (real_estate).
+
+    Ce e captura fidela: `params` (cheile reale compartimentare/price/m/constructie/
+    floor si forma lor de `value`), `photos[].link` cu placeholder-ul {width}x{height},
+    `location` (orasul vine FARA diacritice din API), `created_time` cu offset.
+    Descrierea e reprezentativa (sonda a confirmat maparea, nu i-am dumpat HTML-ul brut).
+    """
     return {
-        "id": 123456789,
+        "id": 305879807,
         "description": "<p>Apartament <b>renovat</b>,\n\n  zona linistita.</p>",
-        "created_time": "2026-07-07T12:08:09+03:00",
+        "created_time": "2026-06-25T13:00:34+03:00",
         "photos": [
-            {"link": "https://img.olx.ro/a;s={width}x{height}"},
-            {"link": "https://img.olx.ro/b;s={width}x{height}"},
-            {"link": "https://img.olx.ro/c;s={width}x{height}"},
-            {"link": "https://img.olx.ro/d;s={width}x{height}"},
-            {"link": "https://img.olx.ro/e;s={width}x{height}"},
-            {"link": "https://img.olx.ro/f;s={width}x{height}"},  # al 6-lea — taiat
+            {"link": f"{_CDN}/98eleil3zi6m3-RO/image;s={{width}}x{{height}}"},
+            {"link": f"{_CDN}/gppfm2zyo2601-RO/image;s={{width}}x{{height}}"},
+            {"link": f"{_CDN}/c3-RO/image;s={{width}}x{{height}}"},
+            {"link": f"{_CDN}/d4-RO/image;s={{width}}x{{height}}"},
+            {"link": f"{_CDN}/e5-RO/image;s={{width}}x{{height}}"},
+            {"link": f"{_CDN}/f6-RO/image;s={{width}}x{{height}}"},  # al 6-lea — taiat
         ],
         "location": {
-            "city": {"name": "București"},
-            "district": {"name": "Crângași"},
+            "city": {"id": 1, "name": "Bucuresti", "normalized_name": "bucuresti"},
+            "district": {"id": 9, "name": "Sectorul 5"},
+            "region": {"id": 46, "name": "Bucuresti - Ilfov"},
         },
+        # Cheile REALE. NU exista `rooms` — vezi test_camere_nu_vine_din_params_reale.
         "params": [
-            {"key": "m", "name": "Suprafață utilă", "value": {"key": "54.5", "label": "54,5 m²"}},
-            {"key": "floor", "name": "Etaj", "value": {"key": "3", "label": "Etaj 3"}},
-            {"key": "rooms", "name": "Compartimentare", "value": {"key": "3", "label": "3 camere"}},
+            {"key": "compartimentare", "name": "Compartimentare",
+             "value": {"key": "decomandat", "label": "Decomandat"}},
+            {"key": "price", "name": "Pret",
+             "value": {"value": 121000, "type": "arranged", "currency": "EUR", "negotiable": True}},
+            {"key": "m", "name": "Suprafata utila", "value": {"key": "62", "label": "62 m²"}},
+            {"key": "constructie", "name": "An constructie",
+             "value": {"key": "dupa-2000", "label": "Dupa 2000"}},
+            {"key": "floor", "name": "Etaj", "value": {"key": "parter", "label": "Parter"}},
         ],
     }
 
@@ -54,29 +71,50 @@ def test_descriere_fara_html_si_whitespace_colapsat():
 def test_poze_maxim_5_cu_placeholder_inlocuit():
     out = _map_offer_details(_offer())
     assert len(out["images"]) == 5
-    assert out["images"][0] == "https://img.olx.ro/a;s=1000x700"
+    assert out["images"][0] == f"{_CDN}/98eleil3zi6m3-RO/image;s=1000x700"
     assert all("{width}" not in u for u in out["images"])
 
 
 def test_cartierul_devine_zone():
     # location.district = intrarea directa in normalize_zone (mai specific decat orasul).
+    # Pe Bucuresti districtul e SECTORUL; orasul vine fara diacritice din API.
     out = _map_offer_details(_offer())
-    assert out["zone"] == "Crângași"
-    assert out["locatie_oras"] == "București"
+    assert out["zone"] == "Sectorul 5"
+    assert out["locatie_oras"] == "Bucuresti"
 
 
 def test_params_mapate():
+    """Doar ce vine REAL din params: suprafata (key="m") si etajul (key="floor").
+    Etajul e un LABEL text ("Parter"/"Demisol"), nu un numar — asa il trimite OLX."""
     out = _map_offer_details(_offer())
-    assert out["suprafata_mp"] == 54.5
-    assert out["etaj"] == "Etaj 3"
-    assert out["camere"] == 3
+    assert out["suprafata_mp"] == 62.0
+    assert out["etaj"] == "Parter"
+
+
+def test_camere_nu_vine_din_params_reale():
+    """SANTINELA (sonda IMO-DIAG, 07.2026): OLX Imobiliare NU expune numarul de camere
+    in `params` — cheile reale sunt compartimentare/price/m/constructie/floor, iar
+    `key_params` e ["m"]. Camerele traiesc doar in titlu/descriere, de unde le ia
+    extract_rooms. Daca testul asta pica, OLX a schimbat API-ul (vezi ramura-plasa)."""
+    out = _map_offer_details(_offer())
+    assert "camere" not in out
+    chei = [p["key"] for p in _offer()["params"]]
+    assert "rooms" not in chei
+    assert not any("camere" in p["name"].lower() for p in _offer()["params"])
+
+
+def test_params_nemapate_sunt_ignorate():
+    # price/compartimentare/constructie exista in raspuns, dar nu au corespondent la noi.
+    out = _map_offer_details(_offer())
+    assert set(out) == {"descriere", "images", "zone", "locatie_oras",
+                        "suprafata_mp", "etaj", "listed_at"}
 
 
 def test_listed_at_e_string_iso_naiv():
     out = _map_offer_details(_offer())
     # Acelasi format ca cel emis din card: string ISO naiv local (fara offset).
     assert isinstance(out["listed_at"], str)
-    assert "+" not in out["listed_at"] and out["listed_at"].startswith("2026-07-07")
+    assert "+" not in out["listed_at"] and out["listed_at"].startswith("2026-06-25")
 
 
 def test_dict_gol_da_dict_gol():
@@ -86,6 +124,24 @@ def test_dict_gol_da_dict_gol():
 def test_tip_gresit_nu_crapa():
     assert _map_offer_details(None) == {}
     assert _map_offer_details("nu-i dict") == {}
+
+
+def test_ramura_plasa_rooms_daca_olx_o_adauga():
+    """FIXTURE SINTETIC — forma pe care OLX NU o trimite azi (confirmat de sonda
+    IMO-DIAG). Testeaza PLASA DE SIGURANTA din _map_offer_details, nu realitatea:
+    daca OLX adauga vreodata `rooms` in params, maparea se auto-activeaza."""
+    out = _map_offer_details({"params": [
+        {"key": "rooms", "name": "Numar camere", "value": {"key": "3", "label": "3 camere"}},
+    ]})
+    assert out["camere"] == 3
+
+
+def test_ramura_plasa_rooms_dupa_nume():
+    """Idem — varianta pe nume ("camere" in name), tot sintetica."""
+    out = _map_offer_details({"params": [
+        {"key": "altceva", "name": "Număr camere", "value": {"key": "2", "label": "2 camere"}},
+    ]})
+    assert out["camere"] == 2
 
 
 def test_params_corupte_sunt_tolerate():

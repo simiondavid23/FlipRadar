@@ -156,6 +156,9 @@ def _map_offer_details(data: dict) -> dict:
                 if label:
                     out["etaj"] = str(label)
             elif key == "rooms" or "camere" in name:
+                # Sonda IMO-DIAG (07.2026): OLX Imobiliare NU trimite cheia rooms in params
+                # (doar compartimentare/price/m/constructie/floor). Ramura ramane ca plasa de
+                # siguranta — se auto-activeaza daca OLX o adauga; camere vine azi din titlu/descriere.
                 v = _first_int(vkey) if vkey is not None else None
                 if v is None:
                     v = _first_int(label)
