@@ -748,6 +748,10 @@ def run_cleanup(db: Session) -> int:
     ambele platforme facebook excluse (login-wall neautentificat = neverificabil).
     Doar 404/410 sterge; orice altceva sau exceptie inseamna doar ca randul a fost
     atins (last_checked_at=now), ca rotatia sa treaca mai departe.
+
+    CLEAN-2: HEAD-ul nu mai e crezut singur — sonda a dovedit ca Publi24 raspunde 404
+    la HEAD pe anunturi VII (GET 200), iar aici 404-ul STERGE definitiv. Singura
+    decizie luata direct din HEAD e "e viu" (200); orice altceva se confirma cu GET.
     """
     import random
     import time
@@ -764,17 +768,20 @@ def run_cleanup(db: Session) -> int:
     for listing in listings:
         gone = False
         try:
-            resp = curl_requests.head(listing.url, impersonate="chrome110",
+            head = curl_requests.head(listing.url, impersonate="chrome110",
                                       timeout=10, allow_redirects=True)
-            status = resp.status_code
-            if status >= 400 and status not in (404, 410):
-                # HEAD blocat/nesuportat -> confirmam cu GET (doar statusul conteaza).
+            head_ok = head.status_code == 200
+        except Exception:
+            head_ok = False   # eroare de retea != anunt disparut; lasam GET-ul sa decida
+        if not head_ok:
+            # CLEAN-2 — orice non-200 la HEAD (inclusiv 404/410, care pe Publi24 apar
+            # si pe anunturi vii) se confirma cu GET; doar GET-ul poate declansa stergerea.
+            try:
                 resp = curl_requests.get(listing.url, impersonate="chrome110",
                                          timeout=10, allow_redirects=True)
-                status = resp.status_code
-            gone = status in (404, 410)
-        except Exception:
-            gone = False   # eroare de retea != anunt disparut
+                gone = resp.status_code in (404, 410)
+            except Exception:
+                gone = False
         if gone:
             db.delete(listing)
             deleted += 1

@@ -21,14 +21,19 @@ _IMPERSONATE = "chrome110"   # conventia proiectului pentru site-uri HTML
 _HTTP_TIMEOUT = 10
 _DELAY_RANGE = (0.4, 1.0)    # delay politicos intre verificari consecutive
 
-# CLEAN-1 — markeri text DOAR unde stringurile sunt suficient de specifice ca sa
-# nu produca stergeri false (cleanup-ul zilnic sterge definitiv). Vinted: "sold"/
-# "vandut" apar in bundle-uri JS si in anunturi conexe de pe pagina -> scos;
-# 404-ul e acoperit de fluxul gone din RAD-1. Publi24/LaJumate/Autovit/Mobile.de:
-# markerii se stabilesc empiric cu scripts/diagnostics/cleanup_sonda.py (CLEAN-2).
-# Facebook: login-wall 200 neautentificat -> neverificabil, sarit in _check_url.
+# CLEAN-2 — markeri text DOAR unde sonda i-a confirmat empiric pe pagini sold, fara
+# fals-pozitive pe pagini active (cleanup-ul zilnic sterge definitiv).
+#   • OLX: SCOS. Paginile ACTIVE (1.7MB) contin toate frazele de sold in bundle-urile
+#     i18n ("expirat", "vandut", "nu mai este disponibil", "sters", "dezactivat") ->
+#     orice marker text da fals-pozitiv. Anunturile disparute raspund 410, deci OLX
+#     merge pe status pur. Acceptat: un anunt OLX "vandut dar inca servit cu 200"
+#     ramane nedetectat (mai bine nedetectat decat sters gresit).
+#   • Okazii: PASTRAT. Markeri confirmati de sonda pe pagini sold; paginile sunt mici
+#     (<120KB), deci riscul de fals-pozitiv e redus. Se scot daca apar fals-pozitive.
+#   • Vinted: scos inca din CLEAN-1 (aceeasi problema de bundle); 404-ul e acoperit
+#     de fluxul gone din RAD-1.
+#   • Facebook: login-wall 200 neautentificat -> neverificabil, sarit in _check_url.
 _SOLD_MARKERS = {
-    "olx": ["anunț expirat", "anunt expirat", "anunțul a fost șters", "this offer has expired"],
     "okazii": ["vandut", "vândut", "anunt expirat", "anunț expirat"],
 }
 
@@ -52,24 +57,21 @@ def _classify(status_code: int, body: str | None, platform: str) -> str:
 
 
 def _check_url(url: str, platform: str) -> str:
-    """HEAD intai (ieftin; OLX intoarce 404 real). GET doar cand e nevoie de body
-    (platforme cu markeri) sau cand HEAD e blocat/nesuportat (403/405/5xx).
-    Orice exceptie de retea -> 'unknown'."""
+    """CLEAN-2 — HEAD-ul NU mai e crezut singur: sonda a dovedit ca Publi24
+    raspunde 404 la HEAD pe anunturi VII (GET 200). Singura decizie luata direct
+    din HEAD este 'active' la 200 pe platforme fara markeri. Orice altceva
+    (inclusiv 404/410 la HEAD) se confirma prin GET; _classify ramane autoritatea."""
     p = (platform or "").lower()
     if p == "facebook":
         return "unknown"
     needs_body = p in _SOLD_MARKERS
     try:
-        resp = curl_requests.head(url, impersonate=_IMPERSONATE,
+        head = curl_requests.head(url, impersonate=_IMPERSONATE,
                                   timeout=_HTTP_TIMEOUT, allow_redirects=True)
-        status = resp.status_code
     except Exception:
         return "unknown"
-    if status in (404, 410):
-        return "removed"
-    if status == 200 and not needs_body:
+    if head.status_code == 200 and not needs_body:
         return "active"
-    # HEAD blocat/nesuportat SAU platforma cere body pentru markeri -> GET
     try:
         resp = curl_requests.get(url, impersonate=_IMPERSONATE,
                                  timeout=_HTTP_TIMEOUT, allow_redirects=True)
