@@ -78,6 +78,16 @@ def _portable_migrations(conn, inspector):
             "ON discord_notifications_sent(listing_id, module, webhook_url)"))
         conn.commit()
 
+    # PKG-2 — furnizor AI comutabil per user: provider + cheie + model pe users.
+    # Portabil (SQLite + PostgreSQL): garda _column_exists, fara IF NOT EXISTS,
+    # o singura actiune per ALTER, inregistrare prin _migrate.
+    for _col, _type in (("ai_provider", "VARCHAR(20)"),
+                        ("ai_api_key", "TEXT"),
+                        ("ai_model", "VARCHAR(100)")):
+        if _table_exists(inspector, "users") and not _column_exists(inspector, "users", _col):
+            _migrate(conn, f"add_users_{_col}",
+                     f"ALTER TABLE users ADD COLUMN {_col} {_type}")
+
 
 def run_migrations():
     """Apply any pending column additions."""

@@ -15,6 +15,7 @@ from app.models.auto_feed_listing import AutoFeedListing
 from app.services.auto_listings.excel_exporter import build_auto_xlsx
 from app.services.bnr_exchange import get_eur_ron
 from app.services.radar.ai_reviewer import generate_ai_review
+from app.services.ai_service import AIConfigError
 from app.models.radar_message_template import RadarMessageTemplate
 from app.utils.auth import get_current_user
 from app.utils.id_csv import parse_id_csv
@@ -394,15 +395,19 @@ def generate_auto_ai_review(
         rp = float(keyword.resale_price)
         rp_cur = (getattr(keyword, "resale_price_currency", None) or "EUR").upper()
         resale_ron = rp * eur_ron if rp_cur == "EUR" else rp
-    review = generate_ai_review(
-        title=listing.title,
-        description=listing.description,
-        price=price_ron,
-        resale_price=resale_ron,
-        platform=listing.platform,
-        score=listing.grade,
-        location=listing.location,
-    )
+    try:
+        review = generate_ai_review(
+            title=listing.title,
+            description=listing.description,
+            price=price_ron,
+            resale_price=resale_ron,
+            platform=listing.platform,
+            score=listing.grade,
+            location=listing.location,
+            user=current_user,
+        )
+    except AIConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not review:
         raise HTTPException(status_code=502, detail="Nu am putut genera review-ul AI. Încearcă din nou.")
     listing.ai_review = review

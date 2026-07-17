@@ -29,6 +29,10 @@ class User(Base):
     # FlipRadar — config per-functionalitate AI. Absenta unei chei (sau coloana null)
     # inseamna ca functia E activata; e dezactivata doar cand cheia e explicit False.
     ai_features_config = Column(JSON, nullable=True)
+    # PKG-2 — furnizor AI comutabil per utilizator (client OpenAI-compatibil).
+    ai_provider = Column(String(20), nullable=True)   # None -> "groq"
+    ai_api_key = Column(String, nullable=True)        # plain — instanta locala single-user
+    ai_model = Column(String(100), nullable=True)     # None -> default-ul furnizorului
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

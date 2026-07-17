@@ -31,6 +31,7 @@ from app.models.radar_message_template import RadarMessageTemplate
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.radar.ai_reviewer import generate_ai_review
+from app.services.ai_service import AIConfigError
 from app.services.radar.categories import PLATFORM_CATEGORIES, get_category_label
 from app.services.radar.discord_service import send_test_message
 from app.services.radar.excel_exporter import build_listings_xlsx
@@ -979,14 +980,18 @@ def generate_listing_ai_review(
         )
     keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
     resale = keyword.resale_price if keyword else 0
-    review = generate_ai_review(
-        title=listing.title,
-        description=listing.description,
-        price=listing.price,
-        resale_price=resale,
-        platform=listing.platform,
-        score=listing.score,
-    )
+    try:
+        review = generate_ai_review(
+            title=listing.title,
+            description=listing.description,
+            price=listing.price,
+            resale_price=resale,
+            platform=listing.platform,
+            score=listing.score,
+            user=current_user,
+        )
+    except AIConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not review:
         raise HTTPException(status_code=502, detail="Nu am putut genera review-ul AI. Încearcă din nou.")
     listing.ai_review = review

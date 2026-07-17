@@ -1,19 +1,58 @@
-"""Client Groq comun pentru FlipRadar.
+"""Client AI comun pentru FlipRadar — furnizor comutabil per utilizator (PKG-2).
 
-Dupa AI-1, acest modul e DOAR clientul Groq partajat + helperele inca folosite:
-`client`/`MODEL` sunt consumate de review-urile AI per anunt
-(app/services/radar/ai_reviewer.py) si `extract_auto_features_from_description`
-de extractia de features din anunturile auto (app/routers/auto.py).
-Chat-ul, analiza de produs, creatorul de anunturi si raportul AI au fost eliminate.
+Clientul Groq singleton a fost inlocuit cu un client OpenAI-compatibil rezolvat
+per utilizator (`get_ai_client`): Groq sau Google Gemini, prin acelasi API
+OpenAI-compatibil. Cheia vine din `users.ai_api_key` (fallback `GROQ_API_KEY` din
+env, doar pentru provider `groq` — compat cu instanta istorica). Consumat de
+review-urile AI per anunt (radar/ai_reviewer.py), extractia auto (routers/auto.py)
+si extractia imobiliara (real_estate/extractor.py).
 """
 import json
 import asyncio
-from groq import Groq
+from openai import OpenAI
 from app.config import GROQ_API_KEY
 
-# Configurare client Groq
-client = Groq(api_key=GROQ_API_KEY)
-MODEL = "llama-3.3-70b-versatile"
+
+class AIConfigError(Exception):
+    """Configuratie AI lipsa/invalida — mesajul e destinat utilizatorului."""
+
+
+PROVIDERS = {
+    "groq": {
+        "label": "Groq",
+        "base_url": "https://api.groq.com/openai/v1",
+        "default_model": "llama-3.3-70b-versatile",
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "default_model": "gemini-2.5-flash",
+    },
+}
+
+
+def resolve_ai_config(user):
+    """(provider, api_key, model) pentru user. Prioritate cheie:
+    users.ai_api_key > GROQ_API_KEY din env (compat, doar provider groq)
+    > AIConfigError cu mesaj de indrumare."""
+    provider = ((getattr(user, "ai_provider", None) or "groq")).strip().lower()
+    if provider not in PROVIDERS:
+        raise AIConfigError(f"Furnizor AI necunoscut: {provider}")
+    key = (getattr(user, "ai_api_key", None) or "").strip()
+    if not key and provider == "groq":
+        key = (GROQ_API_KEY or "").strip()
+    if not key:
+        raise AIConfigError(
+            "Nicio cheie AI configurata. Alege furnizorul si introdu cheia "
+            "in Setari — sectiunea Functii AI.")
+    model = ((getattr(user, "ai_model", None) or "").strip()
+             or PROVIDERS[provider]["default_model"])
+    return provider, key, model
+
+
+def get_ai_client(user):
+    provider, key, model = resolve_ai_config(user)
+    return OpenAI(api_key=key, base_url=PROVIDERS[provider]["base_url"]), model
 
 
 def clean_json_response(text: str) -> str:
@@ -56,10 +95,14 @@ def clean_json_response(text: str) -> str:
         return extracted
 
 
-async def extract_auto_features_from_description(description: str, existing_data: dict = {}) -> dict:
-    """Extrage informatii structurate din descrierea unui anunt auto."""
+async def extract_auto_features_from_description(description: str, existing_data: dict = {}, *, user) -> dict:
+    """Extrage informatii structurate din descrierea unui anunt auto (client AI per user)."""
     if not description or len(description) < 50:
         return {}
+
+    # get_ai_client INAINTE de try, ca AIConfigError (config lipsa) sa propage,
+    # nu sa fie inghitita de `except Exception: return {}` de mai jos.
+    client, model = get_ai_client(user)
 
     prompt = f"""Extrage urmatoarele informatii DIN TEXTUL DE MAI JOS.
 REGULA CRITICA: Daca o informatie NU este mentionata explicit in text, scrie null.
@@ -91,7 +134,7 @@ Returneaza STRICT JSON valid:
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
-            model=MODEL,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=500,

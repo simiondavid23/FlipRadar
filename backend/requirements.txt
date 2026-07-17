@@ -36,8 +36,8 @@ patchright==1.61.2
 curl_cffi==0.15.0
 vinted-scraper==3.1.1
 
-# AI (Groq)
-groq==1.1.1
+# AI (client OpenAI-compatibil: Groq / Google Gemini — PKG-2)
+openai==2.46.0
 
 # Imobiliare — detectie duplicate pe imagine (pHash + color histogram)
 imagehash==4.3.2

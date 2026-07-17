@@ -1,11 +1,12 @@
-"""AI review pentru un listing — text scurt in romana generat cu Groq.
+"""AI review pentru un listing — text scurt in romana, client AI per user (PKG-2).
 
-Reutilizam clientul Groq din services/ai_service.py (acelasi GROQ_API_KEY).
-Daca apelul esueaza, returnam "" — orchestratorul continua fara review.
+Clientul AI (Groq sau Gemini, OpenAI-compatibil) e rezolvat per user cu
+get_ai_client. AIConfigError (config AI lipsa) propaga catre apelant; daca APELUL
+de API esueaza, returnam "" — orchestratorul continua fara review.
 """
 from typing import Optional
 
-from app.services.ai_service import client, MODEL
+from app.services.ai_service import AIConfigError, get_ai_client
 
 
 def generate_ai_review(
@@ -17,8 +18,12 @@ def generate_ai_review(
     score: Optional[str],
     condition: Optional[str] = None,
     location: Optional[str] = None,
+    *,
+    user,
 ) -> str:
-    """Genereaza review-ul AI pentru un listing. Returneaza "" la eroare."""
+    """Genereaza review-ul AI pentru un listing. Returneaza "" la eroare de API."""
+    # get_ai_client INAINTE de orice try — AIConfigError (config AI lipsa) propaga.
+    client, model = get_ai_client(user)
     desc_raw = (description or "").strip()
     desc_for_prompt = desc_raw if desc_raw else "Nu există descriere"
     try:
@@ -64,12 +69,12 @@ def generate_ai_review(
     )
     try:
         response = client.chat.completions.create(
-            model=MODEL,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
             max_tokens=500,
         )
         return (response.choices[0].message.content or "").strip()
     except Exception as exc:
-        print(f"[AiReviewer] Eroare Groq: {exc}")
+        print(f"[AiReviewer] Eroare AI: {exc}")
         return ""

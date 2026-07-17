@@ -125,22 +125,19 @@ def extract_all(text: str) -> dict:
 
 
 def groq_extract(text: str, existing: dict,
-                 groq_enabled: bool = True) -> dict:
+                 ai_client=None, model: str = None) -> dict:
     """
-    Fallback to Groq LLM when regex misses critical fields.
-    Only called when price OR rooms is missing.
-    Respects AI features toggle.
+    Fallback la LLM (client OpenAI-compatibil per user — PKG-2) cand regex-ul
+    rateaza campuri critice. Apelat doar cand price SAU rooms lipsesc.
+    ai_client=None (AI dezactivat / neconfigurat) -> intoarce `existing` neschimbat.
     """
-    if not groq_enabled:
+    if ai_client is None:
         return existing
     if existing.get("price") and existing.get("rooms"):
         return existing  # regex got what we need
 
     try:
-        from groq import Groq
         import json
-        import os
-        client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         prompt = (
             "Extrage din textul următor: pret (număr), moneda (EUR/RON), "
             "camere (număr întreg sau 1 pentru garsonieră/studio), "
@@ -149,8 +146,8 @@ def groq_extract(text: str, existing: dict,
             "Dacă nu găsești un câmp, folosește null.\n"
             f"Text: {text[:800]}"
         )
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        resp = ai_client.chat.completions.create(
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0,
@@ -175,7 +172,7 @@ def groq_extract(text: str, existing: dict,
                 result["price"] / result["area_sqm"], 2)
         return result
     except Exception as exc:
-        print(f"[Extractor] Groq fallback error: {exc}")
+        print(f"[Extractor] AI fallback error: {exc}")
         return existing
 
 

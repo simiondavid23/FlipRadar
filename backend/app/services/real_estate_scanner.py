@@ -14,6 +14,7 @@ from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword as R
 from app.models.real_estate_monitor_listing import RealEstateMonitorListing as RealEstateListing
 from app.models.user import User
 from app.services.real_estate.extractor import extract_all, groq_extract
+from app.services.ai_service import AIConfigError, get_ai_client
 from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
 from app.services.log_manager import log_manager, set_log_user
@@ -48,14 +49,16 @@ def _due_keywords(keywords: list, now: datetime, force: bool) -> list:
     return [kw for kw in keywords if _polling_due(kw, now)]
 
 
-def _is_groq_enabled(db: Session, user_id: int) -> bool:
-    try:
-        from app.models.user import User
-        user = db.query(User).filter(User.id == user_id).first()
-        cfg = getattr(user, "ai_features_config", None) or {}
-        return cfg.get("ai_radar_review", True) is not False
-    except Exception:
-        return True
+def _resolve_scan_ai(db: Session, user_id: int):
+    """PKG-2 — clientul AI per user pentru scan, cu UN singur query pe User.
+    Returneaza (None, None) daca userul a dezactivat review-ul in Setari; altfel
+    (client, model) via get_ai_client (poate ridica AIConfigError cand nu exista cheie)."""
+    from app.models.user import User
+    user = db.query(User).filter(User.id == user_id).first()
+    cfg = getattr(user, "ai_features_config", None) or {}
+    if cfg.get("ai_radar_review", True) is False:
+        return None, None
+    return get_ai_client(user)
 
 
 def _seed_from_raw(raw: dict) -> dict:
@@ -241,7 +244,7 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None, db=Non
 
 
 def _save_listing(db: Session, kw: RealEstateKeyword,
-                  raw: dict, groq_enabled: bool,
+                  raw: dict, ai,
                   custom_aliases: dict,
                   eur_ron: Optional[float] = None) -> tuple:
     """Salveaza un anunt de platforma. Intoarce (listing | None, motiv) cu motiv in
@@ -315,7 +318,8 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     _p, _a = extracted.get("price"), extracted.get("area_sqm")
     extracted["price_per_sqm"] = (round(_p / _a, 2) if _p and _a and _a > 0 else None)
 
-    extracted = groq_extract(text, extracted, groq_enabled)
+    _ai_client, _ai_model = ai if ai else (None, None)
+    extracted = groq_extract(text, extracted, _ai_client, _ai_model)
 
     # Zone normalization — text-first (zone_raw), cu fallback pe seed-ul structurat.
     zone_raw = (extracted.get("zone_raw") or seed["zone_hint"] or "")
@@ -490,7 +494,7 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
 
 
 def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
-                        groq_enabled: bool,
+                        ai,
                         custom_aliases: dict,
                         eur_ron: Optional[float] = None) -> Optional[RealEstateListing]:
     """Convert facebook_group_post -> real_estate_listing pentru un keyword anume.
@@ -523,7 +527,8 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     if not _matches_exclusions(text, kw.exclude_words):
         return None
     extracted = extract_all(text)
-    extracted = groq_extract(text, extracted, groq_enabled)
+    _ai_client, _ai_model = ai if ai else (None, None)
+    extracted = groq_extract(text, extracted, _ai_client, _ai_model)
 
     # Query (cautare libera) local — Grupurile FB nu se cauta la sursa; daca postarea nu
     # contine termenii din kw.query, nu o asociem acestui keyword.
@@ -620,6 +625,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
     except Exception:
         eur_ron = None
 
+    ai_disabled_scan = False  # PKG-2 — la prima AIConfigError: un WARN, apoi AI off pe restul scanului
     for kw in keywords:
         set_log_user(kw.user_id)  # MON-4 — jurnalele acestui keyword apartin user-ului lui
         if not _within_hours(kw):
@@ -627,7 +633,15 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                 f"Skip {kw.name!r} — interval orar inactiv")
             continue
 
-        groq_enabled = _is_groq_enabled(db, kw.user_id)
+        # PKG-2 — client AI per user (Groq/Gemini). AIConfigError o data per scan.
+        ai = None  # (client, model) sau None; alimenteaza groq_extract per anunt
+        if not ai_disabled_scan:
+            try:
+                _c, _m = _resolve_scan_ai(db, kw.user_id)
+                ai = (_c, _m) if _c is not None else None
+            except AIConfigError as e:
+                log_manager.emit("real_estate", "WARN", str(e))
+                ai_disabled_scan = True
         custom_aliases = {}
         settings = None
         try:
@@ -664,7 +678,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                         post_dict = {c.name: getattr(post, c.name)
                                      for c in post.__table__.columns}
                         saved = _save_fb_group_post(
-                            db, post_dict, kw, groq_enabled, custom_aliases, eur_ron)
+                            db, post_dict, kw, ai, custom_aliases, eur_ron)
                         if saved:
                             new_count += 1
                             _notify_re(saved, kw, settings, db)
@@ -686,7 +700,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                     if not _matches_query_local(text_q, kw.query):
                         rej += 1
                         continue
-                saved, motiv = _save_listing(db, kw, r, groq_enabled, custom_aliases, eur_ron)
+                saved, motiv = _save_listing(db, kw, r, ai, custom_aliases, eur_ron)
                 if motiv == "nou":
                     noi += 1
                     _notify_re(saved, kw, settings, db)

@@ -24,6 +24,14 @@ export default function SettingsPage() {
   const [flashThreshold, setFlashThreshold] = useState(15);
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [aiFeatures, setAiFeatures] = useState({});
+  // PKG-2 — furnizor AI comutabil (Groq/Gemini) + cheie per utilizator.
+  const [aiProvider, setAiProvider] = useState("groq");
+  const [aiModel, setAiModel] = useState("");
+  const [aiKeyInput, setAiKeyInput] = useState("");   // valoarea NU se precompleteaza niciodata
+  const [aiKeySet, setAiKeySet] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState(null);  // {ok, model} | {ok:false, error}
   const [newAlias, setNewAlias] = useState("");
   const [newZone, setNewZone] = useState("");
 
@@ -40,6 +48,11 @@ export default function SettingsPage() {
     if (px?.data) setProxy({ ...EMPTY_PROXY, ...px.data, password: "" });
     if (ps?.data) setPushStatus(ps.data);
     if (us?.data?.ai_features_config) setAiFeatures(us.data.ai_features_config);
+    if (us?.data) {
+      setAiProvider(us.data.ai_provider || "groq");
+      setAiModel(us.data.ai_model || "");
+      setAiKeySet(!!us.data.ai_api_key_set);
+    }
     if (us?.data?.flash_deal_threshold != null) setFlashThreshold(Math.round(us.data.flash_deal_threshold * 100));
     setLoading(false);
   }, []);
@@ -191,6 +204,44 @@ export default function SettingsPage() {
     } catch {
       setAiFeatures(aiFeatures);
       alert("Eroare la salvare.");
+    }
+  };
+
+  // PKG-2 — model default per furnizor (placeholder-ul câmpului Model).
+  const PROVIDER_DEFAULT_MODEL = { groq: "llama-3.3-70b-versatile", gemini: "gemini-2.5-flash" };
+
+  const saveAiSettings = async () => {
+    setAiSaving(true);
+    setAiTestResult(null);
+    try {
+      const payload = { ai_provider: aiProvider, ai_model: aiModel };
+      if (aiKeyInput) payload.ai_api_key = aiKeyInput;   // cheia doar dacă a fost tastată
+      const r = await usersAPI.updateAISettings(payload);
+      if (r?.data) {
+        setAiKeySet(!!r.data.ai_api_key_set);
+        setAiModel(r.data.ai_model || "");
+        setAiProvider(r.data.ai_provider || "groq");
+      }
+      setAiKeyInput("");   // nu păstrăm cheia tastată după salvare
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la salvarea setărilor AI.");
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
+  const testAiConnection = async () => {
+    setAiTesting(true);
+    setAiTestResult(null);
+    try {
+      const body = { provider: aiProvider, model: aiModel };
+      if (aiKeyInput) body.api_key = aiKeyInput;   // include cheia tastată nesalvată
+      const r = await usersAPI.testAIConnection(body);
+      setAiTestResult(r.data);
+    } catch (e) {
+      setAiTestResult({ ok: false, error: e.response?.data?.detail || "Eroare la testare." });
+    } finally {
+      setAiTesting(false);
     }
   };
 
@@ -485,13 +536,67 @@ export default function SettingsPage() {
           <Section title="Analiză AI">
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
               Când deschizi un anunț în Radar Piață, Auto Anunțuri sau Imobiliare, se generează
-              automat o analiză AI. Fiecare analiză înseamnă un apel către API-ul Groq.
+              automat o analiză AI. Fiecare analiză înseamnă un apel către furnizorul AI configurat.
             </p>
             <PlatformToggle
               label="Review AI la deschiderea unui anunț"
               enabled={aiFeatures.ai_radar_review !== false}
               onToggle={toggleRadarReview}
             />
+
+            {/* PKG-2 — furnizor AI comutabil + cheie per utilizator */}
+            <div style={{ borderTop: "1px solid var(--border-color)", marginTop: "0.25rem", paddingTop: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+              <label style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", display: "block" }}>
+                Furnizor AI
+                <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} style={{ ...inputStyle, marginTop: "0.25rem" }}>
+                  <option value="groq">Groq</option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
+              </label>
+              <label style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", display: "block" }}>
+                Cheie API
+                <input
+                  type="password"
+                  value={aiKeyInput}
+                  onChange={(e) => setAiKeyInput(e.target.value)}
+                  placeholder={aiKeySet ? "Cheie setată — introdu una nouă pentru a o înlocui" : "Introdu cheia API"}
+                  style={{ ...inputStyle, marginTop: "0.25rem" }}
+                />
+              </label>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                Obține cheia:{" "}
+                <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa" }}>Groq — console.groq.com/keys</a>
+                {" · "}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa" }}>Gemini — aistudio.google.com/apikey</a>
+              </div>
+              <label style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", display: "block" }}>
+                Model (opțional)
+                <input
+                  type="text"
+                  value={aiModel}
+                  onChange={(e) => setAiModel(e.target.value)}
+                  placeholder={PROVIDER_DEFAULT_MODEL[aiProvider] || ""}
+                  style={{ ...inputStyle, marginTop: "0.25rem" }}
+                />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                <button onClick={saveAiSettings} disabled={aiSaving} style={primaryBtn(aiSaving)}>
+                  <Save style={{ width: "14px", height: "14px" }} />
+                  {aiSaving ? "Se salvează…" : "Salvează"}
+                </button>
+                <button onClick={testAiConnection} disabled={aiTesting} style={smallBtn("#60a5fa")}>
+                  <Send style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.25rem" }} />
+                  {aiTesting ? "Se testează…" : "Testează conexiunea"}
+                </button>
+                {aiTestResult && (
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: aiTestResult.ok ? "#4ade80" : "#f87171", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+                    {aiTestResult.ok
+                      ? `✅ Conexiune OK — ${aiTestResult.model}`
+                      : `⚠️ ${aiTestResult.error}`}
+                  </span>
+                )}
+              </div>
+            </div>
           </Section>
         </>
       )}

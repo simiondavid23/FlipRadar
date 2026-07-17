@@ -108,6 +108,10 @@ export const usersAPI = {
   getSettings: () => api.get("/api/users/settings"),
   updateAIFeatures: (config) => api.patch("/api/users/settings", { ai_features_config: config }),
   updateFlashDealThreshold: (fraction) => api.patch("/api/users/settings", { flash_deal_threshold: fraction }),
+  // PKG-2 — furnizor AI comutabil. updateAISettings trimite doar campurile atinse
+  // ({ai_provider, ai_model, ai_api_key?}); testAIConnection accepta {provider?, api_key?, model?}.
+  updateAISettings: (data) => api.patch("/api/users/settings", data),
+  testAIConnection: (data) => api.post("/api/users/ai/test", data),
 };
 
 // Jurnale Live — statistici per modul (stream-ul SSE se consuma direct cu EventSource)

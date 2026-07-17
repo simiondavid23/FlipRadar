@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.auto_lot import AutoLot
 from app.models.auto_listing import AutoListing
 from app.utils.auth import get_current_user
-from app.services.ai_service import extract_auto_features_from_description
+from app.services.ai_service import extract_auto_features_from_description, AIConfigError
 from app.scrapers.auto.lots.copart_public import search_copart_lots
 from app.scrapers.auto.lots.iaai_public import search_iaai_lots
 from app.scrapers.auto.lots.sca_auctions import search_sca_lots
@@ -310,7 +310,12 @@ async def extract_description(
         existing["km"] = data.km
     if data.year is not None:
         existing["year"] = data.year
-    result = await extract_auto_features_from_description(data.description, existing)
+    try:
+        result = await extract_auto_features_from_description(
+            data.description, existing, user=current_user
+        )
+    except AIConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"extracted": result}
 
 
