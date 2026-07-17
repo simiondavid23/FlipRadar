@@ -30,7 +30,7 @@ uvicorn app.main:app --reload
 
 API: `http://127.0.0.1:8000` · docs: `/docs`
 
-Baza de date e un fisier SQLite (`backend/flipradar.db`) creat automat la prima pornire — nu se instaleaza niciun server de baza de date. Backup: copiaza fisierul cu backend-ul oprit.
+Baza de date e un fisier SQLite (`backend/flipradar.db`) creat automat la prima pornire — nu se instaleaza niciun server de baza de date. Backup: aplicatia creeaza automat, zilnic la 04:00, o copie compacta in `backend/backups/` (se pastreaza ultimele 7). Restaurare: opreste backend-ul, copiaza fisierul de backup dorit peste `backend/flipradar.db`, porneste.
 
 ### Frontend
 

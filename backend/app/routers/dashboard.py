@@ -58,6 +58,7 @@ def scheduler_status(current_user: User = Depends(get_current_user)):
         "vinted_catalog_bootstrap": "Bootstrap catalog Vinted",
         "facebook_group_checks": "Grupuri Facebook",
         "facebook_cookie_expiry_check": "Expirare sesiune Facebook",
+        "db_backup": "Backup bază de date",
     }
     jobs_info = []
     for job in scheduler.get_jobs():

@@ -336,6 +336,21 @@ async def lifespan(app: FastAPI):
         id="log_entries_cleanup", replace_existing=True,
     )
 
+    # BK-1 — backup zilnic (04:00) al bazei SQLite, cu rotatie si alerta la esec.
+    def _run_db_backup():
+        from app.database import SessionLocal
+        from app.services.backup_service import run_db_backup
+        db = SessionLocal()
+        try:
+            run_db_backup(db)
+        finally:
+            db.close()
+
+    scheduler.add_job(
+        _run_db_backup, "cron", hour=4, minute=0,
+        id="db_backup", replace_existing=True,
+    )
+
     scheduler.start()
     print(
         "[Scheduler] Started - check_alerts (15m) + radar_scan_<platforma> (8 joburi, 5m)"
