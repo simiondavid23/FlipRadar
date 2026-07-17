@@ -6,7 +6,7 @@ efectele lui la nivel de modul). Toate caile scriibile sunt tmp_path.
 import sys
 from pathlib import Path
 
-from app.paths import get_data_dir, get_or_create_secret_key
+from app.paths import get_data_dir, get_or_create_secret_key, get_or_create_vapid_keys
 
 
 def test_override_env_wins(tmp_path, monkeypatch):
@@ -47,3 +47,47 @@ def test_secret_key_generated_and_persisted(tmp_path):
     k3 = get_or_create_secret_key(tmp_path)
     assert len(k3) == 64
     assert k3 != "scurt"
+
+
+# ── VAPID-AUTO — chei Web Push per instanta ──────────────────────────────────
+
+def _b64u_decode(s: str) -> bytes:
+    import base64
+    return base64.urlsafe_b64decode(s + "===")
+
+
+def test_vapid_generate_shapes(tmp_path):
+    pub, priv = get_or_create_vapid_keys(tmp_path)
+    assert len(_b64u_decode(priv)) == 32          # cheia privata raw P-256
+    pub_raw = _b64u_decode(pub)
+    assert len(pub_raw) == 65                       # punct necomprimat P-256
+    assert pub_raw[0] == 0x04                        # prefix UncompressedPoint
+    assert (tmp_path / "vapid_private_key").is_file()
+
+
+def test_vapid_persists(tmp_path):
+    p1 = get_or_create_vapid_keys(tmp_path)
+    p2 = get_or_create_vapid_keys(tmp_path)          # a doua pornire citeste fisierul
+    assert p1 == p2                                   # exact aceeasi pereche
+
+
+def test_vapid_consumable_by_pywebpush(tmp_path):
+    # Testul de aur: traseul REAL pywebpush -> Vapid.from_string trebuie sa
+    # accepte formatul nostru, iar publicul derivat de el sa fie EXACT publicul nostru.
+    import base64
+    from py_vapid import Vapid
+    from cryptography.hazmat.primitives import serialization
+
+    pub, priv = get_or_create_vapid_keys(tmp_path)
+    v = Vapid.from_string(priv)
+    derived = base64.urlsafe_b64encode(v.public_key.public_bytes(
+        serialization.Encoding.X962,
+        serialization.PublicFormat.UncompressedPoint)).rstrip(b"=").decode()
+    assert derived == pub
+
+
+def test_vapid_regenerates_on_corrupt_file(tmp_path):
+    (tmp_path / "vapid_private_key").write_text("abc", encoding="utf-8")
+    pub, priv = get_or_create_vapid_keys(tmp_path)    # nu arunca exceptie
+    assert len(_b64u_decode(priv)) == 32              # regenerata, valida
+    assert priv != "abc"
