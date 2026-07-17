@@ -155,6 +155,11 @@ def _matches_exclusions(text: str, exclude_words) -> bool:
     return True
 
 
+# SCHED-2 — platformele Imobiliare, fiecare cu jobul ei (re_scan_).
+# facebook_groups = ingest din tabelul facebook_group_posts (fara scraping live).
+RE_PLATFORMS = ["olx", "storia", "imobiliare_ro", "facebook_marketplace", "facebook_groups"]
+
+
 def _olx_query_with_zone(query, zone) -> Optional[str]:
     """IMO-1 — la OLX, zona intra in cautarea full-text q- (OLX cauta si in descrieri
     server-side): pre-ingusteaza rezultatele ca bugetul de enrichment sa se cheltuie
@@ -578,11 +583,19 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
 
 
 def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
-                         force_polling: bool = False) -> None:
+                         force_polling: bool = False,
+                         platform: Optional[str] = None) -> None:
+    """SCHED-2: scheduler-ul apeleaza cate o data PER PLATFORMA (`platform` setat),
+    ca un scraper lent (FB Marketplace pe Playwright) sa nu-i intarzie pe ceilalti.
+    Scan-now manual: user_id setat, platform=None. Polling-ul per keyword ramane
+    autoritatea scadentei — jobul platformei doar restrange multimea.
+    """
     set_log_user(user_id)  # MON-4 — scheduler: user_id=None (reset defensiv); manual: user-ul care a declansat
     query = db.query(RealEstateKeyword).join(User, RealEstateKeyword.user_id == User.id).filter(RealEstateKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(RealEstateKeyword.user_id == user_id)
+    if platform is not None:
+        query = query.filter(RealEstateKeyword.platform == platform)
     keywords = query.all()
     if not keywords:
         return

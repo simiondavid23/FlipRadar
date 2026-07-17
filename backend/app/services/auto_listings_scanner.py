@@ -57,6 +57,11 @@ def _resale_price_ron(kw: AutoKeyword) -> Optional[float]:
     return rp * get_eur_ron() if cur == "EUR" else rp
 
 
+# SCHED-2 — platformele Auto, fiecare cu jobul ei APScheduler (auto_scan_).
+# Sincron cu ramurile din _call_scraper.
+AUTO_PLATFORMS = ["autovit", "olx_auto", "mobile_de", "autoscout24", "facebook_auto", "kleinanzeigen_auto"]
+
+
 def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
     """Dispatch to the correct platform scraper for a given page."""
     import asyncio
@@ -257,20 +262,29 @@ def _send_email_alert_auto(user, kw, listing, send_email) -> None:
     send_email(user.email, subject, body)
 
 
-def run_auto_scan(db: Session, user_id: Optional[int] = None) -> None:
-    """Called by APScheduler every 10 minutes (global) sau din butonul „Scanează
-    acum” cu user_id setat (atunci scaneaza DOAR keyword-urile acelui user)."""
+def run_auto_scan(db: Session, user_id: Optional[int] = None,
+                  platform: Optional[str] = None) -> None:
+    """Scaneaza keyword-urile Auto active.
+
+    SCHED-2: scheduler-ul apeleaza cate o data PER PLATFORMA (`platform` setat,
+    user_id=None) — joburile ruleaza independent, deci un scraper lent/blocat nu
+    le mai intarzie pe celelalte. Butonul „Scaneaza acum" apeleaza cu user_id setat
+    si platform=None (toate platformele userului), comportament neschimbat.
+    """
     set_log_user(user_id)  # MON-4 — scheduler: user_id=None (reset defensiv); manual: user-ul care a declansat
     query = db.query(AutoKeyword).join(User, AutoKeyword.user_id == User.id).filter(AutoKeyword.is_active == True, User.is_active == True)
     if user_id is not None:
         query = query.filter(AutoKeyword.user_id == user_id)
+    if platform is not None:
+        query = query.filter(AutoKeyword.platform == platform)
     keywords = query.all()
 
     if not keywords:
         return
 
     log_manager.emit("auto_listings", "SCAN",
-        f"Auto scan pornit: {len(keywords)} keyword-uri active")
+        f"Auto scan pornit: {len(keywords)} keyword-uri active "
+        f"({platform if platform else 'toate platformele'})")
 
     for kw in keywords:
         set_log_user(kw.user_id)  # MON-4 — jurnalele acestui keyword apartin user-ului lui

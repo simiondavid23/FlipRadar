@@ -135,26 +135,28 @@ async def lifespan(app: FastAPI):
 
     # FlipRadar — Auto Anunturi: scaneaza keyword-urile auto la fiecare 10 min.
     try:
-        from app.services.auto_listings_scanner import run_auto_scan
+        from app.services.auto_listings_scanner import run_auto_scan, AUTO_PLATFORMS
 
-        def _run_auto_scan():
+        def _run_auto_scan(platform: str):
             from app.database import SessionLocal
             _db = SessionLocal()
             try:
-                run_auto_scan(_db)
+                run_auto_scan(_db, platform=platform)
             except Exception as exc:
-                print(f"[AutoScan] eroare: {exc}")
+                print(f"[AutoScan:{platform}] eroare: {exc}")
             finally:
                 _db.close()
 
-        scheduler.add_job(
-            _run_auto_scan,
-            "interval",
-            minutes=10,
-            id="auto_listings_scan",
-            replace_existing=True,
-        )
-        print("[Scheduler] Auto listings scan (10m) inregistrat.")
+        # SCHED-2 — un job per platforma Auto (mirror SCHED-1): mobile_de blocat de
+        # Imperva sau facebook_auto (Playwright, lent) nu mai intarzie Autovit/OLX Auto.
+        # Prima rulare esalonata cu 20s ca joburile sa nu porneasca simultan.
+        for _i, _p in enumerate(AUTO_PLATFORMS):
+            scheduler.add_job(
+                _run_auto_scan, "interval", minutes=10, args=[_p],
+                id=f"auto_scan_{_p}", replace_existing=True,
+                next_run_time=datetime.now() + timedelta(minutes=10, seconds=20 * _i),
+            )
+        print(f"[Scheduler] Auto listings scan per platforma ({len(AUTO_PLATFORMS)} joburi, 10m) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] Auto scan setup failed: {exc}")
 
@@ -185,22 +187,29 @@ async def lifespan(app: FastAPI):
 
     # FlipRadar — Imobiliare Monitor: scan (tick 5m, polling per keyword) + cleanup (12:30).
     try:
-        from app.services.real_estate_scanner import run_real_estate_scan
+        from app.services.real_estate_scanner import run_real_estate_scan, RE_PLATFORMS
 
-        def _run_re_scan():
+        def _run_re_scan(platform: str):
             from app.database import SessionLocal
             _db = SessionLocal()
             try:
-                run_real_estate_scan(_db)
+                run_real_estate_scan(_db, platform=platform)
             except Exception as exc:
-                print(f"[REScan] eroare: {exc}")
+                print(f"[REScan:{platform}] eroare: {exc}")
             finally:
                 _db.close()
 
-        # Tick des (5 min); decizia de a scana e per keyword, in _polling_due (mirror radar_scan).
-        scheduler.add_job(_run_re_scan, "interval", minutes=5,
-            id="real_estate_scan", replace_existing=True)
-        print("[Scheduler] Real estate scan (tick 5m, polling per keyword) inregistrat.")
+        # SCHED-2 — un job per platforma Imobiliare (mirror SCHED-1): FB Marketplace
+        # (Playwright sincron, lent) nu mai intarzie OLX/Storia. Tick des (5 min);
+        # decizia de a scana ramane per keyword, in _polling_due. Prima rulare esalonata.
+        for _i, _p in enumerate(RE_PLATFORMS):
+            scheduler.add_job(
+                _run_re_scan, "interval", minutes=5, args=[_p],
+                id=f"re_scan_{_p}", replace_existing=True,
+                next_run_time=datetime.now() + timedelta(minutes=5, seconds=15 * _i),
+            )
+        print(f"[Scheduler] Real estate scan per platforma ({len(RE_PLATFORMS)} joburi, "
+              f"tick 5m, polling per keyword) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] RE scan setup failed: {exc}")
 
