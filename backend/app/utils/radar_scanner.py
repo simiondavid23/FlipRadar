@@ -43,9 +43,10 @@ from app.services.radar.vinted_html import guard_status as vinted_guard_status
 
 
 # Contor global pentru frecventa cleanup-ului (ruleaza la fiecare 10 cicluri).
-_cycle_counter = {"n": 0}
+_cycle_counter: dict[str, int] = {}   # SCHED-1 — contor de cicluri PER PLATFORMA
 
-# RP-1 — plafoane de enrichment per CICLU de scan (resetate in run_radar_scan).
+# RP-1 — plafoane de enrichment per CICLU de scan (resetate in run_radar_scan_platform,
+# fiecare job resetand doar cheile platformei lui).
 # OLX: inline inainte de save+notify (badge risc + descriere in notificare).
 # Vinted: in fundal DUPA save+notify (pagina HTML, limiter >=6s per item).
 _ENRICH_OLX_CAP = 15
@@ -69,6 +70,9 @@ _PLATFORM_DELAY_RANGES: dict[str, tuple[float, float]] = {
     "autovit":   (0.5, 1.3),
     "mobilede":  (0.8, 1.8),
 }
+
+# SCHED-1 — platformele Radar Piata, fiecare cu jobul ei APScheduler (radar_scan_).
+RADAR_PLATFORMS = ["olx", "vinted", "okazii", "lajumate", "publi24", "facebook", "autovit", "mobilede"]
 
 
 def _get_platform_delay(platform: str) -> float:
@@ -1705,12 +1709,45 @@ def _platform_enabled_in_settings(platform: str, settings: RadarSettings) -> boo
     return False
 
 
-def _should_scan_keyword(keyword: RadarKeyword) -> bool:
-    """True daca intervalul de polling a expirat de la ultimul scan."""
-    if keyword.last_scan_at is None:
+def _parse_platform_last_scan(kw) -> dict:
+    """Dict-ul {platforma: iso_ts} din TEXT-ul JSON; {} la lipsa/corupt."""
+    raw = getattr(kw, "platform_last_scan", None)
+    if not raw:
+        return {}
+    try:
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _platform_scan_due(kw, platform: str, now=None) -> bool:
+    """SCHED-1 — True daca intervalul de polling a expirat PENTRU ACEASTA platforma.
+    Fallback pe last_scan_at (legacy) cand platforma nu are inca timestamp propriu —
+    la deploy nimic nu porneste ca 'prim-scan'. Tratarea naive/aware ca inainte."""
+    now = now or datetime.now(timezone.utc)
+    ts = _parse_platform_last_scan(kw).get(platform)
+    if ts:
+        try:
+            last = datetime.fromisoformat(ts)
+        except (TypeError, ValueError):
+            last = None
+    else:
+        last = kw.last_scan_at
+    if last is None:
         return True
-    elapsed = datetime.now(timezone.utc) - keyword.last_scan_at.replace(tzinfo=timezone.utc) if keyword.last_scan_at.tzinfo is None else datetime.now(timezone.utc) - keyword.last_scan_at
-    return elapsed >= timedelta(minutes=keyword.poll_interval_minutes or 5)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now - last) >= timedelta(minutes=kw.poll_interval_minutes or 5)
+
+
+def _mark_platform_scanned(kw, platform: str, now=None) -> None:
+    """Scrie timestamp-ul platformei in JSON si actualizeaza last_scan_at (maxim global)."""
+    now = now or datetime.now(timezone.utc)
+    d = _parse_platform_last_scan(kw)
+    d[platform] = now.isoformat()
+    kw.platform_last_scan = json.dumps(d)
+    kw.last_scan_at = now
 
 
 def _too_old(listed_at, max_age_days, now=None) -> bool:
@@ -2110,8 +2147,13 @@ def _enrich_olx_backlog(db: Session, user: User) -> None:
         db.rollback()
 
 
-def _scan_user(db: Session, user: User) -> dict:
-    """Scaneaza toate keyword-urile active ale unui user. Returneaza statistici."""
+def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> dict:
+    """Scaneaza keyword-urile active ale unui user. Returneaza statistici.
+
+    SCHED-1: `only_platform` restrange scanarea la o singura platforma (jobul ei
+    APScheduler). None = toate platformele keyword-ului, secvential — cazul
+    scan-now manual din router, neschimbat.
+    """
     stats = {"new_listings": 0, "alerts_sent": 0}
     settings = _get_or_create_settings(db, user.id)
     keywords = (
@@ -2124,8 +2166,6 @@ def _scan_user(db: Session, user: User) -> dict:
         if _is_keyword_cancelled(kw.id):
             print(f"[RadarScanner] Keyword {kw.id} dezactivat/șters — sare peste.")
             continue
-        if not _should_scan_keyword(kw):
-            continue
 
         if not _is_within_active_hours(kw):
             log_manager.emit("radar", "INFO",
@@ -2136,6 +2176,11 @@ def _scan_user(db: Session, user: User) -> dict:
             platforms = [kw.platform]
         else:
             platforms = _parse_json_list(kw.platforms) or []
+        # SCHED-1 — jobul unei platforme vede doar keyword-urile care o contin.
+        if only_platform:
+            platforms = [p for p in platforms if (p or "").lower() == only_platform]
+            if not platforms:
+                continue
         exclude_words = _parse_json_list(kw.exclude_words)
         # RP-2 — engine de excluderi v2 (opt-in). In `advanced`, scraperele NU exclud
         # (liste goale) si filtram centralizat cu check_exclusion dupa intoarcere.
@@ -2153,11 +2198,15 @@ def _scan_user(db: Session, user: User) -> dict:
             platform = (platform or "").lower()
             if not _platform_enabled_in_settings(platform, settings):
                 continue
+            # SCHED-1 — due-ul e per (keyword, platforma), nu per keyword.
+            if not _platform_scan_due(kw, platform):
+                continue
             if idx > 0:
                 time.sleep(random.uniform(*_PLATFORM_DELAY_RANGE))
 
-            log_manager.emit("radar", "SCAN", f'Keyword "{kw.name}" · {platform} · ciclu #{_cycle_counter["n"]}')
-            _first_scan = kw.last_scan_at is None
+            log_manager.emit("radar", "SCAN", f'Keyword "{kw.name}" · {platform} · ciclu #{_cycle_counter.get(platform, 0)}')
+            # RAD-1 — prima scanare se judeca per platforma (SCHED-1), nu global.
+            _first_scan = kw.last_scan_at is None and platform not in _parse_platform_last_scan(kw)
             _page_cap = _page_cap_for(platform, _first_scan)
             # FlipRadar — RP-3: enrichment doar pe anunturi noi. Setul de external_id
             # deja vazute (per user+platforma) e pasat in search_* ca buclele de
@@ -2376,6 +2425,9 @@ def _scan_user(db: Session, user: User) -> dict:
                     continue
             _new_count = stats["new_listings"] - _new_before
             log_manager.emit("radar", "OK", f"{platform}: {_new_count} anunțuri noi · {len(listings)} verificate")
+            # SCHED-1 — platforma a fost scanata efectiv: ii stampilam timestamp-ul ei
+            # (si last_scan_at ca maxim global). Platformele sarite mai sus nu ajung aici.
+            _mark_platform_scanned(kw, platform)
             if cancelled_mid_loop:
                 break
 
@@ -2383,45 +2435,57 @@ def _scan_user(db: Session, user: User) -> dict:
         # nimic in DB pentru el — rowul oricum dispare in cateva milisecunde.
         if kw.id in _deleted_keyword_ids:
             _deleted_keyword_ids.discard(kw.id)
+            # SCHED-1 — _mark_platform_scanned ruleaza in bucla de platforme, deci kw
+            # poate fi deja dirty aici. Un simplu `continue` doar amana flush-ul pana
+            # la commit-ul keyword-ului urmator, pe un rand care nu mai exista
+            # (StaleDataError). Il scoatem din sesiune ca UPDATE-ul sa fie abandonat.
+            db.expunge(kw)
             continue
-        kw.last_scan_at = datetime.now(timezone.utc)
         db.commit()
 
     # RP-1 — enrichment in fundal DUPA procesarea keyword-urilor ciclului:
     # Vinted (pagina HTML, seller+atribute) + backlog OLX (rowuri fara vanzator).
-    try:
-        _enrich_vinted_background(db, user)
-    except Exception as exc:
-        log_manager.emit("radar", "ERR", f"Vinted enrichment user {user.id}: {str(exc)[:80]}")
+    # SCHED-1 — fiecare enrichment ruleaza in jobul platformei lui (contoare pe chei
+    # disjuncte); only_platform None (scan-now manual) le ruleaza pe amandoua, ca inainte.
+    if only_platform in (None, "vinted"):
         try:
-            db.rollback()
-        except Exception:
-            pass
-    try:
-        _enrich_olx_backlog(db, user)
-    except Exception as exc:
-        log_manager.emit("radar", "ERR", f"OLX backlog user {user.id}: {str(exc)[:80]}")
+            _enrich_vinted_background(db, user)
+        except Exception as exc:
+            log_manager.emit("radar", "ERR", f"Vinted enrichment user {user.id}: {str(exc)[:80]}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    if only_platform in (None, "olx"):
         try:
-            db.rollback()
-        except Exception:
-            pass
+            _enrich_olx_backlog(db, user)
+        except Exception as exc:
+            log_manager.emit("radar", "ERR", f"OLX backlog user {user.id}: {str(exc)[:80]}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
     return stats
 
 
-def run_radar_scan() -> None:
-    """Punctul de intrare apelat de APScheduler la fiecare 5 minute."""
-    set_log_user(None)  # MON-4 — reset defensiv: thread de pool reutilizat poate mosteni context
-    print(f"[RadarScanner] Pornit la {datetime.now().strftime('%H:%M:%S')}")
+def run_radar_scan_platform(platform: str) -> None:
+    """SCHED-1 — punctul de intrare al jobului APScheduler al UNEI platforme (5 min).
+    Joburile platformelor ruleaza independent, in thread-uri separate; contoarele
+    de enrichment partajate ating chei disjuncte (olx/olx_backlog doar aici cand
+    platform=olx, vinted doar cand platform=vinted), deci nu se calca intre ele."""
+    platform = (platform or "").lower()
+    set_log_user(None)  # MON-4 — reset defensiv de context pe thread de pool
+    started = time.monotonic()
     db: Session = SessionLocal()
     total_new = 0
     total_alerts = 0
-    # RP-1 — reset plafoane de enrichment la inceputul fiecarui ciclu de scan.
-    _enrich_counters["olx"] = 0
-    _enrich_counters["olx_backlog"] = 0
-    _enrich_counters["vinted"] = 0
-    # RP-6 — deschide ciclul watchdog-ului (agregam rezultate/erori per platforma).
-    health_watchdog.open_cycle()
+    # RP-1 — reset plafoane de enrichment la inceputul ciclului platformei.
+    if platform == "olx":
+        _enrich_counters["olx"] = 0
+        _enrich_counters["olx_backlog"] = 0
+    elif platform == "vinted":
+        _enrich_counters["vinted"] = 0
     try:
         active_user_ids = {
             row[0] for row in db.query(RadarKeyword.user_id)
@@ -2429,35 +2493,38 @@ def run_radar_scan() -> None:
             .distinct().all()
         }
         if not active_user_ids:
-            print("[RadarScanner] Niciun user cu keyword-uri active.")
             return
-
+        # RP-6 — ciclu watchdog doar cand chiar e ceva de scanat: un job fara useri
+        # activi nu e un ciclu, deci streak-urile ingheata (semantica pastrata).
+        health_watchdog.open_cycle(platform)
         users = db.query(User).filter(User.id.in_(active_user_ids), User.is_active == True).all()
         for user in users:
             set_log_user(user.id)  # MON-4 — jurnalele emise in _scan_user apartin acestui user
             try:
-                stats = _scan_user(db, user)
+                stats = _scan_user(db, user, only_platform=platform)
                 total_new += stats["new_listings"]
                 total_alerts += stats["alerts_sent"]
             except Exception as exc:
-                print(f"[RadarScanner] Eroare la scan user {user.id}: {exc}")
+                print(f"[RadarScanner:{platform}] Eroare la scan user {user.id}: {exc}")
                 try:
                     db.rollback()
                 except Exception:
                     pass
         set_log_user(None)  # MON-4 — dupa bucla, emit-urile (watchdog etc.) redevin system
 
-        # RP-6 — evaluarea watchdog-ului la finalul ciclului complet.
+        # RP-6 — evaluarea watchdog-ului la finalul ciclului platformei.
         try:
-            health_watchdog.close_cycle(db)
+            health_watchdog.close_cycle(db, platform)
         except Exception as exc:
-            print(f"[RadarScanner] Watchdog esuat: {exc}")
+            print(f"[RadarScanner:{platform}] Watchdog esuat: {exc}")
 
-        _cycle_counter["n"] += 1
-
-        print(f"[RadarScanner] Scan completat: {total_new} listinguri noi, {total_alerts} alerte trimise")
+        _cycle_counter[platform] = _cycle_counter.get(platform, 0) + 1
+        elapsed = time.monotonic() - started
+        log_manager.emit("radar", "OK",
+            f"{platform}: ciclu #{_cycle_counter[platform]} încheiat în {elapsed:.0f}s · "
+            f"{total_new} noi · {total_alerts} alerte")
     except Exception as exc:
-        print(f"[RadarScanner] EROARE NEASTEPTATA: {exc}")
+        print(f"[RadarScanner:{platform}] EROARE NEASTEPTATA: {exc}")
         import traceback
         traceback.print_exc()
         try:

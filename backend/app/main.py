@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,9 +59,15 @@ from app.utils.db_migrate import run_migrations
 run_migrations()
 
 from app.utils.alert_checker import check_alerts
-from app.utils.radar_scanner import run_radar_scan
+from app.utils.radar_scanner import run_radar_scan_platform, RADAR_PLATFORMS
 
-scheduler = BackgroundScheduler(timezone="Europe/Bucharest")
+# SCHED-1 — job_defaults pentru TOATE joburile: misfire_grace_time implicit e 1s, deci
+# o rulare intarziata (thread pool ocupat) era sarita tacut; coalesce comprima rulari
+# ratate multiple intr-una; max_instances=1 impiedica suprapunerea aceluiasi job.
+scheduler = BackgroundScheduler(
+    timezone="Europe/Bucharest",
+    job_defaults={"coalesce": True, "misfire_grace_time": 300, "max_instances": 1},
+)
 
 
 @asynccontextmanager
@@ -84,14 +90,15 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
         next_run_time=datetime.now(),
     )
-    scheduler.add_job(
-        run_radar_scan,
-        "interval",
-        minutes=5,
-        id="radar_scan",
-        replace_existing=True,
-        next_run_time=datetime.now(),
-    )
+    # SCHED-1 — un job per platforma Radar (independente; un scraper lent/agatat nu
+    # le mai blocheaza pe celelalte). Start esalonat cu 15s ca sa nu porneasca 8
+    # scanari simultan la boot.
+    for _i, _p in enumerate(RADAR_PLATFORMS):
+        scheduler.add_job(
+            run_radar_scan_platform, "interval", minutes=5, args=[_p],
+            id=f"radar_scan_{_p}", replace_existing=True,
+            next_run_time=datetime.now() + timedelta(seconds=15 * _i),
+        )
 
     # RP-2 — refresh arbore categorii Vinted: săptămânal (duminică 04:30) + o singură
     # încercare la startup dacă tabelul e gol. Eșecul (block Vinted) NU blochează app-ul.
@@ -315,7 +322,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
     print(
-        "[Scheduler] Started - check_alerts (15m) + radar_scan (5m)"
+        "[Scheduler] Started - check_alerts (15m) + radar_scan_<platforma> (8 joburi, 5m)"
         + (" + facebook_group_checks (30m) + cookie_expiry (09:00)." if _fb_jobs_ok else ".")
     )
 

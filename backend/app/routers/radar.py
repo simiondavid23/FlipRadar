@@ -1373,8 +1373,10 @@ def radar_scan_now(
 ):
     """Pornește o scanare imediată DOAR pentru keyword-urile active ale userului curent.
 
-    Spre deosebire de run_radar_scan() (care iterează toți userii), aici apelăm
-    _scan_user(db, user) — deja scopat per-user — evitând bug-ul din Auto Anunțuri.
+    Spre deosebire de joburile per platformă (run_radar_scan_platform, care iterează
+    toți userii pentru o singură platformă), aici apelăm _scan_user(db, user) — deja
+    scopat per-user, fără only_platform (deci toate platformele keyword-ului, ca până
+    acum) — evitând bug-ul din Auto Anunțuri.
     Reîncărcăm userul în sesiunea nouă a thread-ului ca să evităm DetachedInstanceError
     (sesiunea request-ului se închide, iar _scan_user citește user.email la alerte).
     """

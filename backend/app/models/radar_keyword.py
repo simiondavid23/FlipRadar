@@ -23,6 +23,10 @@ class RadarKeyword(Base):
     platform = Column(String(50), nullable=True)
     platforms = Column(Text, nullable=False, default='["olx","vinted","okazii"]')
     poll_interval_minutes = Column(Integer, default=5, nullable=False)
+    # SCHED-1 — ultimul scan PER PLATFORMA, dict JSON serializat ca TEXT
+    # ({"olx": "2026-07-17T09:00:00+00:00", ...}), conventia platforms/marketplace_config.
+    # last_scan_at ramane actualizat ca maxim global (UI). NULL = niciun scan per-platforma.
+    platform_last_scan = Column(Text, nullable=True)
     # RAD-1 — vechimea maxima acceptata a unui anunt (zile), pe baza listed_at.
     # NULL = fara limita. Aplicat pe orice platforma unde listed_at e cunoscut.
     max_age_days = Column(Integer, nullable=True)

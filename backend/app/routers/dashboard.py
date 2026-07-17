@@ -28,7 +28,14 @@ def scheduler_status(current_user: User = Depends(get_current_user)):
     from app.main import scheduler
     # Nume prietenoase pentru ID-urile reale de joburi din lifespan.
     job_names = {
-        "radar_scan": "Radar Piață",
+        "radar_scan_olx": "Radar Piață — OLX",
+        "radar_scan_vinted": "Radar Piață — Vinted",
+        "radar_scan_okazii": "Radar Piață — Okazii",
+        "radar_scan_lajumate": "Radar Piață — LaJumate",
+        "radar_scan_publi24": "Radar Piață — Publi24",
+        "radar_scan_facebook": "Radar Piață — Facebook",
+        "radar_scan_autovit": "Radar Piață — Autovit",
+        "radar_scan_mobilede": "Radar Piață — Mobile.de",
         "auto_listings_scan": "Auto Anunțuri",
         "auto_lots_scan": "Scanare loturi auto",
         "real_estate_scan": "Imobiliare",

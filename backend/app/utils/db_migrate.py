@@ -818,6 +818,12 @@ def run_migrations():
             "ALTER TABLE radar_keywords "
             "ADD COLUMN IF NOT EXISTS max_age_days INTEGER")
 
+        # SCHED-1: ultimul scan per platforma (JSON in TEXT); joburile per platforma isi
+        # calculeaza due-ul de aici, cu fallback pe last_scan_at pentru randurile vechi.
+        _migrate(conn, "radar_keywords_add_platform_last_scan",
+            "ALTER TABLE radar_keywords "
+            "ADD COLUMN IF NOT EXISTS platform_last_scan TEXT")
+
         # FlipRadar — Gestiune (GE-3): categoria denormalizata pe vanzari (copiata din inventar
         # la creare; vanzarile manuale o pot seta din formular). Fara backfill — decizie explicita.
         _migrate(conn, "add_sales_category",
