@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta
+from typing import Optional
 from app.database import SessionLocal
 from app.models.facebook_group_config import FacebookGroupConfig
 from app.models.facebook_group_post import FacebookGroupPost
+from app.models.radar_settings import RadarSettings
 from app.scrapers.facebook_group_scraper import scrape_facebook_group
+from app.services.log_manager import log_manager, set_log_user
+from app.services.radar.discord_service import send_system_alert
 from app.services.real_estate.extractor import (
     extract_real_estate_data,
     passes_keyword_filter,
@@ -83,12 +87,20 @@ async def _process_config(db, config) -> int:
             db.rollback()
         except Exception:
             pass
+        # Citit INAINTE de suprascriere (dupa rollback => valoarea persistata, adica
+        # statusul rularii precedente), ca sa stim daca e o intrare noua in stare.
+        was_expired = (config.last_run_status == "cookies_expirate")
         config.last_run_at = now
         config.last_run_status = (
             "cookies_expirate" if "COOKIES_EXPIRATE" in error_msg
             else "eroare"
         )
         db.commit()
+
+        # FBG-1 — alerta la INTRAREA in stare (pattern-ul de tranzitie al watchdog-urilor):
+        # repetitiile nu re-alerteaza, reminder-ul zilnic (check_cookie_expiry) preia de acolo.
+        if config.last_run_status == "cookies_expirate" and not was_expired:
+            _alert_cookies_expired(db, config.user_id, [config.group_name])
 
         return 0
 
@@ -138,12 +150,50 @@ async def run_single_config_check(config_id: int, user_id: int) -> int:
         db.close()
 
 
-def check_cookie_expiry():
-    """Job zilnic — dezactivat in NOTIF-1.
+def _alert_webhook_for(db, user_id: int) -> Optional[str]:
+    """FBG-1 — webhook-ul de alerte de sistem al userului: discord_webhook_alerts
+    (conventia C-15, canalul semantic de alerte), fallback discord_webhook_all
+    (conventia RP-6) cand alerts e gol. None = fara Discord (ramane live logs)."""
+    s = db.query(RadarSettings).filter(RadarSettings.user_id == user_id).first()
+    if not s:
+        return None
+    return s.discord_webhook_alerts or s.discord_webhook_all
 
-    Avertizarea de expirare a cookie-urilor Facebook era o notificare in-app,
-    eliminata complet in NOTIF-1. Functia e pastrata ca no-op fiindca scheduler-ul
-    (app/main.py) o refera; la esec de scraping statusul 'cookies_expirate' se
-    seteaza in continuare in _process_config.
-    """
-    return
+
+def _alert_cookies_expired(db, user_id: int, group_names: list) -> None:
+    """FBG-1 — alerta de sesiune FB expirata: live logs intotdeauna, Discord
+    best-effort. Folosita si la tranzitie (din _process_config), si de
+    reminder-ul zilnic (check_cookie_expiry)."""
+    names = ", ".join(sorted(n for n in group_names if n)) or "grupurile configurate"
+    text = (f"⚠️ Grupuri Facebook — sesiunea Facebook a expirat pentru: {names}. "
+            f"Reîncarcă cookie-urile în pagina Grupuri Facebook pentru a relua scanarea.")
+    set_log_user(user_id)
+    log_manager.emit("real_estate", "WARN", text)
+    url = _alert_webhook_for(db, user_id)
+    if url:
+        try:
+            send_system_alert(url, text)
+        except Exception as exc:
+            print(f"[FB Groups] Alerta Discord esuata (user {user_id}): {exc}")
+
+
+def check_cookie_expiry():
+    """FBG-1 — reminder zilnic (09:00): userii cu configuri active blocate pe
+    "cookies_expirate" primesc o alerta pe Discord (send_system_alert) + live logs.
+    Un mesaj pe zi per user, cu toate grupurile afectate. Inlocuieste notificarea
+    in-app eliminata la NOTIF-1 (functia fusese pastrata ca no-op)."""
+    set_log_user(None)  # MON-4 — reset defensiv pe thread de pool
+    db = SessionLocal()
+    try:
+        rows = db.query(FacebookGroupConfig).filter(
+            FacebookGroupConfig.is_active == True,  # noqa: E712
+            FacebookGroupConfig.last_run_status == "cookies_expirate",
+        ).all()
+        by_user: dict = {}
+        for cfg in rows:
+            by_user.setdefault(cfg.user_id, []).append(cfg.group_name)
+        for user_id, names in by_user.items():
+            _alert_cookies_expired(db, user_id, names)
+    finally:
+        set_log_user(None)
+        db.close()
