@@ -18,6 +18,9 @@ class RealEstateMonitorKeyword(Base):
     property_type            = Column(String(50))
     tip_anunt                = Column(String(50), default="vanzare")
     rooms                    = Column(Integer)
+    # IMO-1 — plafon de camere (rooms ramane MINIM, semantica existenta).
+    # garsoniera = rooms=1 + rooms_max=1. NULL = fara plafon.
+    rooms_max                = Column(Integer)
     area_min                 = Column(Integer)
     area_max                 = Column(Integer)
     price_min                = Column(Numeric(10, 2))

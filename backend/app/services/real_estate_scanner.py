@@ -30,8 +30,8 @@ def _within_hours(kw: RealEstateKeyword) -> bool:
 def _polling_due(kw, now: datetime) -> bool:
     """PURA: True daca intervalul de polling per keyword a expirat de la ultimul scan.
 
-    `now` (aware UTC) e injectat pentru testabilitate. Tratarea naive/aware EXACT ca in
-    radar_scanner._should_scan_keyword: un last_scan_at naiv (fara tzinfo) e considerat UTC.
+    `now` (aware UTC) e injectat pentru testabilitate. Un last_scan_at naiv (fara tzinfo)
+    e considerat UTC — aceeasi conventie ca la Radar.
     Fallback 30 min = default-ul RE (polling_interval_minutes), NU 5 ca la Radar.
     """
     if kw.last_scan_at is None:
@@ -102,7 +102,9 @@ def _seed_from_raw(raw: dict) -> dict:
         "price":         price,
         "currency":      pick("currency", "moneda"),
         "property_type": pick("property_type", "tip_proprietate"),
-        "zone_hint":     pick("location", "zone", "locatie_oras"),
+        # IMO-1 — `zone` (districtul din enrichment-ul OLX) are prioritate: e mai specific
+        # decat "location"/orasul generic de pe card ("București, Sectorul 6").
+        "zone_hint":     pick("zone", "location", "locatie_oras"),
         "listed_at":     listed_at,
     }
 
@@ -153,7 +155,16 @@ def _matches_exclusions(text: str, exclude_words) -> bool:
     return True
 
 
-def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None) -> list:
+def _olx_query_with_zone(query, zone) -> Optional[str]:
+    """IMO-1 — la OLX, zona intra in cautarea full-text q- (OLX cauta si in descrieri
+    server-side): pre-ingusteaza rezultatele ca bugetul de enrichment sa se cheltuie
+    pe candidati relevanti, nu pe tot orasul. Trade-off asumat: un anunt din zona
+    care nu-si mentioneaza cartierul nicaieri nu va aparea. Ambele goale -> None."""
+    parts = [str(p).strip() for p in (query, zone) if p and str(p).strip()]
+    return " ".join(parts) or None
+
+
+def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None, db=None) -> list:
     import asyncio
     platform = kw.platform
     # Cheile TREBUIE sa fie cele CITITE de scrapere (tip_anunt/tip_proprietate/pret_*/
@@ -174,7 +185,9 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None) -> lis
         # zona ca locatie => Storia cadea pe toata-romania, Imobiliare.ro primea path invalid,
         # OLX cauta textul zonei la nivel national.
         "locatie": kw.city,
-        "query": kw.query,
+        # IMO-1 — pe OLX zona intra in q- (cautare server-side si pe descrieri); pe
+        # Storia/Imobiliare.ro zona ramane criteriu LOCAL, deci query-ul e neatins.
+        "query": _olx_query_with_zone(kw.query, kw.zone) if platform == "olx" else kw.query,
     }
     filters = {k: v for k, v in filters.items() if v is not None}
 
@@ -192,7 +205,19 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None) -> lis
         if platform == "olx":
             # query e deja in filters (search_olx_real_estate il transforma in segment q-).
             from app.scrapers.real_estate.olx_real_estate import search_olx_real_estate
-            return asyncio.run(search_olx_real_estate(filters=filters))
+            # IMO-1 — enrichment de detaliu doar pe anunturi NOI (mirror RP-3 din Radar):
+            # trimitem external_id-urile deja cunoscute ale userului. Fara db (defensiv) ->
+            # set gol, deci enrichment pe primele _ENRICH_CAP (comportament tolerant).
+            skip = set()
+            if db is not None:
+                skip = {
+                    ext for (ext,) in db.query(RealEstateListing.external_id)
+                    .filter(RealEstateListing.user_id == kw.user_id,
+                            RealEstateListing.platform == "olx",
+                            RealEstateListing.external_id.isnot(None))
+                    .all()
+                }
+            return asyncio.run(search_olx_real_estate(filters=filters, skip_enrich_ids=skip))
         elif platform == "storia":
             from app.scrapers.real_estate.storia_scraper import search_storia
             return asyncio.run(search_storia(filters=filters))
@@ -416,6 +441,14 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
         except (TypeError, ValueError):
             pass
 
+    # IMO-1 — plafon de camere (rooms_max). Garsoniera = rooms=1 + rooms_max=1.
+    if rooms is not None and getattr(kw, "rooms_max", None) is not None:
+        try:
+            if int(rooms) > int(kw.rooms_max):
+                return False
+        except (TypeError, ValueError):
+            pass
+
     # Suprafata (min/max).
     area = extracted.get("area_sqm")
     if area is not None:
@@ -628,7 +661,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
             log_manager.emit("real_estate", "OK",
                 f"{kw.platform}: {new_count} anunțuri noi")
         else:
-            results = _call_scraper(kw, eur_ron)
+            results = _call_scraper(kw, eur_ron, db=db)
             total_brute = len(results)
             noi = dup = rej = 0
             for r in results:

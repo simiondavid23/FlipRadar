@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -27,6 +27,7 @@ class KeywordCreate(BaseModel):
     property_type: Optional[str] = None
     tip_anunt: Optional[str] = "vanzare"
     rooms: Optional[int] = None
+    rooms_max: Optional[int] = None      # IMO-1 — plafon; rooms ramane minim
     area_min: Optional[int] = None
     area_max: Optional[int] = None
     price_min: Optional[float] = None
@@ -45,6 +46,14 @@ class KeywordCreate(BaseModel):
     active_hours_end: Optional[int] = None
     polling_interval_minutes: int = 30
     exclude_words: Optional[list[str]] = None   # termeni exclusi pe titlu+descriere (IM-6)
+
+    @field_validator("rooms_max")
+    @classmethod
+    def _rooms_max_zero_e_null(cls, v):
+        """IMO-1 — 0 (sau negativ) din formular = dezactivare explicita a plafonului -> NULL.
+        Stocat ca 0, plafonul ar respinge TACIT orice anunt (orice camere > 0)."""
+        return v if v and v > 0 else None
+
 
 class KeywordUpdate(KeywordCreate):
     pass

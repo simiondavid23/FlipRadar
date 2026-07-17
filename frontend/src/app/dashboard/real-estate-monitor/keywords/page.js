@@ -35,7 +35,7 @@ const CITIES = ["București", "Cluj-Napoca", "Iași", "Timișoara", "Brașov",
 const POLL_OPTIONS = [15, 30, 60, 120];
 
 const EMPTY_FORM = {
-  name: "", property_type: "", tip_anunt: "vanzare", rooms: "", area_min: "", area_max: "",
+  name: "", property_type: "", tip_anunt: "vanzare", rooms: "", rooms_max: "", area_min: "", area_max: "",
   price_min: "", price_max: "", price_currency: "EUR", zone: "", city: "București",
   floor_min: "", floor_max: "", furnished: "", query: "", exclude_words: [],
   is_active: true, notify_email: false, notify_discord: false,
@@ -108,7 +108,8 @@ export default function REKeywordsPage() {
     setPlatform(kw.platform || "olx");
     setForm({
       name: kw.name || "", property_type: kw.property_type || "", tip_anunt: kw.tip_anunt || "vanzare",
-      rooms: kw.rooms ?? "", area_min: kw.area_min ?? "", area_max: kw.area_max ?? "",
+      rooms: kw.rooms ?? "", rooms_max: kw.rooms_max ?? "",
+      area_min: kw.area_min ?? "", area_max: kw.area_max ?? "",
       price_min: kw.price_min ?? "", price_max: kw.price_max ?? "",
       price_currency: kw.price_currency || "EUR", zone: kw.zone || "", city: kw.city || "București",
       floor_min: kw.floor_min ?? "", floor_max: kw.floor_max ?? "",
@@ -130,6 +131,7 @@ export default function REKeywordsPage() {
       property_type: form.property_type || null,
       tip_anunt: form.tip_anunt || "vanzare",
       rooms: form.rooms ? parseInt(form.rooms) : null,
+      rooms_max: form.rooms_max ? parseInt(form.rooms_max) : null,
       area_min: form.area_min ? parseInt(form.area_min) : null,
       area_max: form.area_max ? parseInt(form.area_max) : null,
       price_min: form.price_min ? parseFloat(form.price_min) : null,
@@ -167,6 +169,7 @@ export default function REKeywordsPage() {
       await realEstateMonitorAPI.updateKeyword(kw.id, {
         name: kw.name, platform: kw.platform, property_type: kw.property_type,
         tip_anunt: kw.tip_anunt || "vanzare", rooms: kw.rooms,
+        rooms_max: kw.rooms_max,   // CRITIC: ca la exclude_words — fara el, toggle-ul sterge plafonul
         area_min: kw.area_min, area_max: kw.area_max,
         price_min: kw.price_min != null ? parseFloat(kw.price_min) : null,
         price_max: kw.price_max != null ? parseFloat(kw.price_max) : null,
@@ -394,8 +397,14 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
                 {PROPERTY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
-            <Field label="Camere">
+            <Field label="Camere (min)">
               <input type="number" min="1" max="8" value={form.rooms} onChange={(e) => set({ rooms: e.target.value })} placeholder="ex: 2" style={inputStyle} />
+            </Field>
+            <Field label="Camere (max)">
+              <input type="number" min="1" max="8" value={form.rooms_max} onChange={(e) => set({ rooms_max: e.target.value })} placeholder="fără plafon" style={inputStyle} />
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                Pentru garsonieră: min 1, max 1.
+              </div>
             </Field>
             <Field label="Suprafață min (mp)"><input type="number" value={form.area_min} onChange={(e) => set({ area_min: e.target.value })} placeholder="40" style={inputStyle} /></Field>
             <Field label="Suprafață max (mp)"><input type="number" value={form.area_max} onChange={(e) => set({ area_max: e.target.value })} placeholder="80" style={inputStyle} /></Field>

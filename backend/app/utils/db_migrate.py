@@ -803,6 +803,11 @@ def run_migrations():
             "ALTER TABLE real_estate_keywords "
             "ADD COLUMN IF NOT EXISTS last_scan_at TIMESTAMP")
 
+        # IMO-1: plafon de camere per keyword Imobiliare (rooms ramane minim); NULL = fara plafon.
+        _migrate(conn, "real_estate_keywords_add_rooms_max",
+            "ALTER TABLE real_estate_keywords "
+            "ADD COLUMN IF NOT EXISTS rooms_max INTEGER")
+
         # IM-6: cuvinte excluse per keyword Imobiliare (titlu+descriere), aplicate local.
         _migrate(conn, "add_re_kw_exclude_words",
             "ALTER TABLE real_estate_keywords "
