@@ -1289,6 +1289,16 @@ def facebook_connect(
     s.facebook_session_path = path
     db.commit()
 
+    # Pre-check sincron: fara Playwright fereastra nu se va deschide niciodata
+    # (azi esecul era un print invizibil intr-un thread — userul nu afla de ce).
+    try:
+        import playwright.sync_api  # noqa: F401
+    except ImportError:
+        raise HTTPException(status_code=400, detail=(
+            "Playwright nu este instalat pe aceasta instanta. Ruleaza "
+            "`pip install playwright` si `playwright install chromium`, "
+            "apoi reincearca."))
+
     def _bg():
         set_log_user(current_user.id)  # MON-4 — jurnalele conectarii FB apartin acestui user
         try:
@@ -1296,8 +1306,11 @@ def facebook_connect(
         except Exception as exc:
             print(f"[RadarFacebook] connect bg eroare: {exc}")
 
-    thread = threading.Thread(target=_bg, daemon=True)
-    thread.start()
+    # Guard de teste: sub FLIPRADAR_TESTING nu deschidem browser in CI/suita —
+    # contractul (status connecting) ramane testabil fara efecte secundare.
+    if os.getenv("FLIPRADAR_TESTING") != "1":
+        thread = threading.Thread(target=_bg, daemon=True)
+        thread.start()
     return {
         "status": "connecting",
         "message": "Deschide browserul și loghează-te în Facebook în fereastra care apare. Sesiunea se salvează automat.",

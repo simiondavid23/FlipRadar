@@ -29,3 +29,6 @@ Thumbs.db
 backend/data/
 backend/scripts/snapshot_out/
 scripts/diagnostics/
+# chei per-instanta generate in data dir (PKG-DATA / VAPID-AUTO)
+secret_key
+vapid_private_key

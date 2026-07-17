@@ -17,6 +17,9 @@ export default function SettingsPage() {
   // ── Radar settings state (copiat din vechea pagina /dashboard/radar/settings) ──
   const [settings, setSettings] = useState(null);
   const [fbStatus, setFbStatus] = useState({ status: null });
+  // FB-LOGIN — asteptare activa + polling de status (in loc de setTimeout orb).
+  const [fbConnecting, setFbConnecting] = useState(false);
+  const fbPollRef = useRef(null);
   const [proxy, setProxy] = useState(EMPTY_PROXY);
   const [pushStatus, setPushStatus] = useState({ subscribed: false, configured: false });
   const [loading, setLoading] = useState(true);
@@ -58,6 +61,9 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // FB-LOGIN — curata intervalul de polling la unmount.
+  useEffect(() => () => { if (fbPollRef.current) clearInterval(fbPollRef.current); }, []);
 
   const update = (patch) => setSettings({ ...settings, ...patch });
 
@@ -187,13 +193,45 @@ export default function SettingsPage() {
   const connectFacebook = async () => {
     if (!confirm("Se va deschide o fereastră browser ca să te loghezi în Facebook. Continui?")) return;
     try {
-      const r = await radarAPI.connectFacebook();
-      alert(r.data?.message || "Browserul se deschide...");
-      setTimeout(load, 130000);
+      await radarAPI.connectFacebook();
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la pornire login.");
+      return;
     }
+    // Asteptam login-ul urmarind STATUSUL (nu un setTimeout orb): devine verde
+    // la secunde dupa ce fisierul de sesiune e scris (varsta ~0).
+    setFbConnecting(true);
+    if (fbPollRef.current) clearInterval(fbPollRef.current);
+    const startedAt = Date.now();
+    fbPollRef.current = setInterval(async () => {
+      if (Date.now() - startedAt > 260000) {   // LOGIN_TIMEOUT_S (240s) + buffer
+        clearInterval(fbPollRef.current);
+        fbPollRef.current = null;
+        setFbConnecting(false);
+        return;
+      }
+      try {
+        const st = (await radarAPI.getFacebookStatus())?.data;
+        // fisier proaspat scris (<0.1h) => login nou finalizat; merge si la Reconectare.
+        if (st?.status === "active" && st.age_hours != null && st.age_hours < 0.1) {
+          clearInterval(fbPollRef.current);
+          fbPollRef.current = null;
+          setFbConnecting(false);
+          load();
+        }
+      } catch { /* un poll esuat nu opreste asteptarea */ }
+    }, 3000);
   };
+
+  // FB-LOGIN — in timpul asteptarii butonul e inlocuit de un mesaj (toate starile).
+  const fbActionButton = (label) => fbConnecting ? (
+    <span style={{ color: "#facc15", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+      <AlertCircle style={{ width: "14px", height: "14px" }} />
+      Se așteaptă login-ul în fereastra de browser deschisă...
+    </span>
+  ) : (
+    <button onClick={connectFacebook} style={smallBtn("#60a5fa")}>{label}</button>
+  );
 
   const toggleRadarReview = async () => {
     const enabled = aiFeatures.ai_radar_review !== false;
@@ -315,7 +353,7 @@ export default function SettingsPage() {
                     <CheckCircle2 style={{ width: "14px", height: "14px" }} />
                     Sesiune Facebook activă{fbStatus.age_hours != null ? ` — conectată acum ${fbStatus.age_hours < 48 ? Math.round(fbStatus.age_hours) + "h" : Math.round(fbStatus.age_hours / 24) + " zile"}` : ""}
                   </span>
-                  <button onClick={connectFacebook} style={smallBtn("#60a5fa")}>Reconectează</button>
+                  {fbActionButton("Reconectează")}
                 </div>
               ) : fbStatus.status === "expired" ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -323,7 +361,7 @@ export default function SettingsPage() {
                     <AlertCircle style={{ width: "14px", height: "14px" }} />
                     Sesiune Facebook expirată{fbStatus.age_hours != null ? ` (acum ${Math.round(fbStatus.age_hours / 24)} zile)` : ""} — reconectare necesară
                   </span>
-                  <button onClick={connectFacebook} style={smallBtn("#60a5fa")}>Reconectează</button>
+                  {fbActionButton("Reconectează")}
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -331,7 +369,7 @@ export default function SettingsPage() {
                     <AlertCircle style={{ width: "14px", height: "14px" }} />
                     Sesiune Facebook inactivă
                   </span>
-                  <button onClick={connectFacebook} style={smallBtn("#60a5fa")}>Conectează Facebook</button>
+                  {fbActionButton("Conectează Facebook")}
                 </div>
               )}
             </div>

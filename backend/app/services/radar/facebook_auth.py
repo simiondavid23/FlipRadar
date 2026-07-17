@@ -1,21 +1,28 @@
 """Login interactiv pentru Facebook Marketplace.
 
-Deschide Chromium-ul vizibil, asteapta 120s ca utilizatorul sa se logheze
-manual (inclusiv 2FA daca e cazul), apoi salveaza storage_state-ul Playwright
-in fisierul indicat. Storage state include cookies + localStorage, suficient
-pentru ca search_facebook sa restaureze sesiunea ulterior.
+Deschide un browser vizibil — Chrome-ul real al utilizatorului daca exista
+(zero download, login mai natural pentru Facebook), cu fallback pe Chromium-ul
+Playwright. Asteapta pana la LOGIN_TIMEOUT_S (240s) ca utilizatorul sa se
+logheze manual (inclusiv 2FA prin SMS / captcha). Storage_state-ul Playwright
+(cookies + localStorage) se salveaza DOAR daca login-ul s-a finalizat, ca un
+Reconecteaza abandonat sa nu suprascrie o sesiune valida cu una anonima.
 """
 import json
 import os
 import time
 from typing import Optional
 
+LOGIN_TIMEOUT_S = 240  # era 120 — strans pentru 2FA prin SMS + captcha
+
 
 def start_facebook_login_session(session_path: str) -> bool:
-    """Pornește browser-ul vizibil si asteapta login manual.
+    """Pornește un browser vizibil (Chrome real cu fallback Chromium) si asteapta
+    login manual pana la LOGIN_TIMEOUT_S.
 
-    Returneaza True doar daca dupa cele 120s exista cookie-ul c_user
-    (semn ca login-ul s-a finalizat).
+    Returneaza True doar daca apare cookie-ul c_user (login finalizat); in acel
+    caz — si NUMAI atunci — scrie storage_state in session_path. La timeout /
+    fereastra inchisa / login nefinalizat NU atinge fisierul (sesiunea existenta
+    ramane neatinsa).
     """
     if not session_path:
         print("[FacebookAuth] session_path lipseste.")
@@ -32,7 +39,14 @@ def start_facebook_login_session(session_path: str) -> bool:
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
+            # Chrome-ul real al utilizatorului = zero download + login mai natural
+            # pentru Facebook; fallback pe Chromium Playwright pastreaza functionarea.
+            try:
+                browser = p.chromium.launch(headless=False, channel="chrome")
+                print("[FacebookAuth] Folosesc Chrome-ul instalat al utilizatorului.")
+            except Exception:
+                browser = p.chromium.launch(headless=False)
+                print("[FacebookAuth] Chrome indisponibil — fallback pe Chromium Playwright.")
             context = browser.new_context()
             page = context.new_page()
             try:
@@ -40,11 +54,12 @@ def start_facebook_login_session(session_path: str) -> bool:
             except Exception as exc:
                 print(f"[FacebookAuth] Nu am putut deschide facebook.com: {exc}")
 
-            print("[FacebookAuth] Asteapta 120s pentru login manual...")
-            # Polling pentru cookie c_user — daca apare mai devreme,
-            # iesim si salvam imediat ca sa nu tinem browser-ul deschis
-            # mai mult decat e nevoie.
-            deadline = time.time() + 120
+            print(f"[FacebookAuth] Asteapta pana la {LOGIN_TIMEOUT_S}s pentru login manual...")
+            # Polling pentru cookie c_user — daca apare mai devreme, iesim si salvam
+            # imediat. Daca utilizatorul INCHIDE fereastra, context.cookies() arunca
+            # -> prins de try-ul mare de mai jos -> return False FARA scriere
+            # (intentionat: nu suprascriem o sesiune valida existenta).
+            deadline = time.time() + LOGIN_TIMEOUT_S
             success = False
             while time.time() < deadline:
                 cookies = context.cookies()
@@ -53,14 +68,19 @@ def start_facebook_login_session(session_path: str) -> bool:
                     break
                 time.sleep(2)
 
-            storage = context.storage_state()
-            try:
-                with open(session_path, "w", encoding="utf-8") as f:
-                    json.dump(storage, f, ensure_ascii=False)
-                print(f"[FacebookAuth] Sesiune salvata in {session_path}")
-            except Exception as exc:
-                print(f"[FacebookAuth] Eroare la salvare sesiune: {exc}")
-                success = False
+            # BUG FIX: scriem storage_state DOAR la login reusit. Altfel un storage
+            # anonim (Reconecteaza abandonat / timeout) suprascria sesiunea valida.
+            if success:
+                storage = context.storage_state()
+                try:
+                    with open(session_path, "w", encoding="utf-8") as f:
+                        json.dump(storage, f, ensure_ascii=False)
+                    print(f"[FacebookAuth] Sesiune salvata in {session_path}")
+                except Exception as exc:
+                    print(f"[FacebookAuth] Eroare la salvare sesiune: {exc}")
+                    success = False
+            else:
+                print("[FacebookAuth] Login nefinalizat — sesiunea existenta ramane neatinsa.")
 
             try:
                 context.close()
