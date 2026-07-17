@@ -430,9 +430,10 @@ def _settings_to_dict(s: RadarSettings) -> dict:
 
 
 def _default_facebook_session_path(user_id: int) -> str:
-    base_dir = os.path.join(os.getcwd(), "data")
+    from app.config import DATA_DIR  # import local, consecvent cu stilul fisierului
+    base_dir = DATA_DIR / "data"
     os.makedirs(base_dir, exist_ok=True)
-    return os.path.join(base_dir, f"facebook_session_{user_id}.json")
+    return str(base_dir / f"facebook_session_{user_id}.json")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

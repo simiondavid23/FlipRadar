@@ -12,8 +12,9 @@ from datetime import datetime
 from pathlib import Path
 
 from app.database import engine
+from app.config import DATA_DIR
 
-BACKUP_DIR = Path("backups")   # relativ la cwd-ul backend-ului, ca flipradar.db
+BACKUP_DIR = DATA_DIR / "backups"   # data dir-ul instantei; in dev = cwd, ca inainte
 BACKUP_RETENTION = 7           # ultimele 7 copii zilnice (o saptamana)
 _PREFIX = "flipradar_backup_"
 

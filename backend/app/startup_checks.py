@@ -22,8 +22,11 @@ except Exception:
     # deja prezente in mediu (ex. setate de Docker / systemd).
     pass
 
-REQUIRED_VARS = ["DATABASE_URL", "SECRET_KEY", "GROQ_API_KEY"]
-OPTIONAL_VARS = ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD",
+# PKG-DATA — DATABASE_URL si SECRET_KEY au acum default-uri (data dir /
+# autogenerare), GROQ_API_KEY e optional; lista ramane pentru variabile viitoare
+# cu adevarat obligatorii.
+REQUIRED_VARS = []
+OPTIONAL_VARS = ["GROQ_API_KEY", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD",
                  "DISCORD_WEBHOOK_URL", "FACEBOOK_EMAIL", "FACEBOOK_PASSWORD",
                  "LOG_DB_PERSISTENCE"]
 

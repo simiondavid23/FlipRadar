@@ -3,17 +3,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL nu este setat. Defineste-l in fisierul .env inainte sa pornesti serverul."
-    )
+# PKG-DATA — directorul de date scriibil al instantei (dev = cwd; sub
+# PyInstaller = LOCALAPPDATA/XDG). Rezolvat dupa load_dotenv ca FLIPRADAR_DATA_DIR
+# din .env sa fie vizibil.
+from app.paths import get_data_dir, get_or_create_secret_key
+DATA_DIR = get_data_dir()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise RuntimeError(
-        "SECRET_KEY nu este setat. Defineste-l in fisierul .env inainte sa pornesti serverul."
-    )
+# DATABASE_URL: env-ul are prioritate; altfel default SQLite in directorul de date.
+DATABASE_URL = (os.getenv("DATABASE_URL")
+                or f"sqlite:///{(DATA_DIR / 'flipradar.db').as_posix()}")
+
+# SECRET_KEY: env-ul are prioritate; altfel o cheie autogenerata si persistata in
+# data dir. Validarea de lungime se aplica ambelor surse.
+SECRET_KEY = os.getenv("SECRET_KEY") or get_or_create_secret_key(DATA_DIR)
 if len(SECRET_KEY) < 32:
     raise RuntimeError(
         "SECRET_KEY trebuie sa aiba minim 32 de caractere pentru a fi sigur."
