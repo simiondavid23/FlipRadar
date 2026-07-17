@@ -381,6 +381,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Discord] cleanup_stale la startup esuat: {exc}")
 
+    # DISC-1 — worker-ul Discord porneste abia acum: schema exista
+    # (create_all + run_migrations au rulat) si coada e curatata de stale.
+    from app.services.discord_service import discord_service as _discord_svc
+    _discord_svc.start()
+
     # Jurnale Live — emit de pornire pentru fiecare modul, ca tab-urile sa nu fie
     # goale inainte sa ruleze primul scraper.
     from app.services.log_manager import log_manager as _lm

@@ -31,11 +31,21 @@ class DiscordNotificationService:
     def __init__(self):
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="discord-queue-worker")
-        # Sub pytest (FLIPRADAR_TESTING=1) NU pornim worker-ul de fundal: ar accesa
-        # baza de test concurent cu suita. enqueue() ramane functional; doar flush-ul
-        # cozii lipseste in teste. In productie variabila nu exista → worker-ul porneste.
-        if os.getenv("FLIPRADAR_TESTING") != "1":
-            self._thread.start()
+        self._started = False
+
+    def start(self) -> None:
+        """Porneste worker-ul de fundal. Apelat EXPLICIT din main.py dupa
+        create_all + run_migrations (DISC-1) — instantierea la import nu mai
+        porneste nimic, ca primul poll sa nu preceada schema pe o baza
+        proaspata. Idempotent. Sub pytest (FLIPRADAR_TESTING=1) nu porneste:
+        ar accesa baza de test concurent cu suita; enqueue() ramane
+        functional, doar flush-ul cozii lipseste in teste."""
+        if self._started:
+            return
+        if os.getenv("FLIPRADAR_TESTING") == "1":
+            return
+        self._started = True
+        self._thread.start()
 
     def enqueue(self, webhook_url: str, embed: dict, listing_id: str,
                 module: str, grade: str, mention_here: bool = False,
