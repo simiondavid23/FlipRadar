@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import cast, Date, func
+from sqlalchemy import func
 from app.database import get_db
 from app.models.user import User
 from app.models.sale import Sale
@@ -47,9 +47,9 @@ def get_reports_summary(
 
     q = db.query(Sale).filter(Sale.user_id == current_user.id)
     if start:
-        q = q.filter(cast(Sale.sold_at, Date) >= start)
+        q = q.filter(func.date(Sale.sold_at) >= start)
     if end:
-        q = q.filter(cast(Sale.sold_at, Date) <= end)
+        q = q.filter(func.date(Sale.sold_at) <= end)
     sales = q.all()
 
     # Build a name -> category map from inventory for this user

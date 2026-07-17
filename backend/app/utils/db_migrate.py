@@ -54,6 +54,31 @@ def _migrate(conn, name: str, sql: str) -> None:
         print(f"[DB Migrate] Failed: {name} -> {e}")
 
 
+def _portable_migrations(conn, inspector):
+    """Migratii scrise portabil (PostgreSQL + SQLite). Aici intra ORICE
+    migrare adaugata dupa SQLITE-1. Reguli: fara IF NOT EXISTS in
+    ADD COLUMN (garda de introspectie _column_exists face deja acest rol),
+    fara NOW()/INTERVAL/SERIAL, o singura actiune per ALTER TABLE."""
+    # discord_notifications_sent nu are model ORM -> create_all() nu-l creeaza.
+    # Pe PostgreSQL il creeaza migrarea istorica (SERIAL/NOW(), mai jos). Pe SQLite,
+    # unde migrarile istorice sunt sarite, il cream aici cu echivalentele portabile:
+    # id INTEGER PRIMARY KEY (rowid auto-increment) si DEFAULT CURRENT_TIMESTAMP.
+    if conn.dialect.name == "sqlite" and not _table_exists(inspector, "discord_notifications_sent"):
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS discord_notifications_sent (
+                id INTEGER PRIMARY KEY,
+                listing_id VARCHAR(200) NOT NULL,
+                module VARCHAR(50) NOT NULL,
+                webhook_url TEXT NOT NULL,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_discord_notif_dedup "
+            "ON discord_notifications_sent(listing_id, module, webhook_url)"))
+        conn.commit()
+
+
 def run_migrations():
     """Apply any pending column additions."""
     inspector = inspect(engine)
@@ -63,10 +88,20 @@ def run_migrations():
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 migration_name VARCHAR(200) UNIQUE NOT NULL,
-                applied_at TIMESTAMP DEFAULT NOW()
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
         conn.commit()
+
+        _portable_migrations(conn, inspector)
+
+        # SQLITE-1: pe SQLite, schema instalarilor noi vine INTEGRAL din
+        # Base.metadata.create_all() (ruleaza inaintea migratiilor — main.py),
+        # iar migratiile istorice de mai jos folosesc sintaxa PostgreSQL
+        # (ADD COLUMN IF NOT EXISTS, SERIAL, NOW(), ALTER multi-actiune).
+        # NU se ruleaza pe SQLite. Migratiile viitoare -> _portable_migrations.
+        if engine.dialect.name == "sqlite":
+            return
 
         # Alerts: add `currency` column (default EUR)
         if _table_exists(inspector, "alerts") and not _column_exists(inspector, "alerts", "currency"):

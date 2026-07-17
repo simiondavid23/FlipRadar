@@ -293,13 +293,16 @@ async def lifespan(app: FastAPI):
     # MODIFICARE 7 — cleanup zilnic (03:30) al cozii Discord: sterge itemele
     # trimise mai vechi de 7 zile (istoricul nu trebuie pastrat la nesfarsit).
     def _cleanup_discord_queue():
-        from sqlalchemy import text
+        from datetime import datetime, timezone, timedelta
         from app.database import SessionLocal
+        from app.models.discord_queue_db import DiscordQueueItem
         db = SessionLocal()
         try:
-            db.execute(text(
-                "DELETE FROM discord_queue WHERE status='sent' AND sent_at < NOW() - INTERVAL '7 days'"
-            ))
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            db.query(DiscordQueueItem).filter(
+                DiscordQueueItem.status == "sent",
+                DiscordQueueItem.sent_at < cutoff,
+            ).delete(synchronize_session=False)
             db.commit()
         finally:
             db.close()
@@ -315,11 +318,15 @@ async def lifespan(app: FastAPI):
         import os
         if os.getenv("LOG_DB_PERSISTENCE", "false").lower() != "true":
             return
-        from sqlalchemy import text
+        from datetime import datetime, timezone, timedelta
         from app.database import SessionLocal
+        from app.models.log_entry import LogEntry
         db = SessionLocal()
         try:
-            db.execute(text("DELETE FROM log_entries WHERE created_at < NOW() - INTERVAL '24 hours'"))
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            db.query(LogEntry).filter(
+                LogEntry.created_at < cutoff,
+            ).delete(synchronize_session=False)
             db.commit()
         finally:
             db.close()

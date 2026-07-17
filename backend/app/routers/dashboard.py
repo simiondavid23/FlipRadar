@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Date, text
+from sqlalchemy import func
 from app.database import get_db
 from app.models.product import Product
 from app.models.tracked_product import TrackedProduct
@@ -151,7 +151,8 @@ def get_dashboard_stats(
     # filtrul `since` din radar.py), iar AutoFeedListing / RealEstateMonitorListing
     # au server_default func.now() — le comparam cu ceasul serverului DB.
     radar_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    db_cutoff_24h = func.now() - text("interval '24 hours'")
+    # cutoff calculat in Python — portabil intre dialecte
+    db_cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
     def _cnt(q):
         return int(q.scalar() or 0)
@@ -208,20 +209,21 @@ def get_sales_timeseries(
 
     rows = (
         db.query(
-            cast(Sale.sold_at, Date).label("day"),
+            func.date(Sale.sold_at).label("day"),
             Sale.currency,
             func.coalesce(func.sum(Sale.sale_price * Sale.quantity), 0.0).label("revenue"),
             func.coalesce(func.sum(Sale.cost_price * Sale.quantity), 0.0).label("cost"),
             func.coalesce(func.sum(Sale.quantity), 0).label("units"),
         )
-        .filter(Sale.user_id == current_user.id, cast(Sale.sold_at, Date) >= start)
-        .group_by(cast(Sale.sold_at, Date), Sale.currency)
+        .filter(Sale.user_id == current_user.id, func.date(Sale.sold_at) >= start)
+        .group_by(func.date(Sale.sold_at), Sale.currency)
         .all()
     )
 
     by_day: dict[str, dict] = {}
     for day, currency, revenue, cost, units in rows:
-        key = day.isoformat()
+        # func.date() -> date pe PostgreSQL, str "YYYY-MM-DD" pe SQLite; str() unifica.
+        key = str(day)
         bucket = by_day.setdefault(key, {"day": key, "revenue_eur": 0.0, "cost_eur": 0.0, "profit_eur": 0.0, "units": 0})
         rev_eur = convert(float(revenue or 0), currency or "EUR", "EUR")
         cost_eur = convert(float(cost or 0), currency or "EUR", "EUR")

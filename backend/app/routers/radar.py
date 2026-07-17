@@ -18,7 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
-from sqlalchemy import cast, func, Date
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import VAPID_PUBLIC_KEY
@@ -1732,7 +1732,7 @@ def keyword_price_trend(
     since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = (
         db.query(
-            cast(RadarListing.found_at, Date).label("day"),
+            func.date(RadarListing.found_at).label("day"),
             func.avg(RadarListing.price).label("avg_p"),
             func.min(RadarListing.price).label("min_p"),
             func.max(RadarListing.price).label("max_p"),
@@ -1743,8 +1743,8 @@ def keyword_price_trend(
             RadarListing.keyword_id == keyword_id,
             RadarListing.found_at >= since,
         )
-        .group_by(cast(RadarListing.found_at, Date))
-        .order_by(cast(RadarListing.found_at, Date).asc())
+        .group_by(func.date(RadarListing.found_at))
+        .order_by(func.date(RadarListing.found_at).asc())
         .all()
     )
     series = []
@@ -1755,7 +1755,7 @@ def keyword_price_trend(
         max_p = float(r.max_p or 0)
         all_prices.append(avg_p)
         series.append({
-            "date": r.day.isoformat() if r.day else None,
+            "date": str(r.day) if r.day else None,
             "avg_price": round(avg_p, 2),
             "min_price": round(min_p, 2),
             "max_price": round(max_p, 2),
