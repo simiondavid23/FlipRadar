@@ -191,7 +191,7 @@ export default function TrackedProductsPage() {
                 {/* Imagine + nume */}
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <Link href={`/dashboard/products/${product.id}`} style={{
+                    <Link href={`/dashboard/products/detail?id=${product.id}`} style={{
                       fontSize: "0.875rem", fontWeight: 600, color: "var(--text-primary)", textDecoration: "none",
                       display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
                     }}>

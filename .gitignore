@@ -9,11 +9,15 @@ env/
 # Node.js
 node_modules/
 .next/
+# build static (export), generat de npm run build in frontend/
+frontend/out/
 .env.local
 
 # Database
 *.sql
 *.db
+*.db-shm
+*.db-wal
 # copii de backup BK-1
 backend/backups/
 

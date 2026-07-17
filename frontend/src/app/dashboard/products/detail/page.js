@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { productsAPI, trackedProductsAPI, alertsAPI } from "@/lib/api";
 import {
@@ -19,10 +19,10 @@ const SOURCE_COLORS = {
   "pcgarage.ro": { bg: "rgba(168,85,247,0.2)", fg: "#c084fc" },
 };
 
-export default function ProductDetailPage() {
-  const params = useParams();
+function ProductDetailInner() {
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const productId = params.id;
+  const productId = searchParams.get("id");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [alertForm, setAlertForm] = useState({ show: false, target_price: "", currency: "EUR", alert_type: "price_drop" });
@@ -62,6 +62,17 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (productId) loadProduct();
   }, [productId, loadProduct]);
+
+  // PKG-1 — fara ?id= (sau id gol) pagina nu are ce randa; ghidam userul inapoi.
+  // Guard plasat dupa toate hook-urile (Rules of Hooks), inaintea starii de loading.
+  if (!productId) {
+    return (
+      <div style={{ maxWidth: "960px", margin: "0 auto", textAlign: "center", paddingTop: "4rem" }}>
+        <p style={{ color: "var(--text-primary)", fontSize: "1rem", marginBottom: "0.5rem" }}>Produs inexistent</p>
+        <Link href="/dashboard/products" style={{ color: "#60a5fa", fontSize: "0.875rem" }}>← Inapoi la produse</Link>
+      </div>
+    );
+  }
 
   const handleTrackProduct = async () => {
     try {
@@ -937,5 +948,15 @@ export default function ProductDetailPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// PKG-1 — useSearchParams necesita Suspense sub output:export; wrapper-ul e
+// componenta default exportata, iar continutul real sta in ProductDetailInner.
+export default function ProductDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProductDetailInner />
+    </Suspense>
   );
 }

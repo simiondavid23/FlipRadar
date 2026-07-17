@@ -88,7 +88,7 @@ export default function AlertsPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
                     <Link
-                      href={`/dashboard/products/${alert.product_id}`}
+                      href={`/dashboard/products/detail?id=${alert.product_id}`}
                       style={{ textDecoration: "none", color: "inherit", display: "inline-flex", alignItems: "center" }}
                       onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}

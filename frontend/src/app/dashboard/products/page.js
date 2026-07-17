@@ -697,7 +697,7 @@ export default function ProductsPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
-                    <Link href={`/dashboard/products/${product.id}`} style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0, textDecoration: "none" }}
+                    <Link href={`/dashboard/products/detail?id=${product.id}`} style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0, textDecoration: "none" }}
                       onMouseEnter={(e) => { e.currentTarget.style.color = "var(--blue-light)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-primary)"; }}
                     >{product.name}</Link>
@@ -901,7 +901,7 @@ export default function ProductsPage() {
                     <Trash2 style={{ width: "18px", height: "18px" }} />
                   </button>
                   <Link
-                    href={`/dashboard/products/${product.id}`}
+                    href={`/dashboard/products/detail?id=${product.id}`}
                     title="Vezi detalii"
                     style={{ padding: "0.5rem", borderRadius: "0.5rem", display: "flex", color: "var(--text-secondary)", textDecoration: "none", transition: "all 0.15s ease" }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text-primary)"; }}

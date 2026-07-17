@@ -467,13 +467,51 @@ app.include_router(auto_lot_router)
 app.include_router(re_monitor_router)
 
 
-@app.get("/")
-def root():
-    return {
-        "name": "FlipRadar API",
-        "version": "1.0.0",
-        "status": "running",
-        "message": "Bine ai venit la FlipRadar API! Viziteaza /docs pentru documentatie.",
-    }
+# ────────────────────────────────────────────────────────────────────────────
+# PKG-1 — frontend static exportat (frontend/out) servit direct din FastAPI.
+# Se inregistreaza ULTIMUL (catch-all peste toate rutele). Daca out/ lipseste,
+# backend-ul ramane API-only (dev cu `next dev` pe :3000 neschimbat).
+# ────────────────────────────────────────────────────────────────────────────
+from pathlib import Path
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+FRONTEND_OUT = Path(__file__).resolve().parents[2] / "frontend" / "out"
+
+if (FRONTEND_OUT / "_next").is_dir():
+    app.mount(
+        "/_next",
+        StaticFiles(directory=str(FRONTEND_OUT / "_next")),
+        name="next_static",
+    )
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_frontend(full_path: str):
+    # /api/* nu e frontend: 404 JSON, niciodata HTML.
+    if full_path == "api" or full_path.startswith("api/"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    base = FRONTEND_OUT
+    if not base.is_dir():
+        return JSONResponse(
+            {"detail": "Frontend static absent — ruleaza `npm run build` "
+                       "in frontend/ sau porneste `next dev`."},
+            status_code=404,
+        )
+    base_r = base.resolve()
+    target = (base / full_path).resolve() if full_path else base_r / "index.html"
+    # guard path-traversal: orice iese din out/ -> 404
+    if not target.is_relative_to(base_r):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    if target.is_file():
+        return FileResponse(target)
+    # conventia FLAT a exportului: /login -> login.html, /dashboard/alerts -> dashboard/alerts.html
+    html = Path(str(target) + ".html")
+    if html.is_file() and html.resolve().is_relative_to(base_r):
+        return FileResponse(html)
+    nf = base_r / "404.html"
+    if nf.is_file():
+        return FileResponse(nf, status_code=404)
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 
