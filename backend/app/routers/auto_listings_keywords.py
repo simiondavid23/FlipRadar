@@ -69,9 +69,13 @@ def _kw_dict(kw: AutoKeyword) -> dict:
 
 
 @router.get("/categories")
-def get_auto_categories():
+def get_auto_categories(current_user: User = Depends(get_current_user)):
     """Categorii + campuri tehnice confirmate per platforma (pentru formularul dinamic
-    de keyword si tab-ul de cautare manuala). GET /api/auto-listings/categories."""
+    de keyword si tab-ul de cautare manuala). GET /api/auto-listings/categories.
+
+    Necesita autentificare (AN-1): taxonomia e statica, dar toate celelalte
+    endpointuri ale modulului cer autentificare — pastram politica uniforma.
+    """
     from app.scrapers.auto.listings.auto_categories import (
         AUTO_PLATFORM_CATEGORIES, AUTO_TECHNICAL_FIELDS)
     return {"categories": AUTO_PLATFORM_CATEGORIES, "technical_fields": AUTO_TECHNICAL_FIELDS}

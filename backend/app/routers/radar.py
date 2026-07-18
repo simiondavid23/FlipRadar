@@ -39,7 +39,7 @@ from app.services.radar.facebook_auth import start_facebook_login_session
 from app.services.radar.facebook_scraper import is_facebook_session_valid
 from app.services.radar.scorer import calculate_fee_ceiling, calculate_score
 from app.services.log_manager import set_log_user
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_admin
 from app.utils.id_csv import parse_id_csv
 from app.utils.radar_scanner import (
     cancel_keyword_scan,
@@ -1449,8 +1449,13 @@ _PROXY_VARS = ["PROXY_ENABLED", "PROXY_HOST", "PROXY_PORT", "PROXY_USER", "PROXY
 
 
 @router.get("/settings/proxy")
-def get_proxy_settings(current_user: User = Depends(get_current_user)):
-    """Returneaza configuratia proxy citita din .env / variabilele de mediu."""
+def get_proxy_settings(current_user: User = Depends(require_admin)):
+    """Returneaza configuratia proxy citita din .env / variabilele de mediu.
+
+    Necesita drepturi de administrator (PROXY-1 / AN-1): proxy-ul e configuratie
+    GLOBALA de instanta, nu per-user, iar campul username poate scurge date de
+    infrastructura — nu se expune oricarui user autentificat.
+    """
     return {
         "enabled": os.environ.get("PROXY_ENABLED", "false").lower() in ("1", "true", "yes"),
         "host": os.environ.get("PROXY_HOST", ""),
@@ -1465,13 +1470,14 @@ def get_proxy_settings(current_user: User = Depends(get_current_user)):
 @router.put("/settings/proxy")
 def update_proxy_settings(
     cfg: ProxyConfig,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """Rescrie liniile PROXY_* din .env (creandu-le daca lipsesc).
 
-    Doar admin-ii ar trebui sa modifice asta in productie — pentru moment
-    permite oricarui user logat ca radar e per-user; daca admin-ul vrea
-    restrictionare poate adauga is_admin guard ulterior.
+    Necesita drepturi de administrator (PROXY-1 / AN-1): scrie configuratia
+    GLOBALA de proxy (fisierul .env al intregii instante), care afecteaza toti
+    userii si toate scraperele — nu e o setare per-user, deci nu se permite
+    oricarui user autentificat.
     """
     new_values = {
         "PROXY_ENABLED": "true" if cfg.enabled else "false",

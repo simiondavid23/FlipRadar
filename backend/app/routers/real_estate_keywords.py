@@ -64,13 +64,16 @@ def _kw_dict(kw: RealEstateKeyword) -> dict:
 
 
 @router.get("/categories")
-def get_re_categories():
+def get_re_categories(current_user: User = Depends(get_current_user)):
     """Campuri tehnice + tipuri de proprietate confirmate per platforma (pentru formularul
     dinamic de keyword + tab-ul de cautare manuala). GET /api/real-estate-monitor/categories.
 
     Doar intrarile cu confirmed:True sunt de conectat; frontend-ul le foloseste ca sa stie ce
     filtre / tipuri de proprietate suporta fiecare platforma (ex. "comercial" e confirmat pe OLX,
     dar inca neconfirmat pe Storia/Imobiliare.ro — vezi RE_PROPERTY_TYPES).
+
+    Necesita autentificare (AN-1): taxonomia e statica, dar toate celelalte
+    endpointuri ale modulului cer autentificare — pastram politica uniforma.
     """
     from app.scrapers.real_estate.re_categories import RE_TECHNICAL_FIELDS, RE_PROPERTY_TYPES
     return {"technical_fields": RE_TECHNICAL_FIELDS, "property_types": RE_PROPERTY_TYPES}

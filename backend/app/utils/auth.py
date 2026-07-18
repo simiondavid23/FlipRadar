@@ -120,3 +120,20 @@ def require_feature(flag: str):
         return current_user
 
     return _checker
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Gard de rol pentru operatii care afecteaza INTREAGA instanta, nu datele
+    unui singur user (ex: configuratia globala de proxy scrisa in .env).
+
+    Reintrodus la AN-1: gardul istoric traia in routerul de admin, care a fost
+    sters (vezi eliminarea dashboard-ului de admin) — odata cu el a disparut si
+    singura verificare de rol, lasand operatiile de instanta accesibile oricarui
+    user autentificat. Modelat pe `require_feature` de mai sus.
+    """
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Aceasta operatie necesita drepturi de administrator.",
+        )
+    return current_user
