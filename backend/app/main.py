@@ -74,13 +74,17 @@ scheduler = BackgroundScheduler(
 async def lifespan(app: FastAPI):
     # Instaleaza Chromium pentru Playwright la prima pornire (idempotent — sare
     # peste daca e deja instalat). check=False ca sa nu blocheze startup-ul.
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
-            check=False, capture_output=True,
-        )
-    except Exception as exc:
-        print(f"[Playwright] install skip: {exc}")
+    # PKG-3b: sub PyInstaller, sys.executable = FlipRadar.exe, deci acest subprocess
+    # ar re-lansa RECURSIV launcher-ul (fork bomb, uvicorn nu mai devine ready) — il
+    # sarim sub frozen. In exe browserul vine din Chrome real / bundle (vezi --selfcheck).
+    if not getattr(sys, "frozen", False):
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
+                check=False, capture_output=True,
+            )
+        except Exception as exc:
+            print(f"[Playwright] install skip: {exc}")
 
     scheduler.add_job(
         check_alerts,

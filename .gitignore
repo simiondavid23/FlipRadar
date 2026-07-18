@@ -32,3 +32,8 @@ scripts/diagnostics/
 # chei per-instanta generate in data dir (PKG-DATA / VAPID-AUTO)
 secret_key
 vapid_private_key
+
+# PyInstaller — artefacte de build (PKG-3b), NU se comit
+packaging/build/
+packaging/dist/
+packaging/flipradar.ico

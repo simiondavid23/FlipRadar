@@ -93,8 +93,95 @@ def _shutdown(server) -> None:
     server.should_exit = True
 
 
+def _selfcheck() -> int:
+    """Diagnostic per componenta (PKG-3b). Rulat la validarea build-ului si
+    pentru suport DUPA release (`FlipRadar.exe --selfcheck`). Fiecare
+    componenta in try/except cu [OK]/[FAIL]. Exit 0 daca ESENTIALELE merg
+    (Chrome real e informativ — exista fallback pe Chromium/patchright).
+    Sub frozen scrie rezultatul si in <data_dir>/selfcheck_result.txt, usor
+    de gasit de utilizator la suport."""
+    results = []
+    total = 0
+    ok = 0
+    essential_ok = True
+
+    def run(name, fn, essential=True):
+        nonlocal total, ok, essential_ok
+        total += 1
+        try:
+            detail = fn()
+            results.append(f"[OK]   {name}" + (f" — {detail}" if detail else ""))
+            ok += 1
+        except Exception as exc:
+            results.append(f"[FAIL] {name} — {type(exc).__name__}: {str(exc)[:140]}")
+            if essential:
+                essential_ok = False
+
+    def _env():
+        from app.version import APP_VERSION
+        from app.paths import get_data_dir
+        dd = get_data_dir()
+        try:
+            from app.main import FRONTEND_OUT
+            fo = f"frontend_out={FRONTEND_OUT} (exista={FRONTEND_OUT.is_dir()})"
+        except Exception as exc:
+            fo = f"frontend_out=EROARE:{exc}"
+        return (f"FlipRadar v{APP_VERSION}, Python {sys.version.split()[0]}, "
+                f"frozen={getattr(sys, 'frozen', False)}, data_dir={dd}; {fo}")
+
+    def _curl_cffi():
+        from curl_cffi import requests as cffi_req
+        code = cffi_req.get("https://www.olx.ro", impersonate="chrome110",
+                            timeout=10).status_code
+        if code >= 500:
+            raise RuntimeError(f"status {code}")
+        return f"olx.ro -> HTTP {code}"
+
+    def _patchright():
+        from patchright.sync_api import sync_playwright
+        p = sync_playwright().start()
+        p.stop()
+        return "driver Node pornit"
+
+    def _playwright():
+        from playwright.sync_api import sync_playwright
+        p = sync_playwright().start()
+        p.stop()
+        return "driver Node pornit"
+
+    def _chrome():
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            b = p.chromium.launch(headless=True, channel="chrome")
+            b.close()
+        return "Google Chrome real pornit"
+
+    run("mediu", _env)
+    run("curl_cffi (HTTP live)", _curl_cffi)
+    run("patchright", _patchright)
+    run("playwright", _playwright)
+    run("chrome (informativ)", _chrome, essential=False)
+
+    summary = f"SELFCHECK: {ok}/{total} componente OK"
+    report = "\n".join(["===== FlipRadar --selfcheck ====="] + results + [summary])
+    print(report)
+
+    if getattr(sys, "frozen", False):
+        try:
+            from app.paths import get_data_dir
+            out = get_data_dir() / "selfcheck_result.txt"
+            out.write_text(report + "\n", encoding="utf-8")
+            print(f"[Selfcheck] Rezultat scris si in {out}")
+        except Exception as exc:
+            print(f"[Selfcheck] Nu am putut scrie selfcheck_result.txt: {exc}")
+
+    return 0 if essential_ok else 1
+
+
 def main() -> None:
     _setup_frozen_logging()
+    if "--selfcheck" in sys.argv:
+        sys.exit(_selfcheck())
     port, already = _choose_port()
     url = f"http://127.0.0.1:{port}"
     if already:
