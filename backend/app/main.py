@@ -481,7 +481,16 @@ from pathlib import Path
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-FRONTEND_OUT = Path(__file__).resolve().parents[2] / "frontend" / "out"
+def _resolve_frontend_out() -> Path:
+    """Sub PyInstaller (onedir), frontend-ul static sta in folderul
+    frontend_out/ de langa executabil (copiat de build — PKG-3b);
+    in dev, in frontend/out din repo (generat de npm run build)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "frontend_out"
+    return Path(__file__).resolve().parents[2] / "frontend" / "out"
+
+
+FRONTEND_OUT = _resolve_frontend_out()
 
 if (FRONTEND_OUT / "_next").is_dir():
     app.mount(

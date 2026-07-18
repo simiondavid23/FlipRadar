@@ -63,3 +63,7 @@ scikit-learn==1.9.0
 joblib==1.5.3
 numpy==2.4.6
 pandas==3.0.3
+
+# Launcher exe — system tray + iconita (PKG-3a)
+pystray==0.19.5
+pillow==12.2.0
