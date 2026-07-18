@@ -68,6 +68,13 @@ export const authAPI = {
   getMe: () => api.get("/api/auth/me"),
 };
 
+// Licentiere (KEY-1) — activare pe baza de cheie semnata Ed25519, mod desktop.
+export const licenseAPI = {
+  status: () => api.get("/api/license/status"),
+  activate: (key) => api.post("/api/license/activate", { key }),
+  session: () => api.post("/api/license/session"),
+};
+
 // Produse
 export const productsAPI = {
   getProducts: (params) => api.get("/api/products/", { params }),

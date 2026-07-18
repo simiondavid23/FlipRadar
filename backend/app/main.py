@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import auth, products, alerts, dashboard
+from app.routers import license  # KEY-1 — licentiere cu cheie de activare (mod desktop)
 from app.routers import scraping
 from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
@@ -455,6 +456,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 from app.routers import health
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(license.router)  # KEY-1
 app.include_router(products.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)

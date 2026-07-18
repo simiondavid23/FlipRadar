@@ -33,6 +33,9 @@ scripts/diagnostics/
 secret_key
 vapid_private_key
 
+# KEY-1 — cheia privata Ed25519 de semnare a licentelor (NU se comite niciodata)
+scripts/licensing/keys/
+
 # PyInstaller — artefacte de build (PKG-3b), NU se comit
 packaging/build/
 packaging/dist/

@@ -1,28 +1,45 @@
 "use client";
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import axios from "axios";
-import { Mail, Lock, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap } from "lucide-react";
+import { KeyRound, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap } from "lucide-react";
 import { licenseAPI } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-  || (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
-
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function ActivatePage() {
+  const [licenseKey, setLicenseKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Cat verificam starea licentei nu aratam formularul (evitam un flash inutil).
+  const [checking, setChecking] = useState(true);
 
-  // KEY-1 — in modul desktop nu exista login clasic: redirectam catre activarea prin cheie.
+  // La mount: daca nu suntem in mod desktop -> login clasic; daca licenta e deja
+  // activa -> sesiune silentioasa + dashboard; altfel afisam formularul de activare.
   useEffect(() => {
+    let cancelled = false;
     licenseAPI
       .status()
-      .then((res) => {
-        if (res.data?.local_mode) window.location.href = "/activate";
+      .then(async (res) => {
+        const data = res.data || {};
+        if (!data.local_mode) {
+          window.location.href = "/login";
+          return;
+        }
+        if (data.activated) {
+          try {
+            await licenseAPI.session();
+            window.location.href = "/dashboard";
+            return;
+          } catch (_e) {
+            // Licenta prezenta dar invalida intre timp — ramanem pe formular.
+          }
+        }
+        if (!cancelled) setChecking(false);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSubmit = async (e) => {
@@ -30,20 +47,11 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      // MODIFICARE 3 — login setează cookie-urile httpOnly; răspunsul conține user-ul.
-      const loginRes = await axios.post(
-        API_URL + "/api/auth/login",
-        { email, password },
-        { withCredentials: true }
-      );
+      await licenseAPI.activate(licenseKey.trim());
       window.location.href = "/dashboard";
     } catch (err) {
       const detail = err.response?.data?.detail;
-      if (typeof detail === "string") {
-        setError(detail);
-      } else {
-        setError("Email sau parola incorecta");
-      }
+      setError(typeof detail === "string" ? detail : "Cheie de activare invalidă.");
       setLoading(false);
     }
   };
@@ -53,6 +61,7 @@ export default function LoginPage() {
     borderRadius: "0.75rem",
     color: "var(--text-primary)",
     fontSize: "0.875rem",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     backgroundColor: "var(--bg-dark)",
     border: "1px solid var(--border-color)",
     paddingLeft: "3rem",
@@ -63,6 +72,15 @@ export default function LoginPage() {
   };
 
   const labelStyle = { display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.625rem", color: "var(--text-secondary)" };
+
+  if (checking) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-dark)" }}>
+        <div style={{ width: "2rem", height: "2rem", border: "3px solid var(--border-color)", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
@@ -98,16 +116,16 @@ export default function LoginPage() {
           />
           <div style={{ position: "relative", zIndex: 10, textAlign: "center", maxWidth: "32rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
             <h1 style={{ fontSize: "2.25rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.2 }}>
-              Descopera produse <span style={{ color: "#60a5fa" }}>profitabile</span> pentru revanzare
+              Activează-ți <span style={{ color: "#60a5fa" }}>licența</span> FlipRadar
             </h1>
             <p style={{ color: "var(--text-secondary)", fontSize: "1.125rem" }}>
-              Analizeaza piata, monitorizeaza preturile si gaseste cele mai bune oportunitati de revanzare.
+              O singură activare pe acest calculator. După ce introduci cheia, aplicația pornește automat la fiecare deschidere.
             </p>
             <div style={{ alignSelf: "center", display: "inline-flex", flexDirection: "column", gap: "0.75rem", paddingTop: "1rem" }}>
               {[
                 { icon: TrendingUp, text: "Analiza automata a profitabilitatii" },
                 { icon: Zap, text: "Alerte in timp real pentru oportunitati" },
-                { icon: ShieldCheck, text: "Date verificate din surse multiple" },
+                { icon: ShieldCheck, text: "Verificare offline, fara cont online" },
               ].map(({ icon: Icon, text }, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                   <div style={{ width: "2.25rem", height: "2.25rem", borderRadius: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, backgroundColor: "rgba(37, 99, 235, 0.15)" }}>
@@ -135,8 +153,8 @@ export default function LoginPage() {
             </div>
 
             <div style={{ marginBottom: "2.5rem", textAlign: "center" }}>
-              <h2 style={{ fontSize: "1.875rem", fontWeight: 600, color: "var(--text-primary)" }}>Autentificare</h2>
-              <p style={{ color: "var(--text-secondary)", marginTop: "0.75rem", fontSize: "1rem" }}>Introdu datele contului tau<br />pentru a continua</p>
+              <h2 style={{ fontSize: "1.875rem", fontWeight: 600, color: "var(--text-primary)" }}>Activare</h2>
+              <p style={{ color: "var(--text-secondary)", marginTop: "0.75rem", fontSize: "1rem" }}>Lipește cheia de activare<br />primită de la furnizor</p>
             </div>
 
             {error && (
@@ -148,29 +166,18 @@ export default function LoginPage() {
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.5rem", marginBottom: 0 }}>
               <div>
-                <label style={labelStyle}>Email</label>
+                <label style={labelStyle}>Cheie de activare</label>
                 <div style={{ position: "relative" }}>
-                  <Mail style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-muted)", pointerEvents: "none", zIndex: 10 }} />
+                  <KeyRound style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-muted)", pointerEvents: "none", zIndex: 10 }} />
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="email@exemplu.com"
-                    required
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={labelStyle}>Parola</label>
-                <div style={{ position: "relative" }}>
-                  <Lock style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-muted)", pointerEvents: "none", zIndex: 10 }} />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Introdu parola"
+                    type="text"
+                    value={licenseKey}
+                    onChange={(e) => setLicenseKey(e.target.value)}
+                    placeholder="FLIP.…"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     required
                     style={inputStyle}
                   />
@@ -210,29 +217,14 @@ export default function LoginPage() {
                   {loading ? (
                     <div style={{ width: "1.25rem", height: "1.25rem", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
                   ) : (
-                    <>Intra in cont <ArrowRight style={{ width: "1rem", height: "1rem" }} /></>
+                    <>Activează <ArrowRight style={{ width: "1rem", height: "1rem" }} /></>
                   )}
                 </button>
               </div>
             </form>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", margin: "2rem 0" }}>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "var(--bg-card)" }} />
-              <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>sau</span>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "var(--bg-card)" }} />
-            </div>
-
-            <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "1rem" }}>
-              Nu ai cont?{" "}
-              <Link href="/register" style={{ color: "#60a5fa", fontWeight: 500, textDecoration: "none" }}>
-                Creeaza cont gratuit
-              </Link>
-            </p>
-
-            <p style={{ textAlign: "center", fontSize: "1rem", marginTop: "1rem" }}>
-              <Link href="/reset-password" style={{ color: "var(--text-muted)", textDecoration: "none" }}>
-                Ai uitat parola?
-              </Link>
+            <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "2rem", lineHeight: 1.6 }}>
+              Cheia se primește de la furnizor și se lipește o singură dată. Verificarea se face local, fără conexiune la internet.
             </p>
           </div>
         </div>

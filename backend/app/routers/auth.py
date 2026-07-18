@@ -20,6 +20,8 @@ from app.utils.auth import (
     decode_token,
     get_current_user,
 )
+# KEY-1 — in modul desktop (licentiere), fluxul email+parola de self-service e ascuns.
+from app.services.license_service import is_local_mode
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -27,6 +29,8 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 @router.post("/register", response_model=UserResponse)
 @limiter.limit("5/minute")
 def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
+    if is_local_mode():
+        raise HTTPException(status_code=404, detail="Indisponibil în modul desktop.")
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Aceasta adresa de email este deja inregistrata")
@@ -132,6 +136,8 @@ def logout(response: Response):
 @router.get("/security-question", response_model=SecurityQuestionResponse)
 @limiter.limit("10/minute")
 def get_security_question(request: Request, email: str = Query(...), db: Session = Depends(get_db)):
+    if is_local_mode():
+        raise HTTPException(status_code=404, detail="Indisponibil în modul desktop.")
     user = db.query(User).filter(User.email == email).first()
     if not user or not user.security_question:
         raise HTTPException(
@@ -144,6 +150,8 @@ def get_security_question(request: Request, email: str = Query(...), db: Session
 @router.post("/reset-password")
 @limiter.limit("5/minute")
 def reset_password(request: Request, data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    if is_local_mode():
+        raise HTTPException(status_code=404, detail="Indisponibil în modul desktop.")
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not user.security_answer_hash:
         raise HTTPException(
