@@ -93,6 +93,122 @@ def _shutdown(server) -> None:
     server.should_exit = True
 
 
+# ── UI (PKG-4): fereastra nativa pywebview/WebView2 cu fallback pe browser ───────
+def _window_mode_enabled() -> bool:
+    """Fereastra nativa (pywebview) e activa cand NU e fortat browserul
+    (FLIPRADAR_NO_WINDOW != "1") SI fie suntem sub PyInstaller (frozen), fie in
+    dev cu FLIPRADAR_WINDOW=1. In dev fara flag ramane comportamentul istoric
+    (browser), ca sa nu deranjeze fluxul de dezvoltare."""
+    if os.environ.get("FLIPRADAR_NO_WINDOW") == "1":
+        return False
+    if getattr(sys, "frozen", False):
+        return True
+    return os.environ.get("FLIPRADAR_WINDOW") == "1"
+
+
+def _run_tray_browser(url: str, app_version: str, server_thread) -> None:
+    """Ramura clasica (fallback + FLIPRADAR_NO_WINDOW + dev implicit): deschide
+    UI-ul in browserul implicit + tray pystray BLOCANT (icon.run()). Logica e
+    EXACT cea de dinainte de PKG-4; blocheaza pana la Iesire/Ctrl+C, apoi revine
+    ca main() sa faca shutdown-ul comun."""
+    webbrowser.open(url)
+    try:
+        import pystray
+        icon = pystray.Icon(
+            "flipradar", _make_icon_image(), f"FlipRadar v{app_version}",
+            menu=pystray.Menu(
+                pystray.MenuItem("Deschide FlipRadar",
+                                 lambda icon, item: webbrowser.open(url), default=True),
+                pystray.MenuItem("Ieșire", lambda icon, item: icon.stop()),
+            ))
+        icon.run()  # blocant pana la Iesire
+        print("[Launcher] Iesire din tray — opresc serverul.")
+    except KeyboardInterrupt:
+        print("[Launcher] Ctrl+C — opresc serverul.")
+    except Exception as exc:
+        print(f"[Launcher] Tray indisponibil ({exc}) — mod consola, Ctrl+C pentru oprire.")
+        try:
+            while server_thread.is_alive():
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+
+
+def _open_window(url: str, app_version: str, on_exit) -> None:
+    """Ramura fereastra nativa (pywebview/WebView2) peste ACELASI server local.
+    X = ascunde fereastra in tray (procesul + scanerele raman vii); Iesire din
+    tray inchide efectiv. Orice esec de import/creare ridica exceptie -> apelantul
+    (main) face fallback pe browser. webview.start() e BLOCANT pe main thread;
+    dupa revenire (destroy la Iesire) cheama on_exit() (shutdown-ul comun)."""
+    import webview  # import in interior: fail -> fallback la apelant
+
+    window = webview.create_window(
+        f"FlipRadar v{app_version}", url,
+        width=1280, height=800, min_size=(1024, 640))
+
+    exiting = threading.Event()
+
+    def _on_closing():
+        # X pe fereastra: daca nu iesim efectiv, ascundem in tray si ANULAM
+        # inchiderea. pywebview 5 pe WebView2 (winforms): return False ->
+        # args.Cancel=True (evenimentul `closing` e locking, deci valoarea conteaza).
+        if not exiting.is_set():
+            window.hide()
+            return False
+        return True
+
+    window.events.closing += _on_closing
+
+    # Tray-ul porneste INAINTE de webview.start() (blocant) si ruleaza detasat.
+    import pystray
+
+    def _show(icon, item):
+        try:
+            window.show()
+        except Exception:
+            webbrowser.open(url)  # fereastra a murit -> deschidem browserul
+
+    def _exit(icon, item):
+        exiting.set()
+        try:
+            window.destroy()
+        except Exception:
+            pass
+        icon.stop()
+
+    icon = pystray.Icon(
+        "flipradar", _make_icon_image(), f"FlipRadar v{app_version}",
+        menu=pystray.Menu(
+            pystray.MenuItem("Deschide FlipRadar", _show, default=True),
+            pystray.MenuItem("Ieșire", _exit),
+        ))
+    icon.run_detached()
+
+    try:
+        webview.start()  # blocant pe MAIN THREAD pana la destroy
+    except Exception:
+        try:
+            icon.stop()
+        except Exception:
+            pass
+        raise  # -> fallback browser in main
+    try:
+        icon.stop()  # daca fereastra s-a inchis fara Iesire, oprim si tray-ul
+    except Exception:
+        pass
+    on_exit()
+
+
+def _open_viewer(url: str, app_version: str) -> None:
+    """A doua instanta: doar o fereastra-viewer catre instanta existenta. Fara
+    tray, fara server; webview.start() blocheaza pana la inchidere, apoi return."""
+    import webview
+    webview.create_window(
+        f"FlipRadar v{app_version}", url,
+        width=1280, height=800, min_size=(1024, 640))
+    webview.start()
+
+
 def _selfcheck() -> int:
     """Diagnostic per componenta (PKG-3b). Rulat la validarea build-ului si
     pentru suport DUPA release (`FlipRadar.exe --selfcheck`). Fiecare
@@ -185,7 +301,17 @@ def main() -> None:
     port, already = _choose_port()
     url = f"http://127.0.0.1:{port}"
     if already:
-        print(f"[Launcher] FlipRadar ruleaza deja la {url} — deschid browserul si ies.")
+        # A doua instanta: NU pornim server. In mod fereastra deschidem un viewer
+        # catre instanta existenta (inchiderea lui nu atinge prima instanta);
+        # altfel (mod browser sau esec) deschidem browserul, ca inainte.
+        print(f"[Launcher] FlipRadar ruleaza deja la {url}.")
+        if _window_mode_enabled():
+            try:
+                from app.version import APP_VERSION
+                _open_viewer(url, APP_VERSION)
+                return
+            except Exception as exc:
+                print(f"[Launcher] Fereastra indisponibilă ({exc}) — deschid browserul.")
         webbrowser.open(url)
         return
 
@@ -203,36 +329,27 @@ def main() -> None:
         _shutdown(server)
         sys.exit(1)
     print(f"[Launcher] FlipRadar v{APP_VERSION} gata la {url}")
-    webbrowser.open(url)
 
-    try:
-        import pystray
-        icon = pystray.Icon(
-            "flipradar", _make_icon_image(), f"FlipRadar v{APP_VERSION}",
-            menu=pystray.Menu(
-                pystray.MenuItem("Deschide FlipRadar",
-                                 lambda icon, item: webbrowser.open(url), default=True),
-                pystray.MenuItem("Ieșire", lambda icon, item: icon.stop()),
-            ))
-        icon.run()  # blocant pana la Iesire
-        print("[Launcher] Iesire din tray — opresc serverul.")
-    except KeyboardInterrupt:
-        print("[Launcher] Ctrl+C — opresc serverul.")
-    except Exception as exc:
-        print(f"[Launcher] Tray indisponibil ({exc}) — mod consola, Ctrl+C pentru oprire.")
+    def _finalize():
+        # Secventa finala UNICA si comuna ambelor ramuri (fereastra si browser).
+        # Fortam terminarea: dupa oprirea uvicorn (portul e deja eliberat),
+        # joburile scheduler-ului (scrapere in ThreadPoolExecutor) pot lasa
+        # thread-uri non-daemon care, prin atexit-join din concurrent.futures, ar
+        # tine procesul viu la nesfarsit. os._exit ocoleste asta si inchide efectiv.
+        _shutdown(server)
+        t.join(timeout=10)
+        os._exit(0)
+
+    if _window_mode_enabled():
         try:
-            while t.is_alive():
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
+            _open_window(url, APP_VERSION, on_exit=_finalize)
+            return  # _open_window -> on_exit=_finalize -> os._exit(0); nu se mai revine
+        except Exception as exc:
+            print(f"[Launcher] Fereastra indisponibilă ({exc}) — deschid browserul.")
 
-    _shutdown(server)
-    t.join(timeout=10)
-    # Fortam terminarea: dupa oprirea uvicorn (portul e deja eliberat), joburile
-    # scheduler-ului (scrapere in ThreadPoolExecutor) pot lasa thread-uri
-    # non-daemon care, prin atexit-join din concurrent.futures, ar tine procesul
-    # in viata la nesfarsit. os._exit ocoleste asta si inchide efectiv aplicatia.
-    os._exit(0)
+    # Mod browser: FLIPRADAR_NO_WINDOW / dev implicit, sau fallback dupa esecul ferestrei.
+    _run_tray_browser(url, APP_VERSION, t)
+    _finalize()
 
 
 if __name__ == "__main__":

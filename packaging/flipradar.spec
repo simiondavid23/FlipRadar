@@ -17,11 +17,21 @@ binaries = []
 # invizibil analizei statice.
 hiddenimports = ["pystray._win32"]
 
-for _pkg in ("curl_cffi", "patchright", "playwright"):
+# collect_all si pentru stiva pywebview (PKG-4):
+#  - webview: aduce lib/ cu WebView2Loader + Microsoft.Web.WebView2.*.dll +
+#    WebBrowserInterop.*.dll (backend-ul EdgeChromium/WinForms);
+#  - pythonnet: aduce Python.Runtime.dll + interopul .NET (clr);
+#  - clr_loader: bootstrap-ul care incarca .NET Framework (prezent pe Windows).
+# PyInstaller nu are hook-uri proprii pentru niciunul (verificat empiric).
+for _pkg in ("curl_cffi", "patchright", "playwright", "webview", "pythonnet", "clr_loader"):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b
     hiddenimports += _h
+
+# pywebview alege backend-ul de platforma dinamic (pe Windows: winforms/EdgeChromium),
+# iar interopul .NET intra prin `clr` (pythonnet) — ambele invizibile analizei statice.
+hiddenimports += ["webview.platforms.winforms", "clr"]
 
 
 a = Analysis(

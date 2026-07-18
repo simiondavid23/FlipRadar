@@ -67,3 +67,6 @@ pandas==3.0.3
 # Launcher exe — system tray + iconita (PKG-3a)
 pystray==0.19.5
 pillow==12.2.0
+# Fereastra nativa WebView2 (PKG-4); aduce transitiv pythonnet/clr-loader/bottle
+# (nepinuite manual). Fara ea launcher-ul cade automat pe browser.
+pywebview==5.4
