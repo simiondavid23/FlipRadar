@@ -337,4 +337,9 @@ export const salesAPI = {
   exportPDF: () => api.get("/api/sales/export-pdf", { responseType: "blob" }),
 };
 
+// PKG-UPD — versiune aplicatie + verificare de actualizare (GitHub Releases).
+export const systemAPI = {
+  getVersion: () => api.get("/api/version"),
+};
+
 export default api;
