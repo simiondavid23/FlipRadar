@@ -34,7 +34,7 @@ from app.services.radar.facebook_scraper import search_facebook
 from app.services.radar.lajumate_scraper import search_lajumate
 from app.services.radar.mobilede_scraper import search_mobilede
 from app.services.radar.okazii_scraper import search_okazii
-from app.services.radar.olx_scraper import search_olx, fetch_olx_offer_details
+from app.services.radar.olx_scraper import search_olx, fetch_olx_offer_details, fetch_olx_seller_rating
 from app.services.radar.publi24_scraper import search_publi24
 from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
@@ -2016,6 +2016,15 @@ def _maybe_enrich_olx_inline(listing: dict) -> None:
     for k in ("seller_name", "seller_id", "listed_at", "description", "olx_member_since"):
         if det.get(k) is not None:
             listing[k] = det[k]
+    # RP-7 — rating public al vanzatorului (users/{id}/ -> uuid -> rating-cdn), sub
+    # acelasi ciclu plafonat (fara sleep in plus). Doar daca offers a adus seller_id;
+    # ajunge in listing -> persistat + vazut de compute_seller_risk la _seller_persist_fields.
+    sid = listing.get("seller_id")
+    if sid:
+        rating = fetch_olx_seller_rating(sid)  # {} la orice esec — nu ridica
+        for k in ("seller_rating", "seller_reviews"):
+            if rating.get(k) is not None:
+                listing[k] = rating[k]
 
 
 def _enrich_vinted_background(db: Session, user: User) -> None:
@@ -2129,6 +2138,13 @@ def _enrich_olx_backlog(db: Session, user: User) -> None:
             row.description = det["description"]
         if det.get("olx_member_since") is not None:
             extra["olx_member_since"] = det["olx_member_since"]
+        # RP-7 — rating vanzator INAINTE de compute_seller_risk (ca risc-ul sa-l vada).
+        if det.get("seller_id"):
+            rating = fetch_olx_seller_rating(det["seller_id"])  # {} la orice esec
+            if rating.get("seller_rating") is not None:
+                row.seller_rating = rating["seller_rating"]
+            if rating.get("seller_reviews") is not None:
+                row.seller_reviews = rating["seller_reviews"]
         kw = db.query(RadarKeyword).filter(RadarKeyword.id == row.keyword_id).first()
         risk, reason = compute_seller_risk(
             "olx", row.price, kw.resale_price if kw else None, row.seller_name,

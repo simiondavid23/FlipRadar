@@ -389,6 +389,73 @@ def _map_olx_offer(data: dict) -> dict:
     return out
 
 
+def fetch_olx_seller_rating(seller_id) -> dict:
+    """Rating public al vanzatorului OLX, FARA auth (confirmat RP-DIAG-2). Doua GET-uri:
+      1. /api/v1/users/{seller_id}/  -> data.uuid;
+      2. rating-cdn.css.olx.io/ratings/v1/public/olxro/user/{uuid}/eligibleClusters
+         ?includeScores=true  -> _map_olx_rating.
+    Returneaza {seller_rating, seller_reviews} (doar cheile prezente) sau {} la orice
+    status != 200 / lipsa uuid / exceptie (caller pastreaza ce are). Fara cookie/Origin
+    (build_headers nu le adauga); fara retry agresiv."""
+    if not seller_id:
+        return {}
+    hdrs = build_headers({
+        "Referer": "https://www.olx.ro/",
+        "Accept": "application/json, text/plain, */*",
+    })
+    try:
+        ru = curl_requests.get(
+            f"https://www.olx.ro/api/v1/users/{seller_id}/",
+            headers=hdrs, impersonate=_IMPERSONATE, timeout=20,
+        )
+        if ru.status_code != 200:
+            return {}
+        uuid = ((ru.json() or {}).get("data") or {}).get("uuid")
+        if not uuid:
+            return {}
+        rr = curl_requests.get(
+            f"https://rating-cdn.css.olx.io/ratings/v1/public/olxro/user/{uuid}/eligibleClusters?includeScores=true",
+            headers=hdrs, impersonate=_IMPERSONATE, timeout=20,
+        )
+        if rr.status_code != 200:
+            return {}
+        clusters = rr.json() or {}
+    except Exception as exc:
+        print(f"[OlxScraper] seller rating eroare ({seller_id}): {exc}")
+        return {}
+    return _map_olx_rating(clusters)
+
+
+def _map_olx_rating(clusters: dict) -> dict:
+    """Mapeaza raspunsul eligibleClusters (rating-cdn) la campurile noastre (functie
+    PURA, testabila pe fixture): seller_rating/seller_reviews.
+
+    Forma reala (RP-DIAG-2): clusters[0].scoreDetails.value (media stelelor 0-5) si
+    clusters[0].scoreDetails.ratings.totalCount (nr. recenzii). Toleranta la structura
+    lipsa/None -> {} (un camp absent se omite, nu se inventeaza 0)."""
+    out: dict = {}
+    if not isinstance(clusters, dict):
+        return out
+    lst = clusters.get("clusters")
+    if not isinstance(lst, list) or not lst:
+        return out
+    first = lst[0]
+    if not isinstance(first, dict):
+        return out
+    score = first.get("scoreDetails")
+    if not isinstance(score, dict):
+        return out
+    value = score.get("value")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        out["seller_rating"] = float(value)
+    ratings = score.get("ratings")
+    if isinstance(ratings, dict):
+        total = ratings.get("totalCount")
+        if isinstance(total, int) and not isinstance(total, bool):
+            out["seller_reviews"] = total
+    return out
+
+
 def search_olx(
     keyword: str,
     max_price: float,
