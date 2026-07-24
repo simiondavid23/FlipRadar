@@ -67,7 +67,8 @@ def _emit_session(response: Response, user: User) -> None:
 
 @router.get("/status")
 def get_license_status():
-    """Public, orice mod. {"local_mode","activated"[,"lid","name","iss","exp"]}."""
+    """Public, orice mod. {"local_mode","activated"[,"machine_code"][,"lid","name",
+    "iss","exp","hwid"]}; "machine_code" (KEY-2) doar in mod local."""
     return license_service.get_status()
 
 
@@ -78,7 +79,10 @@ def activate(body: ActivateBody, response: Response, db: Session = Depends(get_d
     if not is_local_mode():
         raise HTTPException(status_code=404, detail="Indisponibil.")
     try:
-        license_service.parse_license(body.key)
+        payload = license_service.parse_license(body.key)
+        # KEY-2 — bindingul hardware se verifica INAINTE de save: o cheie emisa
+        # pentru alt computer nu ajunge niciodata pe disc.
+        license_service.check_hwid(payload)
     except LicenseError as e:
         raise HTTPException(status_code=400, detail=str(e))
     license_service.save_license(body.key)
@@ -97,7 +101,8 @@ def open_session(response: Response, db: Session = Depends(get_db)):
     if not key:
         raise HTTPException(status_code=401, detail="Nicio licenta activa.")
     try:
-        license_service.parse_license(key)
+        payload = license_service.parse_license(key)
+        license_service.check_hwid(payload)  # KEY-2 — masina s-a schimbat => 401
     except LicenseError as e:
         raise HTTPException(status_code=401, detail=str(e))
     user = _ensure_local_user(db)

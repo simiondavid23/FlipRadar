@@ -3,11 +3,13 @@
 
 Subcomenzi:
   gen-keys                        genereaza perechea Ed25519 (o singura data)
-  issue --lid ID [--name] [--exp] emite o cheie de activare semnata
+  issue --lid ID [--name] [--hwid] [--exp]  emite o cheie de activare semnata
   verify <cheie>                  valideaza o cheie cu cheia publica din service
 
 Formatul cheii:  FLIP.<b64url(payload_json)>.<b64url(semnatura_64B)>  (fara padding)
-Payload compact: {"lid","iss"[,"name"][,"exp"]}, semnat cu cheia privata Ed25519.
+Payload compact: {"lid","iss"[,"name"][,"hwid"][,"exp"]}, semnat cu cheia privata
+Ed25519. "hwid" (KEY-2) leaga cheia de un singur computer — codul de masina se ia
+din ecranul de activare al clientului; fara el cheia e universala.
 
 Cheia PRIVATA (scripts/licensing/keys/license_private.pem) e GITIGNORED si NU se
 distribuie niciodata. Pierderea ei = imposibil de emis chei compatibile cu
@@ -64,11 +66,26 @@ def cmd_gen_keys(_args):
     print(f"    (base64url raw, {len(pub_b64)} caractere)")
 
 
+def _valid_hwid(s: str) -> bool:
+    """Validare laxa a codului de masina: XXXX-XXXX-XXXX-XXXX (19 caractere, cratime
+    pe pozitiile 4/9/14, restul hex). Nu verificam ca ar corespunde unei masini reale."""
+    if len(s) != 19:
+        return False
+    if [i for i, c in enumerate(s) if c == "-"] != [4, 9, 14]:
+        return False
+    return all(c in "0123456789ABCDEF" for c in s.replace("-", ""))
+
+
 def cmd_issue(args):
     priv = _load_private()
     payload = {"lid": args.lid, "iss": datetime.now(timezone.utc).strftime("%Y-%m-%d")}
     if args.name:
         payload["name"] = args.name
+    if args.hwid:
+        hwid = args.hwid.strip().upper()
+        if not _valid_hwid(hwid):
+            sys.exit(f"[license] --hwid invalid (astept XXXX-XXXX-XXXX-XXXX, hex): {args.hwid}")
+        payload["hwid"] = hwid
     if args.exp:
         try:
             datetime.strptime(args.exp, "%Y-%m-%d")
@@ -93,6 +110,10 @@ def cmd_verify(args):
         sys.exit(f"[license] INVALID: {e}")
     print("[license] VALID. Payload:")
     print(json.dumps(payload, indent=2, ensure_ascii=False))
+    # NU comparam hwid-ul cu masina curenta: emitentul semneaza de pe alt computer
+    # decat clientul, deci o nepotrivire aici ar fi normala si derutanta.
+    if "hwid" in payload:
+        print(f"[license] cheia e legata de computerul {payload['hwid']} — valida doar acolo.")
 
 
 def main():
@@ -103,6 +124,8 @@ def main():
     p_issue = sub.add_parser("issue", help="emite o cheie de activare semnata")
     p_issue.add_argument("--lid", required=True, help="ID licenta, ex: FR-0001")
     p_issue.add_argument("--name", help="nume client (optional)")
+    p_issue.add_argument(
+        "--hwid", help="codul de masina al clientului, format XXXX-XXXX-XXXX-XXXX (optional)")
     p_issue.add_argument("--exp", help="data expirarii YYYY-MM-DD (optional)")
     p_verify = sub.add_parser("verify", help="valideaza o cheie emisa")
     p_verify.add_argument("key", help="cheia de activare FLIP.<...>.<...>")

@@ -7,6 +7,7 @@ FLIPRADAR_DATA_DIR), iar modul local se simuleaza cu FLIPRADAR_LOCAL_MODE=1.
 """
 import base64
 import json
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -197,7 +198,9 @@ def test_status_endpoint_public(client, local_mode, signer):
     """/status merge in orice mod, fara autentificare, si reflecta activarea."""
     before = client.get("/api/license/status")
     assert before.status_code == 200
-    assert before.json() == {"local_mode": True, "activated": False}
+    # KEY-2 — in mod local statusul poarta si machine_code, deci verificam pe campuri.
+    body = before.json()
+    assert body["local_mode"] is True and body["activated"] is False
     client.post("/api/license/activate", json={"key": signer({"lid": "FR-7", "iss": "2026-01-01"})})
     after = client.get("/api/license/status").json()
     assert after["activated"] is True and after["lid"] == "FR-7"
@@ -227,3 +230,86 @@ def test_register_still_works_in_normal_mode(client):
     """Fara mod local, register-ul clasic ramane functional (dev/web neafectat)."""
     resp = client.post("/api/auth/register", json=_reg_payload())
     assert resp.status_code == 200, resp.text
+
+
+# ── KEY-2: binding hardware (cod de masina in payload-ul semnat) ─────────────────
+# FLIPRADAR_MACHINE_ID e override-ul de test: id BRUT, din care serviciul deriva codul.
+_FOREIGN_HWID = "AAAA-BBBB-CCCC-DDDD"  # cod de alt computer (nu poate iesi din sha256)
+
+
+def test_machine_code_format_and_determinism(monkeypatch):
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    code = ls.machine_code()
+    assert re.fullmatch(r"[0-9A-F]{4}(-[0-9A-F]{4}){3}", code), code
+    assert ls.machine_code() == code                       # determinist pe acelasi id
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-B")
+    assert ls.machine_code() != code                       # alt id -> alt cod
+
+
+def test_parse_license_ignores_hwid(monkeypatch, signer):
+    """parse_license ramane PURA: semnatura+expirare, fara verificare de masina."""
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    key = signer({"lid": "FR-1", "iss": "2026-01-01", "hwid": _FOREIGN_HWID})
+    assert parse_license(key)["hwid"] == _FOREIGN_HWID
+
+
+def test_check_hwid_absent_match_mismatch(monkeypatch):
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    mine = ls.machine_code()
+    ls.check_hwid({"lid": "FR-1"})                          # fara hwid -> universala
+    ls.check_hwid({"lid": "FR-1", "hwid": mine})            # potrivit
+    ls.check_hwid({"lid": "FR-1", "hwid": f"  {mine.lower()}  "})  # strip + upper
+    with pytest.raises(LicenseError) as ei:
+        ls.check_hwid({"lid": "FR-1", "hwid": _FOREIGN_HWID})
+    assert "alt computer" in str(ei.value)
+
+
+def test_activate_with_matching_hwid(client, local_mode, signer, monkeypatch):
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    key = signer({"lid": "FR-HW", "iss": "2026-01-01", "hwid": ls.machine_code()})
+    resp = client.post("/api/license/activate", json={"key": key})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["activated"] is True
+    assert (local_mode / "license.json").is_file()
+
+
+def test_activate_with_foreign_hwid_400(client, local_mode, signer, monkeypatch):
+    """Cheie emisa pentru alt computer: 400 SI nimic scris pe disc."""
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    key = signer({"lid": "FR-HW", "iss": "2026-01-01", "hwid": _FOREIGN_HWID})
+    resp = client.post("/api/license/activate", json={"key": key})
+    assert resp.status_code == 400
+    assert "alt computer" in resp.json()["detail"]
+    assert not (local_mode / "license.json").exists()
+
+
+def test_session_401_after_machine_change(client, local_mode, signer, monkeypatch):
+    """Licenta activata legal, apoi masina se schimba -> sesiunea nu mai porneste."""
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    key = signer({"lid": "FR-HW", "iss": "2026-01-01", "hwid": ls.machine_code()})
+    assert client.post("/api/license/activate", json={"key": key}).status_code == 200
+    assert client.post("/api/license/session").status_code == 200
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "cu-totul-alta-masina")
+    resp = client.post("/api/license/session")
+    assert resp.status_code == 401
+    assert "alt computer" in resp.json()["detail"]
+
+
+def test_status_exposes_machine_code_and_rejects_foreign_hwid(
+        client, local_mode, signer, monkeypatch):
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    st = client.get("/api/license/status").json()
+    assert st["local_mode"] is True
+    assert st["machine_code"] == ls.machine_code()
+    # Licenta pentru alt computer pusa direct pe disc (activate ar da 400) -> nu activeaza.
+    ls.save_license(signer({"lid": "FR-HW", "iss": "2026-01-01", "hwid": _FOREIGN_HWID}))
+    assert client.get("/api/license/status").json()["activated"] is False
+
+
+def test_key_without_hwid_works_on_any_machine(client, local_mode, signer, monkeypatch):
+    """Cheile fara hwid raman universale (compatibilitate cu cele emise la KEY-1)."""
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "masina-A")
+    key = signer({"lid": "FR-UNIV", "iss": "2026-01-01"})
+    assert client.post("/api/license/activate", json={"key": key}).status_code == 200
+    monkeypatch.setenv("FLIPRADAR_MACHINE_ID", "cu-totul-alta-masina")
+    assert client.post("/api/license/session").status_code == 200

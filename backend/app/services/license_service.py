@@ -2,12 +2,13 @@
 
 O cheie de activare are forma:
     FLIP.<b64url(payload_json)>.<b64url(semnatura_64B)>        (fara padding)
-Payload-ul e JSON compact {"lid","iss"[,"name"][,"exp"]}. Semnatura Ed25519 se
+Payload-ul e JSON compact {"lid","iss"[,"name"][,"hwid"][,"exp"]}. Semnatura Ed25519 se
 verifica pe bytes-ii payload-ului cu cheia publica de mai jos; perechea privata e
 la furnizor (scripts/licensing/keys/, gitignored). Nimic nu iese pe retea —
 totul se valideaza local, deci build-urile desktop functioneaza fara internet.
 """
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -86,6 +87,49 @@ def parse_license(key: str) -> dict:
     return payload
 
 
+def machine_code() -> str:
+    """Codul stabil al acestui computer (KEY-2), format XXXX-XXXX-XXXX-XXXX.
+
+    Sursa id-ului BRUT, in ordine: env FLIPRADAR_MACHINE_ID (override pentru teste,
+    id ne-hashat) -> MachineGuid din registrul Windows -> /etc/machine-id (fallback
+    dev Linux). Id-ul brut nu se expune niciodata: se publica doar sha256 cu sare
+    ("flipradar:"), primele 16 caractere hex, uppercase, grupate 4-4-4-4."""
+    raw = os.getenv("FLIPRADAR_MACHINE_ID")
+    if not raw and os.name == "nt":
+        try:
+            import winreg  # doar pe Windows — modulul nu exista pe Linux
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+                0,
+                # Fara WOW64_64KEY un proces 32-bit ar citi nodul redirectat si ar
+                # produce ALT cod pe aceeasi masina.
+                winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+            ) as k:
+                raw = winreg.QueryValueEx(k, "MachineGuid")[0]
+        except Exception:
+            raw = None
+    if not raw:
+        try:
+            raw = Path("/etc/machine-id").read_text(encoding="utf-8").strip()
+        except Exception:
+            raw = None
+    if not raw:
+        raise LicenseError("Nu pot determina codul acestui computer.")
+    h = hashlib.sha256(("flipradar:" + str(raw)).encode("utf-8")).hexdigest()[:16].upper()
+    return "-".join(h[i:i + 4] for i in range(0, 16, 4))
+
+
+def check_hwid(payload: dict) -> None:
+    """Bindingul hardware al unei chei (KEY-2). Cheile FARA "hwid" raman universale
+    (valabile pe orice computer); cu "hwid" sunt valide doar pe masina emisa.
+    Separata de parse_license ca sa nu-i strice puritatea — o apeleaza apelantii."""
+    if not isinstance(payload, dict) or "hwid" not in payload:
+        return
+    if str(payload["hwid"]).strip().upper() != machine_code():
+        raise LicenseError("Cheia este emisă pentru alt computer.")
+
+
 def license_path() -> Path:
     return get_data_dir() / "license.json"
 
@@ -107,19 +151,28 @@ def load_license() -> str | None:
 
 
 def get_status() -> dict:
-    """{"local_mode","activated"[,"lid","name","iss","exp"]}. Licenta de pe disc e
+    """{"local_mode","activated"[,"machine_code"][,"lid","name","iss","exp","hwid"]}.
+    "machine_code" apare doar in mod local. Licenta de pe disc e
     RE-VERIFICATA la fiecare apel (nu doar prezenta) — o cheie expirata/coruptа
     inseamna activated=False."""
     status = {"local_mode": is_local_mode(), "activated": False}
+    if status["local_mode"]:
+        # KEY-2 — codul masinii e util SI neactivat: userul il trimite vanzatorului
+        # ca sa primeasca o cheie legata de acest computer.
+        try:
+            status["machine_code"] = machine_code()
+        except LicenseError:
+            pass  # nu il putem determina -> campul lipseste, statusul NU crapa
     key = load_license()
     if not key:
         return status
     try:
         payload = parse_license(key)
+        check_hwid(payload)  # KEY-2 — cheie emisa pentru alt computer => activated False
     except LicenseError:
         return status
     status["activated"] = True
-    for field in ("lid", "name", "iss", "exp"):
+    for field in ("lid", "name", "iss", "exp", "hwid"):
         if field in payload:
             status[field] = payload[field]
     return status

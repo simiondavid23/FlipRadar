@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { KeyRound, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap } from "lucide-react";
+import { KeyRound, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap, Copy, Check } from "lucide-react";
 import { licenseAPI } from "@/lib/api";
 
 export default function ActivatePage() {
@@ -10,6 +10,9 @@ export default function ActivatePage() {
   const [loading, setLoading] = useState(false);
   // Cat verificam starea licentei nu aratam formularul (evitam un flash inutil).
   const [checking, setChecking] = useState(true);
+  // KEY-2 — codul acestui computer (din /status, doar in mod local) + feedback la copiere.
+  const [machineCode, setMachineCode] = useState("");
+  const [copied, setCopied] = useState(false);
 
   // La mount: daca nu suntem in mod desktop -> login clasic; daca licenta e deja
   // activa -> sesiune silentioasa + dashboard; altfel afisam formularul de activare.
@@ -19,6 +22,8 @@ export default function ActivatePage() {
       .status()
       .then(async (res) => {
         const data = res.data || {};
+        // KEY-2 — codul de masina, de trimis vanzatorului pentru o cheie legata de el.
+        if (!cancelled && data.machine_code) setMachineCode(data.machine_code);
         if (!data.local_mode) {
           window.location.href = "/login";
           return;
@@ -53,6 +58,17 @@ export default function ActivatePage() {
       const detail = err.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Cheie de activare invalidă.");
       setLoading(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(machineCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (_e) {
+      // Clipboard indisponibil (context ne-securizat / permisiune refuzata):
+      // codul ramane selectabil manual, nu aratam o eroare inutila.
     }
   };
 
@@ -183,6 +199,74 @@ export default function ActivatePage() {
                   />
                 </div>
               </div>
+
+              {machineCode && (
+                <div>
+                  <label style={labelStyle}>Codul acestui computer</label>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.75rem",
+                      borderRadius: "0.75rem",
+                      backgroundColor: "var(--bg-dark)",
+                      border: "1px solid var(--border-color)",
+                      padding: "0.75rem 0.75rem 0.75rem 1rem",
+                    }}
+                  >
+                    <code
+                      style={{
+                        flex: 1,
+                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                        fontSize: "0.875rem",
+                        letterSpacing: "0.06em",
+                        color: "var(--text-primary)",
+                        userSelect: "all",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {machineCode}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      aria-label="Copiază codul acestui computer"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.375rem",
+                        flexShrink: 0,
+                        borderRadius: "0.5rem",
+                        border: "1px solid var(--border-color)",
+                        backgroundColor: "transparent",
+                        color: copied ? "#4ade80" : "var(--text-secondary)",
+                        fontSize: "0.8125rem",
+                        cursor: "pointer",
+                        paddingLeft: "0.625rem",
+                        paddingRight: "0.625rem",
+                        paddingTop: "0.375rem",
+                        paddingBottom: "0.375rem",
+                        transition: "color 0.2s",
+                      }}
+                    >
+                      {copied ? (
+                        <>
+                          <Check style={{ width: "0.875rem", height: "0.875rem" }} />
+                          Copiat
+                        </>
+                      ) : (
+                        <>
+                          <Copy style={{ width: "0.875rem", height: "0.875rem" }} />
+                          Copiază
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", lineHeight: 1.5, margin: "0.625rem 0 0" }}>
+                    Trimite acest cod vânzătorului pentru a primi o cheie de activare legată de acest computer.
+                  </p>
+                </div>
+              )}
 
               <div style={{ paddingTop: "0.5rem" }}>
                 <button
