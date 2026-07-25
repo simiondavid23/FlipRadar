@@ -88,6 +88,16 @@ def _portable_migrations(conn, inspector):
             _migrate(conn, f"add_users_{_col}",
                      f"ALTER TABLE users ADD COLUMN {_col} {_type}")
 
+    # RETAIL-2 — monitorizare prin link: stocul pe sursa (tri-state, NULL = necunoscut)
+    # si pragul procentual de scadere pe alerta (consumat din RETAIL-3).
+    if _table_exists(inspector, "product_sources") and not _column_exists(inspector, "product_sources", "in_stock"):
+        _migrate(conn, "add_product_sources_in_stock",
+                 "ALTER TABLE product_sources ADD COLUMN in_stock BOOLEAN")
+
+    if _table_exists(inspector, "alerts") and not _column_exists(inspector, "alerts", "drop_pct"):
+        _migrate(conn, "add_alerts_drop_pct",
+                 "ALTER TABLE alerts ADD COLUMN drop_pct FLOAT")
+
 
 def run_migrations():
     """Apply any pending column additions."""

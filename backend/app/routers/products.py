@@ -1,5 +1,6 @@
 import random
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -16,16 +17,26 @@ from app.schemas.product import (
     ProductResponse,
     ProductSaveResponse,
     ProductDetailResponse,
+    ProductFromUrlRequest,
+    ProductFromUrlResponse,
     RefreshSourceResult,
     RefreshAllSourcesResponse,
 )
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_feature
+from app.utils.category_mapper import infer_category_from_name
 from app.models.user import User
 from app.services.currency_service import convert
 from app.services.scraper_service import (
     fetch_ean_from_url,
     refresh_price_from_source,
     find_cross_shop_matches,
+)
+# Fara risc de ciclu de import: extractorul importa scraper_service DOAR lenes,
+# in corpul lui extract_product (vezi comentariul de acolo).
+from app.services.product_page_extractor import (
+    extract_product,
+    ProductExtractionError,
+    VALIDATED_DOMAINS,
 )
 
 _SCRAPE_DELAY_RANGE = (0.6, 1.4)
@@ -105,6 +116,10 @@ def attach_source_to_product(
 
 
 router = APIRouter(prefix="/api/products", tags=["Products"])
+
+# Adaugarea prin link face fetch server-side pe un URL dat de user — aceeasi
+# suprafata de scraping ca routerul /api/scraping, deci acelasi gard de feature.
+_scraping_user = require_feature("can_use_scraping")
 
 
 def _user_products_query(db: Session, user_id: int):
@@ -514,6 +529,110 @@ def create_product(
     background_tasks.add_task(_cross_shop_match, new_product.id)
 
     return _build_save_response(new_product, is_new=True, previous_price=None)
+
+
+def _host_key(url: str) -> str:
+    """Hostname lowercase fara "www." — aceeasi cheie de domeniu ca extractorul."""
+    try:
+        host = (urllib.parse.urlparse(url or "").hostname or "").lower()
+    except Exception:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def _from_url_http_error(exc: ProductExtractionError, url: str) -> HTTPException:
+    """ProductExtractionError.reason -> status + mesaj pentru UI."""
+    if exc.reason == "domain_not_allowed":
+        host = _host_key(url) or (url or "")[:80]
+        return HTTPException(
+            status_code=400,
+            detail=f"Domeniul „{host}” nu este pe lista magazinelor suportate.",
+        )
+    if exc.reason in ("no_product_data", "invalid_price"):
+        return HTTPException(
+            status_code=422,
+            detail="Nu am putut extrage datele produsului din această pagină.",
+        )
+    # fetch_failed / challenge (si orice motiv viitor): problema e la magazin.
+    return HTTPException(
+        status_code=502,
+        detail="Magazinul nu a răspuns sau a blocat cererea. Încearcă din nou mai târziu.",
+    )
+
+
+@router.post("/from-url", response_model=ProductFromUrlResponse)
+def create_product_from_url(
+    payload: ProductFromUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_scraping_user),
+):
+    """Adauga un produs pornind DOAR de la link-ul paginii de magazin.
+
+    Extrage datele cu extractorul generic, apoi deleaga integral salvarea catre
+    create_product: dedup-ul per user, snapshot-ul initial de pret si task-urile
+    de fundal (backfill EAN + cross-shop) sunt deja acolo si raman singura
+    implementare. Aici se adauga doar ce e specific link-ului: stocul pe sursa
+    si meta de extractie in raspuns.
+    """
+    url = (payload.url or "").strip()
+    try:
+        res = extract_product(url)
+    except ProductExtractionError as exc:
+        raise _from_url_http_error(exc, url)
+
+    # Canonical-ul e preferat (taie parametrii de sesiune/tracking), dar DOAR daca
+    # ramane pe acelasi magazin: un canonical catre alt domeniu ar muta sursa.
+    canonical = res.get("canonical_url") or ""
+    source_url = canonical if canonical and _host_key(canonical) == res["domain"] else (
+        urllib.parse.urldefrag(url)[0] or url
+    )
+
+    # KEYWORD_MAP e cheiat pe slug-ul magazinului ("emag"), nu pe domeniu — acelasi
+    # apel ca in scraperele de cautare, care intoarce (categorie, subcategorie).
+    main_cat, sub_cat = infer_category_from_name(res["name"], res["domain"].split(".")[0])
+
+    save = create_product(
+        product_data=ProductCreate(
+            name=res["name"],
+            image_url=res["image_url"],
+            source=res["domain"],
+            source_url=source_url,
+            current_price=res["price"],
+            currency=res["currency"],
+            category=main_cat,
+            subcategory=sub_cat,
+        ),
+        background_tasks=background_tasks,
+        db=db,
+        current_user=current_user,
+    )
+
+    # Stocul e singurul camp pe care create_product nu-l cunoaste (ProductCreate e
+    # la nivel de produs, nu de sursa) -> se scrie dupa salvare, pe sursa creata.
+    source_row = (
+        db.query(ProductSource)
+        .filter(ProductSource.product_id == save["id"], ProductSource.source == res["domain"])
+        .first()
+    )
+    if source_row is not None:
+        source_row.in_stock = res["in_stock"]
+        db.commit()
+
+    product = db.query(Product).filter(Product.id == save["id"]).first()
+    return {
+        **_build_detail_response(db, product),
+        "is_new": save["is_new"],
+        "previous_price": save["previous_price"],
+        "price_changed": save["price_changed"],
+        "domain_validated": res["domain"] in VALIDATED_DOMAINS,
+        "extraction": {
+            "method": res["method"],
+            "override_applied": res["override_applied"],
+            "in_stock": res["in_stock"],
+            "is_aggregate": res["is_aggregate"],
+        },
+    }
 
 
 @router.put("/{product_id}", response_model=ProductResponse)

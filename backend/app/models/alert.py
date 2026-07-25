@@ -13,6 +13,9 @@ class Alert(Base):
     target_price = Column(Float, nullable=False)
     currency = Column(String, default="EUR")
     alert_type = Column(String, default="price_drop")  # price_drop | price_rise
+    # RETAIL-3: prag procentual de scadere (ex. 15.0 = alerta la -15% fata de
+    # pretul de referinta). NULL = alerta pe pret-tinta absolut, ca pana acum.
+    drop_pct = Column(Float, nullable=True)
     is_active = Column(Boolean, default=True)
     is_triggered = Column(Boolean, default=False)
     triggered_at = Column(DateTime, nullable=True)

@@ -43,6 +43,8 @@ class ProductSourceResponse(BaseModel):
     source_url: str
     current_price: Optional[float] = None
     currency: str
+    # RETAIL-2 — tri-state: True/False din pagina magazinului, None = necunoscut.
+    in_stock: Optional[bool] = None
     last_checked_at: Optional[UTCDateTime] = None
 
     class Config:
@@ -133,3 +135,29 @@ class ProductDetailResponse(BaseModel):
     lowest_price: Optional[float] = None
     highest_price: Optional[float] = None
     average_price: Optional[float] = None
+
+
+# ── RETAIL-2 — adaugare produs prin link ─────────────────────────────────────────
+
+class ProductFromUrlRequest(BaseModel):
+    """Link-ul lipit de user in UI. Doar URL-ul: restul datelor vin din extractor."""
+    url: str
+
+
+class ExtractionMeta(BaseModel):
+    """Cum au fost obtinute datele — arata in UI cat de sigura e extragerea si
+    ajuta la diagnoza cand un magazin isi schimba structura."""
+    method: str                            # "jsonld" | "og"
+    override_applied: bool = False         # a intervenit un DOMAIN_OVERRIDES
+    in_stock: Optional[bool] = None        # tri-state, ca pe sursa
+    is_aggregate: bool = False             # pretul vine dintr-un interval (lowPrice)
+
+
+class ProductFromUrlResponse(ProductDetailResponse):
+    """Detaliul complet al produsului (ca la GET /{id}) plus rezultatul salvarii,
+    ca UI-ul sa poata afisa produsul imediat, fara un al doilea request."""
+    is_new: bool = True
+    previous_price: Optional[float] = None
+    price_changed: bool = False
+    domain_validated: bool = False         # domeniul e in VALIDATED_DOMAINS
+    extraction: ExtractionMeta
