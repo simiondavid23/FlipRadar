@@ -286,7 +286,10 @@ def _selfcheck() -> int:
         try:
             from app.paths import get_data_dir
             out = get_data_dir() / "selfcheck_result.txt"
-            out.write_text(report + "\n", encoding="utf-8")
+            # BOM utf-8-sig: PowerShell Get-Content detecteaza corect codificarea —
+            # fara el, diacriticele si em-dash-urile apar ca mojibake in rapoartele
+            # pe care clientii le trimit la suport.
+            out.write_text(report + "\n", encoding="utf-8-sig")
             print(f"[Selfcheck] Rezultat scris si in {out}")
         except Exception as exc:
             print(f"[Selfcheck] Nu am putut scrie selfcheck_result.txt: {exc}")

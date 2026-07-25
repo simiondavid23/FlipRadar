@@ -5,6 +5,7 @@ folosim clientul neautentificat. Resetam cache-ul in fiecare test si
 monkeypatch-uim _fetch_latest_release ca sa nu lovim reteaua.
 """
 from app.routers import health
+from app.version import APP_VERSION
 
 
 def _reset_cache():
@@ -27,7 +28,7 @@ def test_version_endpoint_update_available(client, monkeypatch):
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "0.9.0"
+    assert body["version"] == APP_VERSION
     assert body["latest"] == "v9.9.9"
     assert body["update_available"] is True
     assert body["url"] == "https://example.com/rel"
@@ -43,5 +44,5 @@ def test_version_endpoint_fetch_failure_is_silent(client, monkeypatch):
     r = client.get("/api/version")
     assert r.status_code == 200          # esecul e silentios — nu 500
     body = r.json()
-    assert body["version"] == "0.9.0"
+    assert body["version"] == APP_VERSION
     assert body["update_available"] is False

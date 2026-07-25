@@ -6,7 +6,8 @@ Ruleaza din radacina repo-ului cu python-ul din venv (are pyinstaller):
 Pasi: (1) verifica pyinstaller, (2) genereaza flipradar.ico daca lipseste,
 (3) verifica frontend/out (build daca lipseste), (4) curata build/ + dist/,
 (5) ruleaza PyInstaller cu spec-ul (cwd=packaging/), (6) copiaza frontend/out
-langa exe (frontend_out/), (7) raport de marime (total + top 10 fisiere).
+langa exe (frontend_out/), excluzand *.map (source maps nu se livreaza
+clientilor), (7) raport de marime (total + top 10 fisiere).
 """
 import os
 import re
@@ -80,7 +81,8 @@ def _run_pyinstaller():
 def _copy_frontend():
     dst = DIST / "FlipRadar" / "frontend_out"
     print(f"[build] copiez frontend/out -> {dst}")
-    shutil.copytree(FRONTEND_OUT, dst)
+    shutil.copytree(FRONTEND_OUT, dst,
+                    ignore=shutil.ignore_patterns("*.map"))
 
 
 def _report_size():

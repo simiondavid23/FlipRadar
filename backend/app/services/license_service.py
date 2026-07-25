@@ -42,7 +42,7 @@ def _b64u_decode(s: str) -> bytes:
     try:
         return base64.urlsafe_b64decode(s + pad)
     except Exception:
-        raise LicenseError("Cheie de activare invalida (format base64 corupt).")
+        raise LicenseError("Cheie de activare invalidă (format base64 corupt).")
 
 
 def _public_key():
@@ -54,10 +54,10 @@ def parse_license(key: str) -> dict:
     """Valideaza o cheie de activare si intoarce payload-ul, sau ridica LicenseError
     cu mesaj distinct (format / semnatura / expirat). Nu atinge discul sau reteaua."""
     if not isinstance(key, str) or not key.startswith(_PREFIX):
-        raise LicenseError("Cheie de activare invalida (prefix necunoscut).")
+        raise LicenseError("Cheie de activare invalidă (prefix necunoscut).")
     parts = key.split(".")
     if len(parts) != 3:
-        raise LicenseError("Cheie de activare invalida (format gresit).")
+        raise LicenseError("Cheie de activare invalidă (format greșit).")
 
     payload_bytes = _b64u_decode(parts[1])
     signature = _b64u_decode(parts[2])
@@ -66,21 +66,21 @@ def parse_license(key: str) -> dict:
     try:
         _public_key().verify(signature, payload_bytes)
     except InvalidSignature:
-        raise LicenseError("Cheie de activare invalida (semnatura nu se potriveste).")
+        raise LicenseError("Cheie de activare invalidă (semnătura nu se potrivește).")
 
     try:
         payload = json.loads(payload_bytes)
     except Exception:
-        raise LicenseError("Cheie de activare invalida (continut necitibil).")
+        raise LicenseError("Cheie de activare invalidă (conținut necitibil).")
     if not isinstance(payload, dict) or "lid" not in payload:
-        raise LicenseError("Cheie de activare invalida (continut incomplet).")
+        raise LicenseError("Cheie de activare invalidă (conținut incomplet).")
 
     exp = payload.get("exp")
     if exp:
         try:
             exp_date = datetime.strptime(str(exp), "%Y-%m-%d").date()
         except ValueError:
-            raise LicenseError("Cheie de activare invalida (data de expirare necitibila).")
+            raise LicenseError("Cheie de activare invalidă (data de expirare necitibilă).")
         if datetime.now(timezone.utc).date() > exp_date:
             raise LicenseError("Cheia a expirat.")
 
