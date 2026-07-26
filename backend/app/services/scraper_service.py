@@ -808,9 +808,12 @@ def _is_allowed_shop_url(url: str) -> bool:
     """C-14 (anti-SSRF): `source_url` vine liber din formularul userului si e cerut
     server-side (backfill EAN, refresh pret). Fara allow-list, un URL intern
     (169.254.169.254, localhost) ar transforma backend-ul in proxy de scanare
-    interna. Permitem DOAR domeniile magazinelor pe care le stim scrapa.
+    interna. Permitem DOAR domeniile magazinelor pe care le stim citi.
 
-    Domeniile se citesc din _SCRAPERS_BY_SOURCE (singura sursa de adevar).
+    Allow-list-ul e UNIUNEA a doua multimi: scraperele de cautare
+    (_SCRAPERS_BY_SOURCE) si domeniile validate pentru monitorizare prin link
+    (VALIDATED_DOMAINS, RETAIL-3a) — al doilea grup poate contine magazine pentru
+    care avem doar extractie de pagina de produs, fara scraper de cautare.
     Citirea e la apel, nu la import, fiindca dict-ul e definit mai jos in fisier
     decat functia asta — o constanta la nivel de modul ar da NameError.
     """
@@ -822,7 +825,7 @@ def _is_allowed_shop_url(url: str) -> bool:
         hostname = (parsed.hostname or "").lower()
         if not hostname:
             return False
-        for domain in _SCRAPERS_BY_SOURCE:
+        for domain in set(_SCRAPERS_BY_SOURCE) | VALIDATED_DOMAINS:
             # Egalitatea acopera domeniul gol de subdomeniu; endswith pe "."+domain
             # accepta subdomenii legitime (comenzi.farmaciatei.ro) dar respinge
             # sufixele inselatoare (evil-altex.ro.attacker.com).

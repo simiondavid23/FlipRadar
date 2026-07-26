@@ -38,10 +38,15 @@ class ProductExtractionError(Exception):
 
 # Registry per domeniu (cheia = domeniu fara "www."). Toate campurile sunt
 # optionale si se aplica DOAR peste rezultatul de baza:
+#   price_regex — regex cu UN grup de captura, cautat in HTML-ul BRUT; grupul se
+#                 parseaza STRICT ca float in format masina (JSON/JS embedded).
+#                 Are precedenta peste price_selector; match lipsa sau valoare
+#                 invalida => ignorat, se cade pe price_selector, apoi jsonld/og.
 #   price_selector / name_selector / image_selector — selectori CSS
 #   out_of_stock_text — substring case-insensitive in pagina => in_stock False
 #   currency — moneda fixa a magazinului
-# Gol in RETAIL-1: se populeaza in RETAIL-5, dupa validarea live pe magazine.
+# Inca gol: sonda RETAIL-5 (2026-07-26) NU a gasit un pattern de regex stabil pe
+# eMAG — vezi comentariul de la VALIDATED_DOMAINS.
 DOMAIN_OVERRIDES: dict[str, dict] = {}
 
 # Domeniile pe care extractorul a fost validat pe pagini de produs REALE (sonda
@@ -51,11 +56,18 @@ DOMAIN_OVERRIDES: dict[str, dict] = {}
 VALIDATED_DOMAINS: set[str] = {
     # 3/3 pagini extrase prin JSON-LD, pret identic cu cel din lista de cautare.
     "altex.ro",
-    # 5/5 pagini extrase prin JSON-LD. DE STIUT: pe 1 din cele 5 (Lenovo IdeaPad,
-    # pagina marcata "is_genius_eligible":true) JSON-LD-ul purta 5689.42, in timp ce
-    # lista de cautare arata 3459.99 — ambele valori exista in HTML-ul paginii. Deci
-    # JSON-LD-ul eMAG poate purta pretul de lista, nu cea mai buna oferta afisata
-    # userului. De confirmat pe un produs cu pret Genius cunoscut (RETAIL-5).
+    # 5/5 pagini extrase prin JSON-LD.
+    #
+    # LIMITARE CUNOSCUTA (sonda RETAIL-5, 2026-07-26) — NU e legata de Genius, cum
+    # se banuia la RETAIL-3a: pe paginile cu MAI MULTE oferte eMAG afiseaza
+    # "de la <cel mai mic pret>", in timp ce JSON-LD poarta oferta principala.
+    # Exemplu masurat (Lenovo IdeaPad Slim 3, 2 oferte): afisat 3.459,99 lei,
+    # JSON-LD 5689.42. Pe paginile cu o singura oferta relevanta, JSON-LD = afisat.
+    # Niciun regex pe starea JS incorporata nu acopera ambele cazuri: EM.product
+    # da oferta principala (gresit pe multi-oferta), iar EM.multiple_min_price si
+    # datalayer-ul dau minimul altor oferte (gresit pe restul). Ce a mers 5/5 pe
+    # ambele tipuri de pagina e selectorul pretului afisat, ".product-new-price"
+    # — candidatul pentru un price_selector, intr-un task dedicat.
     "emag.ro",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
@@ -352,7 +364,7 @@ def parse_product_html(html: str, url: str) -> dict:
             result, method = og, "og"  # gol: nici JSON-LD, nici OG
 
     domain = _domain_of(url)
-    override_applied = _apply_override(soup, result, DOMAIN_OVERRIDES.get(domain) or {})
+    override_applied = _apply_override(soup, html or "", result, DOMAIN_OVERRIDES.get(domain) or {})
 
     name, price = result["name"], result["price"]
     if not name:
@@ -378,7 +390,27 @@ def parse_product_html(html: str, url: str) -> dict:
     }
 
 
-def _apply_override(soup, result: dict, override: dict) -> bool:
+def _price_from_regex(html: str, pattern: str):
+    """(a_gasit_match, pret) pentru grupul 1 al `pattern` din HTML-ul BRUT.
+
+    Parsare STRICTA cu float(), NU _parse_price_any: sursa e o stare JSON/JS
+    incorporata, unde punctul e MEREU separator zecimal. Trecut prin
+    _parse_price_any, "1234.567" ar fi citit ca mii si ar da 1234567.
+
+    Flag-ul de match e separat de valoare ca apelantul sa stie ca a EXISTAT un
+    candidat de pret in pagina (invalid_price) chiar daca nu s-a putut parsa.
+    """
+    match = re.search(pattern, html or "", re.S)
+    if match is None:
+        return False, None
+    try:
+        value = float(match.group(1))
+    except (TypeError, ValueError, IndexError):
+        return True, None  # captura neparsabila (sau pattern fara grup) -> ignorat
+    return True, (value if value > 0 else None)
+
+
+def _apply_override(soup, html: str, result: dict, override: dict) -> bool:
     """Patch-uieste IN-PLACE doar campurile definite in override, peste rezultatul
     de baza (doar price_selector => numele si stocul raman din JSON-LD).
 
@@ -389,8 +421,22 @@ def _apply_override(soup, result: dict, override: dict) -> bool:
         return False
     applied = False
 
+    # price_regex INAINTEA price_selector: cand magazinul publica pretul afisat
+    # intr-o stare JS incorporata, aceasta e mai stabila decat clasele CSS.
+    # Esecul lui nu e final — se cade pe price_selector, apoi pe jsonld/og.
+    price_done = False
+    pattern = override.get("price_regex")
+    if pattern:
+        matched, regex_price = _price_from_regex(html, pattern)
+        if matched:
+            result["price_seen"] = True
+        if regex_price is not None:
+            result["price"] = regex_price
+            result["is_aggregate"] = False
+            applied = price_done = True
+
     selector = override.get("price_selector")
-    if selector:
+    if selector and not price_done:
         el = soup.select_one(selector)
         if el is not None:
             result["price_seen"] = True

@@ -234,3 +234,39 @@ def test_pcgarage_legitim(monkeypatch):
 
     assert fetch_pcgarage_price_from_url("https://www.pcgarage.ro/produs") == 1234.56
     assert calls == ["https://www.pcgarage.ro/produs"]
+
+
+# ── RETAIL-5: allow-list-ul e uniunea scraperelor cu domeniile validate ────────
+
+def test_domeniu_doar_din_validated_domains_e_acceptat(monkeypatch):
+    """Un magazin monitorizabil prin link, dar FARA scraper de cautare, trebuie
+    sa treaca de C-14 — altfel extract_product l-ar respinge pe propriul domeniu."""
+    import app.services.scraper_service as ss
+
+    assert "magazin-nou.ro" not in ss._SCRAPERS_BY_SOURCE
+    assert _is_allowed_shop_url("https://magazin-nou.ro/p/1") is False  # inainte
+
+    monkeypatch.setattr(ss, "VALIDATED_DOMAINS", ss.VALIDATED_DOMAINS | {"magazin-nou.ro"})
+
+    assert _is_allowed_shop_url("https://magazin-nou.ro/p/1") is True
+
+
+def test_subdomeniul_unui_domeniu_validat_e_acceptat(monkeypatch):
+    import app.services.scraper_service as ss
+
+    monkeypatch.setattr(ss, "VALIDATED_DOMAINS", ss.VALIDATED_DOMAINS | {"magazin-nou.ro"})
+
+    assert _is_allowed_shop_url("https://shop.magazin-nou.ro/p/1") is True
+    # ...dar sufixul inselator ramane respins (aceeasi regula ca la scrapere).
+    assert _is_allowed_shop_url("https://magazin-nou.ro.attacker.com/p/1") is False
+
+
+def test_domeniu_absent_din_ambele_multimi_ramane_respins(monkeypatch):
+    """Regresie: extinderea allow-list-ului nu deschide poarta pentru altcineva."""
+    import app.services.scraper_service as ss
+
+    monkeypatch.setattr(ss, "VALIDATED_DOMAINS", ss.VALIDATED_DOMAINS | {"magazin-nou.ro"})
+
+    assert _is_allowed_shop_url("https://alt-magazin.ro/p/1") is False
+    assert _is_allowed_shop_url("http://169.254.169.254/latest/meta-data/") is False
+    assert _is_allowed_shop_url("http://localhost:8000/api/products/") is False

@@ -293,3 +293,109 @@ def test_canonical_absent_si_www_eliminat():
     assert res["canonical_url"] == "https://www.shop-fake.ro/produs?ref=x"
     assert res["domain"] == "shop-fake.ro"
     assert res["override_applied"] is False
+
+
+# ── RETAIL-5: price_regex (override pe starea JS incorporata) ─────────────────
+
+FAKE_URL = "https://magazin-fake.ro/p/1"
+
+
+def _ld_plus_state(ld_price, state_price, extra_body=""):
+    """Pagina in stilul eMAG: JSON-LD cu un pret, stare JS incorporata cu altul."""
+    return _page(
+        head=_ld(f"""
+            {{"@type": "Product", "name": "Laptop Test",
+              "offers": {{"@type": "Offer", "price": "{ld_price}", "priceCurrency": "RON"}}}}
+        """),
+        body=(f'<script>EM.product = {{\n  id: 42,\n  offer: {{\n    price: {{\n'
+              f'      current: {state_price},\n    }}\n  }},\n}};</script>{extra_body}'),
+    )
+
+
+STATE_REGEX = r'EM\.product\s*=\s*\{.*?price:\s*\{\s*current:\s*([0-9]+(?:\.[0-9]+)?)'
+
+
+def test_price_regex_bate_jsonld(monkeypatch):
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro", {"price_regex": STATE_REGEX})
+
+    res = parse_product_html(_ld_plus_state("5689.42", "3459.99"), FAKE_URL)
+
+    assert res["price"] == 3459.99
+    assert res["override_applied"] is True
+    # Metoda ramane a sursei de baza: override-ul patch-uieste, nu inlocuieste lantul.
+    assert res["method"] == "jsonld"
+    assert res["name"] == "Laptop Test"
+
+
+def test_price_regex_parsare_stricta_format_masina(monkeypatch):
+    """Punctul din starea JS e MEREU zecimal. _parse_price_any ar citi "1234.567"
+    ca separator de mii (1234567) — de aceea regexul foloseste float() direct."""
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro", {"price_regex": STATE_REGEX})
+
+    res = parse_product_html(_ld_plus_state("99,00", "1234.567"), FAKE_URL)
+
+    assert res["price"] == 1234.567
+
+
+def test_price_regex_fara_match_lasa_jsonld(monkeypatch):
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro",
+                        {"price_regex": r"NU_EXISTA_IN_PAGINA:\s*([0-9.]+)"})
+
+    res = parse_product_html(_ld_plus_state("5689.42", "3459.99"), FAKE_URL)
+
+    assert res["price"] == 5689.42
+    assert res["override_applied"] is False  # nimic nu s-a aplicat efectiv
+
+
+def test_price_regex_captura_neparsabila_e_ignorata(monkeypatch):
+    """Captura exista dar nu e numar -> se cade inapoi pe JSON-LD, fara exceptie."""
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro",
+                        {"price_regex": r'"eticheta":\s*"([^"]+)"'})
+    html = _ld_plus_state("5689.42", "3459.99", extra_body='<script>{"eticheta": "la cerere"}</script>')
+
+    res = parse_product_html(html, FAKE_URL)
+
+    assert res["price"] == 5689.42
+    assert res["override_applied"] is False
+
+
+def test_price_regex_zero_e_ignorat(monkeypatch):
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro", {"price_regex": STATE_REGEX})
+
+    res = parse_product_html(_ld_plus_state("5689.42", "0"), FAKE_URL)
+
+    assert res["price"] == 5689.42
+    assert res["override_applied"] is False
+
+
+def test_price_regex_are_precedenta_peste_price_selector(monkeypatch):
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro", {
+        "price_regex": STATE_REGEX,
+        "price_selector": "span.pret-final",
+    })
+    html = _ld_plus_state("5689.42", "3459.99", extra_body='<span class="pret-final">777,00 lei</span>')
+
+    res = parse_product_html(html, FAKE_URL)
+
+    assert res["price"] == 3459.99   # regexul, nu selectorul
+
+
+def test_price_selector_ramane_fallback_cand_regexul_rateaza(monkeypatch):
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-fake.ro", {
+        "price_regex": r"NU_EXISTA:\s*([0-9.]+)",
+        "price_selector": "span.pret-final",
+    })
+    html = _ld_plus_state("5689.42", "3459.99", extra_body='<span class="pret-final">777,00 lei</span>')
+
+    res = parse_product_html(html, FAKE_URL)
+
+    assert res["price"] == 777.0
+    assert res["override_applied"] is True
+
+
+def test_emag_nu_are_inca_override_de_pret():
+    """Santinela RETAIL-5: sonda live n-a gasit un regex care sa dea pretul AFISAT
+    si pe paginile cu o oferta, si pe cele multi-oferta ("de la X"). Cand se adauga
+    un override pentru eMAG, testul asta trebuie actualizat CONSTIENT, impreuna cu
+    dovada din sonda."""
+    assert "emag.ro" not in ppe.DOMAIN_OVERRIDES
