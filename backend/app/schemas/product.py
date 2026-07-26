@@ -45,6 +45,8 @@ class ProductSourceResponse(BaseModel):
     currency: str
     # RETAIL-2 — tri-state: True/False din pagina magazinului, None = necunoscut.
     in_stock: Optional[bool] = None
+    # FASHION-1a — marimea urmarita la aceasta sursa; "" = fara varianta.
+    variant: str = ""
     last_checked_at: Optional[UTCDateTime] = None
 
     class Config:
@@ -121,6 +123,8 @@ class PriceHistoryResponse(BaseModel):
     price: float
     currency: str
     source: Optional[str] = None
+    # FASHION-1a — marimea careia ii apartine pretul; "" = fara varianta.
+    variant: str = ""
     recorded_at: UTCDateTime
 
     class Config:

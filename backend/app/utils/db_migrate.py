@@ -54,6 +54,64 @@ def _migrate(conn, name: str, sql: str) -> None:
         print(f"[DB Migrate] Failed: {name} -> {e}")
 
 
+def _sqlite_atomic_steps(conn, name: str, statements: list[str]) -> None:
+    """Ruleaza statement-urile intr-o tranzactie REALA pe SQLite, ocolind
+    Connection-ul SQLAlchemy.
+
+    Motivul ocolirii: driverul pysqlite deschide tranzactii doar pentru DML si
+    lasa DDL-ul in autocommit, deci un CREATE/DROP ramane aplicat si dupa
+    conn.rollback() — exact scenariul pe care un rebuild de tabela nu si-l poate
+    permite (tabela veche stearsa, cea noua necreata = date pierdute). BEGIN /
+    COMMIT / ROLLBACK explicite pe conexiunea DBAPI acopera si DDL-ul.
+    """
+    raw = conn.connection.dbapi_connection
+    raw.execute("BEGIN")
+    try:
+        for sql in statements:
+            raw.execute(sql)
+        raw.execute("INSERT INTO schema_migrations (migration_name) VALUES (?)", (name,))
+        raw.execute("COMMIT")
+    except Exception:
+        raw.execute("ROLLBACK")
+        raise
+
+
+def _migrate_steps(conn, name: str, statements: list[str]) -> None:
+    """Varianta multi-statement a lui _migrate, pentru migrarile care nu incap
+    intr-un singur statement — tipic rebuild-urile de tabela pe SQLite (CREATE
+    nou + copiere date + DROP + RENAME + recrearea indexurilor), unde ALTER TABLE
+    nu poate schimba o constrangere existenta.
+
+    Aceeasi semantica ca _migrate (skip daca e deja aplicata, inregistrare O
+    SINGURA data dupa succes, print Applied/Failed), cu doua garantii in plus:
+    statement-urile ruleaza secvential in ACEEASI tranzactie, cu un singur commit
+    la final, iar orice exceptie face rollback la TOT — inclusiv la DDL, ceea ce
+    pe SQLite cere ocolirea driverului (vezi _sqlite_atomic_steps). O migrare
+    esuata nu se inregistreaza, deci se reia curat la boot-ul urmator.
+    """
+    if _applied(conn, name):
+        return
+    try:
+        if conn.dialect.name == "sqlite":
+            _sqlite_atomic_steps(conn, name, statements)
+            # Bookkeeping-ul SQLAlchemy nu a vazut COMMIT-ul de mai sus; il
+            # resetam ca urmatoarea migrare sa porneasca dintr-o stare curata
+            # (la nivel de driver nu mai e nimic in asteptare, deci nu se pierde nimic).
+            conn.rollback()
+        else:
+            for sql in statements:
+                conn.execute(text(sql))
+            conn.execute(
+                text("INSERT INTO schema_migrations (migration_name) VALUES (:name)"),
+                {"name": name},
+            )
+            conn.commit()
+        print(f"[DB Migrate] Applied: {name}")
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB Migrate] Failed: {name} -> {e}")
+
+
 def _portable_migrations(conn, inspector):
     """Migratii scrise portabil (PostgreSQL + SQLite). Aici intra ORICE
     migrare adaugata dupa SQLITE-1. Reguli: fara IF NOT EXISTS in
@@ -97,6 +155,60 @@ def _portable_migrations(conn, inspector):
     if _table_exists(inspector, "alerts") and not _column_exists(inspector, "alerts", "drop_pct"):
         _migrate(conn, "add_alerts_drop_pct",
                  "ALTER TABLE alerts ADD COLUMN drop_pct FLOAT")
+
+    # FASHION-1a — dimensiunea `variant` (marimea) pe surse si istoric.
+    #
+    # Pe product_sources nu e o simpla ADD COLUMN: unique-ul trebuie sa devina
+    # (product_id, source, variant), iar SQLite nu poate schimba o constrangere
+    # printr-un ALTER -> rebuild complet al tabelei. Rebuild-ul e AUTONOM: niciun
+    # FK extern nu arata spre product_sources (product_source_suggestions si
+    # celelalte tabele referentiaza products), deci DROP + RENAME nu lasa
+    # referinte orfane. DDL-ul de mai jos OGLINDESTE exact ce genereaza
+    # create_all() pe modelul nou, ca o baza migrata si una noua sa fie identice.
+    if (_table_exists(inspector, "product_sources")
+            and not _column_exists(inspector, "product_sources", "variant")):
+        _migrate_steps(conn, "rebuild_product_sources_variant", [
+            """
+            CREATE TABLE product_sources_new (
+                id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                source VARCHAR NOT NULL,
+                source_url VARCHAR NOT NULL,
+                current_price FLOAT,
+                currency VARCHAR NOT NULL,
+                in_stock BOOLEAN,
+                variant VARCHAR DEFAULT '' NOT NULL,
+                last_checked_at DATETIME,
+                created_at DATETIME,
+                updated_at DATETIME,
+                PRIMARY KEY (id),
+                CONSTRAINT uq_product_source_variant UNIQUE (product_id, source, variant),
+                FOREIGN KEY(product_id) REFERENCES products (id) ON DELETE CASCADE
+            )
+            """,
+            # Randurile existente sunt toate la nivel de produs -> variant = ''.
+            """
+            INSERT INTO product_sources_new
+                (id, product_id, source, source_url, current_price, currency,
+                 in_stock, variant, last_checked_at, created_at, updated_at)
+            SELECT id, product_id, source, source_url, current_price, currency,
+                   in_stock, '', last_checked_at, created_at, updated_at
+            FROM product_sources
+            """,
+            "DROP TABLE product_sources",
+            "ALTER TABLE product_sources_new RENAME TO product_sources",
+            # Indexurile nu supravietuiesc DROP-ului -> recreate identic cu modelul.
+            "CREATE INDEX ix_product_sources_id ON product_sources (id)",
+            "CREATE INDEX ix_product_sources_product_id ON product_sources (product_id)",
+            "CREATE INDEX ix_product_sources_source ON product_sources (source)",
+        ])
+
+    # Pe price_history nu se schimba nicio constrangere -> ADD COLUMN simplu.
+    # SQLite accepta NOT NULL la ADD COLUMN cat timp default-ul e o constanta.
+    if (_table_exists(inspector, "price_history")
+            and not _column_exists(inspector, "price_history", "variant")):
+        _migrate(conn, "add_price_history_variant",
+                 "ALTER TABLE price_history ADD COLUMN variant VARCHAR NOT NULL DEFAULT ''")
 
 
 def run_migrations():

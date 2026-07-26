@@ -183,6 +183,10 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
                 min30 = db.query(func.min(PriceHistory.price)).filter(
                     PriceHistory.product_id == product.id,
                     PriceHistory.source == ps.source,
+                    # FASHION-1a — si pe varianta: marimile aceleiasi surse au
+                    # preturi diferite, deci minimul uneia n-are ce cauta in
+                    # marcajul "cel mai mic pret" al alteia.
+                    PriceHistory.variant == (ps.variant or ""),
                     PriceHistory.recorded_at >= now - timedelta(days=30),
                 ).scalar()
             db.add(PriceHistory(
@@ -190,6 +194,7 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
                 price=new_price,
                 currency=ps.currency or "EUR",
                 source=ps.source,
+                variant=ps.variant or "",
             ))
             refreshed += 1
             touched_products[product.id] = product

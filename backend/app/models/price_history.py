@@ -12,6 +12,10 @@ class PriceHistory(Base):
     price = Column(Float, nullable=False)
     currency = Column(String, default="EUR")
     source = Column(String, nullable=True)
+    # FASHION-1a: varianta (marimea) careia ii apartine pretul inregistrat;
+    # '' = fara varianta (rand la nivel de produs). Aceleasi default-uri ca pe
+    # ProductSource.variant, ca istoricul sa se poata filtra pe acelasi triplet.
+    variant = Column(String, nullable=False, default="", server_default="")
     recorded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

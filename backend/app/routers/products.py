@@ -44,7 +44,8 @@ _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
 def _recompute_primary_snapshot(product: Product) -> None:
     """Setează product.current_price/currency/source/source_url pe baza sursei
-    cu prețul cel mai mic (cu comparație după conversie valutară)."""
+    cu prețul cel mai mic (cu comparație după conversie valutară). Minimul se ia
+    peste toate sursele ȘI variantele produsului."""
     sources_with_price = [s for s in product.sources if s.current_price is not None]
     if not sources_with_price:
         return
@@ -71,6 +72,7 @@ def attach_source_to_product(
     price: Optional[float] = None,
     currency: Optional[str] = None,
     name: Optional[str] = None,
+    variant: str = "",
 ) -> None:
     """Creează sau actualizează un ProductSource pe produs + PriceHistory, apoi
     recalculează snapshot-ul primar (current_price = minimul dintre surse) și face
@@ -78,10 +80,14 @@ def attach_source_to_product(
 
     `name` e acceptat pentru compatibilitate de semnătură (ProductSource nu are
     coloană de nume — numele produsului e pe Product).
+
+    `variant` (mărimea) face parte din identitatea sursei: aceeași sursă cu mărimi
+    diferite sunt rânduri distincte. `""` = fără variantă (rând la nivel de produs).
     """
     if not source:
         return
-    ps = next((s for s in product.sources if s.source == source), None)
+    ps = next((s for s in product.sources
+               if s.source == source and (s.variant or "") == variant), None)
     if ps is None and source_url:
         ps = ProductSource(
             product_id=product.id,
@@ -89,6 +95,7 @@ def attach_source_to_product(
             source_url=source_url,
             current_price=price,
             currency=currency or "EUR",
+            variant=variant,
             last_checked_at=datetime.now(timezone.utc),
         )
         db.add(ps)
@@ -108,6 +115,7 @@ def attach_source_to_product(
             price=price,
             currency=currency or "EUR",
             source=source,
+            variant=variant,
         ))
 
     _recompute_primary_snapshot(product)
@@ -515,6 +523,7 @@ def create_product(
             price=new_product.current_price,
             currency=new_product.currency,
             source=new_product.source,
+            variant="",
         ))
 
     db.commit()
@@ -610,9 +619,15 @@ def create_product_from_url(
 
     # Stocul e singurul camp pe care create_product nu-l cunoaste (ProductCreate e
     # la nivel de produs, nu de sursa) -> se scrie dupa salvare, pe sursa creata.
+    # variant == "" e pinuit explicit: pana la FASHION-1b, adaugarea prin link
+    # opereaza doar pe randul fara varianta. Fara filtru, `.first()` peste
+    # (product_id, source) ar deveni nedeterminist de indata ce acelasi magazin
+    # are si randuri pe marimi.
     source_row = (
         db.query(ProductSource)
-        .filter(ProductSource.product_id == save["id"], ProductSource.source == res["domain"])
+        .filter(ProductSource.product_id == save["id"],
+                ProductSource.source == res["domain"],
+                ProductSource.variant == "")
         .first()
     )
     if source_row is not None:
@@ -673,6 +688,7 @@ def update_product(
             price=product.current_price,
             currency=product.currency or "EUR",
             source=product.source,
+            variant="",
         ))
 
     db.commit()
@@ -739,6 +755,7 @@ def refresh_product_price(
                 price=new_price,
                 currency=ps.currency or "EUR",
                 source=ps.source,
+                variant=ps.variant or "",
             ))
         results.append(RefreshSourceResult(
             source=ps.source, source_url=ps.source_url,
