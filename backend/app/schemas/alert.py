@@ -13,6 +13,10 @@ class AlertCreate(BaseModel):
     target_price: float = Field(..., gt=0, description="Trebuie sa fie mai mare decat 0")
     currency: str = "EUR"
     alert_type: str = "price_drop"  # price_drop | price_rise
+    # RETAIL-3b — prag de scadere ca FRACTIE (0.15 = -15%), aliniat cu
+    # User.flash_deal_threshold. Se evalueaza pe delta unui ciclu de refresh,
+    # independent de target_price. None = doar tinta absoluta, ca pana acum.
+    drop_pct: Optional[float] = Field(None, gt=0, lt=1)
 
     @field_validator("currency")
     @classmethod
@@ -38,6 +42,7 @@ class AlertResponse(BaseModel):
     target_price: float
     currency: str = "EUR"
     alert_type: str
+    drop_pct: Optional[float] = None
     is_active: bool
     is_triggered: bool
     triggered_at: Optional[UTCDateTime] = None

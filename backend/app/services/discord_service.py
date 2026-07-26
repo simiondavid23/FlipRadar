@@ -340,6 +340,7 @@ def build_imob_embed(listing: dict, grade: str, score: int,
 
 ALERT_COLORS = {"price_drop": 0x22c55e, "price_rise": 0x3b82f6}
 FLASH_DEAL_COLOR = 0xf59e0b
+RESTOCK_COLOR = 0x06b6d4
 
 
 def build_alert_embed(product_name: str, current_price: float, target_price: float,
@@ -361,9 +362,52 @@ def build_alert_embed(product_name: str, current_price: float, target_price: flo
     return embed
 
 
+def build_drop_alert_embed(product_name: str, drop_observed: float, current_price: float,
+                           currency: str, product_url: str = None) -> dict:
+    """RETAIL-3b — alerta declansata de pragul procentual (Alert.drop_pct), nu de
+    tinta absoluta: nu are ce afisa la "Tinta", deci arata scaderea observata."""
+    embed = {
+        "title": f"📉 Alerta: scadere brusca — {product_name}"[:200],
+        "color": ALERT_COLORS["price_drop"],
+        "fields": [
+            {"name": "📉 Scadere",
+             "value": f"-{drop_observed * 100:.1f}%", "inline": True},
+            {"name": "💰 Pret curent",
+             "value": f"{current_price:.2f} {currency}", "inline": True},
+        ],
+        "footer": {"text": "FlipRadar Alerte"},
+    }
+    if product_url:
+        embed["url"] = product_url
+    return embed
+
+
+def build_restock_embed(product_name: str, price: float, currency: str, source: str,
+                        product_url: str = None) -> dict:
+    """RETAIL-3b — revenirea in stoc a unei surse. Fara prag: spre deosebire de
+    Flash Deal, revenirea e binara, deci embed-ul nu are procente."""
+    fields = [{
+        "name": "💰 Pret",
+        # Pretul poate lipsi pe o sursa care si-a revenit dar n-a dat pret valid.
+        "value": f"{price:.2f} {currency}" if price is not None else "necunoscut",
+        "inline": True,
+    }]
+    if source:
+        fields.append({"name": "🏪 Sursa", "value": source.upper(), "inline": True})
+    embed = {
+        "title": f"📦 Din nou in stoc: {product_name}"[:200],
+        "color": RESTOCK_COLOR,
+        "fields": fields,
+        "footer": {"text": "FlipRadar Alerte"},
+    }
+    if product_url:
+        embed["url"] = product_url
+    return embed
+
+
 def build_flash_deal_embed(product_name: str, old_price: float, new_price: float,
                            currency: str, drop_pct: float, source: str,
-                           product_url: str = None) -> dict:
+                           product_url: str = None, min_30d: float = None) -> dict:
     fields = [
         {"name": "💰 Pret",
          "value": f"{old_price} {currency} -> {new_price} {currency}", "inline": True},
@@ -372,6 +416,14 @@ def build_flash_deal_embed(product_name: str, old_price: float, new_price: float
     ]
     if source:
         fields.append({"name": "🏪 Sursa", "value": source.upper(), "inline": True})
+    # RETAIL-3b — context istoric: cat de bun e pretul fata de ultimele 30 de zile
+    # pe ACEEASI sursa. Parametru optional si ultimul, ca apelurile vechi sa ramana valide.
+    if min_30d is not None:
+        fields.append({"name": "📊 Minim 30 zile",
+                       "value": f"{min_30d} {currency}", "inline": True})
+        if new_price <= min_30d:
+            fields.append({"name": "🏆 Minim istoric",
+                           "value": "Cel mai mic pret din ultimele 30 de zile", "inline": False})
     embed = {
         "title": f"⚡ Flash Deal: {product_name}"[:200],
         "color": FLASH_DEAL_COLOR,

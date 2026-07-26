@@ -57,6 +57,7 @@ def create_alert(
         target_price=alert_data.target_price,
         currency=alert_data.currency,
         alert_type=alert_data.alert_type,
+        drop_pct=alert_data.drop_pct,
     )
     db.add(new_alert)
     db.commit()
