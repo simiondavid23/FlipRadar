@@ -76,17 +76,24 @@ def _check_and_send_restock(db, product, ps):
                 product_name=product.name, price=ps.current_price,
                 currency=ps.currency or product.currency or "EUR",
                 source=ps.source, product_url=ps.source_url or product.source_url,
+                variant=ps.variant,
             )
             # Fara pretul in listing_id (spre deosebire de flash deal): dedup-ul de
             # 24h al cozii absoarbe flapping-ul stoc da/nu/da pe aceeasi sursa.
+            # FASHION-1c — sufixul de marime se adauga DOAR pe randurile cu varianta:
+            # marimile aceleiasi surse revin in stoc independent, deci au nevoie de
+            # dedup separat, dar randurile fara varianta trebuie sa pastreze lid-ul
+            # EXACT ca inainte (altfel s-ar reseta dedup-ul deja acumulat pe ele).
             rs_lid = f"restock-{product.id}-{user_id}-{ps.source}"
+            if ps.variant:
+                rs_lid += f"-{ps.variant}"
             send_price_alert_notification(embed, st, rs_lid)
         except Exception as exc:
             print(f"[AlertChecker] Discord restock esuat (user {user_id}): {exc}")
 
 
 def _check_and_send_flash_deals(db, product, old_price: float, new_price: float, source: str,
-                                min_30d: float = None):
+                                min_30d: float = None, variant: str = ""):
     drop_pct = (old_price - new_price) / old_price
 
     # Gaseste user_id-urile care au produsul in catalog (owner) sau il monitorizeaza
@@ -115,7 +122,7 @@ def _check_and_send_flash_deals(db, product, old_price: float, new_price: float,
                     product_name=product.name, old_price=float(old_price),
                     new_price=float(new_price), currency=product.currency or "EUR",
                     drop_pct=drop_pct, source=source, product_url=product.source_url,
-                    min_30d=min_30d,
+                    min_30d=min_30d, variant=variant,
                 )
                 fd_lid = f"flashdeal-{product.id}-{user_id}-{new_price}"
                 send_price_alert_notification(fd_embed, st, fd_lid)
@@ -154,6 +161,7 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
             source_url=ps.source_url,
             product_name=product.name,
             sku=product.sku,
+            variant=ps.variant,
         )
         new_price = res["price"] if res else None
         ps.last_checked_at = now
@@ -206,7 +214,7 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
                 drop = (float(old_price) - float(new_price)) / float(old_price)
                 price_drops[product.id] = max(price_drops.get(product.id, 0.0), drop)
                 _check_and_send_flash_deals(db, product, float(old_price), float(new_price),
-                                            ps.source, min_30d=min30)
+                                            ps.source, min_30d=min30, variant=ps.variant)
         else:
             print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
     for product in touched_products.values():
@@ -300,6 +308,11 @@ def check_alerts() -> int:
 
                 # ALERT-1 — notificare Discord pe webhook-ul dedicat (bloc independent:
                 # o eroare aici NU afecteaza notificarea in-app / emailul de mai jos).
+                #
+                # FASHION-1c — embed-urile de alerta raman PRODUCT-LEVEL, fara marime:
+                # Alert e legata de produs, nu de sursa, iar scaderea comparata cu
+                # pragul e cea mai mare de pe produs (poate veni de pe alta marime
+                # decat cea afisata). O eticheta de marime aici ar fi inselatoare.
                 try:
                     st = _get_user_settings(db, alert.user_id, settings_cache)
                     if st is not None:

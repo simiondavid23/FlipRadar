@@ -383,7 +383,7 @@ def build_drop_alert_embed(product_name: str, drop_observed: float, current_pric
 
 
 def build_restock_embed(product_name: str, price: float, currency: str, source: str,
-                        product_url: str = None) -> dict:
+                        product_url: str = None, variant: str = "") -> dict:
     """RETAIL-3b — revenirea in stoc a unei surse. Fara prag: spre deosebire de
     Flash Deal, revenirea e binara, deci embed-ul nu are procente."""
     fields = [{
@@ -394,6 +394,10 @@ def build_restock_embed(product_name: str, price: float, currency: str, source: 
     }]
     if source:
         fields.append({"name": "🏪 Sursa", "value": source.upper(), "inline": True})
+    # FASHION-1c — marimea, cand notificarea e despre o varianta anume. Parametru
+    # optional si ultimul, ca apelurile fara marime sa ramana valide si identice.
+    if variant:
+        fields.append({"name": "📏 Marimea", "value": str(variant), "inline": True})
     embed = {
         "title": f"📦 Din nou in stoc: {product_name}"[:200],
         "color": RESTOCK_COLOR,
@@ -407,7 +411,8 @@ def build_restock_embed(product_name: str, price: float, currency: str, source: 
 
 def build_flash_deal_embed(product_name: str, old_price: float, new_price: float,
                            currency: str, drop_pct: float, source: str,
-                           product_url: str = None, min_30d: float = None) -> dict:
+                           product_url: str = None, min_30d: float = None,
+                           variant: str = "") -> dict:
     fields = [
         {"name": "💰 Pret",
          "value": f"{old_price} {currency} -> {new_price} {currency}", "inline": True},
@@ -416,6 +421,10 @@ def build_flash_deal_embed(product_name: str, old_price: float, new_price: float
     ]
     if source:
         fields.append({"name": "🏪 Sursa", "value": source.upper(), "inline": True})
+    # FASHION-1c — marimea careia ii apartine scaderea (minimul pe 30 de zile de
+    # mai jos e calculat tot pe marimea asta, nu pe produs).
+    if variant:
+        fields.append({"name": "📏 Marimea", "value": str(variant), "inline": True})
     # RETAIL-3b — context istoric: cat de bun e pretul fata de ultimele 30 de zile
     # pe ACEEASI sursa. Parametru optional si ultimul, ca apelurile vechi sa ramana valide.
     if min_30d is not None:

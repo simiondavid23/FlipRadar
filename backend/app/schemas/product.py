@@ -18,6 +18,9 @@ class ProductCreate(BaseModel):
     original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str = "EUR"
+    # FASHION-1c — marimea sursei salvate; "" = fara varianta (rand product-level).
+    # E camp de SURSA, nu de produs: vezi excluderea din model_dump in create_product.
+    variant: str = ""
 
 
 class ProductUpdate(BaseModel):
@@ -146,6 +149,8 @@ class ProductDetailResponse(BaseModel):
 class ProductFromUrlRequest(BaseModel):
     """Link-ul lipit de user in UI. Doar URL-ul: restul datelor vin din extractor."""
     url: str
+    # FASHION-1c — marimea ceruta explicit; None/absent = produsul intreg (ca pana acum).
+    variant: Optional[str] = None
 
 
 class ExtractionMeta(BaseModel):
@@ -157,6 +162,13 @@ class ExtractionMeta(BaseModel):
     is_aggregate: bool = False             # pretul vine dintr-un interval (lowPrice)
 
 
+class VariantOption(BaseModel):
+    """O marime publicata de pagina, cu pretul si stocul ei (extractorul FASHION-1b)."""
+    variant: str
+    price: float
+    in_stock: Optional[bool] = None
+
+
 class ProductFromUrlResponse(ProductDetailResponse):
     """Detaliul complet al produsului (ca la GET /{id}) plus rezultatul salvarii,
     ca UI-ul sa poata afisa produsul imediat, fara un al doilea request."""
@@ -165,3 +177,6 @@ class ProductFromUrlResponse(ProductDetailResponse):
     price_changed: bool = False
     domain_validated: bool = False         # domeniul e in VALIDATED_DOMAINS
     extraction: ExtractionMeta
+    # FASHION-1c — marimile pe care le publica pagina, ca UI-ul (1d) sa poata oferi
+    # alegerea fara un al doilea fetch. None = pagina nu publica oferte per marime.
+    variants: Optional[List[VariantOption]] = None

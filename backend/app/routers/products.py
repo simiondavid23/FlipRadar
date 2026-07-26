@@ -476,6 +476,7 @@ def create_product(
             db, existing,
             product_data.source, product_data.source_url,
             product_data.current_price, product_data.currency,
+            variant=product_data.variant,
         )
         return _build_save_response(existing, is_new=False, previous_price=old_primary_price)
 
@@ -502,7 +503,9 @@ def create_product(
         if same_site_match is not None:
             return _add_or_update_source(same_site_match)
 
-    new_product = Product(**product_data.model_dump(), user_id=current_user.id)
+    # `variant` e camp de SURSA, nu de produs: Product nu are coloana, deci ar pica
+    # cu TypeError daca l-am trece prin **model_dump().
+    new_product = Product(**product_data.model_dump(exclude={"variant"}), user_id=current_user.id)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
@@ -514,6 +517,7 @@ def create_product(
             source_url=new_product.source_url,
             current_price=new_product.current_price,
             currency=new_product.currency or "EUR",
+            variant=product_data.variant,
             last_checked_at=datetime.now(timezone.utc),
         ))
 
@@ -523,7 +527,7 @@ def create_product(
             price=new_product.current_price,
             currency=new_product.currency,
             source=new_product.source,
-            variant="",
+            variant=product_data.variant,
         ))
 
     db.commit()
@@ -597,6 +601,28 @@ def create_product_from_url(
         urllib.parse.urldefrag(url)[0] or url
     )
 
+    # FASHION-1c — cand userul cere o marime anume, ea devine sursa de adevar
+    # pentru pret si stoc: agregatul "de la" al grupului ar fi pretul ALTEI marimi.
+    # Spatiile din jur se taie (vin din formular), dar potrivirea ramane EXACTA —
+    # etichetele sunt string liber ('40_5', '28_32'), fara semantica de normalizat.
+    wanted = (payload.variant or "").strip()
+    variants = res.get("variants")
+    entry = None
+    if wanted:
+        if not variants:
+            raise HTTPException(
+                status_code=422,
+                detail="Pagina nu publică oferte per mărime, deci nu putem urmări o mărime anume.",
+            )
+        entry = next((v for v in variants if v.get("variant") == wanted), None)
+        if entry is None:
+            disponibile = ", ".join(str(v.get("variant")) for v in variants if v.get("variant"))
+            raise HTTPException(
+                status_code=422,
+                detail=f"Mărimea „{wanted}” nu este publicată pe această pagină. "
+                       f"Mărimi disponibile: {disponibile}.",
+            )
+
     # KEYWORD_MAP e cheiat pe slug-ul magazinului ("emag"), nu pe domeniu — acelasi
     # apel ca in scraperele de cautare, care intoarce (categorie, subcategorie).
     main_cat, sub_cat = infer_category_from_name(res["name"], res["domain"].split(".")[0])
@@ -607,10 +633,11 @@ def create_product_from_url(
             image_url=res["image_url"],
             source=res["domain"],
             source_url=source_url,
-            current_price=res["price"],
+            current_price=entry["price"] if entry else res["price"],
             currency=res["currency"],
             category=main_cat,
             subcategory=sub_cat,
+            variant=wanted,
         ),
         background_tasks=background_tasks,
         db=db,
@@ -619,19 +646,17 @@ def create_product_from_url(
 
     # Stocul e singurul camp pe care create_product nu-l cunoaste (ProductCreate e
     # la nivel de produs, nu de sursa) -> se scrie dupa salvare, pe sursa creata.
-    # variant == "" e pinuit explicit: pana la FASHION-1b, adaugarea prin link
-    # opereaza doar pe randul fara varianta. Fara filtru, `.first()` peste
-    # (product_id, source) ar deveni nedeterminist de indata ce acelasi magazin
-    # are si randuri pe marimi.
+    # Filtrul pe varianta tine randul TINTA: acelasi magazin poate avea acum si
+    # randuri pe marimi, iar un `.first()` nefiltrat ar fi nedeterminist.
     source_row = (
         db.query(ProductSource)
         .filter(ProductSource.product_id == save["id"],
                 ProductSource.source == res["domain"],
-                ProductSource.variant == "")
+                ProductSource.variant == wanted)
         .first()
     )
     if source_row is not None:
-        source_row.in_stock = res["in_stock"]
+        source_row.in_stock = entry["in_stock"] if entry else res["in_stock"]
         db.commit()
 
     product = db.query(Product).filter(Product.id == save["id"]).first()
@@ -647,6 +672,8 @@ def create_product_from_url(
             "in_stock": res["in_stock"],
             "is_aggregate": res["is_aggregate"],
         },
+        # Marimile paginii, ca UI-ul sa poata propune alegerea (FASHION-1d).
+        "variants": variants,
     }
 
 
@@ -726,6 +753,7 @@ def refresh_product_price(
                 source_url=ps.source_url,
                 product_name=product.name,
                 sku=product.sku,
+                variant=ps.variant,
             )
         except Exception as e:
             results.append(RefreshSourceResult(

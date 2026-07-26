@@ -1052,6 +1052,7 @@ def refresh_source(
     source_url: Optional[str],
     product_name: Optional[str],
     sku: Optional[str] = None,
+    variant: str = "",
 ) -> Optional[dict]:
     """Re-citeste pretul (si, unde se poate, stocul) pentru o sursa de produs.
 
@@ -1062,6 +1063,10 @@ def refresh_source(
                    singura cale care aduce si stocul (doar VALIDATED_DOMAINS)
       "pcgarage" — fetch direct pe pagina de produs cu parserul dedicat (Cloudflare)
       "search"   — calea istorica: re-cautare in magazin + potrivire pe URL/nume
+
+    `variant` (FASHION-1c) restrange citirea la o MARIME anume: se accepta doar
+    intrarea ei din `variants`, iar daca lipseste se intoarce None. Cu variant=""
+    (tot restul catalogului) comportamentul e neschimbat.
     """
     if not source or not source_url:
         return None
@@ -1073,13 +1078,30 @@ def refresh_source(
     if domain in VALIDATED_DOMAINS:
         try:
             extracted = extract_product(source_url)
-            price = float(extracted.get("price") or 0)
-            if price > 0:
-                return {"price": price, "in_stock": extracted.get("in_stock"), "method": "url"}
+            if variant:
+                # Potrivire EXACTA pe eticheta marimii; nimic altceva nu e acceptabil.
+                entry = next((v for v in (extracted.get("variants") or [])
+                              if v.get("variant") == variant), None)
+                price = float((entry or {}).get("price") or 0)
+                if entry is not None and price > 0:
+                    return {"price": price, "in_stock": entry.get("in_stock"), "method": "url"}
+            else:
+                price = float(extracted.get("price") or 0)
+                if price > 0:
+                    return {"price": price, "in_stock": extracted.get("in_stock"), "method": "url"}
         except ProductExtractionError as exc:
             # Nu e final: magazinul poate raspunde la cautare chiar daca pagina de
             # produs a fost blocata sau si-a schimbat structura -> cadem mai jos.
             print(f"[Refresh] Extractie esuata ({exc.reason}) pe {domain}: {source_url[:80]}")
+
+    # FASHION-1c — un rand pe MARIME se opreste aici. Caile de mai jos (re-cautare,
+    # parser PCGarage) nu stiu de marimi: ar intoarce pretul PRODUSULUI si l-ar
+    # scrie peste pretul marimii, falsificand istoricul si alertele. Mai bine un
+    # pret vechi (stale) decat pretul altei marimi sau agregatul "de la".
+    if variant:
+        print(f"[Refresh] Marimea {variant!r} nu a putut fi citita pe {domain}: "
+              f"pastram pretul anterior ({source_url[:80]})")
+        return None
 
     # (b) PCGarage: refresh direct de pe pagina de produs (source_url stocat), ocolind
     # complet cautarea /cauta/ care e challenge-uita agresiv de Cloudflare. Restul
