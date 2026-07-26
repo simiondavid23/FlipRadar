@@ -16,8 +16,8 @@ from app.utils.alert_checker import _refresh_all_scrapeable_products
 def test_last_checked_at_persistat_cand_pretul_nu_se_schimba(monkeypatch):
     catalog_health_watchdog._reset_state()
     # Pret identic cu cel stocat -> refreshed=0, touched_products gol.
-    monkeypatch.setattr("app.utils.alert_checker.refresh_price_from_source",
-                        lambda **kw: 100.0)
+    monkeypatch.setattr("app.utils.alert_checker.refresh_source",
+                        lambda **kw: {"price": 100.0, "in_stock": None, "method": "url"})
 
     db = SessionLocal()
     try:

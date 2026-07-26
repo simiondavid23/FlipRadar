@@ -28,7 +28,7 @@ from app.models.user import User
 from app.services.currency_service import convert
 from app.services.scraper_service import (
     fetch_ean_from_url,
-    refresh_price_from_source,
+    refresh_source,
     find_cross_shop_matches,
 )
 # Fara risc de ciclu de import: extractorul importa scraper_service DOAR lenes,
@@ -705,7 +705,7 @@ def refresh_product_price(
             time.sleep(random.uniform(*_SCRAPE_DELAY_RANGE))
         old_price = ps.current_price
         try:
-            new_price = refresh_price_from_source(
+            res = refresh_source(
                 source=ps.source,
                 source_url=ps.source_url,
                 product_name=product.name,
@@ -718,7 +718,12 @@ def refresh_product_price(
                 changed=False, success=False, error=str(e),
             ))
             continue
+        new_price = res["price"] if res else None
         ps.last_checked_at = now
+        # Stocul vine doar de pe calea "url"; None = necunoscut, deci nu suprascrie
+        # o stare deja cunoscuta (aceeasi regula ca in alert_checker).
+        if res and res.get("in_stock") is not None:
+            ps.in_stock = res["in_stock"]
         if new_price is None:
             results.append(RefreshSourceResult(
                 source=ps.source, source_url=ps.source_url,

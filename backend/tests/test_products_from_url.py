@@ -107,7 +107,9 @@ def test_produs_nou_din_link(auth_client, fake_extract):
     assert body["is_new"] is True
     assert body["previous_price"] is None
     assert body["price_changed"] is False
-    assert body["domain_validated"] is False          # VALIDATED_DOMAINS e gol in RETAIL-1
+    # emag.ro a intrat in VALIDATED_DOMAINS la RETAIL-3a (sonda FAZA A: 5/5 pagini
+    # extrase corect prin JSON-LD). Ramura False e pinuita separat, mai jos.
+    assert body["domain_validated"] is True
     assert body["extraction"] == {
         "method": "jsonld", "override_applied": False, "in_stock": True, "is_aggregate": False,
     }
@@ -123,6 +125,20 @@ def test_produs_nou_din_link(auth_client, fake_extract):
     assert sources[0].in_stock is True
     assert sources[0].current_price == 899.0
     assert history[0].price == 899.0
+
+
+def test_domeniu_nevalidat_are_domain_validated_false(auth_client, fake_extract):
+    """Flag-ul chiar reflecta apartenenta la VALIDATED_DOMAINS, nu e mereu True:
+    pe un domeniu care n-a trecut prin nicio sonda, UI-ul trebuie sa stie ca
+    extractia e neverificata."""
+    fake_extract["result"] = _res(domain="magazin-fictiv.ro",
+                                  canonical_url="https://magazin-fictiv.ro/p/1")
+
+    body = auth_client.post("/api/products/from-url",
+                            json={"url": "https://magazin-fictiv.ro/p/1"}).json()
+
+    assert body["domain_validated"] is False
+    assert body["product"]["source"] == "magazin-fictiv.ro"
 
 
 def test_repaste_acelasi_url_pret_neschimbat(auth_client, fake_extract):

@@ -11,6 +11,14 @@ from curl_cffi import requests as curl_requests
 
 from app.utils.category_mapper import infer_category_from_name
 from app.services.log_manager import log_manager
+# Directia importurilor e sigura in acest sens: extractorul importa scraper_service
+# DOAR lenes (in corpul lui extract_product, pentru allow-list-ul SSRF), tocmai ca
+# importul asta top-level sa nu inchida un ciclu.
+from app.services.product_page_extractor import (
+    extract_product,
+    ProductExtractionError,
+    VALIDATED_DOMAINS,
+)
 
 
 _ALTEX_HEADERS = {
@@ -1036,26 +1044,50 @@ def fetch_pcgarage_price_from_url(source_url: str, max_retries: int = 3) -> Opti
     return None
 
 
-def refresh_price_from_source(
+def refresh_source(
     source: Optional[str],
     source_url: Optional[str],
     product_name: Optional[str],
     sku: Optional[str] = None,
-) -> Optional[float]:
-    """Re-fetch the current price for a product from its source magazin.
+) -> Optional[dict]:
+    """Re-citeste pretul (si, unde se poate, stocul) pentru o sursa de produs.
 
-    Returneaza un float (pretul nou in moneda magazinului) sau None daca nu
-    am putut gasi produsul. Strategie: lansam o cautare cu SKU (mai precisa)
-    sau cu numele si gasim rezultatul cu acelasi source_url.
+    Intoarce {"price": float, "in_stock": bool|None, "method": str} sau None cand
+    nu s-a putut afla nimic. Un dict intors are MEREU un pret valid (> 0).
+    `method` spune pe ce cale a venit rezultatul:
+      "url"      — fetch direct al paginii de produs prin extractorul generic;
+                   singura cale care aduce si stocul (doar VALIDATED_DOMAINS)
+      "pcgarage" — fetch direct pe pagina de produs cu parserul dedicat (Cloudflare)
+      "search"   — calea istorica: re-cautare in magazin + potrivire pe URL/nume
     """
     if not source or not source_url:
         return None
-    # PCGarage: refresh direct de pe pagina de produs (source_url stocat), ocolind
+    domain = source.lower()
+
+    # (a) Domenii validate: pagina de produs e sursa de adevar. Un pret citit direct
+    # de acolo bate potrivirea fuzzy din lista de cautare (care poate nimeri alt
+    # produs) si e singurul mod in care aflam si disponibilitatea.
+    if domain in VALIDATED_DOMAINS:
+        try:
+            extracted = extract_product(source_url)
+            price = float(extracted.get("price") or 0)
+            if price > 0:
+                return {"price": price, "in_stock": extracted.get("in_stock"), "method": "url"}
+        except ProductExtractionError as exc:
+            # Nu e final: magazinul poate raspunde la cautare chiar daca pagina de
+            # produs a fost blocata sau si-a schimbat structura -> cadem mai jos.
+            print(f"[Refresh] Extractie esuata ({exc.reason}) pe {domain}: {source_url[:80]}")
+
+    # (b) PCGarage: refresh direct de pe pagina de produs (source_url stocat), ocolind
     # complet cautarea /cauta/ care e challenge-uita agresiv de Cloudflare. Restul
     # aplicatiei (cautare, cross-shop) continua sa foloseasca _sync_scrape_pcgarage.
-    if source.lower() == "pcgarage.ro":
-        return fetch_pcgarage_price_from_url(source_url)
-    scraper = _SCRAPERS_BY_SOURCE.get(source.lower())
+    if domain == "pcgarage.ro":
+        price = fetch_pcgarage_price_from_url(source_url)
+        return {"price": price, "in_stock": None, "method": "pcgarage"} if price else None
+
+    # (c) Calea istorica: lansam o cautare cu SKU (mai precisa) sau cu numele si
+    # gasim rezultatul cu acelasi source_url.
+    scraper = _SCRAPERS_BY_SOURCE.get(domain)
     if not scraper:
         return None
     # IMPORTANT: `sku` e cautabil DOAR pentru altex.ro, unde e un cod real de produs
@@ -1091,7 +1123,10 @@ def refresh_price_from_source(
             price = r.get("price")
             try:
                 price = float(price)
-                return price if price > 0 else None
+                # Ca inainte: URL-ul potrivit dar pretul invalid inseamna None, NU
+                # trecerea la strategia 2 (am gasit exact produsul, n-are rost sa
+                # cautam altul dupa nume).
+                return {"price": price, "in_stock": None, "method": "search"} if price > 0 else None
             except (TypeError, ValueError):
                 continue
     # Strategia 2 (fallback): potrivire după primele 40 de caractere din nume,
@@ -1110,10 +1145,25 @@ def refresh_price_from_source(
                     try:
                         price = float(price)
                         if price > 0:
-                            return price
+                            return {"price": price, "in_stock": None, "method": "search"}
                     except (TypeError, ValueError):
                         continue
     return None
+
+
+def refresh_price_from_source(
+    source: Optional[str],
+    source_url: Optional[str],
+    product_name: Optional[str],
+    sku: Optional[str] = None,
+) -> Optional[float]:
+    """Wrapper back-compat peste refresh_source: DOAR pretul, exact ca inainte.
+
+    Pastrat pentru apelantii care nu au nevoie de stoc sau de calea folosita
+    (semnatura si semantica identice cu versiunea dinaintea RETAIL-3a).
+    """
+    result = refresh_source(source, source_url, product_name, sku)
+    return result["price"] if result else None
 
 
 def find_cross_shop_matches(

@@ -22,7 +22,7 @@ from app.models.tracked_product import TrackedProduct
 from app.models.radar_settings import RadarSettings
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
-from app.services.scraper_service import refresh_price_from_source
+from app.services.scraper_service import refresh_source
 from app.services import catalog_health_watchdog
 from app.services.discord_service import (
     build_alert_embed, build_flash_deal_embed, send_price_alert_notification,
@@ -112,14 +112,19 @@ def _refresh_all_scrapeable_products(db: Session) -> int:
         if i > 0:
             time.sleep(random.uniform(*_SCRAPE_DELAY_RANGE))
         product = ps.product
-        new_price = refresh_price_from_source(
+        res = refresh_source(
             source=ps.source,
             source_url=ps.source_url,
             product_name=product.name,
             sku=product.sku,
         )
+        new_price = res["price"] if res else None
         ps.last_checked_at = now
-        catalog_health_watchdog.note_refresh(ps.source, success=(new_price is not None))
+        # Stocul vine doar de pe calea "url" (pagina de produs). None inseamna
+        # NECUNOSCUT, nu "a iesit din stoc" -> nu suprascrie o stare deja cunoscuta.
+        if res and res.get("in_stock") is not None:
+            ps.in_stock = res["in_stock"]
+        catalog_health_watchdog.note_refresh(ps.source, success=(res is not None))
         if new_price is None:
             print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({ps.source}). Folosesc pretul stocat: {ps.current_price} {ps.currency}")
             continue

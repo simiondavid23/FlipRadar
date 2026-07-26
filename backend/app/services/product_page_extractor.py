@@ -44,9 +44,24 @@ class ProductExtractionError(Exception):
 # Gol in RETAIL-1: se populeaza in RETAIL-5, dupa validarea live pe magazine.
 DOMAIN_OVERRIDES: dict[str, dict] = {}
 
-# Domeniile pe care extractorul a fost validat manual. Gol in RETAIL-1 —
-# gating-ul din UI (ce link accepta userul) vine in RETAIL-2/3.
-VALIDATED_DOMAINS: set[str] = set()
+# Domeniile pe care extractorul a fost validat pe pagini de produs REALE (sonda
+# RETAIL-3a, 2026-07-26). refresh_source le reimprospateaza citind direct pagina de
+# produs; celelalte raman pe re-cautare. Un domeniu se adauga aici DOAR dupa o sonda
+# live, niciodata pe presupunere: o extractie gresita ar scrie preturi false in istoric.
+VALIDATED_DOMAINS: set[str] = {
+    # 3/3 pagini extrase prin JSON-LD, pret identic cu cel din lista de cautare.
+    "altex.ro",
+    # 5/5 pagini extrase prin JSON-LD. DE STIUT: pe 1 din cele 5 (Lenovo IdeaPad,
+    # pagina marcata "is_genius_eligible":true) JSON-LD-ul purta 5689.42, in timp ce
+    # lista de cautare arata 3459.99 — ambele valori exista in HTML-ul paginii. Deci
+    # JSON-LD-ul eMAG poate purta pretul de lista, nu cea mai buna oferta afisata
+    # userului. De confirmat pe un produs cu pret Genius cunoscut (RETAIL-5).
+    "emag.ro",
+}
+# NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
+# pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
+# produs la sonda RETAIL-3a; refresh-ul lui ramane pe fetch_pcgarage_price_from_url,
+# care trece de Cloudflare cu retry).
 
 
 # Headers proprii modulului: generice, fara Referer (pagina de produs e ceruta
