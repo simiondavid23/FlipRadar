@@ -169,6 +169,24 @@ class VariantOption(BaseModel):
     in_stock: Optional[bool] = None
 
 
+class ExtractUrlRequest(BaseModel):
+    """Link-ul de previzualizat, inainte de orice scriere in baza (FASHION-1d)."""
+    url: str
+
+
+class ExtractPreviewResponse(BaseModel):
+    """Ce publica pagina, FARA a salva nimic — alimenteaza pasii wizardului.
+    `variants` None = pagina nu ofera marimi, deci wizardul sare pasul de marime."""
+    name: str
+    price: float
+    currency: str
+    in_stock: Optional[bool] = None
+    image_url: Optional[str] = None
+    is_aggregate: bool = False
+    domain_validated: bool = False
+    variants: Optional[List[VariantOption]] = None
+
+
 class ProductFromUrlResponse(ProductDetailResponse):
     """Detaliul complet al produsului (ca la GET /{id}) plus rezultatul salvarii,
     ca UI-ul sa poata afisa produsul imediat, fara un al doilea request."""

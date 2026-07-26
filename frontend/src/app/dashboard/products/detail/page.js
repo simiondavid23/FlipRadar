@@ -627,6 +627,13 @@ function ProductDetailInner() {
                   >
                     {copiedKey === `src-url-${s.id}` ? "Copiat!" : s.source}
                   </button>
+                  {/* FASHION-1d — randurile pe marime isi spun marimea; cele fara
+                      varianta arata exact ca inainte. */}
+                  {s.variant && (
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                      · Marimea <strong style={{ color: "var(--text-primary)" }}>{s.variant}</strong>
+                    </span>
+                  )}
                   <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: isCheapest ? "#4ade80" : "white" }}>
                     {s.current_price ?? "—"} {s.currency}
                   </span>

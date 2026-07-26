@@ -19,6 +19,8 @@ from app.schemas.product import (
     ProductDetailResponse,
     ProductFromUrlRequest,
     ProductFromUrlResponse,
+    ExtractUrlRequest,
+    ExtractPreviewResponse,
     RefreshSourceResult,
     RefreshAllSourcesResponse,
 )
@@ -571,6 +573,40 @@ def _from_url_http_error(exc: ProductExtractionError, url: str) -> HTTPException
         status_code=502,
         detail="Magazinul nu a răspuns sau a blocat cererea. Încearcă din nou mai târziu.",
     )
+
+
+@router.post("/extract-url", response_model=ExtractPreviewResponse)
+def extract_url_preview(
+    payload: ExtractUrlRequest,
+    current_user: User = Depends(_scraping_user),
+):
+    """Perechea READ-ONLY a lui /from-url: citeste pagina si intoarce ce a gasit,
+    FARA sa scrie nimic in baza.
+
+    Exista pentru wizardul de adaugare prin link (FASHION-1d): pana acum el crea
+    produsul la deschidere, ca sa aiba ce previzualiza, iar cu marimi asta ar fi
+    lasat in urma randuri agregate parazite pentru fiecare link deschis si
+    abandonat. Acum crearea se face la Finalizeaza, dupa alegerea marimii.
+
+    Aceleasi garduri (auth + can_use_scraping) si EXACT aceeasi mapare de erori
+    ca from-url — deliberat, ca preview-ul si salvarea sa esueze la fel.
+    """
+    url = (payload.url or "").strip()
+    try:
+        res = extract_product(url)
+    except ProductExtractionError as exc:
+        raise _from_url_http_error(exc, url)
+
+    return {
+        "name": res["name"],
+        "price": res["price"],
+        "currency": res["currency"],
+        "in_stock": res["in_stock"],
+        "image_url": res["image_url"],
+        "is_aggregate": res["is_aggregate"],
+        "domain_validated": res["domain"] in VALIDATED_DOMAINS,
+        "variants": res.get("variants"),
+    }
 
 
 @router.post("/from-url", response_model=ProductFromUrlResponse)

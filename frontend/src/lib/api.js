@@ -85,7 +85,11 @@ export const productsAPI = {
   updateProduct: (id, data) => api.put(`/api/products/${id}`, data),
   refreshPrice: (id) => api.post(`/api/products/${id}/refresh-price`),
   // RETAIL-4 — adaugare dintr-un link de pagina de produs (extractie server-side).
-  createFromUrl: (url) => api.post("/api/products/from-url", { url }),
+  // FASHION-1d — previzualizare READ-ONLY: citeste pagina fara sa salveze nimic.
+  extractFromUrl: (url) => api.post("/api/products/extract-url", { url }),
+  // `variant` = marimea aleasa; omis (nu null) cand se urmareste produsul intreg.
+  createFromUrl: (url, variant) =>
+    api.post("/api/products/from-url", variant ? { url, variant } : { url }),
   deleteProduct: (id) => api.delete(`/api/products/${id}`),
   // Sugestii de surse cross-shop (potrivire pe nume) — confirmare / respingere.
   confirmSuggestion: (productId, suggestionId) =>

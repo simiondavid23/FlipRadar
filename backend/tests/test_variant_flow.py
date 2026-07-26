@@ -17,6 +17,7 @@ from app.models.product_source import ProductSource
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services import catalog_health_watchdog
+from app.services.product_page_extractor import ProductExtractionError
 from app.services.scraper_service import refresh_source
 from app.utils.alert_checker import _refresh_all_scrapeable_products
 
@@ -329,3 +330,105 @@ def test_flash_fara_varianta_nu_are_field_de_marime(monkeypatch, sent):
 
     embed = next(e for e, l in sent if l.startswith("flashdeal-"))
     assert not any(f["name"] == "📏 Marimea" for f in embed["fields"])
+
+
+# ── FASHION-1d: POST /extract-url (preview read-only) ─────────────────────────
+
+def _nimic_in_baza():
+    db = SessionLocal()
+    try:
+        return (db.query(Product).count(), db.query(ProductSource).count(),
+                db.query(PriceHistory).count()) == (0, 0, 0)
+    finally:
+        db.close()
+
+
+def test_extract_url_intoarce_previzualizarea_cu_variante(auth_client):
+    r = auth_client.post("/api/products/extract-url", json={"url": URL})
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "Sneakers Nike Dunk Low F1C"
+    assert body["price"] == 699.0
+    assert body["currency"] == "RON"
+    assert body["in_stock"] is True
+    assert body["is_aggregate"] is True
+    assert body["domain_validated"] is True          # epantofi.ro a intrat la FASHION-1b
+    assert body["variants"] == VARIANTS
+    # Esenta endpointului: previzualizarea NU scrie nimic.
+    assert _nimic_in_baza()
+
+
+def test_extract_url_fara_variante_da_variants_none(auth_client, fake_extract):
+    fake_extract["result"] = _res(variants=None, is_aggregate=False,
+                                  domain="altex.ro", price=249.99)
+
+    r = auth_client.post("/api/products/extract-url", json={"url": URL})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["variants"] is None
+    assert r.json()["price"] == 249.99
+    assert _nimic_in_baza()
+
+
+def test_extract_url_domeniu_nepermis_da_400(auth_client, fake_extract, monkeypatch):
+    """Aceeasi mapare de erori ca from-url: domeniul respins de garda SSRF -> 400."""
+    import app.routers.products as products
+
+    def _boom(url, max_retries=3):
+        raise ProductExtractionError("domain_not_allowed", "nu e pe lista")
+
+    monkeypatch.setattr(products, "extract_product", _boom)
+
+    r = auth_client.post("/api/products/extract-url", json={"url": "https://xyz.tld/p/1"})
+
+    assert r.status_code == 400
+    assert "xyz.tld" in r.json()["detail"]
+    assert _nimic_in_baza()
+
+
+def test_extract_url_fara_date_de_produs_da_422(auth_client, monkeypatch):
+    import app.routers.products as products
+
+    def _boom(url, max_retries=3):
+        raise ProductExtractionError("no_product_data", "pagina nu are date")
+
+    monkeypatch.setattr(products, "extract_product", _boom)
+
+    r = auth_client.post("/api/products/extract-url", json={"url": URL})
+
+    assert r.status_code == 422
+    assert _nimic_in_baza()
+
+
+def test_extract_url_magazin_blocat_da_502(auth_client, monkeypatch):
+    import app.routers.products as products
+
+    def _boom(url, max_retries=3):
+        raise ProductExtractionError("challenge", "interstitiu anti-bot")
+
+    monkeypatch.setattr(products, "extract_product", _boom)
+
+    assert auth_client.post("/api/products/extract-url", json={"url": URL}).status_code == 502
+    assert _nimic_in_baza()
+
+
+def test_extract_url_cere_autentificare(client):
+    """Fara sesiune -> 401, ca restul routerului (niciun fetch nu se intampla)."""
+    assert client.post("/api/products/extract-url", json={"url": URL}).status_code == 401
+
+
+def test_extract_url_cere_can_use_scraping(auth_client):
+    """Acelasi gard de feature ca from-url: fara can_use_scraping -> 403."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).order_by(User.id.desc()).first()
+        user.can_use_scraping = False
+        db.commit()
+    finally:
+        db.close()
+
+    r = auth_client.post("/api/products/extract-url", json={"url": URL})
+
+    assert r.status_code == 403
+    assert _nimic_in_baza()

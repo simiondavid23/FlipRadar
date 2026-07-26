@@ -5,10 +5,18 @@ import { X } from "lucide-react";
 import { alertsAPI, productsAPI, trackedProductsAPI } from "@/lib/api";
 
 /**
- * RETAIL-4 — asistent in 3 pasi peste POST /api/products/from-url.
- * Pasul 1 previzualizeaza ce a extras backendul, pasul 2 configureaza
- * monitorizarea, pasul 3 confirma si scrie. Stilul oglindeste modalul de
+ * RETAIL-4 — asistent peste POST /api/products/from-url.
+ * Pasul 1 previzualizeaza ce a extras backendul, urmatorul configureaza
+ * monitorizarea, ultimul confirma si scrie. Stilul oglindeste modalul de
  * keyword din radar/keywords (overlay fix, card centrat, Inapoi/Continua).
+ *
+ * FASHION-1d — doua schimbari:
+ *  - previzualizarea trece prin /extract-url (READ-ONLY). Pana acum wizardul
+ *    crea produsul la deschidere, doar ca sa aiba ce afisa; cu marimi asta ar
+ *    fi lasat randuri agregate parazite la fiecare link deschis si abandonat.
+ *    Acum nimic nu se scrie pana la Finalizeaza, deci Anuleaza chiar anuleaza.
+ *  - cand pagina publica marimi apare un pas in plus, "Alege marimea", si
+ *    numarul de pasi devine 4 in loc de 3.
  */
 
 const overlayStyle = {
@@ -52,12 +60,31 @@ function StockBadge({ inStock }) {
   return <span style={badge("rgba(148,163,184,0.15)", "#cbd5e1")}>Stoc necunoscut</span>;
 }
 
+/** Domeniul pentru badge: preview-ul e read-only si nu intoarce sursa salvata. */
+function hostOf(u) {
+  try {
+    return new URL(u).hostname.replace(/^www\./, "");
+  } catch {
+    return u;
+  }
+}
+
+const chipStyle = (selected) => ({
+  display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.125rem",
+  padding: "0.5rem 0.75rem", borderRadius: "0.5rem", cursor: "pointer", textAlign: "left",
+  backgroundColor: selected ? "rgba(59,130,246,0.15)" : "var(--bg-dark)",
+  border: `1px solid ${selected ? "var(--blue-primary)" : "var(--border-color)"}`,
+  color: "var(--text-primary)", fontSize: "0.8125rem", fontWeight: 600,
+});
+
 export default function AddByLinkWizard({ url, onClose }) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
+  const [created, setCreated] = useState(null);
 
+  const [selectedVariant, setSelectedVariant] = useState(null);
   const [monitorActive, setMonitorActive] = useState(true);
   const [targetPrice, setTargetPrice] = useState("");
   const [dropPctPercent, setDropPctPercent] = useState("");
@@ -69,7 +96,7 @@ export default function AddByLinkWizard({ url, onClose }) {
     setLoading(true);
     setError("");
     try {
-      const res = await productsAPI.createFromUrl(url);
+      const res = await productsAPI.extractFromUrl(url);
       setData(res.data);
     } catch (e) {
       // Mesajele backendului sunt deja in romana si explica exact cauza.
@@ -81,19 +108,40 @@ export default function AddByLinkWizard({ url, onClose }) {
 
   useEffect(() => { extract(); }, [extract]);
 
+  // Pasul de marime exista doar cand pagina publica oferte per marime.
+  const variants = Array.isArray(data?.variants) ? data.variants : [];
+  const hasVariants = variants.length > 0;
+  const totalSteps = hasVariants ? 4 : 3;
+  const variantStep = hasVariants ? 2 : 0;   // 0 = pas inexistent
+  const monitorStep = hasVariants ? 3 : 2;
+
+  // Cu o marime aleasa, pretul relevant e al ei, nu agregatul "de la" al paginii.
+  const chosen = selectedVariant ? variants.find((v) => v.variant === selectedVariant) : null;
+  const shownPrice = chosen ? chosen.price : data?.price;
+
   // Alerta de pret cere o tinta (target_price e obligatoriu in backend), deci
   // pragul procentual n-are unde fi atasat fara ea.
   const targetFilled = targetPrice.trim() !== "";
   const dropValue = Number(dropPctPercent);
   const dropValid = dropPctPercent.trim() === "" || (isFinite(dropValue) && dropValue >= 1 && dropValue <= 99);
   const targetValid = !targetFilled || (isFinite(Number(targetPrice)) && Number(targetPrice) > 0);
-  const canContinueStep2 = targetValid && dropValid;
+  const canContinueMonitor = targetValid && dropValid;
+  const canContinue =
+    step === variantStep ? selectedVariant !== null
+      : step === monitorStep ? canContinueMonitor
+        : true;
 
   const handleFinish = async () => {
     setSaving(true);
     setError("");
     try {
-      const productId = data.product.id;
+      // FASHION-1d — produsul se creeaza ABIA acum (pana la 1d se crea la
+      // deschiderea wizardului). selectedVariant "" = toate marimile, deci
+      // randul agregat fara varianta; `undefined` il omite din payload.
+      const res = await productsAPI.createFromUrl(url, selectedVariant || undefined);
+      const saved = res.data;
+      setCreated(saved);
+      const productId = saved.product.id;
       // ORDINE OBLIGATORIE: toggle-ul de monitorizare INTAI. Activarea cu prag
       // face upsert peste alerta price_drop existenta si o rearmeaza (C-18), deci
       // o alerta creata inainte ar fi rescrisa. Trimitem toggle-ul FARA prag
@@ -105,14 +153,14 @@ export default function AddByLinkWizard({ url, onClose }) {
         await alertsAPI.createAlert({
           product_id: productId,
           target_price: Number(targetPrice),
-          currency: data.product.currency,
+          currency: saved.product.currency,
           alert_type: "price_drop",
           ...(dropPctPercent.trim() !== "" ? { drop_pct: Number(dropPctPercent) / 100 } : {}),
         });
       }
       setDone(true);
     } catch (e) {
-      setError(e.response?.data?.detail || "Nu am putut salva setarile de monitorizare.");
+      setError(e.response?.data?.detail || "Nu am putut salva produsul.");
     } finally {
       setSaving(false);
     }
@@ -122,7 +170,7 @@ export default function AddByLinkWizard({ url, onClose }) {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-          {done ? "Produs adaugat" : `Adauga prin link — Pasul ${step} din 3`}
+          {done ? "Produs adaugat" : `Adauga prin link — Pasul ${step} din ${totalSteps}`}
         </h2>
         <button onClick={onClose} title="Inchide"
           style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}>
@@ -131,7 +179,7 @@ export default function AddByLinkWizard({ url, onClose }) {
       </div>
       {!done && (
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
-          {[1, 2, 3].map((s) => (
+          {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
             <div key={s} style={{
               flex: 1, height: "4px", borderRadius: "2px",
               backgroundColor: s <= step ? "var(--blue-primary)" : "var(--border-color)",
@@ -168,11 +216,12 @@ export default function AddByLinkWizard({ url, onClose }) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
           <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
-            <strong style={{ color: "var(--text-primary)" }}>{data.product.name}</strong> a fost salvat
+            <strong style={{ color: "var(--text-primary)" }}>{data.name}</strong>
+            {selectedVariant ? ` (marimea ${selectedVariant})` : ""} a fost salvat
             {monitorActive ? " si este monitorizat." : "."}
           </p>
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-            <Link href={`/dashboard/products/detail?id=${data.product.id}`}
+            <Link href={`/dashboard/products/detail?id=${created.product.id}`}
               style={{ ...primaryBtn, display: "inline-block", textDecoration: "none" }}>
               Vezi produsul
             </Link>
@@ -182,26 +231,23 @@ export default function AddByLinkWizard({ url, onClose }) {
       );
     }
 
-    const p = data.product;
-    const extraction = data.extraction || {};
-
     if (step === 1) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
           <div style={{ display: "flex", gap: "0.875rem" }}>
-            {p.image_url && (
+            {data.image_url && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.image_url} alt={p.name}
+              <img src={data.image_url} alt={data.name}
                 style={{ width: "84px", height: "84px", objectFit: "contain", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)" }} />
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 0.5rem" }}>
-                {p.name}
+                {data.name}
               </p>
               <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", alignItems: "center" }}>
-                {/* Domeniul e sursa produsului — raspunsul from-url nu are camp separat. */}
-                <span style={badge("rgba(147,51,234,0.15)", "#a78bfa")}>{p.source}</span>
-                <StockBadge inStock={extraction.in_stock} />
+                {/* Previzualizarea nu salveaza nimic, deci sursa se citeste din link. */}
+                <span style={badge("rgba(147,51,234,0.15)", "#a78bfa")}>{hostOf(url)}</span>
+                <StockBadge inStock={data.in_stock} />
                 {data.domain_validated === false && (
                   <span style={badge("rgba(250,204,21,0.15)", "#facc15")}>
                     Domeniu nevalidat — monitorizare best-effort
@@ -212,19 +258,60 @@ export default function AddByLinkWizard({ url, onClose }) {
           </div>
 
           <p style={{ fontSize: "1.375rem", fontWeight: 700, color: "#4ade80", margin: 0 }}>
-            {p.current_price} {p.currency}
+            {data.price} {data.currency}
           </p>
 
-          {data.is_new === false && (
+          {data.is_aggregate && (
             <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: 0 }}>
-              Produs existent — istoricul de pret e pastrat ({(data.price_history || []).length} puncte).
+              Pret &quot;de la&quot; — pagina are mai multe oferte
+              {hasVariants ? `, pe ${variants.length} marimi.` : "."}
             </p>
           )}
         </div>
       );
     }
 
-    if (step === 2) {
+    if (step === variantStep) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
+            Alege marimea pe care vrei sa o urmaresti. Pretul si stocul vor fi citite
+            pentru ea, nu pentru produs in general.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {/* TOATE marimile sunt selectabile, inclusiv cele epuizate: a urmari o
+                marime epuizata ca sa afli cand revine e exact cazul de restock. */}
+            {variants.map((v) => (
+              <button key={v.variant} type="button"
+                onClick={() => setSelectedVariant(v.variant)}
+                style={chipStyle(selectedVariant === v.variant)}>
+                <span>{v.variant}</span>
+                <span style={{
+                  display: "flex", alignItems: "center", gap: "0.3125rem",
+                  fontSize: "0.6875rem", fontWeight: 500, color: "var(--text-secondary)",
+                }}>
+                  {v.price} {data.currency}
+                  {v.in_stock === true && (
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#4ade80" }}
+                      title="In stoc" />
+                  )}
+                  {v.in_stock === false && <span style={{ color: "#f87171" }}>Epuizat</span>}
+                </span>
+              </button>
+            ))}
+            <button type="button" onClick={() => setSelectedVariant("")}
+              style={chipStyle(selectedVariant === "")}>
+              <span>Toate marimile</span>
+              <span style={{ fontSize: "0.6875rem", fontWeight: 500, color: "var(--text-secondary)" }}>
+                pret minim
+              </span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (step === monitorStep) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
           <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.8125rem", color: "var(--text-primary)" }}>
@@ -233,10 +320,10 @@ export default function AddByLinkWizard({ url, onClose }) {
           </label>
 
           <div>
-            <label style={labelStyle}>Tinta de pret (optional) — {p.currency}</label>
+            <label style={labelStyle}>Tinta de pret (optional) — {data.currency}</label>
             <input type="number" min="0" step="0.01" value={targetPrice}
               onChange={(e) => setTargetPrice(e.target.value)}
-              placeholder={`ex: ${p.current_price}`} style={inputStyle} />
+              placeholder={`ex: ${shownPrice}`} style={inputStyle} />
             {!targetValid && (
               <p style={{ ...hintStyle, color: "#facc15" }}>Tinta trebuie sa fie un numar mai mare decat 0.</p>
             )}
@@ -266,14 +353,21 @@ export default function AddByLinkWizard({ url, onClose }) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
         <p style={{ margin: 0 }}>
-          Produs: <strong style={{ color: "var(--text-primary)" }}>{p.name}</strong>
+          Produs: <strong style={{ color: "var(--text-primary)" }}>{data.name}</strong>
         </p>
+        {hasVariants && (
+          <p style={{ margin: 0 }}>
+            Marime: <strong style={{ color: "var(--text-primary)" }}>
+              {selectedVariant ? selectedVariant : "toate (pret minim)"}
+            </strong>
+          </p>
+        )}
         <p style={{ margin: 0 }}>
           Monitorizare: <strong style={{ color: "var(--text-primary)" }}>{monitorActive ? "da" : "nu"}</strong>
         </p>
         <p style={{ margin: 0 }}>
           Tinta de pret: <strong style={{ color: "var(--text-primary)" }}>
-            {targetFilled ? `${Number(targetPrice)} ${p.currency}` : "fara"}
+            {targetFilled ? `${Number(targetPrice)} ${data.currency}` : "fara"}
           </strong>
         </p>
         <p style={{ margin: 0 }}>
@@ -298,14 +392,14 @@ export default function AddByLinkWizard({ url, onClose }) {
             <button type="button" onClick={() => (step > 1 ? setStep(step - 1) : onClose())} style={secondaryBtn}>
               {step > 1 ? "Inapoi" : "Anuleaza"}
             </button>
-            {step < 3 ? (
+            {step < totalSteps ? (
               <button type="button"
-                disabled={step === 2 && !canContinueStep2}
-                onClick={() => (step === 2 && !canContinueStep2 ? null : setStep(step + 1))}
+                disabled={!canContinue}
+                onClick={() => (canContinue ? setStep(step + 1) : null)}
                 style={{
                   ...primaryBtn,
-                  opacity: step === 2 && !canContinueStep2 ? 0.5 : 1,
-                  cursor: step === 2 && !canContinueStep2 ? "not-allowed" : "pointer",
+                  opacity: canContinue ? 1 : 0.5,
+                  cursor: canContinue ? "pointer" : "not-allowed",
                 }}>
                 Continua
               </button>
