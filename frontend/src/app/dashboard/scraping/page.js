@@ -2,6 +2,7 @@
 import { useState, useMemo } from "react";
 import { scrapingAPI, productsAPI, trackedProductsAPI } from "@/lib/api";
 import { Globe, Search, Plus, Heart, ExternalLink, ShoppingBag } from "lucide-react";
+import AddByLinkWizard from "@/components/AddByLinkWizard";
 
 const SOURCE_STYLES = {
   "altex.ro": { bg: "rgba(59,130,246,0.2)", fg: "#60a5fa" },
@@ -24,6 +25,8 @@ export default function ScrapingPage() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sortOrder, setSortOrder] = useState("default");
+  // RETAIL-4 — link lipit in campul de cautare: deschide asistentul de adaugare.
+  const [linkUrl, setLinkUrl] = useState(null);
 
   const eanHint = (() => {
     if (searchType !== "ean" || !query.trim()) return "";
@@ -36,6 +39,13 @@ export default function ScrapingPage() {
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
+    // RETAIL-4 — un URL nu e un termen de cautare: deschide asistentul in loc sa
+    // trimita link-ul catre scraperele de cautare (ar returna 0 rezultate).
+    const trimmed = query.trim();
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      setLinkUrl(trimmed);
+      return;
+    }
     setLoading(true);
     setResults(null);
     setSortOrder("default");
@@ -178,7 +188,12 @@ export default function ScrapingPage() {
             Nu toate magazinele indexeaza dupa {searchType === "ean" ? "EAN" : "SKU"}. Sursele care nu o fac vor returna 0 rezultate.
           </p>
         )}
+        <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+          Poti lipi direct link-ul unei pagini de produs — se deschide asistentul de adaugare.
+        </p>
       </form>
+
+      {linkUrl && <AddByLinkWizard url={linkUrl} onClose={() => setLinkUrl(null)} />}
 
       {/* Results */}
       {loading && (

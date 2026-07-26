@@ -196,6 +196,18 @@ function ProductDetailInner() {
 
   const { product, price_history, suggestions, lowest_price, highest_price, average_price } = data;
 
+  // RETAIL-4 — minimul pe ultimele 30 de zile, calculat client-side din istoric
+  // (backendul il trimite doar in embed-ul de Flash Deal). price_history vine DESC,
+  // dar aici ordinea nu conteaza: filtram pe fereastra si luam minimul.
+  const min30d = (() => {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const prices = (price_history || [])
+      .filter((ph) => new Date(ph.recorded_at).getTime() >= cutoff)
+      .map((ph) => Number(ph.price))
+      .filter((n) => isFinite(n));
+    return prices.length ? Math.min(...prices) : null;
+  })();
+
   // Pregătim datele graficului (cele mai vechi primele)
   const chartData = [...(price_history || [])].reverse().map((ph) => ({
     date: new Date(ph.recorded_at).toLocaleDateString("ro-RO", { day: "2-digit", month: "short" }),
@@ -618,6 +630,15 @@ function ProductDetailInner() {
                   <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: isCheapest ? "#4ade80" : "white" }}>
                     {s.current_price ?? "—"} {s.currency}
                   </span>
+                  {/* RETAIL-4 — stoc tri-state: null inseamna necunoscut, nu epuizat. */}
+                  <span style={{
+                    padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", fontWeight: 500,
+                    backgroundColor: s.in_stock === true ? "rgba(34,197,94,0.15)"
+                      : s.in_stock === false ? "rgba(239,68,68,0.15)" : "rgba(148,163,184,0.15)",
+                    color: s.in_stock === true ? "#4ade80" : s.in_stock === false ? "#f87171" : "#cbd5e1",
+                  }} title={s.in_stock == null ? "Disponibilitate necunoscuta" : undefined}>
+                    {s.in_stock === true ? "In stoc" : s.in_stock === false ? "Stoc epuizat" : "—"}
+                  </span>
                   {isCheapest && (
                     <span style={{ fontSize: "0.6875rem", color: "#4ade80", fontWeight: 500 }}>cea mai mica</span>
                   )}
@@ -787,10 +808,16 @@ function ProductDetailInner() {
       })()}
 
       {/* Price stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1rem" }}>
         <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret minim</p>
           <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#4ade80", margin: 0 }}>{lowest_price ?? "—"} {product.currency}</p>
+        </div>
+        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Minim 30 zile</p>
+          <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#22d3ee", margin: 0 }}>
+            {min30d != null ? `${min30d} ${product.currency}` : "—"}
+          </p>
         </div>
         <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret mediu</p>

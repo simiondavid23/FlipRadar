@@ -183,6 +183,21 @@ export default function TrackedProductsPage() {
             const history = Array.isArray(product.price_history)
               ? product.price_history.slice(-7).map((h) => Number(h?.price ?? h)).filter((n) => isFinite(n))
               : [];
+            // RETAIL-4 — variatia fata de penultimul punct (istoricul vine ASC).
+            // Sub 0.5% e zgomot de rotunjire, nu o miscare de pret.
+            const variation = (() => {
+              if (history.length < 2) return null;
+              const prev = history[history.length - 2];
+              const last = history[history.length - 1];
+              if (!prev || prev === last) return null;
+              const pct = ((last - prev) / prev) * 100;
+              return Math.abs(pct) < 0.5 ? null : pct;
+            })();
+            // RETAIL-4 — pretul curent a atins deja pragul setat pe monitorizare.
+            const underTarget = product.monitoring_active
+              && product.alert_threshold != null
+              && product.current_price != null
+              && product.current_price <= product.alert_threshold;
             return (
               <div key={product.id} style={{
                 backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
@@ -201,6 +216,24 @@ export default function TrackedProductsPage() {
                       {product.source && (
                         <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: style.bg, color: style.fg }}>
                           {product.source}
+                        </span>
+                      )}
+                      {variation != null && (
+                        <span style={{
+                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", fontWeight: 600,
+                          backgroundColor: variation < 0 ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                          color: variation < 0 ? "#4ade80" : "#f87171",
+                        }}>
+                          {variation < 0 ? "▼" : "▲"} {variation > 0 ? "+" : ""}{variation.toFixed(1)}%
+                        </span>
+                      )}
+                      {underTarget && (
+                        <span style={{
+                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", fontWeight: 600,
+                          backgroundColor: "rgba(34,197,94,0.25)", color: "#4ade80",
+                          border: "1px solid rgba(34,197,94,0.5)",
+                        }}>
+                          Sub tinta
                         </span>
                       )}
                     </div>

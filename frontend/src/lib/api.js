@@ -84,6 +84,8 @@ export const productsAPI = {
   createProduct: (data) => api.post("/api/products/", data),
   updateProduct: (id, data) => api.put(`/api/products/${id}`, data),
   refreshPrice: (id) => api.post(`/api/products/${id}/refresh-price`),
+  // RETAIL-4 — adaugare dintr-un link de pagina de produs (extractie server-side).
+  createFromUrl: (url) => api.post("/api/products/from-url", { url }),
   deleteProduct: (id) => api.delete(`/api/products/${id}`),
   // Sugestii de surse cross-shop (potrivire pe nume) — confirmare / respingere.
   confirmSuggestion: (productId, suggestionId) =>
