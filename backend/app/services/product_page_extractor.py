@@ -132,6 +132,20 @@ VALIDATED_DOMAINS: set[str] = {
     # size) — deci ramane produs simplu, fara variante. Intrarea e CU subdomeniu:
     # _domain_of taie doar "www.", iar refresh-ul compara pe egalitate exacta.
     "en.afew-store.com",
+
+    # ── completare val 3 (micro-sonda FASHION-2b, 2026-07-26) ──────────────────
+    # Ambele au atins pragul de 2 URL-uri OK. Zero mecanism nou: formele lor sunt
+    # deja acoperite de extractor.
+
+    # 2/2 JSON-LD product-level pe doua sonde. Forma answear: lista de marimi
+    # FARA oferte per marime -> variants ramane None (nu fabricam variante din
+    # marimi necotate). Localizarea /ro e path, deci cheia exacta ramane curata.
+    "prm.com",
+    # 2 URL-uri OK (storefront-urile en-int si en-eu); path-ul vechi /en/product/
+    # da 404 = link mort, care prin regula valului nu descalifica. offers-lista
+    # FARA `size` pe elemente — exact regresia pinuita in FASHION-2: ofertele
+    # neetichetate raman neexploatate, pretul e "primul cu pret", ca inainte.
+    "sneakersnstuff.com",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
@@ -158,10 +172,6 @@ VALIDATED_DOMAINS: set[str] = {
 #                  (acelasi tipar ca flanco.ro). De reatacat cu impersonate/headers.
 #   footshop.ro  — CSR confirmat pe URL-uri corecte: 200 fara niciun marker (nici
 #                  ld+json, nici OG). Ar cere browser, nu extractor.
-#   sneakersnstuff.com — sub pragul de 2 URL-uri (1/2). Forma masurata: Product cu
-#                  offers-lista FARA size, deci ar ramane produs simplu chiar si
-#                  intrat — exact regresia pinuita in teste.
-#   prm.com      — sub pragul de 2 URL-uri (1/1).
 #   trendyol.com — servire inconsistenta (1/2 la valul 2, dupa 1/1 la valul 1):
 #                  aceeasi cauza ca aboutyou, aceeasi decizie.
 #   sole.ro      — RECLASIFICAT: nu e magazin de fashion, deci nu apartine acestor

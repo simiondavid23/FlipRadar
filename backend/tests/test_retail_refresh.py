@@ -139,6 +139,7 @@ def test_validated_domains_santinela():
         "answear.ro", "fashiondays.ro",               # FASHION-1b
         "epantofi.ro", "modivo.ro",                   # FASHION-1b
         "bstn.com", "en.afew-store.com",              # FASHION-2
+        "prm.com", "sneakersnstuff.com",              # FASHION-2b
     }
 
 
