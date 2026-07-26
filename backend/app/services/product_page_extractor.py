@@ -45,9 +45,25 @@ class ProductExtractionError(Exception):
 #   price_selector / name_selector / image_selector — selectori CSS
 #   out_of_stock_text — substring case-insensitive in pagina => in_stock False
 #   currency — moneda fixa a magazinului
-# Inca gol: sonda RETAIL-5 (2026-07-26) NU a gasit un pattern de regex stabil pe
-# eMAG — vezi comentariul de la VALIDATED_DOMAINS.
-DOMAIN_OVERRIDES: dict[str, dict] = {}
+DOMAIN_OVERRIDES: dict[str, dict] = {
+    # eMAG — sonda RETAIL-5b (2026-07-26): 5/5 egalitate cu pretul din lista de
+    # cautare, inclusiv pe o pagina multi-oferta unde JSON-LD dadea 5689.42 iar
+    # afisat era "de la 3.459,99" (selectorul a reparat divergenta).
+    #
+    # DE CE selector si nu price_regex: cauza divergentei NU e Genius (ipoteza de
+    # la RETAIL-3a, infirmata), ci paginile cu mai multe oferte — eMAG afiseaza
+    # "de la <minim>", pe cand JSON-LD si starea JS `EM.product` poarta oferta
+    # PRINCIPALA. Regexurile pe starea incorporata esueaza fiecare pe cate un tip
+    # de pagina (masurat in RETAIL-5); doar elementul afisat e corect pe ambele.
+    # Textul vine spart in span-uri ("3.459 , 99 Lei"), pe care _parse_price_any
+    # il recompune corect.
+    #
+    # NUANTA ACCEPTATA: pe paginile multi-oferta pretul devine cel afisat, dar
+    # `in_stock` ramane cel din JSON-LD, adica al ofertei PRINCIPALE, nu al
+    # ofertei minime. Stocul e tri-state si informativ; pretul e cel care intra
+    # in istoric si in alerte, deci prioritatea e corectitudinea lui.
+    "emag.ro": {"price_selector": ".product-new-price"},
+}
 
 # Domeniile pe care extractorul a fost validat pe pagini de produs REALE (sonda
 # RETAIL-3a, 2026-07-26). refresh_source le reimprospateaza citind direct pagina de

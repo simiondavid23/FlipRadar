@@ -393,9 +393,63 @@ def test_price_selector_ramane_fallback_cand_regexul_rateaza(monkeypatch):
     assert res["override_applied"] is True
 
 
-def test_emag_nu_are_inca_override_de_pret():
-    """Santinela RETAIL-5: sonda live n-a gasit un regex care sa dea pretul AFISAT
-    si pe paginile cu o oferta, si pe cele multi-oferta ("de la X"). Cand se adauga
-    un override pentru eMAG, testul asta trebuie actualizat CONSTIENT, impreuna cu
-    dovada din sonda."""
-    assert "emag.ro" not in ppe.DOMAIN_OVERRIDES
+# ── RETAIL-5b: override-ul de PRODUCTIE pentru eMAG ──────────────────────────
+
+def test_emag_are_price_selector():
+    """Santinela: continutul EXACT al override-ului de productie. Orice schimbare
+    (alt selector, camp in plus) trebuie facuta constient, cu dovada din sonda."""
+    assert ppe.DOMAIN_OVERRIDES["emag.ro"] == {"price_selector": ".product-new-price"}
+
+
+def _emag_page(jsonld_price, afisat, availability="https://schema.org/InStock"):
+    """Pagina in stilul eMAG: JSON-LD cu oferta principala, elementul vizibil cu
+    pretul afisat (spart in span-uri, exact ca in HTML-ul real)."""
+    whole, cents = afisat.split(",")
+    return _page(
+        head=_ld(f"""
+            {{"@type": "Product", "name": "Laptop Lenovo IdeaPad",
+              "offers": {{"@type": "Offer", "price": "{jsonld_price}",
+                          "priceCurrency": "RON", "availability": "{availability}"}}}}
+        """),
+        body=(f'<p class="product-new-price">{whole}<sup>,</sup>'
+              f'<sup>{cents}</sup> Lei</p>'),
+    )
+
+
+def test_emag_multi_oferta_ia_pretul_afisat():
+    """Cazul care a motivat override-ul: pagina cu mai multe oferte arata
+    "de la <minim>", iar JSON-LD poarta oferta principala, mai scumpa."""
+    html = _emag_page("5689.42", "de la 3.459,99")
+
+    res = parse_product_html(html, "https://www.emag.ro/laptop-lenovo/pd/DWNRDP3BM/")
+
+    assert res["price"] == 3459.99          # afisat, NU cel din JSON-LD
+    assert res["override_applied"] is True
+    assert res["method"] == "jsonld"        # override-ul patch-uieste, nu inlocuieste lantul
+    assert res["name"] == "Laptop Lenovo IdeaPad"
+    assert res["currency"] == "RON"
+    # Nuanta documentata: stocul ramane al ofertei PRINCIPALE din JSON-LD.
+    assert res["in_stock"] is True
+
+
+def test_emag_oferta_unica_da_acelasi_pret_ca_jsonld():
+    html = _emag_page("4840.00", "4.840,00")
+
+    res = parse_product_html(html, "https://www.emag.ro/laptop-acer/pd/D46YX5YBM/")
+
+    assert res["price"] == 4840.0
+    assert res["override_applied"] is True
+
+
+def test_emag_fara_elementul_de_pret_cade_curat_pe_jsonld():
+    """Daca eMAG redenumeste clasa, nu ramanem fara pret: selectorul nu se
+    potriveste, override_applied ramane False si JSON-LD preia."""
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Laptop fara element de pret",
+         "offers": {"@type": "Offer", "price": "1999.00", "priceCurrency": "RON"}}
+    """))
+
+    res = parse_product_html(html, "https://www.emag.ro/laptop/pd/XYZ/")
+
+    assert res["price"] == 1999.0
+    assert res["override_applied"] is False
