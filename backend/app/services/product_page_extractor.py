@@ -83,13 +83,34 @@ VALIDATED_DOMAINS: set[str] = {
     # da oferta principala (gresit pe multi-oferta), iar EM.multiple_min_price si
     # datalayer-ul dau minimul altor oferte (gresit pe restul). Ce a mers 5/5 pe
     # ambele tipuri de pagina e selectorul pretului afisat, ".product-new-price"
-    # — candidatul pentru un price_selector, intr-un task dedicat.
+    # — REZOLVAT in RETAIL-5b: vezi DOMAIN_OVERRIDES["emag.ro"] mai sus.
     "emag.ro",
+
+    # ── al doilea val (sonda RETAIL-5c, 2026-07-26) ────────────────────────────
+    # Toate trei extrag prin JSON-LD, FARA override. Regula valului: un link mort
+    # (fetch esuat / 404) se raporteaza dar nu descalifica domeniul; doar o parsare
+    # esuata pe o pagina care s-a incarcat corect descalifica. Intrare cu >=2 OK.
+
+    # 2/2 JSON-LD. Include prima confirmare LIVE a ramurii negative de
+    # disponibilitate (in_stock=False citit corect din availability).
+    "cel.ro",
+    # 3/3 JSON-LD.
+    "vexio.ro",
+    # 2/3 JSON-LD; al treilea URL era un resigilat vandut intre timp (404 = link
+    # mort, raportat fara sa descalifice). Platforma comuna cu altex.ro.
+    "mediagalaxy.ro",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
 # produs la sonda RETAIL-3a; refresh-ul lui ramane pe fetch_pcgarage_price_from_url,
 # care trece de Cloudflare cu retry).
+#
+# Ratate in valul RETAIL-5c, fiecare din alt motiv:
+#   flanco.ro  — 403/challenge pe TOATE URL-urile: problema de ACCES, nu de
+#                parsare. De reatacat separat (impersonate/headers), nu prin override.
+#   evomag.ro  — no_product_data pe pagini care s-au incarcat corect (200): nu
+#                publica datele structurate pe care le citim. Candidat de override
+#                (price_selector/price_regex), investigatie separata.
 
 
 # Headers proprii modulului: generice, fara Referer (pagina de produs e ceruta

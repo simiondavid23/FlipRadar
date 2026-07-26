@@ -133,7 +133,10 @@ def test_wrapper_back_compat_intoarce_doar_pretul(spy_extract, monkeypatch):
 def test_validated_domains_santinela():
     """Continutul e decis de sonda live, nu de intuitie: orice adaugare trece prin
     FAZA A a unui task RETAIL si actualizeaza explicit acest test."""
-    assert VALIDATED_DOMAINS == {"altex.ro", "emag.ro"}
+    assert VALIDATED_DOMAINS == {
+        "altex.ro", "emag.ro",                        # RETAIL-3a
+        "cel.ro", "vexio.ro", "mediagalaxy.ro",       # RETAIL-5c
+    }
 
 
 # ── alert_checker: persistarea stocului ───────────────────────────────────────
