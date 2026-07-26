@@ -136,6 +136,8 @@ def test_validated_domains_santinela():
     assert VALIDATED_DOMAINS == {
         "altex.ro", "emag.ro",                        # RETAIL-3a
         "cel.ro", "vexio.ro", "mediagalaxy.ro",       # RETAIL-5c
+        "answear.ro", "fashiondays.ro",               # FASHION-1b
+        "epantofi.ro", "modivo.ro",                   # FASHION-1b
     }
 
 

@@ -9,6 +9,8 @@ parsare, nu structura reala a unui magazin (capturile reale stau in tests/fixtur
 `extract_product` nu se testeaza — face retea si e doar bucla de retry peste
 _fetch_shop_url_guarded, deja acoperit in scraper_service.
 """
+import json
+
 import pytest
 
 from app.services import product_page_extractor as ppe
@@ -40,7 +42,8 @@ def test_jsonld_simplu_toate_cheile():
     res = parse_product_html(html, URL + "#tab-review")
 
     assert set(res) == {"name", "price", "currency", "in_stock", "is_aggregate",
-                        "image_url", "canonical_url", "domain", "method", "override_applied"}
+                        "image_url", "canonical_url", "domain", "method", "override_applied",
+                        "variants"}   # FASHION-1b — cheie aditiva, None aici
     assert res["name"] == "Casti Bluetooth XZ"
     assert res["price"] == 249.99
     assert res["currency"] == "RON"
@@ -453,3 +456,230 @@ def test_emag_fara_elementul_de_pret_cade_curat_pe_jsonld():
 
     assert res["price"] == 1999.0
     assert res["override_applied"] is False
+
+
+# ── FASHION-1b: ProductGroup / hasVariant ─────────────────────────────────────
+#
+# Fixture-urile de mai jos reproduc FORMELE REALE masurate de sonda fashion
+# (2026-07-26): eobuwie (epantofi.ro / modivo.ro) publica WebSite +
+# BreadcrumbList + ProductGroup, unde hasVariant e o lista de produse-varianta cu
+# `size` la nivelul variantei si o singura oferta fiecare; answear publica un
+# Product simplu care poarta doar LISTA de marimi, fara oferta per marime.
+
+def _variant(size, price, availability="InStock", *, name="Sneakers Nike Dunk Low"):
+    """O intrare hasVariant in forma eobuwie. `availability=None` = cheie absenta."""
+    offer = {"@type": "Offer", "price": price, "priceCurrency": "RON"}
+    if availability is not None:
+        offer["availability"] = f"https://schema.org/{availability}"
+    return {"@type": "Product", "name": name, "size": size, "offers": offer}
+
+
+def _group_page(variants, *, name="Sneakers Nike Dunk Low", in_graph=False):
+    """Pagina eobuwie: WebSite + BreadcrumbList + ProductGroup (optional in @graph)."""
+    group = {"@type": "ProductGroup", "name": name,
+             "image": ["https://img.eobuwie.cloud/dunk.jpg"],
+             "brand": {"@type": "Brand", "name": "Nike"},
+             "variesBy": ["https://schema.org/Size"],
+             "hasVariant": variants}
+    if in_graph:
+        return _page(head=_ld(json.dumps({"@context": "https://schema.org", "@graph": [
+            {"@type": "WebSite", "name": "Epantofi"},
+            {"@type": "BreadcrumbList", "itemListElement": []},
+            group]})))
+    return _page(head=(_ld(json.dumps({"@type": "WebSite", "name": "Epantofi"}))
+                       + _ld(json.dumps({"@type": "BreadcrumbList", "itemListElement": []}))
+                       + _ld(json.dumps(group))))
+
+
+def test_productgroup_epantofi_pretul_e_minimul_marimilor_in_stoc():
+    """Forma epantofi cu 8 marimi, mix de disponibilitate: pretul product-level e
+    minimul marimilor CUMPARABILE, nu minimul absolut."""
+    html = _group_page([
+        _variant("40_5", 652.0, "OutOfStock"),
+        _variant("41", 652.0, "OutOfStock"),
+        _variant("42", 699.0, "InStock"),
+        _variant("42_5", 679.0, "InStock"),
+        _variant("43", 652.0, "OutOfStock"),
+        _variant("44", 719.0, "InStock"),
+        _variant("44_5", 729.0, "OutOfStock"),
+        _variant("46", 749.0, "InStock"),
+    ])
+
+    res = parse_product_html(html, "https://epantofi.ro/p/dunk-low")
+
+    assert res["method"] == "jsonld"
+    assert res["name"] == "Sneakers Nike Dunk Low"
+    assert res["price"] == 679.0            # minimul din InStock (652 e epuizat)
+    assert res["in_stock"] is True
+    assert res["is_aggregate"] is True      # pretul e "de la"
+    assert res["currency"] == "RON"
+    assert res["image_url"] == "https://img.eobuwie.cloud/dunk.jpg"
+    assert len(res["variants"]) == 8
+    assert res["variants"][0] == {"variant": "40_5", "price": 652.0, "in_stock": False}
+    assert res["variants"][2] == {"variant": "42", "price": 699.0, "in_stock": True}
+    assert [v["variant"] for v in res["variants"]] == [
+        "40_5", "41", "42", "42_5", "43", "44", "44_5", "46"]
+
+
+def test_productgroup_toate_epuizate_cade_pe_minimul_tuturor():
+    """Cazul masurat live pe epantofi: toate marimile OutOfStock. Produsul ramane
+    monitorizabil, cu pretul minim al grupului si stocul False."""
+    html = _group_page([
+        _variant("41", 652.0, "OutOfStock"),
+        _variant("42", 640.0, "OutOfStock"),
+        _variant("43", 660.0, "OutOfStock"),
+    ])
+
+    res = parse_product_html(html, "https://epantofi.ro/p/dunk-low")
+
+    assert res["price"] == 640.0
+    assert res["in_stock"] is False
+    assert [v["in_stock"] for v in res["variants"]] == [False, False, False]
+
+
+def test_productgroup_availability_lipsa_da_none_pe_varianta_si_pe_agregat():
+    """Fara availability, varianta e necunoscuta (None). Agregatul e None cand nu
+    exista nici macar o marime in stoc, dar nici toate nu-s explicit epuizate."""
+    html = _group_page([
+        _variant("41", 652.0, "OutOfStock"),
+        _variant("42", 640.0, availability=None),
+    ])
+
+    res = parse_product_html(html, "https://epantofi.ro/p/dunk-low")
+
+    assert [v["in_stock"] for v in res["variants"]] == [False, None]
+    assert res["in_stock"] is None
+    assert res["price"] == 640.0            # nicio marime in stoc -> minimul tuturor
+
+
+def test_productgroup_varianta_fara_pret_valid_e_sarita():
+    """O marime necotata (pret 0 / fara oferta) nu invalideaza grupul."""
+    html = _group_page([
+        _variant("41", 0, "InStock"),
+        {"@type": "Product", "name": "fara oferta", "size": "42"},
+        _variant("43", 559.0, "InStock"),
+    ])
+
+    res = parse_product_html(html, "https://modivo.ro/p/x")
+
+    assert len(res["variants"]) == 1
+    assert res["variants"][0] == {"variant": "43", "price": 559.0, "in_stock": True}
+    assert res["price"] == 559.0
+    assert res["in_stock"] is True
+
+
+def test_productgroup_in_graph_e_gasit():
+    html = _group_page([_variant("42", 331.0, "InStock")], in_graph=True)
+
+    res = parse_product_html(html, "https://modivo.ro/p/x")
+
+    assert res["price"] == 331.0
+    assert [v["variant"] for v in res["variants"]] == ["42"]
+
+
+def test_productgroup_marimile_compuse_raman_string_liber():
+    """Talia modivo '28_32' si jumatatea '40_5' se pastreaza EXACT — orice
+    normalizare numerica ar pierde a doua componenta."""
+    html = _group_page([
+        _variant("28_32", 225.9, "OutOfStock"),
+        _variant("29_32", 225.9, "InStock"),
+        _variant("40_5", 225.9, "InStock"),
+        _variant("XXL", 225.9, "InStock"),
+    ])
+
+    res = parse_product_html(html, "https://modivo.ro/p/blugi")
+
+    assert [v["variant"] for v in res["variants"]] == ["28_32", "29_32", "40_5", "XXL"]
+    assert all(isinstance(v["variant"], str) for v in res["variants"])
+
+
+def test_produs_simplu_are_cheia_variants_dar_e_none():
+    """REGRESIE: cheia e aditiva, deci exista pe toate caile — cu valoarea None."""
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Casti Bluetooth XZ",
+         "offers": {"@type": "Offer", "price": "249.99", "priceCurrency": "RON",
+                    "availability": "https://schema.org/InStock"}}
+    """))
+
+    res = parse_product_html(html, URL)
+
+    assert "variants" in res
+    assert res["variants"] is None
+    assert res["is_aggregate"] is False
+
+
+def test_lista_de_marimi_fara_oferte_nu_fabrica_variante():
+    """Forma answear: Product simplu cu `size` = lista de marimi si o singura
+    oferta. Fara pret/stoc pe marime nu avem ce monitoriza -> variants None."""
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "U.S. Polo Assn. camasa safari",
+         "size": ["S", "M", "L", "XL", "XXL"],
+         "offers": {"@type": "Offer", "price": "209.9", "priceCurrency": "RON",
+                    "availability": "https://schema.org/InStock"}}
+    """))
+
+    res = parse_product_html(html, "https://answear.ro/p/camasa")
+
+    assert res["price"] == 209.9
+    assert res["in_stock"] is True
+    assert res["variants"] is None
+
+
+def test_productgroup_fara_nicio_varianta_cotata_da_eroarea_existenta():
+    """Grup gol de preturi: clasificarea erorii ramane cea de azi — invalid_price
+    cand a existat un candidat de pret, no_product_data cand nu a existat deloc."""
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_group_page([_variant("41", 0, "InStock")]),
+                           "https://epantofi.ro/p/x")
+    assert exc.value.reason == "invalid_price"
+
+    fara_oferte = _group_page([{"@type": "Product", "name": "x", "size": "41"}])
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(fara_oferte, "https://epantofi.ro/p/x")
+    assert exc.value.reason == "no_product_data"
+
+
+def test_productul_valid_are_precedenta_peste_productgroup():
+    """ProductGroup e plasa de dedesubt: cand pagina publica si un Product cotat,
+    acela ramane sursa (si variants ramane None)."""
+    html = _page(head=(
+        _ld(json.dumps({"@type": "ProductGroup", "name": "Grup",
+                        "hasVariant": [_variant("42", 100.0, "InStock")]}))
+        + _ld(json.dumps({"@type": "Product", "name": "Produs cotat",
+                          "offers": {"@type": "Offer", "price": 149.0,
+                                     "priceCurrency": "RON"}}))))
+
+    res = parse_product_html(html, "https://www.magazin-test.ro/p/x")
+
+    assert res["name"] == "Produs cotat"
+    assert res["price"] == 149.0
+    assert res["variants"] is None
+
+
+def test_productgroup_preia_cand_produsul_simplu_nu_are_pret():
+    """Product prezent dar necotat -> grupul preia, cu variante cu tot."""
+    html = _page(head=(
+        _ld(json.dumps({"@type": "Product", "name": "Produs fara pret"}))
+        + _ld(json.dumps({"@type": "ProductGroup", "name": "Grup cu marimi",
+                          "hasVariant": [_variant("42", 100.0, "InStock"),
+                                         _variant("43", 120.0, "InStock")]}))))
+
+    res = parse_product_html(html, "https://epantofi.ro/p/x")
+
+    assert res["name"] == "Grup cu marimi"
+    assert res["price"] == 100.0
+    assert len(res["variants"]) == 2
+
+
+def test_og_are_variants_none():
+    """Calea OG (fara JSON-LD) pastreaza cheia aditiva, goala."""
+    html = _page(head="""
+        <meta property="og:title" content="Produs OG"/>
+        <meta property="product:price:amount" content="99.90"/>
+        <meta property="product:price:currency" content="RON"/>
+    """)
+
+    res = parse_product_html(html, URL)
+
+    assert res["method"] == "og"
+    assert res["variants"] is None

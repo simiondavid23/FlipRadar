@@ -99,6 +99,25 @@ VALIDATED_DOMAINS: set[str] = {
     # 2/3 JSON-LD; al treilea URL era un resigilat vandut intre timp (404 = link
     # mort, raportat fara sa descalifice). Platforma comuna cu altex.ro.
     "mediagalaxy.ro",
+
+    # ── valul fashion (sonda FASHION, 2026-07-26) ──────────────────────────────
+    # Primul val care aduce si magazine cu MARIMI. Doua forme masurate:
+    # Product simplu (answear, fashiondays) si ProductGroup cu hasVariant
+    # (eobuwie), citit de FASHION-1b — vezi _candidate_from_group.
+
+    # 2/2 JSON-LD Product. Publica si o lista de marimi (`size` = ['S','M',...]),
+    # dar FARA oferta per marime: nu se pot deriva variante, deci ramane produs simplu.
+    "answear.ro",
+    # 3/3 JSON-LD Product. EdgeOne trecut de pe IP rezidential (sonda ruleaza cu
+    # impersonate). Include o confirmare LIVE a ramurii negative: un in_stock=False
+    # citit corect din availability.
+    "fashiondays.ro",
+    # 3/3. Pana la FASHION-1b cadea pe OG — suspect pret de LISTA, fiindca grupul
+    # nu expune pret la nivel de produs; dupa ProductGroup pretul vine din oferta
+    # per marime (minimul marimilor in stoc).
+    "epantofi.ro",
+    # 3/3, identic cu epantofi: aceeasi platforma (eobuwie), acelasi ProductGroup.
+    "modivo.ro",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
@@ -111,6 +130,18 @@ VALIDATED_DOMAINS: set[str] = {
 #   evomag.ro  — no_product_data pe pagini care s-au incarcat corect (200): nu
 #                publica datele structurate pe care le citim. Candidat de override
 #                (price_selector/price_regex), investigatie separata.
+#
+# Ratate in valul FASHION (sonda 2026-07-26):
+#   aboutyou.ro  — SERVIRE INCONSISTENTA, nu lipsa de suport: 1 din 3 pagini a
+#                  venit cu ProductGroup complet (51 variante, pret+stoc per
+#                  marime), celelalte doua fara NICIUN bloc ld+json. Extractorul
+#                  stie deja forma dupa FASHION-1b; de re-auditat separat, cand
+#                  intelegem ce comuta servirea (A/B, geo, cache).
+#   footshop.ro  — 200 fara niciun marker (nici ld+json, nici OG): shell randat
+#                  in client. Ar cere browser, nu extractor.
+#   trendyol.com — un singur URL de produs la sonda, sub pragul de 2 al valului;
+#                  forma (Product simplu, jsonld) a mers, deci e doar de re-testat.
+#   sole.ro      — netestat in acest val (ramane degradat de la sonda RETAIL-1).
 
 
 # Headers proprii modulului: generice, fara Referer (pagina de produs e ceruta
@@ -255,14 +286,23 @@ def _iter_jsonld_objects(soup):
         yield from _flatten_jsonld(data)
 
 
-def _is_product(obj: dict) -> bool:
-    """@type "Product", inclusiv cand @type e lista (["Product", "Thing"])."""
+def _has_type(obj: dict, wanted: str) -> bool:
+    """@type == `wanted` (lowercase), inclusiv cand @type e lista (["Product", "Thing"])."""
     node_type = obj.get("@type")
     if isinstance(node_type, str):
-        return node_type.strip().lower() == "product"
+        return node_type.strip().lower() == wanted
     if isinstance(node_type, list):
-        return any(isinstance(t, str) and t.strip().lower() == "product" for t in node_type)
+        return any(isinstance(t, str) and t.strip().lower() == wanted for t in node_type)
     return False
+
+
+def _is_product(obj: dict) -> bool:
+    return _has_type(obj, "product")
+
+
+def _is_product_group(obj: dict) -> bool:
+    """@type "ProductGroup" — grupul de variante (marimi) al aceluiasi produs."""
+    return _has_type(obj, "productgroup")
 
 
 def _first_image(value) -> str | None:
@@ -310,15 +350,113 @@ def _price_from_offers(offers):
     return None, False, first_offer, saw_candidate
 
 
+def _variant_label(variant: dict) -> str:
+    """Eticheta unei variante: campul `size`, cu numele ca plasa de siguranta.
+
+    Ramane STRING LIBER, fara normalizare numerica: eobuwie publica jumatatile si
+    taliile compuse ca '40_5' / '28_32', iar orice "curatare" ori ar pierde
+    informatie, ori ar confunda 40.5 cu un interval. Cine o afiseaza o arata ca atare.
+    """
+    size = variant.get("size")
+    if isinstance(size, (int, float)) and not isinstance(size, bool):
+        size = str(size)
+    # `size` poate fi si o LISTA de marimi la nivel de produs (pattern answear) —
+    # aia nu e eticheta unei variante, deci se cade pe nume.
+    label = _clean_text(size) if isinstance(size, str) else None
+    return label or _clean_text(variant.get("name")) or ""
+
+
+def _candidate_from_group(group: dict):
+    """Candidat product-level dintr-un ProductGroup + lista lui de variante.
+
+    Forma masurata pe eobuwie (epantofi/modivo) si About You, sonda 2026-07-26:
+    `hasVariant` e o lista de produse-varianta, fiecare cu `size` la nivelul ei si
+    cu propria `offers`. Pretul si disponibilitatea trec prin logica EXISTENTA
+    (_price_from_offers / _normalize_availability), ca variantele sa se comporte
+    exact ca ofertele obisnuite.
+
+    Intoarce None daca obiectul nu poarta deloc `hasVariant`.
+    """
+    raw = group.get("hasVariant")
+    if raw is None:
+        return None
+    entries = raw if isinstance(raw, list) else [raw]
+
+    variants, currency, saw_candidate = [], None, False
+    for variant in entries:
+        if not isinstance(variant, dict):
+            continue
+        price, _is_aggregate, offer, seen = _price_from_offers(variant.get("offers"))
+        saw_candidate = saw_candidate or seen
+        # Varianta fara pret utilizabil se SARE, nu arunca: o marime pe care
+        # magazinul n-o mai coteaza nu trebuie sa invalideze restul grupului.
+        if price is None or price <= 0:
+            continue
+        offer = offer or {}
+        if currency is None:
+            currency = _normalize_currency(offer.get("priceCurrency"))
+        variants.append({
+            "variant": _variant_label(variant),
+            "price": price,
+            "in_stock": _normalize_availability(offer.get("availability")),
+        })
+
+    first = next((v for v in entries if isinstance(v, dict)), {})
+    candidate = {
+        "name": _clean_text(group.get("name")) or _clean_text(first.get("name")),
+        "price": None,
+        "currency": currency or _normalize_currency(group.get("priceCurrency")),
+        "in_stock": None,
+        # Pretul e un MINIM peste marimi ("de la"), nu o valoare unica.
+        "is_aggregate": True,
+        "image_url": _first_image(group.get("image")) or _first_image(first.get("image")),
+        "price_seen": saw_candidate,
+        "variants": None,
+    }
+    if not variants:
+        # Grup fara nicio varianta cotata: lasam price=None si price_seen asa cum a
+        # iesit, ca fluxul existent de eroare sa aleaga intre invalid_price si
+        # no_product_data exact ca la un Product simplu.
+        return candidate
+
+    states = [v["in_stock"] for v in variants]
+    in_stock_prices = [v["price"] for v in variants if v["in_stock"] is True]
+    # Semantica "de la": pretul relevant e minimul a ceea ce se poate cumpara
+    # EFECTIV. Cand nimic nu e in stoc cade pe minimul tuturor, ca produsul sa
+    # ramana monitorizabil (pretul redevine real cand revine stocul).
+    candidate["price"] = min(in_stock_prices) if in_stock_prices else min(
+        v["price"] for v in variants)
+    if any(s is True for s in states):
+        candidate["in_stock"] = True
+    elif all(s is False for s in states):
+        candidate["in_stock"] = False        # TOATE marimile explicit epuizate
+    candidate["variants"] = variants
+    return candidate
+
+
 def _collect_jsonld(soup):
     """(rezultat_complet | None, primul_candidat | None).
 
     Castiga primul Product cu nume SI pret rezolvabil; primul Product intalnit se
     pastreaza oricum ca `partial`, ca sa putem clasifica eroarea (un Product cu
     pret "0" e invalid_price, nu no_product_data).
+
+    ProductGroup e plasa de dedesubt, nu concurent: se foloseste DOAR daca niciun
+    Product n-a dat un pret rezolvabil (magazinele de moda publica si un Product
+    simplu langa grup, iar acela ramane sursa preferata).
     """
     partial = None
+    group_result = None
     for obj in _iter_jsonld_objects(soup):
+        if _is_product_group(obj):
+            if group_result is None:
+                group = _candidate_from_group(obj)
+                if group is not None:
+                    if partial is None:
+                        partial = group
+                    if group["name"] and group["price"] is not None and group["price"] > 0:
+                        group_result = group
+            continue
         if not _is_product(obj):
             continue
         price, is_aggregate, offer, saw_candidate = _price_from_offers(obj.get("offers"))
@@ -331,12 +469,16 @@ def _collect_jsonld(soup):
             "is_aggregate": is_aggregate,
             "image_url": _first_image(obj.get("image")),
             "price_seen": saw_candidate,
+            # Un Product simplu nu are variante: cheia exista, dar e goala. NU
+            # fabricam variante dintr-o lista de marimi fara oferte per marime
+            # (pattern answear) — n-am avea nici pret, nici stoc pe marime.
+            "variants": None,
         }
         if partial is None:
             partial = candidate
         if candidate["name"] and price is not None and price > 0:
             return candidate, partial
-    return None, partial
+    return group_result, partial
 
 
 # ── OpenGraph ─────────────────────────────────────────────────────────────────
@@ -365,6 +507,7 @@ def _collect_og(soup):
         "is_aggregate": False,
         "image_url": _meta(soup, "og:image"),
         "price_seen": price_raw is not None,
+        "variants": None,   # OG nu descrie variante
     }
 
 
@@ -419,6 +562,9 @@ def parse_product_html(html: str, url: str) -> dict:
         "currency": result["currency"] or "RON",
         "in_stock": result["in_stock"],
         "is_aggregate": bool(result["is_aggregate"]),
+        # ADITIV (FASHION-1b): lista de marimi cu pret+stoc, cand sursa e un
+        # ProductGroup. None pe toate celelalte cai (Product simplu, OG, override).
+        "variants": result.get("variants"),
         "image_url": result["image_url"],
         "canonical_url": _canonical_url(soup, url),
         "domain": domain,
