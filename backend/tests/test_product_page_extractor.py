@@ -683,3 +683,163 @@ def test_og_are_variants_none():
 
     assert res["method"] == "og"
     assert res["variants"] is None
+
+
+# ── FASHION-2: forma #2 — Product cu offers-lista cu `size` per oferta ────────
+#
+# Masurata pe BSTN (sonda 2026-07-26): un singur Product, fara ProductGroup, cu
+# `offers` = lista de oferte purtand fiecare propria marime. Etichetele reale au
+# spatii si fractii ('4,0 US', '36 2/3 EU'), deci raman string liber.
+# Contra-forma, pinuita mai jos: sneakersnstuff publica tot offers-lista, dar
+# FARA size — acolo comportamentul trebuie sa ramana exact cel dinainte.
+
+def _offer(size, price, availability="InStock", currency="USD"):
+    """O oferta in forma BSTN. `size=None` = oferta fara marime declarata."""
+    offer = {"@type": "Offer", "price": price, "priceCurrency": currency}
+    if size is not None:
+        offer["size"] = size
+    if availability is not None:
+        offer["availability"] = f"https://schema.org/{availability}"
+    return offer
+
+
+def _offers_page(offers, *, name="530 DRW"):
+    return _page(head=_ld(json.dumps({
+        "@context": "https://schema.org", "@type": "Product", "name": name,
+        "image": "https://cdn.bstn.com/530.jpg", "offers": offers})))
+
+
+def test_offers_lista_cu_size_da_variante_si_minimul_in_stoc():
+    """Pretul product-level NU mai e al primului element: primul e epuizat la
+    84.99, dar cea mai ieftina marime CUMPARABILA e 99.99."""
+    html = _offers_page([
+        _offer("4,0 US", 84.99, "OutOfStock"),
+        _offer("4,5 US", 89.99, "OutOfStock"),
+        _offer("5,0 US", 109.99, "InStock"),
+        _offer("36 2/3 EU", 99.99, "InStock"),
+        _offer("37 1/3 EU", 119.99, "InStock"),
+        _offer("38 EU", 129.99, "OutOfStock"),
+    ])
+
+    res = parse_product_html(html, "https://www.bstn.com/us_en/p/new-balance-530-drw")
+
+    assert res["method"] == "jsonld"
+    assert res["price"] == 99.99            # minimul din InStock, nu 84.99 (primul)
+    assert res["in_stock"] is True
+    assert res["is_aggregate"] is True
+    assert res["currency"] == "USD"
+    assert len(res["variants"]) == 6
+    # Etichetele raman EXACT cum le publica magazinul (spatii, virgule, fractii).
+    assert [v["variant"] for v in res["variants"]] == [
+        "4,0 US", "4,5 US", "5,0 US", "36 2/3 EU", "37 1/3 EU", "38 EU"]
+    assert res["variants"][0] == {"variant": "4,0 US", "price": 84.99, "in_stock": False}
+    assert res["variants"][3] == {"variant": "36 2/3 EU", "price": 99.99, "in_stock": True}
+
+
+def test_offers_lista_toate_epuizate_cade_pe_minimul_tuturor():
+    html = _offers_page([
+        _offer("4,0 US", 84.99, "OutOfStock"),
+        _offer("4,5 US", 79.99, "OutOfStock"),
+    ])
+
+    res = parse_product_html(html, "https://www.bstn.com/us_en/p/x")
+
+    assert res["price"] == 79.99
+    assert res["in_stock"] is False
+
+
+def test_offers_lista_oferta_necotata_e_sarita():
+    html = _offers_page([
+        _offer("4,0 US", 0, "InStock"),
+        _offer("4,5 US", 89.99, "InStock"),
+    ])
+
+    res = parse_product_html(html, "https://www.bstn.com/us_en/p/x")
+
+    assert [v["variant"] for v in res["variants"]] == ["4,5 US"]
+    assert res["price"] == 89.99
+
+
+def test_offers_lista_availability_lipsa_da_none_pe_varianta():
+    html = _offers_page([
+        _offer("4,0 US", 84.99, "OutOfStock"),
+        _offer("4,5 US", 79.99, availability=None),
+    ])
+
+    res = parse_product_html(html, "https://www.bstn.com/us_en/p/x")
+
+    assert [v["in_stock"] for v in res["variants"]] == [False, None]
+    assert res["in_stock"] is None          # nici in stoc, nici toate epuizate
+    assert res["price"] == 79.99
+
+
+def test_offers_lista_fara_size_ramane_exact_ca_azi():
+    """REGRESIE PINUITA (forma sneakersnstuff): fara `size` pe niciun element,
+    calea ramane cea dinainte de FASHION-2 — primul cu pret, fara variante."""
+    html = _offers_page([
+        _offer(None, 149.99, "OutOfStock"),
+        _offer(None, 99.99, "InStock"),
+    ])
+
+    res = parse_product_html(html, "https://www.sneakersnstuff.com/p/x")
+
+    assert res["variants"] is None
+    assert res["price"] == 149.99           # PRIMUL element, nu minimul
+    assert res["in_stock"] is False         # stocul primei oferte
+    assert res["is_aggregate"] is False
+
+
+def test_offers_lista_cu_un_singur_element_fara_size_ramane_ca_azi():
+    """REGRESIE (forma afew): offers-lista cu un element, fara marime."""
+    html = _offers_page([_offer(None, 129.0, "InStock", currency="EUR")])
+
+    res = parse_product_html(html, "https://en.afew-store.com/products/x")
+
+    assert res["variants"] is None
+    assert res["price"] == 129.0
+    assert res["in_stock"] is True
+    assert res["currency"] == "EUR"
+
+
+def test_offers_lista_mixta_ia_doar_ofertele_cu_marime():
+    """Pe o lista mixta, ofertele fara marime NU devin variante (altfel eticheta
+    ar fi inventata din numele produsului) si nu intra in agregare."""
+    html = _offers_page([
+        _offer(None, 59.99, "InStock"),      # oferta generica, ignorata ca varianta
+        _offer("4,0 US", 84.99, "InStock"),
+        _offer("4,5 US", 94.99, "OutOfStock"),
+    ])
+
+    res = parse_product_html(html, "https://www.bstn.com/us_en/p/x")
+
+    assert [v["variant"] for v in res["variants"]] == ["4,0 US", "4,5 US"]
+    assert res["price"] == 84.99            # minimul marimilor, nu oferta de 59.99
+    assert res["in_stock"] is True
+
+
+def test_ambele_forme_trec_prin_aceeasi_agregare():
+    """Santinela de refactor: ProductGroup si offers-lista trebuie sa dea acelasi
+    rezultat pentru aceleasi marimi, preturi si stocuri."""
+    from app.services.product_page_extractor import _aggregate_variants
+
+    trei = [
+        {"variant": "41", "price": 200.0, "in_stock": False},
+        {"variant": "42", "price": 150.0, "in_stock": True},
+        {"variant": "43", "price": 180.0, "in_stock": True},
+    ]
+    assert _aggregate_variants(trei) == (150.0, True)
+
+    grup = parse_product_html(_group_page([
+        _variant("41", 200.0, "OutOfStock"),
+        _variant("42", 150.0, "InStock"),
+        _variant("43", 180.0, "InStock"),
+    ]), "https://epantofi.ro/p/x")
+    lista = parse_product_html(_offers_page([
+        _offer("41", 200.0, "OutOfStock", currency="RON"),
+        _offer("42", 150.0, "InStock", currency="RON"),
+        _offer("43", 180.0, "InStock", currency="RON"),
+    ]), "https://www.bstn.com/us_en/p/x")
+
+    for res in (grup, lista):
+        assert (res["price"], res["in_stock"], res["is_aggregate"]) == (150.0, True, True)
+    assert [v["variant"] for v in grup["variants"]] == [v["variant"] for v in lista["variants"]]

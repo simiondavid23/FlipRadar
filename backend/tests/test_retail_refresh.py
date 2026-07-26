@@ -138,6 +138,7 @@ def test_validated_domains_santinela():
         "cel.ro", "vexio.ro", "mediagalaxy.ro",       # RETAIL-5c
         "answear.ro", "fashiondays.ro",               # FASHION-1b
         "epantofi.ro", "modivo.ro",                   # FASHION-1b
+        "bstn.com", "en.afew-store.com",              # FASHION-2
     }
 
 
