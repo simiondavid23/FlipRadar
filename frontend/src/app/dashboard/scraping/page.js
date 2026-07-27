@@ -3,14 +3,7 @@ import { useState, useMemo } from "react";
 import { scrapingAPI, productsAPI, trackedProductsAPI } from "@/lib/api";
 import { Globe, Search, Plus, Heart, ExternalLink, ShoppingBag } from "lucide-react";
 import AddByLinkWizard from "@/components/AddByLinkWizard";
-
-const SOURCE_STYLES = {
-  "altex.ro": { bg: "rgba(59,130,246,0.2)", fg: "#60a5fa" },
-  "sole.ro": { bg: "rgba(236,72,153,0.2)", fg: "#f472b6" },
-  "farmaciatei.ro": { bg: "rgba(34,197,94,0.2)", fg: "#4ade80" },
-  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#facc15" },
-  "pcgarage.ro": { bg: "rgba(168,85,247,0.2)", fg: "#c084fc" },
-};
+import { styleFor } from "@/lib/sourceStyles";
 
 const SEARCH_TYPE_PLACEHOLDERS = {
   name: "ex: MacBook Pro 14, crema hidratanta",
@@ -225,7 +218,7 @@ export default function ScrapingPage() {
           {allResults.length > 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               {sortedResults.map((product, i) => {
-                const style = SOURCE_STYLES[product.source] || { bg: "rgba(148,163,184,0.2)", fg: "#cbd5e1" };
+                const style = styleFor(product.source);
                 const cur = product.currency || "RON";
                 return (
                   <div key={i} style={{ ...cardStyle, borderRadius: "0.75rem", padding: "1.25rem" }}>

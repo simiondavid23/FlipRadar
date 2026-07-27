@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { trackedProductsAPI } from "@/lib/api";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
+import { styleFor } from "@/lib/sourceStyles";
 import { Heart, Trash2, Bell, Package, ExternalLink, Activity } from "lucide-react";
 
 // Pills de status + pills per magazin (sursa = domeniul salvat de scrapere).
@@ -19,14 +20,6 @@ const SOURCE_FILTERS = [
   { label: "Sole", value: "sole.ro" },
   { label: "FarmaciaTei", value: "farmaciatei.ro" },
 ];
-
-const SOURCE_STYLES = {
-  "altex.ro": { bg: "rgba(59,130,246,0.2)", fg: "#60a5fa" },
-  "sole.ro": { bg: "rgba(236,72,153,0.2)", fg: "#f472b6" },
-  "farmaciatei.ro": { bg: "rgba(34,197,94,0.2)", fg: "#4ade80" },
-  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#facc15" },
-  "pcgarage.ro": { bg: "rgba(168,85,247,0.2)", fg: "#c084fc" },
-};
 
 export default function TrackedProductsPage() {
   const [items, setItems] = useState([]);
@@ -173,7 +166,7 @@ export default function TrackedProductsPage() {
       ) : filtered.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "1rem" }}>
           {filtered.map((product) => {
-            const style = SOURCE_STYLES[product.source] || { bg: "rgba(148,163,184,0.2)", fg: "#cbd5e1" };
+            const style = styleFor(product.source);
             const cur = product.currency || "RON";
             const hasDiscount = product.original_price != null && product.current_price != null && product.original_price > product.current_price;
             const draftValue = alertDrafts[product.id] !== undefined
