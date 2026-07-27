@@ -76,6 +76,8 @@ RadarMessageTemplate = _model("RadarMessageTemplate")
 RealEstateMonitorKeyword = _model("RealEstateMonitorKeyword")
 RealEstateMonitorListing = _model("RealEstateMonitorListing")
 RealEstateListing = _model("RealEstateListing")  # tabelul vechi (deprecat), /real-estate/saved
+ResaleFeeProfile = _model("ResaleFeeProfile")
+ResaleReference = _model("ResaleReference")
 
 _NAME = "AN1-authz"
 
@@ -280,6 +282,24 @@ def _f_re_saved_listing(uid):
         return [li.id]
 
 
+def _f_resale_fee_profile(uid):
+    with _session() as db:
+        pr = ResaleFeeProfile(user_id=uid, platform=f"authz-{uuid.uuid4().hex[:8]}",
+                              label=_NAME)
+        db.add(pr); db.flush()
+        return [pr.id]
+
+
+def _f_resale_reference(uid):
+    # Ownership-ul referintei vine prin produs (nu are user_id propriu).
+    with _session() as db:
+        p = Product(user_id=uid, name=_NAME); db.add(p); db.flush()
+        ref = ResaleReference(product_id=p.id, platform="stockx", variant="",
+                              ref_price=1.0)
+        db.add(ref); db.flush()
+        return [ref.id]
+
+
 RESOURCE_FACTORIES = {
     "alert": _f_alert,
     "inventory": _f_inventory,
@@ -301,6 +321,8 @@ RESOURCE_FACTORIES = {
     "re_monitor_listing": _f_re_monitor_listing,
     "re_monitor_keyword": _f_re_monitor_keyword,
     "re_saved_listing": _f_re_saved_listing,
+    "resale_fee_profile": _f_resale_fee_profile,
+    "resale_reference": _f_resale_reference,
 }
 
 
@@ -383,6 +405,15 @@ ENDPOINTS = [
     ("PUT", "/api/real-estate-monitor/keywords/{kw_id}", "re_monitor_keyword", {"name": "x", "platform": "olx"}, DENIED),
     # ── real-estate (saved, tabel vechi) ──
     ("DELETE", "/api/real-estate/listings/saved/{listing_id}", "re_saved_listing", None, DENIED),
+    # ── resale (FASHION-3a): profiluri de taxe + referinte de revanzare ──
+    # Referintele nu au user_id: ownership-ul lor se verifica prin join la produs.
+    ("PUT", "/api/resale/fee-profiles/{profile_id}", "resale_fee_profile", {}, DENIED),
+    ("GET", "/api/products/{product_id}/resale-references", "product", None, DENIED),
+    ("POST", "/api/products/{product_id}/resale-references", "product",
+     {"platform": "stockx", "ref_price": 1.0}, DENIED),
+    ("DELETE", "/api/resale/references/{ref_id}", "resale_reference", None, DENIED),
+    ("PUT", "/api/resale/references/{ref_id}", "resale_reference", {}, DENIED),
+    ("POST", "/api/resale/references/{ref_id}/set-primary", "resale_reference", None, DENIED),
     # ── sales ──
     ("DELETE", "/api/sales/{sale_id}", "sale", None, DENIED),
     ("PUT", "/api/sales/{sale_id}", "sale", {}, DENIED),
