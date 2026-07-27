@@ -35,7 +35,10 @@ class ResaleReference(Base):
     ref_price = Column(Float, nullable=False)
     ref_currency = Column(String, nullable=False, default="EUR")
     source_url = Column(String, nullable=True)
-    # "manual" acum; lasa loc unei culegeri automate fara migrare (FASHION-3b+).
+    # "manual" azi; "auto" REZERVAT — vezi nota de fezabilitate din
+    # resale_service.py (sonda 3c): niciuna dintre platforme nu livreaza preturile
+    # de piata in HTML-ul pe care il putem citi. Campul exista ca o implementare
+    # viitoare sa nu ceara migrare.
     mode = Column(String, nullable=False, default="manual")
     fetched_at = Column(DateTime, nullable=True)
     is_primary = Column(Boolean, nullable=False, default=False)

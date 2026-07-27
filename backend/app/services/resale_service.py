@@ -4,6 +4,28 @@ Totul e mediat prin RON: e singura moneda in care BNR ne da rate directe, deci
 orice conversie cross-valutara (referinta in EUR, taxe fixe in USD) trece prin
 ea. Netul NU se stocheaza NICIODATA — se recalculeaza din profilul de taxe
 curent, ca o editare a taxelor sa se vada imediat peste tot.
+
+FEZABILITATE AUTO (sonda 3c, 2026-07-26) — de ce referintele raman MANUALE
+--------------------------------------------------------------------------
+Intrebarea "se pot culege automat preturile de referinta?" a fost masurata, nu
+presupusa. Raspunsul e NU pe ambele platforme, din motive DIFERITE:
+
+  StockX — curl e blocat (403). patchright serveste continut, dar sub challenge:
+           ce se obtine e partial si fragil, adica exact felul de sursa care
+           produce preturi gresite fara sa semnaleze nimic.
+  GOAT   — curl intoarce 200 stabil, deci accesul NU e problema. Problema e ca
+           SSR-ul livreaza `productTemplate` cu lowestPriceCents,
+           newLowestPriceCents si usedLowestPriceCents = 0, iar `offers` = None:
+           preturile de piata se hidrateaza printr-un XHR de dupa incarcare, deci
+           nu exista in HTML-ul pe care il primim.
+
+Concluzia: `mode='auto'` ramane REZERVAT (campul exista in model tocmai ca o
+implementare viitoare sa nu ceara migrare), iar manual-first nu e o etapa
+intermediara, ci forma completa a functionalitatii.
+
+Redeschiderea e CONDITIONATA de o sonda noua, nu de o presupunere: daca o
+platforma isi schimba servirea, se remasoara si abia apoi se decide (acelasi
+tipar ca la flanco.ro in valurile RETAIL).
 """
 from sqlalchemy.orm import Session
 
