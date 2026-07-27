@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { productsAPI, trackedProductsAPI, alertsAPI } from "@/lib/api";
+import { productsAPI, trackedProductsAPI, alertsAPI, resaleAPI } from "@/lib/api";
+import ResaleReferenceDialog from "@/components/ResaleReferenceDialog";
 import {
   ArrowLeft, ExternalLink, Eye, Bell, Package, TrendingUp, TrendingDown, Minus, Trash2, RefreshCw, Check, X,
 } from "lucide-react";
@@ -36,6 +37,10 @@ function ProductDetailInner() {
   const [resaleSaving, setResaleSaving] = useState(false);
   // Cross-shop: sugestia pe care o procesam acum (confirm/respinge) — pentru disable.
   const [suggestionBusy, setSuggestionBusy] = useState(null);
+  // FASHION-3b — referinte de revanzare (net-ul vine calculat din backend).
+  const [references, setReferences] = useState([]);
+  const [refDialog, setRefDialog] = useState(null);   // {reference} | {} pentru adaugare
+  const [refBusy, setRefBusy] = useState(null);
 
   const copyToClipboard = async (value, key) => {
     if (!value) return;
@@ -59,9 +64,29 @@ function ProductDetailInner() {
     }
   }, [productId]);
 
+  // FASHION-3b — referintele si produsul se reincarca IMPREUNA dupa orice actiune:
+  // resale_price se poate schimba din oricare (primara noua, editare, stergere).
+  const loadReferences = useCallback(async () => {
+    if (!productId) return;
+    try {
+      const res = await resaleAPI.listReferences(productId);
+      setReferences(res.data);
+    } catch (error) {
+      console.error("Error loading resale references:", error);
+    }
+  }, [productId]);
+
+  const reloadAll = useCallback(async () => {
+    await Promise.all([loadProduct(), loadReferences()]);
+  }, [loadProduct, loadReferences]);
+
   useEffect(() => {
     if (productId) loadProduct();
   }, [productId, loadProduct]);
+
+  useEffect(() => {
+    if (productId) loadReferences();
+  }, [productId, loadReferences]);
 
   // PKG-1 — fara ?id= (sau id gol) pagina nu are ce randa; ghidam userul inapoi.
   // Guard plasat dupa toate hook-urile (Rules of Hooks), inaintea starii de loading.
@@ -135,6 +160,32 @@ function ProductDetailInner() {
       alert(error.response?.data?.detail || "Eroare la salvarea pretului de revanzare");
     } finally {
       setResaleSaving(false);
+    }
+  };
+
+  // FASHION-3b — actiunile pe referinte. Toate reincarca si produsul.
+  const handleSetPrimary = async (refId) => {
+    setRefBusy(refId);
+    try {
+      await resaleAPI.setPrimary(refId);
+      await reloadAll();
+    } catch (error) {
+      alert(error.response?.data?.detail || "Eroare la setarea referintei primare");
+    } finally {
+      setRefBusy(null);
+    }
+  };
+
+  const handleDeleteReference = async (refId) => {
+    if (!confirm("Stergi aceasta referinta de revanzare?")) return;
+    setRefBusy(refId);
+    try {
+      await resaleAPI.deleteReference(refId);
+      await reloadAll();
+    } catch (error) {
+      alert(error.response?.data?.detail || "Eroare la stergerea referintei");
+    } finally {
+      setRefBusy(null);
     }
   };
 
@@ -476,6 +527,17 @@ function ProductDetailInner() {
       {product.current_price != null && (() => {
         const money = product.currency || "EUR";
         const fmt = (n) => Number(n).toFixed(2);
+        // FASHION-3b — cu o referinta primara, resale_price e CALCULAT si nu se
+        // mai editeaza manual: sursa lui e referinta, gestionata in sectiunea de
+        // mai jos. Fara referinta primara, blocul ramane exact cel dinainte.
+        const primaryRef = references.find((r) => r.is_primary) || null;
+        const primaryNote = primaryRef && (
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0.5rem 0 0" }}>
+            Calculat din referinta {primaryRef.platform}
+            {primaryRef.variant ? ` (marimea ${primaryRef.variant})` : ""} — gestioneaza
+            referintele mai jos.
+          </p>
+        );
 
         if (product.resale_price == null) {
           return (
@@ -483,7 +545,14 @@ function ProductDetailInner() {
               backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
               borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
             }}>
-              {resaleEditing ? (
+              {primaryRef ? (
+                <div>
+                  <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+                    Pret revanzare: nu a putut fi calculat din referinta curenta.
+                  </span>
+                  {primaryNote}
+                </div>
+              ) : resaleEditing ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>Pret revanzare estimat:</span>
                   <input
@@ -593,9 +662,111 @@ function ProductDetailInner() {
                 {" "}| ROI net: <span style={{ color: vColor }}>{roiNet.toFixed(1)}%</span>
               </span>
             </div>
+            {primaryNote}
           </div>
         );
       })()}
+
+      {/* FASHION-3b — referinte de revanzare (net-ul vine calculat din backend) */}
+      <div style={{
+        backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+        borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
+          <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+            Referinte de revanzare ({references.length})
+          </h2>
+          <button type="button" onClick={() => setRefDialog({})}
+            style={{
+              display: "flex", alignItems: "center", gap: "0.375rem",
+              padding: "0.5rem 0.875rem", borderRadius: "0.5rem",
+              backgroundColor: "rgba(167,139,250,0.15)", color: "#a78bfa",
+              border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+            }}>
+            Adauga referinta
+          </button>
+        </div>
+
+        {references.length === 0 ? (
+          <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
+            Nicio referinta. Adauga pretul cerut pe StockX sau GOAT ca sa vezi cat ramane
+            net dupa taxe si sa aprinzi analiza de profitabilitate.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {references.map((r) => (
+              <div key={r.id} style={{
+                display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.75rem",
+                backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem", flexWrap: "wrap",
+                border: r.is_primary ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-color)",
+              }}>
+                <span style={{
+                  padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                  backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa", minWidth: "72px", textAlign: "center",
+                }}>
+                  {r.platform}
+                </span>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                  {r.variant ? `Marimea ${r.variant}` : "Toate marimile"}
+                </span>
+                <span style={{ fontSize: "0.875rem", color: "var(--text-primary)" }}>
+                  {r.ref_price} {r.ref_currency}
+                </span>
+                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: r.net != null ? "#4ade80" : "var(--text-muted)" }}>
+                  net {r.net != null ? `${r.net} ${r.net_currency}` : "—"}
+                </span>
+                {r.is_primary && (
+                  <span style={{ fontSize: "0.6875rem", color: "#4ade80", fontWeight: 500 }}>Primara</span>
+                )}
+                <span style={{ flex: 1 }} />
+                {r.source_url && (
+                  <a href={r.source_url} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", alignItems: "center", color: "#60a5fa" }} title="Deschide linkul">
+                    <ExternalLink style={{ width: "14px", height: "14px" }} />
+                  </a>
+                )}
+                {!r.is_primary && (
+                  <button type="button" disabled={refBusy === r.id} onClick={() => handleSetPrimary(r.id)}
+                    style={{
+                      padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem",
+                      backgroundColor: "transparent", color: "#4ade80",
+                      border: "1px solid rgba(34,197,94,0.4)", cursor: "pointer",
+                    }}>
+                    Set primara
+                  </button>
+                )}
+                <button type="button" onClick={() => setRefDialog({ reference: r })}
+                  style={{
+                    padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem",
+                    backgroundColor: "transparent", color: "var(--text-secondary)",
+                    border: "1px solid var(--border-color)", cursor: "pointer",
+                  }}>
+                  Editeaza
+                </button>
+                <button type="button" disabled={refBusy === r.id} onClick={() => handleDeleteReference(r.id)}
+                  title="Sterge referinta"
+                  style={{
+                    display: "flex", alignItems: "center", padding: "0.25rem",
+                    backgroundColor: "transparent", border: "none", color: "#f87171", cursor: "pointer",
+                  }}>
+                  <Trash2 style={{ width: "14px", height: "14px" }} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {refDialog && (
+        <ResaleReferenceDialog
+          productId={productId}
+          reference={refDialog.reference}
+          // Marimile deja urmarite pe produs (randurile-sursa din FASHION-1a).
+          sizes={[...new Set((product.sources || []).map((s) => s.variant).filter(Boolean))]}
+          onClose={() => setRefDialog(null)}
+          onSaved={async () => { setRefDialog(null); await reloadAll(); }}
+        />
+      )}
 
       {product.sources && product.sources.length > 0 && (
         <div style={{

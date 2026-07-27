@@ -98,6 +98,20 @@ export const productsAPI = {
     api.delete(`/api/products/${productId}/suggestions/${suggestionId}`),
 };
 
+// FASHION-3a/3b — referinte de revanzare + profiluri de taxe.
+// `netPreview` calculeaza net-ul server-side, ca formula sa nu fie duplicata aici.
+export const resaleAPI = {
+  getFeeProfiles: () => api.get("/api/resale/fee-profiles"),
+  createFeeProfile: (data) => api.post("/api/resale/fee-profiles", data),
+  updateFeeProfile: (profileId, data) => api.put(`/api/resale/fee-profiles/${profileId}`, data),
+  listReferences: (productId) => api.get(`/api/products/${productId}/resale-references`),
+  createReference: (productId, data) => api.post(`/api/products/${productId}/resale-references`, data),
+  updateReference: (refId, data) => api.put(`/api/resale/references/${refId}`, data),
+  deleteReference: (refId) => api.delete(`/api/resale/references/${refId}`),
+  setPrimary: (refId) => api.post(`/api/resale/references/${refId}/set-primary`),
+  netPreview: (data) => api.post("/api/resale/net-preview", data),
+};
+
 // Alerte
 export const alertsAPI = {
   getAlerts: () => api.get("/api/alerts/"),

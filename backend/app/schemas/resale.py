@@ -48,6 +48,18 @@ class FeeProfileResponse(BaseModel):
         from_attributes = True
 
 
+class NetPreviewRequest(BaseModel):
+    """FASHION-3b — cat ar ramane net pentru un pret inca nesalvat."""
+    platform: str
+    ref_price: float
+    ref_currency: str = "EUR"
+
+
+class NetPreviewResponse(BaseModel):
+    net: float
+    net_currency: str
+
+
 class ResaleReferenceCreate(BaseModel):
     platform: str
     variant: str = ""          # "" = referinta la nivel de produs (conventia 1a)

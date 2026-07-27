@@ -275,6 +275,33 @@ def test_referinta_aprinde_filtrarea_roi_existenta(auth_client):
     assert next(p for p in dupa if p["id"] == pid)["resale_price"] == 175.0
 
 
+def test_net_preview_foloseste_profilul_userului(auth_client):
+    """FASHION-3b — 200 EUR pe StockX (9.5+3%): 1000 RON -> 875 RON -> 175 EUR."""
+    auth_client.get("/api/resale/fee-profiles")          # seed
+
+    r = auth_client.post("/api/resale/net-preview",
+                         json={"platform": "stockx", "ref_price": 200.0, "ref_currency": "EUR"})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"net": 175.0, "net_currency": "EUR"}
+
+
+def test_net_preview_fara_profil_da_brutul(auth_client):
+    """Aceeasi semantica pinuita in 3a: profil lipsa = taxe zero, vizibil."""
+    r = auth_client.post("/api/resale/net-preview",
+                         json={"platform": "platforma-inexistenta", "ref_price": 200.0,
+                               "ref_currency": "USD"})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"net": 200.0, "net_currency": "USD"}
+
+
+def test_net_preview_cere_autentificare(client):
+    r = client.post("/api/resale/net-preview",
+                    json={"platform": "stockx", "ref_price": 1.0})
+    assert r.status_code == 401
+
+
 def test_editarea_taxelor_se_vede_imediat_in_net(auth_client):
     """Netul nu e stocat: dupa ce comisionul devine 0, aceeasi referinta raporteaza
     brutul, iar resale_price se actualizeaza la urmatoarea recalculare."""

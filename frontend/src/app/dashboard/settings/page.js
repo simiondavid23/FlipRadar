@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { radarAPI, usersAPI, facebookGroupsAPI } from "@/lib/api";
+import { radarAPI, usersAPI, facebookGroupsAPI, resaleAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Save, Send, ToggleLeft, ToggleRight,
   CheckCircle2, AlertCircle,
@@ -381,6 +381,8 @@ export default function SettingsPage() {
           {/* Șabloane Mesaje (mutat din pagina standalone radar/templates; generalizat pe toate modulele) */}
           <MessageTemplatesSection />
 
+          <ResaleFeesSection />
+
           {/* Discord */}
           <Section title="Discord Webhooks">
             <WebhookInput
@@ -641,6 +643,208 @@ export default function SettingsPage() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  );
+}
+
+// ── FASHION-3b — Taxe revanzare ─────────────────────────────────────────────
+// Profilurile vin seed-uite de backend la primul GET (StockX + GOAT cu procentele
+// verificate manual). Fixele si transportul raman 0 pana le completeaza userul:
+// depind de contul lui, deci nicio valoare implicita n-ar fi corecta.
+const RESALE_CURRENCIES = ["EUR", "USD", "RON"];
+const EMPTY_FEE_FORM = {
+  platform: "", label: "", commission_pct: "", processing_pct: "", extra_pct: "",
+  fixed_fee: "", shipping_cost: "", currency: "EUR",
+};
+
+function ResaleFeesSection() {
+  const [profiles, setProfiles] = useState([]);
+  const [drafts, setDrafts] = useState({});          // id -> valori editate
+  const [savingId, setSavingId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_FEE_FORM);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const res = await resaleAPI.getFeeProfiles();
+      setProfiles(res.data);
+      setDrafts(Object.fromEntries(res.data.map((p) => [p.id, { ...p }])));
+    } catch {
+      setError("Nu am putut incarca profilurile de taxe.");
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setField = (id, key, value) =>
+    setDrafts((d) => ({ ...d, [id]: { ...d[id], [key]: value } }));
+
+  const saveProfile = async (id) => {
+    setSavingId(id);
+    setError("");
+    const d = drafts[id] || {};
+    const num = (v) => (v === "" || v == null ? 0 : Number(v));
+    try {
+      await resaleAPI.updateFeeProfile(id, {
+        label: d.label,
+        commission_pct: num(d.commission_pct),
+        processing_pct: num(d.processing_pct),
+        extra_pct: num(d.extra_pct),
+        fixed_fee: num(d.fixed_fee),
+        shipping_cost: num(d.shipping_cost),
+        currency: d.currency,
+      });
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.detail || "Nu am putut salva profilul.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const createProfile = async () => {
+    setError("");
+    const num = (v) => (v === "" || v == null ? 0 : Number(v));
+    try {
+      await resaleAPI.createFeeProfile({
+        platform: form.platform.trim(),
+        label: form.label.trim() || form.platform.trim(),
+        commission_pct: num(form.commission_pct),
+        processing_pct: num(form.processing_pct),
+        extra_pct: num(form.extra_pct),
+        fixed_fee: num(form.fixed_fee),
+        shipping_cost: num(form.shipping_cost),
+        currency: form.currency,
+      });
+      setForm(EMPTY_FEE_FORM);
+      setShowForm(false);
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.detail || "Nu am putut crea profilul.");
+    }
+  };
+
+  const numField = (label, value, onChange, suffix) => (
+    <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
+      {label}
+      <div style={{ position: "relative" }}>
+        <input type="number" step="0.01" min="0" value={value ?? ""} onChange={(e) => onChange(e.target.value)}
+          style={{ ...inputStyle, marginTop: "0.25rem", paddingRight: suffix ? "1.75rem" : undefined }} />
+        {suffix && (
+          <span style={{ position: "absolute", right: "0.625rem", top: "50%", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+            {suffix}
+          </span>
+        )}
+      </div>
+    </label>
+  );
+
+  const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.5rem" };
+
+  return (
+    <Section title="Taxe revanzare">
+      <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
+        Taxele nu se citesc automat de pe platforme — se configureaza aici. Procentele vin
+        completate cu valorile publicate oficial; taxele fixe si transportul depind de contul
+        tau, deci raman 0 pana le completezi.
+      </p>
+      {error && <p style={{ fontSize: "0.8125rem", color: "#f87171", margin: 0 }}>{error}</p>}
+
+      {profiles.map((p) => {
+        const d = drafts[p.id] || {};
+        return (
+          <div key={p.id} style={{
+            border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+            padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)" }}>
+                {p.label}{" "}
+                <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--text-muted)" }}>({p.platform})</span>
+              </h3>
+              <span style={{ fontSize: "0.7rem", color: p.verified_at ? "#4ade80" : "var(--text-muted)" }}>
+                {p.verified_at ? `Procente verificate la ${p.verified_at}` : "Valori modificate de tine"}
+              </span>
+            </div>
+
+            <div style={grid}>
+              {numField("Comision", d.commission_pct, (v) => setField(p.id, "commission_pct", v), "%")}
+              {numField("Procesare", d.processing_pct, (v) => setField(p.id, "processing_pct", v), "%")}
+              {numField("Extra", d.extra_pct, (v) => setField(p.id, "extra_pct", v), "%")}
+              {numField("Taxa fixa", d.fixed_fee, (v) => setField(p.id, "fixed_fee", v))}
+              {numField("Transport", d.shipping_cost, (v) => setField(p.id, "shipping_cost", v))}
+              <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
+                Moneda taxelor
+                <select value={d.currency || "EUR"} onChange={(e) => setField(p.id, "currency", e.target.value)}
+                  style={{ ...inputStyle, marginTop: "0.25rem" }}>
+                  {RESALE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+            </div>
+
+            {p.note && (
+              <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: 0 }}>{p.note}</p>
+            )}
+            <div>
+              <button onClick={() => saveProfile(p.id)} disabled={savingId === p.id} style={primaryBtn(savingId === p.id)}>
+                <Save style={{ width: "14px", height: "14px" }} />
+                {savingId === p.id ? "Se salveaza…" : "Salveaza"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      {showForm ? (
+        <div style={{
+          border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+          padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem",
+        }}>
+          <div style={grid}>
+            <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
+              Platforma
+              <input type="text" value={form.platform} placeholder="ex: vinted"
+                onChange={(e) => setForm({ ...form, platform: e.target.value })}
+                style={{ ...inputStyle, marginTop: "0.25rem" }} />
+            </label>
+            <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
+              Nume afisat
+              <input type="text" value={form.label} placeholder="ex: Vinted"
+                onChange={(e) => setForm({ ...form, label: e.target.value })}
+                style={{ ...inputStyle, marginTop: "0.25rem" }} />
+            </label>
+            {numField("Comision", form.commission_pct, (v) => setForm({ ...form, commission_pct: v }), "%")}
+            {numField("Procesare", form.processing_pct, (v) => setForm({ ...form, processing_pct: v }), "%")}
+            {numField("Extra", form.extra_pct, (v) => setForm({ ...form, extra_pct: v }), "%")}
+            {numField("Taxa fixa", form.fixed_fee, (v) => setForm({ ...form, fixed_fee: v }))}
+            {numField("Transport", form.shipping_cost, (v) => setForm({ ...form, shipping_cost: v }))}
+            <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
+              Moneda taxelor
+              <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                style={{ ...inputStyle, marginTop: "0.25rem" }}>
+                {RESALE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button onClick={createProfile} disabled={!form.platform.trim()} style={primaryBtn(!form.platform.trim())}>
+              <Plus style={{ width: "14px", height: "14px" }} />
+              Adauga
+            </button>
+            <button onClick={() => { setShowForm(false); setForm(EMPTY_FEE_FORM); setError(""); }} style={fgSecondaryBtn}>
+              Anuleaza
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <button onClick={() => setShowForm(true)} style={fgSecondaryBtn}>
+            <Plus style={{ width: "14px", height: "14px" }} />
+            Adauga profil
+          </button>
+        </div>
+      )}
+    </Section>
   );
 }
 

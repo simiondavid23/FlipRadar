@@ -18,6 +18,8 @@ from app.schemas.resale import (
     FeeProfileCreate,
     FeeProfileResponse,
     FeeProfileUpdate,
+    NetPreviewRequest,
+    NetPreviewResponse,
     ResaleReferenceCreate,
     ResaleReferenceResponse,
     ResaleReferenceUpdate,
@@ -191,6 +193,29 @@ def update_fee_profile(
     db.commit()
     db.refresh(profile)
     return profile
+
+
+@router.post("/api/resale/net-preview", response_model=NetPreviewResponse)
+def net_preview(
+    payload: NetPreviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Netul pentru un pret INCA nesalvat — alimenteaza dialogul din UI.
+
+    Exista ca formula sa NU fie duplicata in JavaScript: o a doua implementare
+    ar diverge tacut de compute_net_ron la prima schimbare de reguli, iar userul
+    ar vedea in dialog alt numar decat cel salvat. Fara parametru de path, deci
+    in afara sweep-ului AN-1 (nu are resursa cu ID de protejat) — ownership-ul e
+    implicit: se foloseste DOAR profilul userului curent.
+    """
+    profile = _profile_for(db, current_user.id, (payload.platform or "").strip())
+    currency = (payload.ref_currency or "EUR").upper()
+    try:
+        net = net_in(compute_net_ron(payload.ref_price, currency, profile), currency)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"net": net, "net_currency": currency}
 
 
 # ── referinte de revanzare ────────────────────────────────────────────────────
