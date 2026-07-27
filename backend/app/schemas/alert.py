@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 from app.schemas._types import UTCDateTime
 from app.schemas.product import ProductResponse
@@ -49,5 +49,4 @@ class AlertResponse(BaseModel):
     created_at: UTCDateTime
     product: Optional[ProductResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

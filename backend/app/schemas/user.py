@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from typing import Optional
 from app.schemas._types import UTCDateTime
 
@@ -43,8 +43,7 @@ class UserResponse(BaseModel):
     ai_features_config: Optional[dict] = None
     created_at: Optional[UTCDateTime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from app.schemas._types import UTCDateTime
 
@@ -52,8 +52,7 @@ class ProductSourceResponse(BaseModel):
     variant: str = ""
     last_checked_at: Optional[UTCDateTime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductSourceSuggestionResponse(BaseModel):
@@ -65,8 +64,7 @@ class ProductSourceSuggestionResponse(BaseModel):
     currency: str
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductResponse(BaseModel):
@@ -88,8 +86,7 @@ class ProductResponse(BaseModel):
     created_at: UTCDateTime
     sources: List[ProductSourceResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RefreshSourceResult(BaseModel):
@@ -130,8 +127,7 @@ class PriceHistoryResponse(BaseModel):
     variant: str = ""
     recorded_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductDetailResponse(BaseModel):

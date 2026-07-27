@@ -1,7 +1,7 @@
 """FASHION-3a — scheme pentru profilurile de taxe si referintele de revanzare."""
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas._types import UTCDateTime
 
@@ -44,8 +44,7 @@ class FeeProfileResponse(BaseModel):
     verified_at: Optional[str] = None
     note: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NetPreviewRequest(BaseModel):
@@ -90,5 +89,4 @@ class ResaleReferenceResponse(BaseModel):
     net: Optional[float] = None
     net_currency: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
