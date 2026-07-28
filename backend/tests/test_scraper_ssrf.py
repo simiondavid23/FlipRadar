@@ -9,7 +9,12 @@ Teste pure de functie: nu ating reteaua si nu au nevoie de DB.
 """
 import pytest
 
-from app.services.scraper_service import _is_allowed_shop_url, fetch_ean_from_url
+from app.services.scraper_service import (
+    _fetch_shop_url_guarded,
+    _impersonate_for,
+    _is_allowed_shop_url,
+    fetch_ean_from_url,
+)
 
 
 class _FakeResponse:
@@ -270,3 +275,86 @@ def test_domeniu_absent_din_ambele_multimi_ramane_respins(monkeypatch):
     assert _is_allowed_shop_url("https://alt-magazin.ro/p/1") is False
     assert _is_allowed_shop_url("http://169.254.169.254/latest/meta-data/") is False
     assert _is_allowed_shop_url("http://localhost:8000/api/products/") is False
+
+
+# ── ACCESS-2: amprenta de impersonate per domeniu ─────────────────────────────
+
+@pytest.mark.parametrize("url,asteptat", [
+    # Domeniul cu override, in toate formele legitime.
+    ("https://www.43einhalb.com/p/x", "firefox135"),
+    ("https://43einhalb.com/p/x", "firefox135"),
+    ("https://shop.43einhalb.com/p/x", "firefox135"),
+    # Override inert: flanco.ro nu e (inca) in allow-list, dar treapta e consemnata.
+    ("https://www.flanco.ro/produs.html", "firefox135"),
+    # Sufix inselator: NU primeste amprenta domeniului pe care il imita — altfel
+    # un atacator si-ar alege singur clientul cu care iese backend-ul pe retea.
+    ("https://evil-43einhalb.com.attacker.com/x", "chrome131"),
+    ("https://43einhalb.com.attacker.com/x", "chrome131"),
+    # Domeniu fara override -> default-ul global.
+    ("https://www.emag.ro/x", "chrome131"),
+    ("https://altex.ro/cpd/ABC/", "chrome131"),
+    # URL neparsabil -> fail-safe pe default (hostname gol, respectiv urlparse care
+    # arunca pe IPv6 invalid).
+    ("not a url", "chrome131"),
+    ("", "chrome131"),
+    ("http://[::1", "chrome131"),
+])
+def test_impersonate_for_alege_treapta_domeniului(url, asteptat):
+    """Treptele sunt scrise LITERAL, nu prin _IMPERSONATE: daca cineva schimba
+    default-ul global, testul pica si obliga la o decizie constienta."""
+    assert _impersonate_for(url) == asteptat
+
+
+def _spion_impersonate(monkeypatch, responses=None):
+    """Fals pentru curl_requests.get care inregistreaza (url, impersonate)."""
+    calls = []
+    responses = responses or {}
+
+    def _get(url, *args, **kwargs):
+        calls.append((url, kwargs.get("impersonate")))
+        return responses.get(url, _FakeResponse(status_code=200))
+
+    monkeypatch.setattr("app.services.scraper_service.curl_requests.get", _get)
+    return calls
+
+
+def test_poarta_guarded_foloseste_override_ul(monkeypatch):
+    """43einhalb.com da 403 pe orice treapta chrome (ACCESS-1), deci poarta trebuie
+    sa iasa cu firefox135 — altfel domeniul e in VALIDATED_DOMAINS dar necitibil."""
+    calls = _spion_impersonate(monkeypatch)
+
+    _fetch_shop_url_guarded("https://www.43einhalb.com/p/x", headers={}, timeout=5)
+
+    assert calls == [("https://www.43einhalb.com/p/x", "firefox135")]
+
+
+def test_poarta_guarded_pastreaza_default_ul_pentru_restul(monkeypatch):
+    """Regresie: override-ul e per domeniu, nu o schimbare globala de amprenta."""
+    calls = _spion_impersonate(monkeypatch)
+
+    _fetch_shop_url_guarded("https://www.emag.ro/x", headers={}, timeout=5)
+
+    assert calls == [("https://www.emag.ro/x", "chrome131")]
+
+
+def test_impersonate_rezolvat_per_hop(monkeypatch):
+    """Un redirect intre domenii trebuie sa plece cu amprenta TINTEI, nu a sursei:
+    altfel hop-ul catre 43einhalb ar cere pagina cu chrome131 si ar lua 403.
+
+    Ambele domenii sunt in allow-list-ul real (emag.ro prin scrapere, 43einhalb.com
+    prin VALIDATED_DOMAINS), deci aranjamentul nu indoaie nimic din productie.
+    """
+    tinta = "https://www.43einhalb.com/p/x"
+    calls = _spion_impersonate(monkeypatch, {
+        "https://www.emag.ro/x": _FakeResponse(
+            status_code=302, headers={"location": tinta}),
+        tinta: _FakeResponse(status_code=200),
+    })
+
+    response = _fetch_shop_url_guarded("https://www.emag.ro/x", headers={}, timeout=5)
+
+    assert response.status_code == 200
+    assert calls == [
+        ("https://www.emag.ro/x", "chrome131"),
+        (tinta, "firefox135"),
+    ]

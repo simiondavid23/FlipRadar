@@ -141,6 +141,8 @@ def test_validated_domains_santinela():
         "bstn.com", "en.afew-store.com",              # FASHION-2
         "prm.com", "sneakersnstuff.com",              # FASHION-2b
         "aboutyou.ro", "trendyol.com",                # FASHION-4
+        "endclothing.com", "zalando.ro",              # ACCESS-2
+        "43einhalb.com",                              # ACCESS-2
     }
 
 

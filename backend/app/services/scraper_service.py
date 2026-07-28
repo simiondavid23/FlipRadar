@@ -59,6 +59,21 @@ _PCGARAGE_HEADERS = {
 
 _IMPERSONATE = "chrome131"
 
+# Amprenta TLS/HTTP2 per domeniu, pentru magazinele pe care default-ul nu le
+# deschide. Cheia e domeniul de baza; rezolvarea trece prin _impersonate_for,
+# cu matching suffix-safe identic cu allow-list-ul C-14.
+_IMPERSONATE_OVERRIDES: dict[str, str] = {
+    # ACCESS-1/1b (2026-07-28): 403 challenge pe toate treptele chrome
+    # (131/136/146/latest); trece curat pe firefox135, 3/3 match de pret.
+    "43einhalb.com": "firefox135",
+    # ACCESS-1/1b (2026-07-28): aceeasi situatie de acces (chrome pica pe
+    # paginile de produs, firefox135 trece). INERT deocamdata: flanco.ro nu e
+    # in allow-list-ul C-14 (nici scraper de cautare, nici VALIDATED_DOMAINS)
+    # — validarea a picat pe divergenta OG la produsele cu reducere; intra la
+    # valul content cu price_selector, iar treapta de aici il asteapta.
+    "flanco.ro": "firefox135",
+}
+
 # Pagination safety caps (per-site) so a runaway query can't hammer a shop.
 _MAX_PAGES_EMAG = 10         # eMAG serves ~72-78 cards per page
 _MAX_PAGES_PCGARAGE = 15     # PCGarage serves ~20 cards per page
@@ -836,6 +851,31 @@ def _is_allowed_shop_url(url: str) -> bool:
         return False  # fail-closed: orice URL neparsabil e respins
 
 
+def _impersonate_for(url: str) -> str:
+    """Amprenta curl_cffi pentru `url`: override-ul domeniului, altfel _IMPERSONATE.
+
+    Matching-ul e IDENTIC cu cel din _is_allowed_shop_url (egalitate sau sufix
+    "."+domeniu), ca un subdomeniu legitim (shop.43einhalb.com) sa primeasca
+    aceeasi amprenta ca domeniul de baza, dar un sufix inselator
+    (evil-43einhalb.com.attacker.com) sa NU o primeasca — altfel un atacator si-ar
+    alege singur amprenta cu care backend-ul iese pe retea.
+
+    Fail-safe pe DEFAULT, nu fail-closed ca allow-list-ul: aici nu se decide DACA
+    se cere URL-ul (poarta a decis deja), ci doar cum arata clientul, deci un URL
+    neparsabil primeste _IMPERSONATE, nu o eroare.
+    """
+    try:
+        hostname = (urllib.parse.urlparse(url).hostname or "").lower()
+    except Exception:
+        return _IMPERSONATE
+    if not hostname:
+        return _IMPERSONATE
+    for domain, tier in _IMPERSONATE_OVERRIDES.items():
+        if hostname == domain or hostname.endswith("." + domain):
+            return tier
+    return _IMPERSONATE
+
+
 def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: int = 3):
     """C-14b/C-14c: fetch cu allow-list per-hop, partajat de toate fetch-urile pe
     URL-uri controlate de user.
@@ -847,6 +887,10 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
     Intoarce response-ul final (non-redirect) sau None daca: URL neautorizat pe orice
     hop, prea multe redirecturi, sau eroare de retea. NU verifica `url` gol si NU
     parseaza continutul — alea raman la apelanti.
+
+    Amprenta de impersonate se rezolva PER HOP, ca un redirect intre domenii sa
+    plece cu amprenta TINTEI, nu a sursei — altfel un redirect catre 43einhalb.com
+    ar cere pagina cu chrome131 si ar lua 403, exact ce evita override-ul.
     """
     current_url = url
     for _hop in range(max_hops + 1):  # 1 request initial + max_hops redirecturi
@@ -856,7 +900,7 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
             response = curl_requests.get(
                 current_url,
                 headers=headers,
-                impersonate=_IMPERSONATE,
+                impersonate=_impersonate_for(current_url),
                 timeout=timeout,
                 allow_redirects=False,
             )

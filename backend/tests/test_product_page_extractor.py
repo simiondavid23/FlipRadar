@@ -953,3 +953,41 @@ def test_sufixele_inselatoare_raman_respinse(url):
     from app.services.scraper_service import _is_allowed_shop_url
 
     assert _is_allowed_shop_url(url) is False
+
+
+# ── ACCESS-2: domeniile noi intra in allow-list-ul C-14 ───────────────────────
+
+@pytest.mark.parametrize("url", [
+    "https://www.endclothing.com/eu/produs.html",
+    "https://endclothing.com/eu/produs.html",
+    "https://www.zalando.ro/produs-x.html",
+    "https://www.43einhalb.com/p/produs",
+])
+def test_domeniile_access2_sunt_permise(url):
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is True
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil-endclothing.com.attacker.com/x",
+    "https://zalando.ro.attacker.com/x",
+    "https://43einhalb.com.attacker.com/p/x",
+])
+def test_sufixele_inselatoare_access2_raman_respinse(url):
+    """Promovarea nu slabeste allow-list-ul: potrivirea ramane pe egalitate sau
+    pe "."+domeniu, deci un sufix atasat nu trece."""
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is False
+
+
+def test_flanco_ramane_in_afara_allow_list_ului():
+    """flanco.ro are treapta consemnata in _IMPERSONATE_OVERRIDES, dar NU e validat:
+    OG-ul divergea pe produsele cu reducere (ACCESS-1b). Override-ul de amprenta nu
+    trebuie sa deschida singur poarta — validarea ramane conditia de intrare."""
+    from app.services.scraper_service import _IMPERSONATE_OVERRIDES, _is_allowed_shop_url
+
+    assert "flanco.ro" in _IMPERSONATE_OVERRIDES
+    assert "flanco.ro" not in ppe.VALIDATED_DOMAINS
+    assert _is_allowed_shop_url("https://www.flanco.ro/produs.html") is False

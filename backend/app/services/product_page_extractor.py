@@ -161,6 +161,25 @@ VALIDATED_DOMAINS: set[str] = {
     "aboutyou.ro",
     # Product simplu, preturi RON pe /ro/.
     "trendyol.com",
+
+    # ── valul ACCESS-2 (sondele ACCESS-1/1b, 2026-07-28) ──────────────────────
+    # Primul val intrat pe baza unei matrice de ACCES, nu doar de parsare: ACCESS-1
+    # a incercat 6 trepte de impersonate (chrome131/136/146/latest, firefox135,
+    # safari260) x domeniu ca sa gaseasca treapta care deschide fiecare site, iar
+    # ACCESS-1b a validat apoi extractia pe un set NOU de pagini, cu pretul comparat
+    # manual cu cel AFISAT in browser: 3/3 match per domeniu. Toate trei extrag prin
+    # JSON-LD, fara override de continut.
+
+    # chrome131 (default), JSON-LD, preturi EUR.
+    "endclothing.com",
+    # chrome131 (default), JSON-LD, preturi RON. Oferta e agregata (is_aggregate),
+    # dar pretul agregat coincide cu cel afisat — deci trece, spre deosebire de
+    # multi-oferta eMAG, unde tocmai divergenta a cerut price_selector.
+    "zalando.ro",
+    # firefox135, NU default: pe toate treptele chrome ia 403. Treapta vine din
+    # _IMPERSONATE_OVERRIDES (scraper_service), deci domeniul e citibil doar prin
+    # poarta guarded. JSON-LD, preturi EUR.
+    "43einhalb.com",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
@@ -168,8 +187,13 @@ VALIDATED_DOMAINS: set[str] = {
 # care trece de Cloudflare cu retry).
 #
 # Ratate in valul RETAIL-5c, fiecare din alt motiv:
-#   flanco.ro  — 403/challenge pe TOATE URL-urile: problema de ACCES, nu de
-#                parsare. De reatacat separat (impersonate/headers), nu prin override.
+#   flanco.ro  — ACCESUL e REZOLVAT (ACCESS-1, 2026-07-28): 403-ul era de treapta,
+#                nu de site — firefox135 deschide paginile, si treapta e consemnata
+#                in _IMPERSONATE_OVERRIDES (scraper_service), inerta pana cand
+#                domeniul intra in allow-list. A picat insa VALIDAREA, la ACCESS-1b:
+#                pe produsele cu reducere OG-ul da pretul gresit (extras 5199.00 vs
+#                5468.99 afisat), adica exact ce ar scrie preturi false in istoric.
+#                Candidat de price_selector in valul content, ca evomag.ro.
 #   evomag.ro  — no_product_data pe pagini care s-au incarcat corect (200): nu
 #                publica datele structurate pe care le citim. Candidat de override
 #                (price_selector/price_regex), investigatie separata.
@@ -178,8 +202,6 @@ VALIDATED_DOMAINS: set[str] = {
 #   aboutyou.ro si trendyol.com — PROMOVATE la valul FASHION-4 (sonda 2026-07-28):
 #                  servirea inconsistenta care le descalificase nu s-a reprodus.
 #                  Vezi nota valului din VALIDATED_DOMAINS.
-#   43einhalb.com — 403 pe toate URL-urile: problema de ACCES, nu de parsare
-#                  (acelasi tipar ca flanco.ro). De reatacat cu impersonate/headers.
 #   footshop.ro  — CSR confirmat pe URL-uri corecte: 200 fara niciun marker (nici
 #                  ld+json, nici OG). Ar cere browser, nu extractor.
 #   sole.ro      — RECLASIFICAT: nu e magazin de fashion, deci nu apartine acestor
