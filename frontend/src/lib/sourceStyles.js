@@ -28,6 +28,26 @@ export const SOURCE_STYLES = {
   "prm.com": { bg: "rgba(6,182,212,0.2)", fg: "#22d3ee" },         // cyan inchis
   "sneakersnstuff.com": { bg: "rgba(245,158,11,0.2)", fg: "#fbbf24" },  // chihlimbar
 
+  // ── valurile 2026-07-28 (FASHION-4 / ACCESS-2) ──
+  // Spectrul Tailwind de baza e consumat de intrarile de mai sus, deci nuantele de
+  // aici sunt intermediare. Trendyol si Zalando sunt portocalii de brand, dar
+  // portocaliul e deja al lui bstn.com (#fb923c): trendyol pastreaza temperatura
+  // (corai), zalando pleaca pe rece ca sa nu iasa trei portocalii pe acelasi rand.
+  "aboutyou.ro": { bg: "rgba(236,60,204,0.2)", fg: "#f66fdd" },      // magenta-orhidee
+  "trendyol.com": { bg: "rgba(238,78,43,0.2)", fg: "#f97e62" },      // corai
+  "endclothing.com": { bg: "rgba(16,185,129,0.2)", fg: "#34d399" },  // verde-smarald
+  "zalando.ro": { bg: "rgba(73,121,243,0.2)", fg: "#88a9fb" },       // albastru-pervinca
+  "43einhalb.com": { bg: "rgba(173,60,226,0.2)", fg: "#c56cef" },    // mov-orhidee
+
+  // ── valurile 2026-07-28 (CONTENT-2 / DISCOVERY-2) ──
+  // Flanco e rosu de brand, dar rosul e al lui mediagalaxy.ro — acelasi vertical,
+  // deci merge pe celalalt accent din logo (galbenul), deplasat spre verde ca sa
+  // nu calce pe emag.ro (#fde047).
+  "flanco.ro": { bg: "rgba(193,211,34,0.2)", fg: "#d9e949" },        // galben-verzui
+  "evomag.ro": { bg: "rgba(91,195,40,0.2)", fg: "#87e458" },         // verde-crud
+  "footshop.ro": { bg: "rgba(226,40,99,0.2)", fg: "#f15b8a" },       // roz-zmeura
+  "asos.com": { bg: "rgba(81,64,231,0.2)", fg: "#7f72f3" },          // albastru-violet
+
   // ── pastrate din versiunea veche: nevalidate azi, dar produsele salvate
   //    inainte le au inca pe sursa, deci stergerea lor ar fi o regresie vizuala ──
   "sole.ro": { bg: "rgba(236,72,153,0.2)", fg: "#f472b6" },
