@@ -146,6 +146,21 @@ VALIDATED_DOMAINS: set[str] = {
     # FARA `size` pe elemente — exact regresia pinuita in FASHION-2: ofertele
     # neetichetate raman neexploatate, pretul e "primul cu pret", ca inainte.
     "sneakersnstuff.com",
+
+    # ── valul FASHION-4 (sonda 2026-07-28) ─────────────────────────────────────
+    # Cele doua domenii ratate la FASHION-1/FASHION-2 pentru servire inconsistenta,
+    # re-auditate: 8 URL-uri x 3 incercari per domeniu, 24/24 OK fiecare. Pe TOATE
+    # cele 48 de raspunsuri ld+json era prezent (2 blocuri/pagina), iar HTML-ul a
+    # venit identic la octet intre incercarile aceluiasi URL. Servirea inconsistenta
+    # din 2026-07-26 NU s-a reprodus, deci regula valului (o parsare esuata pe o
+    # pagina incarcata corect descalifica) nu mai are ce descalifica.
+    # In acelasi commit s-a adaugat retry-ul defensiv pe no_product_data din
+    # extract_product, ca o eventuala recidiva sporadica sa fie absorbita.
+
+    # ProductGroup cu hasVariant (forma stiuta din FASHION-1b), preturi RON.
+    "aboutyou.ro",
+    # Product simplu, preturi RON pe /ro/.
+    "trendyol.com",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
@@ -160,20 +175,13 @@ VALIDATED_DOMAINS: set[str] = {
 #                (price_selector/price_regex), investigatie separata.
 #
 # Ratate in valurile FASHION-1 si FASHION-2 (sonde 2026-07-26):
-#   aboutyou.ro  — SERVIRE INCONSISTENTA: 2 din 3 pagini vin cu ProductGroup
-#                  complet (12 si 16 marimi, pret+stoc per marime), a treia fara
-#                  NICIUN bloc ld+json desi HTML-ul e al unei pagini de produs
-#                  reale. Extractorul stie forma din FASHION-1b, deci NU e o
-#                  incompatibilitate — dar regula valului ramane cea de la
-#                  RETAIL-5c: o parsare esuata pe o pagina care s-a incarcat
-#                  corect descalifica. De re-auditat cand intelegem ce comuta
-#                  servirea (A/B, geo, cache).
+#   aboutyou.ro si trendyol.com — PROMOVATE la valul FASHION-4 (sonda 2026-07-28):
+#                  servirea inconsistenta care le descalificase nu s-a reprodus.
+#                  Vezi nota valului din VALIDATED_DOMAINS.
 #   43einhalb.com — 403 pe toate URL-urile: problema de ACCES, nu de parsare
 #                  (acelasi tipar ca flanco.ro). De reatacat cu impersonate/headers.
 #   footshop.ro  — CSR confirmat pe URL-uri corecte: 200 fara niciun marker (nici
 #                  ld+json, nici OG). Ar cere browser, nu extractor.
-#   trendyol.com — servire inconsistenta (1/2 la valul 2, dupa 1/1 la valul 1):
-#                  aceeasi cauza ca aboutyou, aceeasi decizie.
 #   sole.ro      — RECLASIFICAT: nu e magazin de fashion, deci nu apartine acestor
 #                  valuri. Ramane in backlogul general (degradat de la RETAIL-1: 502).
 
@@ -772,6 +780,7 @@ def extract_product(url: str, max_retries: int = 3) -> dict:
 
     last_status = None
     saw_challenge = False
+    last_parse_exc = None
     for attempt in range(1, max_retries + 1):
         if attempt > 1:
             time.sleep(random.uniform(1, 3))
@@ -795,8 +804,31 @@ def extract_product(url: str, max_retries: int = 3) -> dict:
         if response.status_code != 200:
             continue
 
-        return parse_product_html(response.text, url)
+        # Retry pe no_product_data — ASIGURARE DEFENSIVA, nu curativa. Sonda
+        # FASHION-4 (2026-07-28) NU a reprodus servirea inconsistenta observata la
+        # 2026-07-26: 48/48 extractii OK pe aboutyou.ro + trendyol.com, cu ld+json
+        # prezent pe fiecare raspuns si HTML identic la octet intre incercari.
+        # Adaugam totusi calea fiindca are cost ZERO — se executa doar acolo unde
+        # azi se esua imediat — si absoarbe o eventuala recidiva SPORADICA.
+        # O recidiva LIPITA (3/3 esec) iese la suprafata identic cu comportamentul
+        # de azi: aceeasi exceptie no_product_data, doar dupa mai multe incercari.
+        #
+        # DOAR acest reason reintra in bucla. Restul (invalid_price etc.) propaga
+        # imediat: acolo pagina CHIAR poarta date de produs, deci un re-fetch nu
+        # schimba raspunsul, iar retry-ul ar fi trafic inutil.
+        try:
+            return parse_product_html(response.text, url)
+        except ProductExtractionError as exc:
+            if exc.reason != "no_product_data":
+                raise
+            last_parse_exc = exc
+            continue  # sleep-ul vine de la inceputul iteratiei urmatoare
 
+    # Precedenta erorilor: parse > challenge > fetch_failed. Un esec de parsare e
+    # informatia cea mai specifica — dovedeste ca am primit un 200 pe care chiar
+    # l-am citit, spre deosebire de "n-am ajuns la continut".
+    if last_parse_exc is not None:
+        raise last_parse_exc
     if saw_challenge:
         raise ProductExtractionError(
             "challenge", f"Blocat de challenge anti-bot dupa {max_retries} incercari: {url[:120]}")

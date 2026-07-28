@@ -6,8 +6,9 @@ Acopera:
 
 Fixture-urile sunt HTML sintetic minim, inline: aici se testeaza logica de
 parsare, nu structura reala a unui magazin (capturile reale stau in tests/fixtures/).
-`extract_product` nu se testeaza — face retea si e doar bucla de retry peste
-_fetch_shop_url_guarded, deja acoperit in scraper_service.
+Din `extract_product` se testeaza DOAR bucla de erori adaugata la FASHION-4
+(retry pe no_product_data + precedenta parse > challenge > fetch_failed), cu
+poarta de fetch mock-uita; restul buclei ramane acoperit in scraper_service.
 """
 import json
 
@@ -843,3 +844,112 @@ def test_ambele_forme_trec_prin_aceeasi_agregare():
     for res in (grup, lista):
         assert (res["price"], res["in_stock"], res["is_aggregate"]) == (150.0, True, True)
     assert [v["variant"] for v in grup["variants"]] == [v["variant"] for v in lista["variants"]]
+
+
+# ── FASHION-4: retry defensiv pe no_product_data in extract_product ───────────
+# Singurele teste din fisier care ating extract_product. Reteaua e taiata la
+# radacina: _fetch_shop_url_guarded se patch-uieste in namespace-ul
+# app.services.scraper_service (nu in ppe), fiindca extract_product il importa
+# LENES, in corpul functiei — un patch pe ppe n-ar fi vazut. time.sleep se
+# neutralizeaza ca bucla sa nu astepte 1-3s intre incercari.
+
+_HTML_OK = _page(head=_ld("""
+    {"@type": "Product", "name": "Produs servit corect",
+     "offers": {"@type": "Offer", "price": "199.99", "priceCurrency": "RON"}}
+"""))
+_HTML_FARA_DATE = _page(head="<title>Produs</title>", body="<div>pagina reala, fara ld+json</div>")
+_HTML_PRET_ZERO = _page(head=_ld("""
+    {"@type": "Product", "name": "Produs cu pret 0",
+     "offers": {"@type": "Offer", "price": "0", "priceCurrency": "RON"}}
+"""))
+
+
+class _FakeResponse:
+    def __init__(self, text, status_code=200):
+        self.text = text
+        self.status_code = status_code
+        self.headers = {}
+
+
+@pytest.fixture
+def fetch_mock(monkeypatch):
+    """Inlocuieste poarta de fetch cu o coada de raspunsuri HTML si numara apelurile."""
+    from app.services import scraper_service
+
+    monkeypatch.setattr(ppe.time, "sleep", lambda *_a, **_kw: None)
+
+    def _install(*pagini):
+        state = {"calls": 0}
+
+        def _fake(url, **_kwargs):
+            index = min(state["calls"], len(pagini) - 1)
+            state["calls"] += 1
+            return _FakeResponse(pagini[index])
+
+        monkeypatch.setattr(scraper_service, "_fetch_shop_url_guarded", _fake)
+        return state
+
+    return _install
+
+
+SHOP_URL = "https://www.aboutyou.ro/p/marca/produs-123"
+
+
+def test_no_product_data_reintra_in_bucla_si_reuseste(fetch_mock):
+    """Servire inconsistenta simulata: prima pagina vine fara date de produs, a
+    doua e completa. Retry-ul defensiv trebuie sa salveze extractia."""
+    state = fetch_mock(_HTML_FARA_DATE, _HTML_OK)
+
+    res = ppe.extract_product(SHOP_URL)
+
+    assert (res["price"], res["currency"], res["name"]) == (199.99, "RON", "Produs servit corect")
+    assert state["calls"] == 2          # a doua incercare a fost chiar ceruta
+
+
+def test_no_product_data_pe_toate_incercarile_pastreaza_reason_ul(fetch_mock):
+    """Recidiva LIPITA (3/3): apelantul vede exact eroarea de azi, nu una degradata
+    in fetch_failed/challenge — precedenta erorilor pune parse-ul primul."""
+    state = fetch_mock(_HTML_FARA_DATE)
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(SHOP_URL)
+
+    assert exc.value.reason == "no_product_data"
+    assert state["calls"] == 3
+
+
+def test_invalid_price_propaga_imediat_fara_retry(fetch_mock):
+    """Doar no_product_data reintra in bucla. Cand pagina CHIAR poarta un pret,
+    doar ca invalid, un re-fetch n-ar schimba nimic — deci un singur fetch."""
+    state = fetch_mock(_HTML_PRET_ZERO)
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(SHOP_URL)
+
+    assert exc.value.reason == "invalid_price"
+    assert state["calls"] == 1
+
+
+# ── FASHION-4: domeniile noi intra in allow-list-ul C-14 ──────────────────────
+
+@pytest.mark.parametrize("url", [
+    "https://www.aboutyou.ro/p/x",
+    "https://aboutyou.ro/p/x",
+    "https://www.trendyol.com/ro/marca/produs-p-123",
+])
+def test_domeniile_fashion4_sunt_permise(url):
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is True
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil-aboutyou.ro.attacker.com/p/x",
+    "https://trendyol.com.attacker.com/ro/x",
+])
+def test_sufixele_inselatoare_raman_respinse(url):
+    """Promovarea nu slabeste allow-list-ul: potrivirea ramane pe egalitate sau
+    pe "."+domeniu, deci un sufix atasat nu trece."""
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is False

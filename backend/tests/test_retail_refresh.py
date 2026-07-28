@@ -140,6 +140,7 @@ def test_validated_domains_santinela():
         "epantofi.ro", "modivo.ro",                   # FASHION-1b
         "bstn.com", "en.afew-store.com",              # FASHION-2
         "prm.com", "sneakersnstuff.com",              # FASHION-2b
+        "aboutyou.ro", "trendyol.com",                # FASHION-4
     }
 
 
