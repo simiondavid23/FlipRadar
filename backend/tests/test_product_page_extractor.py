@@ -1140,3 +1140,224 @@ def test_flanco_are_si_treapta_de_impersonate():
 
     assert _IMPERSONATE_OVERRIDES["flanco.ro"] == "firefox135"
     assert _impersonate_for("https://www.flanco.ro/produs.html") == "firefox135"
+
+
+# ── DISCOVERY-2: microdata CAMELCASE (forma footshop.ro) ─────────────────────
+
+def test_microdata_camelcase_este_citita():
+    """footshop.ro emite atributele camelCase (SSR React): itemProp/itemScope/itemType.
+
+    Pe HTML brut `itemprop` da 0 potriviri si `itemProp` 41 — exact capcana care a
+    facut ca FASHION-2 sa clasifice site-ul drept CSR. BeautifulSoup normalizeaza
+    numele atributelor la lowercase cand parseaza HTML, deci selectorii merg; testul
+    pinuieste asta, fiindca e o proprietate a parserului, nu a codului nostru.
+
+    Forma reprodusa e cea reala: `content` pe pretul curent, availability ca <link
+    href>, iar pretul TAIAT fara itemProp (deci imposibil de confundat).
+    """
+    html = _page(body="""
+        <div itemScope="" itemType="https://schema.org/Product">
+          <h1 itemProp="name">Nike Air Force 1</h1>
+          <div class="_priceWrapper" itemProp="offers" itemScope=""
+               itemType="https://schema.org/Offer">
+            <link itemProp="availability" href="https://schema.org/InStock"/>
+            <div class="_price _hasSale" itemProp="price" content="501">
+              <strong class="_priceValue">501 RON</strong><span>cu TVA</span></div>
+            <div class="_price"><span class="_retailPriceValue">589 RON</span>
+              <span class="_retailPriceSale">-15 %</span></div>
+            <meta itemProp="priceCurrency" content="RON"/>
+          </div>
+        </div>""")
+
+    assert "itemprop" not in html          # chiar asa arata pagina reala
+    data = parse_product_html(html, URL)
+
+    assert data["price"] == 501.0          # curentul, nu 589 (taiatul n-are itemProp)
+    assert data["currency"] == "RON"
+    assert data["in_stock"] is True        # din <link ... href>, nu din content
+    assert data["method"] == "microdata"
+
+
+# ── DISCOVERY-2: extractorul custom asos.com ─────────────────────────────────
+
+ASOS_URL = "https://www.asos.com/nike/nike-p-6000-trainers/prd/209724066"
+
+_ASOS_PAGINA = _page(head=_ld("""
+    {"@context": "https://schema.org", "@type": "Product",
+     "name": "Nike P-6000 trainers in off white suede", "sku": "209724066",
+     "brand": {"@type": "Brand", "name": "Nike"}}
+""") + '<meta property="og:image" content="https://images.asos.com/p6000.jpg"/>')
+
+_ASOS_API = json.dumps([
+    {"productId": 205774480,                       # alt produs, PRIMUL in lista
+     "productPrice": {"current": {"value": 19.5, "text": "19.50"}, "currency": "EUR"},
+     "isInStock": True},
+    {"productId": 209724066,
+     "productPrice": {"current": {"value": 119.99, "text": "119.99"}, "currency": "EUR"},
+     "isInStock": True},
+])
+
+
+@pytest.fixture
+def asos_gate(monkeypatch):
+    """Poarta guarded falsa: inregistreaza URL-urile si serveste raspunsuri la rand."""
+    from app.services import scraper_service
+
+    monkeypatch.setattr(ppe.time, "sleep", lambda *_a, **_kw: None)
+
+    def _install(*raspunsuri):
+        state = {"urls": [], "calls": 0}
+
+        def _fake(url, **_kwargs):
+            state["urls"].append(url)
+            index = min(state["calls"], len(raspunsuri) - 1)
+            state["calls"] += 1
+            corp = raspunsuri[index]
+            if isinstance(corp, tuple):
+                return _FakeResponse(corp[0], status_code=corp[1])
+            return _FakeResponse(corp)
+
+        monkeypatch.setattr(scraper_service, "_fetch_shop_url_guarded", _fake)
+        return state
+
+    return _install
+
+
+def test_asos_extrage_din_api_ul_de_stockprice(asos_gate):
+    """Cazul fericit: nume din ld+json-ul paginii, pret/moneda/stoc din API."""
+    state = asos_gate(_ASOS_PAGINA, _ASOS_API)
+
+    data = ppe.extract_product(ASOS_URL)
+
+    assert data["name"] == "Nike P-6000 trainers in off white suede"
+    assert data["price"] == 119.99          # intrarea NOASTRA, nu prima din lista
+    assert data["currency"] == "EUR"
+    assert data["in_stock"] is True
+    assert data["method"] == "asos_stockprice"
+    assert data["domain"] == "asos.com"
+
+    # AMBELE fetch-uri trec prin poarta guarded, si al doilea e API-ul cu codurile RO.
+    assert state["calls"] == 2
+    assert state["urls"][0] == ASOS_URL
+    assert "/api/product/catalogue/v4/stockprice" in state["urls"][1]
+    assert "productIds=209724066" in state["urls"][1]
+    for cod in ("store=ROE", "currency=EUR", "country=RO"):
+        assert cod in state["urls"][1]
+
+
+def test_asos_url_fara_prd_nu_face_niciun_fetch(asos_gate):
+    """Id-ul vine din cale; fara el nu avem ce cere, deci nici nu iesim pe retea."""
+    state = asos_gate(_ASOS_PAGINA, _ASOS_API)
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product("https://www.asos.com/women/ctas/cat/?cid=4169")
+
+    assert exc.value.reason == "no_product_data"
+    assert state["calls"] == 0
+
+
+def test_asos_produsul_lipseste_din_raspuns(asos_gate):
+    """Lista poate contine doar recomandari. Fara intrarea noastra NU ghicim —
+    primul element ar fi pretul altui produs (capcana masurata la DISCOVERY-1)."""
+    fara_noi = json.dumps([{"productId": 111111,
+                            "productPrice": {"current": {"value": 19.5}, "currency": "EUR"},
+                            "isInStock": True}])
+    asos_gate(_ASOS_PAGINA, fara_noi)
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(ASOS_URL)
+
+    assert exc.value.reason == "no_product_data"
+
+
+def test_asos_json_invalid(asos_gate):
+    asos_gate(_ASOS_PAGINA, "<html>nu e json</html>")
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(ASOS_URL)
+
+    assert exc.value.reason == "no_product_data"
+
+
+def test_asos_pret_zero_e_invalid_price(asos_gate):
+    zero = json.dumps([{"productId": 209724066,
+                        "productPrice": {"current": {"value": 0}, "currency": "EUR"},
+                        "isInStock": True}])
+    asos_gate(_ASOS_PAGINA, zero)
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(ASOS_URL)
+
+    assert exc.value.reason == "invalid_price"
+
+
+def test_asos_challenge_pe_api(asos_gate):
+    """403 pe al doilea fetch = challenge, acelasi reason ca in fluxul generic."""
+    asos_gate(_ASOS_PAGINA, ("Just a moment...", 403))
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(ASOS_URL)
+
+    assert exc.value.reason == "challenge"
+
+
+# ── DISCOVERY-2: dispatch-ul registrului ─────────────────────────────────────
+
+def test_dispatch_trimite_asos_la_extractorul_custom(monkeypatch):
+    """Un URL asos.com NU trebuie sa intre in fluxul HTML generic."""
+    apeluri = []
+
+    def _fals(url):
+        apeluri.append(url)
+        return {"price": 1.0, "method": "asos_stockprice"}
+
+    monkeypatch.setitem(ppe.CUSTOM_EXTRACTORS, "asos.com", _fals)
+
+    assert ppe.extract_product(ASOS_URL)["method"] == "asos_stockprice"
+    assert apeluri == [ASOS_URL]
+
+
+def test_dispatch_nu_atinge_domeniile_fara_extractor(fetch_mock):
+    """emag.ro nu e in registru, deci merge pe fluxul generic, neschimbat."""
+    state = fetch_mock(_HTML_OK)
+
+    res = ppe.extract_product("https://www.emag.ro/produs/pd/XYZ/")
+
+    assert res["method"] == "jsonld"
+    assert state["calls"] == 1
+
+
+@pytest.mark.parametrize("url,asteptat", [
+    ("https://www.asos.com/x/prd/1", True),
+    ("https://asos.com/x/prd/1", True),
+    ("https://marketplace.asos.com/x/prd/1", True),          # subdomeniu legitim
+    ("https://evil-asos.com.attacker.com/x/prd/1", False),   # sufix inselator
+    ("https://www.emag.ro/x", False),
+    ("not a url", False),
+])
+def test_custom_extractor_for_e_suffix_safe(url, asteptat):
+    assert (ppe._custom_extractor_for(url) is not None) is asteptat
+
+
+# ── DISCOVERY-2: domeniile noi in allow-list-ul C-14 ─────────────────────────
+
+@pytest.mark.parametrize("url", [
+    "https://www.footshop.ro/ro/categorie/98497-produs.html",
+    "https://footshop.ro/ro/categorie/98497-produs.html",
+    "https://www.asos.com/nike/produs/prd/209724066",
+])
+def test_domeniile_discovery2_sunt_permise(url):
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is True
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil-footshop.ro.attacker.com/p",
+    "https://footshop.ro.attacker.com/p",
+    "https://asos.com.attacker.com/prd/1",
+])
+def test_sufixele_inselatoare_discovery2_raman_respinse(url):
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is False

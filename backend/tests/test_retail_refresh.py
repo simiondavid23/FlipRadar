@@ -144,6 +144,7 @@ def test_validated_domains_santinela():
         "endclothing.com", "zalando.ro",              # ACCESS-2
         "43einhalb.com",                              # ACCESS-2
         "flanco.ro", "evomag.ro",                     # CONTENT-2
+        "footshop.ro", "asos.com",                    # DISCOVERY-2
     }
 
 

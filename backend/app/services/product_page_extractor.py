@@ -21,6 +21,13 @@ era None — in practica `in_stock`, unde sursa principala nu publica availabili
 microdata). Pretul din microdata are in plus o regula de siguranta la ambiguitate
 (vezi _collect_microdata).
 
+Inaintea intregului flux de mai sus sta registrul CUSTOM_EXTRACTORS (DISCOVERY-2):
+domenii unde datele de produs NU se afla in HTML-ul paginii, deci nu exista sursa
+de citit indiferent de ordine. Acolo `extract_product` deleaga integral catre un
+extractor dedicat, care ridica aceleasi ProductExtractionError si foloseste aceeasi
+poarta guarded C-14. Primul caz: asos.com, unde pretul vine din API-ul public de
+stoc/pret, nu din pagina.
+
 Modulul nu logheaza nimic (log_manager ramane la apelanti) si nu importa
 scraper_service la nivel de modul — vezi comentariul din extract_product.
 """
@@ -212,6 +219,20 @@ VALIDATED_DOMAINS: set[str] = {
     # format masina, plus priceCurrency=RON si availability publicate. 3/3 match prin
     # fallback-ul de microdata adaugat in acest commit.
     "evomag.ro",
+
+    # ── valul DISCOVERY-2 (sondele DISCOVERY-1/1b, 2026-07-28) ────────────────
+    # chrome131; microdata camelCase (itemProp/itemScope/itemType, SSR React) in
+    # HTML-ul INITIAL — nu e nevoie de browser. Clasificarea "CSR confirmat" din
+    # FASHION-2 a fost ARTEFACT DE MASURARE: cautarea de markere era case-sensitive
+    # pe HTML brut (`itemprop` da 0, `itemProp` da 41), iar fallback-ul de microdata
+    # nici nu exista atunci — a intrat abia la CONTENT-2. Pretul curent poarta
+    # itemProp; cel taiat NU, deci nu poate fi confundat. Stocul vine din
+    # <link itemProp="availability" href=...>, RON.
+    "footshop.ro",
+    # extractor CUSTOM (vezi CUSTOM_EXTRACTORS): numele din ld+json-ul paginii
+    # (Product fara `offers`), iar pretul/stocul/moneda din API-ul public
+    # stockprice cu codurile RO (ROE/EUR/RO), fara cookie-uri. Preturi EUR.
+    "asos.com",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
@@ -225,8 +246,8 @@ VALIDATED_DOMAINS: set[str] = {
 #   aboutyou.ro si trendyol.com — PROMOVATE la valul FASHION-4 (sonda 2026-07-28):
 #                  servirea inconsistenta care le descalificase nu s-a reprodus.
 #                  Vezi nota valului din VALIDATED_DOMAINS.
-#   footshop.ro  — CSR confirmat pe URL-uri corecte: 200 fara niciun marker (nici
-#                  ld+json, nici OG). Ar cere browser, nu extractor.
+#   footshop.ro  — PROMOVAT la valul DISCOVERY-2: "CSR confirmat" a fost artefact de
+#                  masurare, nu realitate. Vezi nota valului din VALIDATED_DOMAINS.
 #   sole.ro      — RECLASIFICAT: nu e magazin de fashion, deci nu apartine acestor
 #                  valuri. Ramane in backlogul general (degradat de la RETAIL-1: 502).
 
@@ -903,6 +924,163 @@ def _apply_override(soup, html: str, result: dict, override: dict) -> bool:
     return applied
 
 
+def _fetch_text_guarded(url: str, max_retries: int = 3) -> str:
+    """Textul unui URL prin poarta C-14, cu taxonomia de erori din extract_product.
+
+    NU e o refactorizare a buclei din extract_product si nu o inlocuieste: acolo
+    incercarile de FETCH si cele de PARSE impart acelasi buget de `max_retries`
+    (retry-ul FASHION-4 pe no_product_data reintra in aceeasi bucla), iar mutarea
+    fetch-ului aici ar da 3 incercari de fetch PER incercare de parsare — alt
+    comportament, cu alte numaratori de apeluri decat cele pinuite in teste.
+    Helperul asta serveste extractoarele custom, care nu parseaza HTML si deci n-au
+    nevoie de retry-ul de parsare.
+    """
+    from app.services.scraper_service import _fetch_shop_url_guarded, _is_allowed_shop_url
+
+    last_status = None
+    saw_challenge = False
+    for attempt in range(1, max_retries + 1):
+        if attempt > 1:
+            time.sleep(random.uniform(1, 3))
+
+        response = _fetch_shop_url_guarded(url, headers=_HEADERS, timeout=_TIMEOUT)
+        if response is None:
+            if not _is_allowed_shop_url(url):
+                raise ProductExtractionError(
+                    "domain_not_allowed", f"Domeniu neautorizat (allow-list C-14): {url[:120]}")
+            continue
+        last_status = response.status_code
+        if (response.status_code == 403
+                or response.headers.get("cf-mitigated") == "challenge"
+                or "just a moment" in response.text[:2000].lower()):
+            saw_challenge = True
+            continue
+        if response.status_code != 200:
+            continue
+        return response.text
+
+    if saw_challenge:
+        raise ProductExtractionError(
+            "challenge", f"Blocat de challenge anti-bot dupa {max_retries} incercari: {url[:120]}")
+    raise ProductExtractionError(
+        "fetch_failed",
+        f"Fetch esuat dupa {max_retries} incercari (ultimul status: {last_status}): {url[:120]}")
+
+
+_ASOS_ID_RE = re.compile(r"/prd/(\d+)")
+
+# store/currency/country sunt intrarea OFICIALA pentru Romania din
+# /api/fashion/store/v2/stores/countries (sonda DISCOVERY-1, 2026-07-28; raspunsul e
+# cache-uit in scripts/diagnostics/asos_stores.json):
+#   {"country": "RO", "store": "ROE", ..., "currencies": [{"currency": "EUR", ...}]}
+# `currency=EUR` SINGUR da 400 "Invalid Currency Requested" — moneda e legata de
+# magazin, deci cele trei coduri merg impreuna. `keyStoreDataversion` e omis
+# DELIBERAT: API-ul raspunde si fara el, iar valoarea din pagina e volatila.
+_ASOS_STOCKPRICE_URL = (
+    "https://www.asos.com/api/product/catalogue/v4/stockprice"
+    "?productIds={pid}&store=ROE&currency=EUR&country=RO"
+)
+
+
+def _extract_asos(url: str) -> dict:
+    """asos.com — pagina nu poarta pretul, deci il luam din API-ul public de stoc/pret.
+
+    Masurat la DISCOVERY-1 (2026-07-28): ld+json-ul paginii are un Product FARA
+    `offers`, OG n-are pret, iar blobul `stockPriceResponse` inline vine in GBP si
+    nu e garantat (pagina insasi cade pe XHR cand lipseste). API-ul public
+    raspunde insa cu pretul EUR corect, fara cookie-uri.
+
+    Doua fetch-uri, AMBELE prin poarta guarded C-14: pagina (doar pentru nume) si
+    API-ul (pret, moneda, stoc).
+    """
+    match = _ASOS_ID_RE.search(urllib.parse.urlparse(url or "").path)
+    if match is None:
+        raise ProductExtractionError(
+            "no_product_data", f"URL ASOS fara /prd/<id>: {(url or '')[:120]}")
+    product_id = int(match.group(1))
+
+    # --- 1. pagina: numele. ld+json-ul are Product (fara offers); OG e plasa. ---
+    soup = BeautifulSoup(_fetch_text_guarded(url), "html.parser")
+    name = None
+    for obj in _iter_jsonld_objects(soup):
+        if _is_product(obj) and obj.get("name"):
+            name = _clean_text(obj["name"])
+            break
+    name = name or _meta(soup, "og:title")
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina ASOS fara nume de produs: {(url or '')[:120]}")
+
+    # --- 2. API: pret, moneda, stoc ---
+    corp = _fetch_text_guarded(_ASOS_STOCKPRICE_URL.format(pid=product_id))
+    try:
+        payload = json.loads(corp)
+    except Exception:
+        raise ProductExtractionError(
+            "no_product_data", f"Raspuns stockprice neparsabil pentru {product_id}")
+    if isinstance(payload, dict):
+        payload = [payload]
+
+    intrare = None
+    for candidat in payload or []:
+        if not isinstance(candidat, dict):
+            continue
+        try:
+            if int(candidat.get("productId")) == product_id:
+                intrare = candidat
+                break
+        except (TypeError, ValueError):
+            continue
+    if intrare is None:
+        # Lista poate contine si alte produse (recomandari): fara intrarea NOASTRA
+        # nu ghicim — primul element ar fi pretul altui produs.
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Produsul {product_id} lipseste din raspunsul stockprice: {(url or '')[:120]}")
+
+    pret_bloc = (intrare.get("productPrice") or {})
+    price = _parse_price_any((pret_bloc.get("current") or {}).get("value"))
+    if price is None or price <= 0:
+        raise ProductExtractionError(
+            "invalid_price", f"Pret invalid ({price!r}) pentru {product_id} la '{name[:60]}'")
+
+    return {
+        "name": name,
+        "price": price,
+        "currency": _normalize_currency(pret_bloc.get("currency")) or "EUR",
+        "in_stock": intrare.get("isInStock") if isinstance(
+            intrare.get("isInStock"), bool) else None,
+        "is_aggregate": False,
+        "variants": None,
+        "image_url": _meta(soup, "og:image"),
+        "canonical_url": _canonical_url(soup, url),
+        "domain": _domain_of(url),
+        "method": "asos_stockprice",
+        "override_applied": False,
+    }
+
+
+# Domenii unde datele NU stau in HTML-ul paginii, deci fluxul generic n-are ce citi.
+# Cheia e domeniul de baza; potrivirea e suffix-safe, ca la allow-list-ul C-14.
+CUSTOM_EXTRACTORS: dict[str, callable] = {
+    "asos.com": _extract_asos,
+}
+
+
+def _custom_extractor_for(url: str):
+    """Extractorul dedicat al domeniului, sau None pentru fluxul generic."""
+    try:
+        hostname = (urllib.parse.urlparse(url or "").hostname or "").lower()
+    except Exception:
+        return None
+    if not hostname:
+        return None
+    for domain, extractor in CUSTOM_EXTRACTORS.items():
+        if hostname == domain or hostname.endswith("." + domain):
+            return extractor
+    return None
+
+
 def extract_product(url: str, max_retries: int = 3) -> dict:
     """Fetch + parse pentru pagina de produs de la `url`.
 
@@ -911,6 +1089,14 @@ def extract_product(url: str, max_retries: int = 3) -> dict:
     """
     if not url or not str(url).strip():
         raise ProductExtractionError("domain_not_allowed", "URL gol")
+
+    # DISCOVERY-2: domeniile din CUSTOM_EXTRACTORS nu trec prin fluxul generic —
+    # pe ele pagina pur si simplu nu poarta datele, deci n-ar avea ce parsa.
+    # Extractorul custom ridica aceleasi ProductExtractionError si foloseste aceeasi
+    # poarta guarded, deci apelantii nu vad nicio diferenta.
+    custom = _custom_extractor_for(url)
+    if custom is not None:
+        return custom(url)
 
     # Import lenes, in corpul functiei: evita ciclul de import de cand, in
     # RETAIL-3, scraper_service va importa acest modul. Allow-list-ul SSRF C-14
