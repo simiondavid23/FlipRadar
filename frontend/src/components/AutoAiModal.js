@@ -30,8 +30,8 @@ function fmtValue(v) {
 }
 
 const inputStyle = {
-  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
+  width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+  borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
   fontSize: "0.8125rem", outline: "none",
 };
 
@@ -80,12 +80,12 @@ export default function AutoAiModal({ open, onClose, listing }) {
 
   return (
     <div onClick={onClose} style={{
-      position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 100,
+      position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", zIndex: 100,
       display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "3rem 1rem", overflowY: "auto",
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: "100%", maxWidth: "560px", backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)", borderRadius: "0.875rem", padding: "1.5rem",
+        width: "100%", maxWidth: "560px", background: "var(--bg-card)", backdropFilter: "blur(20px)",
+        border: "1px solid var(--border-color)", borderRadius: "14px", padding: "1.5rem",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
           <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -108,7 +108,7 @@ export default function AutoAiModal({ open, onClose, listing }) {
           style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
 
         <button onClick={analyze} disabled={loading}
-          style={{ marginTop: "0.75rem", padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "#7c3aed", color: "white", border: "none", cursor: loading ? "wait" : "pointer", fontSize: "0.8125rem", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+          style={{ marginTop: "0.75rem", padding: "0.5rem 1.25rem", borderRadius: "10px", background: "linear-gradient(135deg, rgba(147,51,234,.2), rgba(147,51,234,.05) 60%, transparent)", color: "#c4b5fd", border: "1px solid rgba(147,51,234,.4)", cursor: loading ? "wait" : "pointer", fontSize: "0.8125rem", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
           <Sparkles style={{ width: "14px", height: "14px" }} /> {loading ? "Se analizeaza..." : "Analizeaza"}
         </button>
 
@@ -119,7 +119,7 @@ export default function AutoAiModal({ open, onClose, listing }) {
             {warnings.length > 0 && (
               <div style={{ marginBottom: "0.75rem" }}>
                 {warnings.map((w, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.75rem", color: "#fb923c", backgroundColor: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: "0.5rem", padding: "0.375rem 0.625rem", marginBottom: "0.375rem" }}>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.75rem", color: "#fb923c", backgroundColor: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: "10px", padding: "0.375rem 0.625rem", marginBottom: "0.375rem" }}>
                     <AlertTriangle style={{ width: "13px", height: "13px", flexShrink: 0 }} /> {w}
                   </div>
                 ))}

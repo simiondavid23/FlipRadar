@@ -25,7 +25,7 @@ const EMPTY_FORM = {
 const td = { padding: "0.625rem 0.75rem", fontSize: "0.8125rem", color: "var(--text-primary)", verticalAlign: "middle" };
 const iconBtn = {
   display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0.375rem",
-  backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.375rem",
+  background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "8px",
   color: "var(--text-secondary)", cursor: "pointer",
 };
 
@@ -145,8 +145,8 @@ export default function AutoLotKeywordsPage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <Car style={{ width: "20px", height: "20px", color: "white" }} />
+          <div style={{ padding: "8px", borderRadius: "10px", background: "rgba(34,211,238,.09)", border: "1px solid rgba(34,211,238,.26)", display: "flex" }}>
+            <Car style={{ width: "17px", height: "17px", color: "#7ee7f8" }} strokeWidth={1.8} />
           </div>
           <div>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Keyword-uri Loturi</h1>
@@ -159,7 +159,7 @@ export default function AutoLotKeywordsPage() {
           <ScanNowButton onScan={handleScanNow} scanning={scanning} label="Scanează acum" />
           <button onClick={openAdd} style={{
             display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem",
-            backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem",
+            background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px",
             fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
           }}>
             <Plus style={{ width: "16px", height: "16px" }} /> Adaugă Keyword
@@ -168,7 +168,7 @@ export default function AutoLotKeywordsPage() {
       </div>
 
       {/* Table */}
-      <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden" }}>
+      <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", overflow: "hidden" }}>
         {loading ? (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
         ) : keywords.length === 0 ? (
@@ -178,7 +178,7 @@ export default function AutoLotKeywordsPage() {
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ backgroundColor: "var(--bg-dark)" }}>
+              <tr style={{ background: "rgba(4,9,18,.45)" }}>
                 {["Nume", "Platformă", "Mașină", "Bid max", "Interval", "Activ", ""].map((h) => (
                   <th key={h} style={{ ...td, fontWeight: 600, color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.03em" }}>{h}</th>
                 ))}
@@ -243,9 +243,9 @@ function LotKeywordModal({ editing, form, setForm, saving, onClose, onSubmit }) 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "640px", maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem", borderBottom: "1px solid var(--border-color)", position: "sticky", top: 0, backgroundColor: "var(--bg-card)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "14px", width: "100%", maxWidth: "640px", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem", borderBottom: "1px solid var(--border-color)", position: "sticky", top: 0, background: "var(--bg-card)", backdropFilter: "blur(20px)" }}>
           <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
             {editing ? "Editează keyword lot" : "Adaugă keyword lot"}
           </h2>
@@ -314,9 +314,9 @@ function LotKeywordModal({ editing, form, setForm, saving, onClose, onSubmit }) 
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", position: "sticky", bottom: 0, backgroundColor: "var(--bg-card)" }}>
-          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
-          <button onClick={onSubmit} disabled={saving} style={{ padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", position: "sticky", bottom: 0, background: "var(--bg-card)", backdropFilter: "blur(20px)" }}>
+          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
+          <button onClick={onSubmit} disabled={saving} style={{ padding: "0.5rem 1.25rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
             {saving ? "Se salvează..." : editing ? "Salvează" : "Adaugă"}
           </button>
         </div>

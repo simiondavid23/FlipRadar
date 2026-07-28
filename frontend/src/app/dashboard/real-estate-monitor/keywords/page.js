@@ -3,8 +3,10 @@ import { useState, useEffect, useCallback } from "react";
 import { realEstateMonitorAPI } from "@/lib/api";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import NotifToggle from "@/components/NotifToggle";
-import { modalFooterStyle } from "@/lib/uiStyles";
-import { Home, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, RefreshCw, Info } from "lucide-react";
+import { modalFooterStyle, platformChipStyle } from "@/lib/uiStyles";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
+import { Home, Plus, Pencil, Trash2, X, RefreshCw, Info } from "lucide-react";
 
 const RE_PLATFORMS = [
   { value: "olx",                  label: "OLX Imobiliare" },
@@ -52,16 +54,16 @@ const PLATFORM_TO_RE_KEY = {
 const TECH_LABELS = { price_min: "preț min", price_max: "preț max", rooms_min: "camere", area_min: "suprafață" };
 
 const inputStyle = {
-  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
+  width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+  borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
   fontSize: "0.875rem", outline: "none",
 };
 const labelStyle = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
-const td = { padding: "0.625rem 0.75rem", fontSize: "0.8125rem", color: "var(--text-primary)", verticalAlign: "middle" };
+const td = { color: "var(--text-secondary)" };
 const iconBtn = {
-  display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0.375rem",
-  backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.375rem",
-  color: "var(--text-secondary)", cursor: "pointer",
+  display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "5px",
+  background: "transparent", border: "none", borderRadius: "7px",
+  color: "var(--text-dim)", cursor: "pointer", opacity: 0.8, transition: "all .15s ease",
 };
 
 export default function REKeywordsPage() {
@@ -200,90 +202,92 @@ export default function REKeywordsPage() {
   };
 
   const platLabel = (v) => RE_PLATFORMS.find((p) => p.value === v)?.label || v;
+  const activeCount = keywords.filter((k) => k.is_active).length;
 
   return (
-    <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <Home style={{ width: "20px", height: "20px", color: "white" }} />
-          </div>
-          <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Keyword-uri Imobiliare</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>
-              Monitorizare chirii pe {RE_PLATFORMS.length} surse ({keywords.length} keyword-uri)
-            </p>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <button onClick={handleScanNow} disabled={scanning} title="Scanare imediată" style={{
-            display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-            backgroundColor: "var(--bg-dark)", color: scanning ? "#60a5fa" : "var(--text-secondary)",
-            border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem",
-            fontWeight: 500, cursor: scanning ? "default" : "pointer",
-          }}>
-            <RefreshCw style={{ width: "14px", height: "14px", animation: scanning ? "spin 1s linear infinite" : "none" }} />
-            {scanning ? "Scanare pornită..." : "Scanează acum"}
-          </button>
-          <button onClick={openAdd} style={{
-            display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem",
-            backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem",
-            fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
-          }}>
-            <Plus style={{ width: "16px", height: "16px" }} /> Adaugă Keyword
-          </button>
-        </div>
-      </div>
+    <div>
+      <TopBar path={["IMOBILIARE", "KEYWORD-URI"]}>
+        <button onClick={handleScanNow} disabled={scanning} title="Scanare imediată" className="btn-cyan">
+          <RefreshCw style={{ width: "13px", height: "13px", animation: scanning ? "spin 1s linear infinite" : "none" }} strokeWidth={2} />
+          {scanning ? "Scanare pornită…" : "Scanează acum"}
+        </button>
+      </TopBar>
 
-      <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden" }}>
+      <PageHeading
+        icon={Home}
+        title="Keyword-uri Imobiliare"
+        subtitle={<>Monitorizare chirii pe {RE_PLATFORMS.length} surse — <Hl>{keywords.length} keyword-uri</Hl>, {activeCount} active.</>}
+      >
+        <button onClick={openAdd} className="btn-cyan">
+          <Plus style={{ width: "13px", height: "13px" }} strokeWidth={2.2} /> Adaugă keyword
+        </button>
+      </PageHeading>
+
+      <div className="glass-panel" style={{ marginTop: "16px", overflow: "hidden" }}>
         {loading ? (
-          <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
+          <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-dim)", fontSize: "12.5px" }}>Se încarcă…</div>
         ) : keywords.length === 0 ? (
-          <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem" }}>
-            Niciun keyword încă. Apasă „Adaugă Keyword” pentru a începe monitorizarea.
+          <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-dim)", fontSize: "12.5px" }}>
+            Niciun keyword încă. Apasă „Adaugă keyword” pentru a începe monitorizarea.
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={{ overflowX: "auto" }}>
+          <table className="data-table" style={{ minWidth: "920px" }}>
             <thead>
-              <tr style={{ backgroundColor: "var(--bg-dark)" }}>
-                {["Nume", "Sursă", "Tip", "Zonă / Oraș", "Preț max", "Interval", "Activ", ""].map((h) => (
-                  <th key={h} style={{ ...td, fontWeight: 600, color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>{h}</th>
+              <tr>
+                {["Nume", "Sursă", "Tip", "Zonă / Oraș", "Preț max", "Interval", "Status", "Acțiuni"].map((h) => (
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {keywords.map((k) => (
-                <tr key={k.id} style={{ borderTop: "1px solid var(--border-color)" }}>
+                <tr key={k.id}>
                   <td style={td}>
-                    <div style={{ fontWeight: 500 }}>{k.name}</div>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{k.name}</div>
                     {(k.active_hours_start != null && k.active_hours_end != null) && (
-                      <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                        {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "8px", color: "var(--text-muted)", display: "block", marginTop: "4px" }}>
+                        ⏱ {String(k.active_hours_start).padStart(2, "0")}:00 – {String(k.active_hours_end).padStart(2, "0")}:00
                       </span>
+                    )}
+                    {Array.isArray(k.exclude_words) && k.exclude_words.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
+                        {k.exclude_words.map((w) => (
+                          <span key={w} style={{
+                            fontSize: "9.5px", padding: "1.5px 7px", borderRadius: "6px",
+                            background: "rgba(248,113,113,.09)", color: "#fca5a5",
+                            border: "1px solid rgba(248,113,113,.22)", whiteSpace: "nowrap",
+                          }}>− {w}</span>
+                        ))}
+                      </div>
                     )}
                   </td>
                   <td style={td}>
-                    <span style={{ fontSize: "0.6875rem", fontWeight: 600, color: "#60a5fa", backgroundColor: "rgba(37,99,235,0.15)", padding: "0.125rem 0.5rem", borderRadius: "999px" }}>{platLabel(k.platform)}</span>
+                    <span style={platformChipStyle(k.platform)}>{platLabel(k.platform)}</span>
                   </td>
                   <td style={td}>{k.property_type || (k.rooms ? `${k.rooms} cam` : "—")}</td>
                   <td style={td}>{[k.zone, k.city].filter(Boolean).join(", ") || "—"}</td>
-                  <td style={td}>{k.price_max ? `${Math.round(k.price_max).toLocaleString("ro-RO")} ${k.price_currency}` : "—"}</td>
-                  <td style={td}>{k.polling_interval_minutes} min</td>
+                  <td style={{ ...td, color: "var(--text-primary)", fontWeight: 500 }}>{k.price_max ? `${Math.round(k.price_max).toLocaleString("ro-RO")} ${k.price_currency}` : "—"}</td>
+                  <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-dim)" }}>{k.polling_interval_minutes} min</td>
                   <td style={td}>
-                    <button onClick={() => toggle(k)} style={{ background: "none", border: "none", cursor: "pointer", color: k.is_active ? "#4ade80" : "var(--text-muted)" }}>
-                      {k.is_active ? <ToggleRight style={{ width: "22px", height: "22px" }} /> : <ToggleLeft style={{ width: "22px", height: "22px" }} />}
-                    </button>
+                    <button
+                      onClick={() => toggle(k)}
+                      className={`toggle-cyan${k.is_active ? " on" : ""}`}
+                      aria-label={k.is_active ? "Dezactivează" : "Activează"}
+                      title={k.is_active ? "Activ" : "Inactiv"}
+                    />
                   </td>
                   <td style={td}>
-                    <div style={{ display: "flex", gap: "0.375rem" }}>
-                      <button onClick={() => openEdit(k)} title="Editează" style={iconBtn}><Pencil style={{ width: "14px", height: "14px" }} /></button>
-                      <button onClick={() => handleDeleteClick(k)} title="Șterge" style={{ ...iconBtn, color: "#f87171" }}><Trash2 style={{ width: "14px", height: "14px" }} /></button>
+                    <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
+                      <button onClick={() => openEdit(k)} title="Editează" style={iconBtn}><Pencil style={{ width: "13px", height: "13px" }} strokeWidth={1.8} /></button>
+                      <button onClick={() => handleDeleteClick(k)} title="Șterge" style={{ ...iconBtn, color: "#f87171" }}><Trash2 style={{ width: "13px", height: "13px" }} strokeWidth={1.8} /></button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -329,9 +333,9 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
     .map(([f]) => TECH_LABELS[f]).filter(Boolean);
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "640px", maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem", borderBottom: "1px solid var(--border-color)", position: "sticky", top: 0, backgroundColor: "var(--bg-card)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "14px", width: "100%", maxWidth: "640px", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem", borderBottom: "1px solid var(--border-color)", position: "sticky", top: 0, background: "var(--bg-card)", backdropFilter: "blur(20px)" }}>
           <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
             {editing ? "Editează keyword imobiliar" : "Adaugă keyword imobiliar"}
           </h2>
@@ -351,7 +355,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
                 const active = platform === p.value;
                 return (
                   <button key={p.value} onClick={() => { setPlatform(p.value); if (p.value === "facebook_marketplace" && form.tip_anunt === "vanzare") set({ tip_anunt: "inchiriere" }); }} style={{
-                    padding: "0.375rem 0.75rem", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
+                    padding: "0.375rem 0.75rem", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
                     border: `1px solid ${active ? "rgba(37,99,235,0.4)" : "var(--border-color)"}`,
                     backgroundColor: active ? "rgba(37,99,235,0.15)" : "transparent",
                     color: active ? "#60a5fa" : "var(--text-secondary)",
@@ -372,12 +376,12 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
           </div>
 
           {platform === "facebook_groups" && (
-            <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+            <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "10px", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
               <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Postările din grupurile configurate în Setări → „Grupuri Facebook — Chirii” vor fi incluse automat în feed pentru acest keyword.
             </div>
           )}
           {platform === "facebook_marketplace" && (
-            <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "0.5rem", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+            <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "10px", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
               <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Doar <strong>Închiriere</strong> e disponibil — categoria de vânzare Facebook nu conține anunțuri imobiliare reale.
             </div>
           )}
@@ -439,9 +443,9 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
           </Field>
 
           <Field label="Cuvinte excluse (titlu + descriere)">
-            <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)", padding: "0.375rem 0.5rem", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem", minHeight: "2.5rem" }}>
+            <div style={{ border: "1px solid var(--border-color)", borderRadius: "10px", background: "rgba(4,9,18,.45)", padding: "0.375rem 0.5rem", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem", minHeight: "2.5rem" }}>
               {excludeChips.map((chip) => (
-                <span key={chip} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", backgroundColor: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", color: "#60a5fa", fontSize: "0.75rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
+                <span key={chip} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", backgroundColor: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", color: "#60a5fa", fontSize: "0.75rem", padding: "0.125rem 0.5rem", borderRadius: "8px" }}>
                   {chip}
                   <button type="button" onClick={() => set({ exclude_words: excludeChips.filter((c) => c !== chip) })} style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", padding: 0, display: "flex" }}>
                     <X style={{ width: "12px", height: "12px" }} />
@@ -492,7 +496,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
           {/* Canale de notificare — identic cu Radar (NotifToggle partajat) */}
           <div style={{
             border: "1px solid var(--border-color)",
-            borderRadius: "0.5rem",
+            borderRadius: "10px",
             padding: "1rem",
             display: "flex",
             flexDirection: "column",
@@ -523,8 +527,8 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
         </div>
 
         <div style={modalFooterStyle}>
-          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
-          <button onClick={onSubmit} disabled={saving} style={{ padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
+          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
+          <button onClick={onSubmit} disabled={saving} style={{ padding: "0.5rem 1.25rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
             {saving ? "Se salvează..." : editing ? "Salvează" : "Adaugă"}
           </button>
         </div>

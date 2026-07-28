@@ -4,8 +4,8 @@ import { useState, useMemo } from "react";
 import { Calculator } from "lucide-react";
 
 const inputStyle = {
-  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
+  width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+  borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
 };
 const lbl = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
 
@@ -57,7 +57,7 @@ export default function ImportCalculatorPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", alignItems: "start" }}>
         {/* Formular */}
-        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+        <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
           <div><label style={lbl}>Pret bid (USD)</label><input type="number" value={bidUsd} onChange={(e) => setBidUsd(e.target.value)} placeholder="ex: 8000" style={inputStyle} autoFocus /></div>
           <div><label style={lbl}>Buyer&apos;s fee (%)</label><input type="number" value={feePct} onChange={(e) => setFeePct(e.target.value)} style={inputStyle} /></div>
           <div><label style={lbl}>Transport estimat (EUR)</label><input type="number" value={transport} onChange={(e) => setTransport(e.target.value)} style={inputStyle} /></div>
@@ -67,7 +67,7 @@ export default function ImportCalculatorPage() {
         </div>
 
         {/* Rezultate */}
-        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1.25rem" }}>
+        <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1.25rem" }}>
           <h2 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--text-primary)", marginTop: 0, marginBottom: "0.75rem" }}>Defalcare costuri</h2>
           <Row label={`Pret bid (${num(bidUsd).toLocaleString("ro-RO")} USD)`} value={calc.bidEur} sign="=" />
           <Row label={`Buyer's fee (${num(feePct, 10)}%)`} value={calc.buyersFee} />

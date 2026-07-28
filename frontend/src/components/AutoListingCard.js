@@ -24,7 +24,7 @@ function aiSummary(ai) {
 }
 
 export default function AutoListingCard({ listing, onSave, onDelete, onAnalyze, isSaved, busy }) {
-  const plat = PLATFORM[listing.platform] || { label: listing.platform, color: "#64748b" };
+  const plat = PLATFORM[listing.platform] || { label: listing.platform, color: "#a9b8d6" };
   const specs = [
     listing.year ? `${listing.year}` : null,
     listing.km != null ? `${Number(listing.km).toLocaleString("ro-RO")} km` : null,
@@ -34,8 +34,8 @@ export default function AutoListingCard({ listing, onSave, onDelete, onAnalyze, 
   const ai = aiSummary(listing.ai_extract);
 
   return (
-    <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", backgroundColor: "var(--bg-dark)" }}>
+    <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", background: "rgba(4,9,18,.45)" }}>
         {listing.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={listing.thumbnail_url} alt={listing.titlu || ""} loading="lazy"
@@ -46,7 +46,7 @@ export default function AutoListingCard({ listing, onSave, onDelete, onAnalyze, 
             <ImageOff style={{ width: "28px", height: "28px" }} />
           </div>
         )}
-        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: plat.color }}>
+        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "8px", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: plat.color }}>
           {plat.label}
         </span>
       </div>
@@ -72,7 +72,7 @@ export default function AutoListingCard({ listing, onSave, onDelete, onAnalyze, 
         )}
 
         {ai && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.6875rem", color: "#a78bfa", backgroundColor: "rgba(167,139,250,0.12)", borderRadius: "0.375rem", padding: "0.1875rem 0.375rem" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.6875rem", color: "#a78bfa", backgroundColor: "rgba(167,139,250,0.12)", borderRadius: "8px", padding: "0.1875rem 0.375rem" }}>
             <Sparkles style={{ width: "11px", height: "11px" }} /> AI: {ai}
           </div>
         )}
@@ -96,7 +96,7 @@ export default function AutoListingCard({ listing, onSave, onDelete, onAnalyze, 
           )}
           {listing.source_url && (
             <a href={listing.source_url} target="_blank" rel="noopener noreferrer"
-              style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", padding: "0.375rem 0.625rem", borderRadius: "0.5rem", fontSize: "0.7rem", fontWeight: 600, border: "none", backgroundColor: "var(--blue-primary)", color: "white", textDecoration: "none" }}>
+              style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", padding: "0.375rem 0.625rem", borderRadius: "9px", fontSize: "10.5px", fontWeight: 600, background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", textDecoration: "none" }}>
               <ExternalLink style={{ width: "13px", height: "13px" }} /> Deschide
             </a>
           )}
@@ -109,7 +109,7 @@ export default function AutoListingCard({ listing, onSave, onDelete, onAnalyze, 
 function btn(color, bg) {
   return {
     flex: 1, minWidth: "70px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem",
-    padding: "0.375rem", borderRadius: "0.5rem", fontSize: "0.7rem", fontWeight: 600,
+    padding: "0.375rem", borderRadius: "10px", fontSize: "0.7rem", fontWeight: 600,
     border: "1px solid var(--border-color)", cursor: "pointer", backgroundColor: bg, color,
   };
 }

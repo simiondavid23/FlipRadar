@@ -12,6 +12,8 @@ import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import REManualSearch from "@/components/REManualSearch";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
 
 const PLATFORM_LABELS = {
   olx: "OLX", storia: "Storia", imobiliare_ro: "Imobiliare.ro",
@@ -177,45 +179,50 @@ export default function REFeedPage() {
 
   const byGrade = stats.by_grade || {};
   const statCards = [
-    { label: "Total listinguri", value: stats.total_listings ?? 0, color: "#60a5fa" },
-    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
+    { label: "Total listinguri", value: stats.total_listings ?? 0, color: "#7ee7f8" },
+    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#8fb5f7" },
     { label: "Grade A", value: byGrade.A || 0, color: "#4ade80" },
   ];
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      {/* Header — structură identică cu Radar (iconiță simplă în h1, fără badge colorat) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Home style={{ width: "22px", height: "22px", color: "#2563eb" }} />
-            Feed Imobiliare
-          </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>Chirii scorate, cu zone normalizate</p>
-        </div>
-      </div>
+    <div>
+      <TopBar path={["IMOBILIARE", "FEED"]}>
+        {tab === "feed" && <ScanNowButton onScan={handleScanNow} scanning={scanning} />}
+      </TopBar>
+
+      {/* Header — structură identică cu Radar */}
+      <PageHeading
+        icon={Home}
+        title="Feed Imobiliare"
+        subtitle={
+          tab === "feed"
+            ? <>Chirii scorate, cu zone normalizate — <Hl>{displayedListings.length} în vizualizare</Hl>.</>
+            : "Caută live pe platformele imobiliare, fără să salvezi în feed."
+        }
+      />
 
       {/* Tab-uri: Feed automat / Căutare Manuală (pill-uri, ca la Auto/Radar) */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
-        <button onClick={() => setTab("feed")} style={tabPillStyle(tab === "feed")}>Feed</button>
-        <button onClick={() => setTab("manual")} style={tabPillStyle(tab === "manual")}>Căutare Manuală</button>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "16px" }}>
+        <button onClick={() => setTab("feed")} style={{ ...tabPillStyle(tab === "feed"), display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          {tab === "feed" && <span className="pill-nav-dot" />}
+          Feed
+        </button>
+        <button onClick={() => setTab("manual")} style={{ ...tabPillStyle(tab === "manual"), display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          {tab === "manual" && <span className="pill-nav-dot" />}
+          Căutare Manuală
+        </button>
       </div>
 
       {tab === "manual" && <REManualSearch />}
 
       {tab === "feed" && (<>
-      {/* Scanare manuală — rând dedicat aliniat dreapta (ca la Radar) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
-        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
-      </div>
-
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
-          <AlertTriangle style={{ width: "18px", height: "18px", color: "#fbbf24", flexShrink: 0 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 14px", marginTop: "14px", background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: "12px" }}>
+          <AlertTriangle style={{ width: "16px", height: "16px", color: "#fb923c", flexShrink: 0 }} strokeWidth={1.8} />
           <div>
-            <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "#fbbf24", margin: 0 }}>Sesiunea Facebook a expirat</p>
-            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.125rem 0 0" }}>
-              Keyword-urile Facebook nu vor returna rezultate. Reautentifică-te din <a href="/dashboard/settings" style={{ color: "#fbbf24", fontWeight: 500 }}>Setări → Facebook</a>.
+            <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Sesiunea Facebook a expirat</p>
+            <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
+              Keyword-urile Facebook nu vor returna rezultate. Reautentifică-te din <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>.
             </p>
           </div>
         </div>
@@ -223,16 +230,13 @@ export default function REFeedPage() {
 
       <StatCardsRow cards={statCards} />
 
-      <div style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        padding: "1rem",
-        marginBottom: "1.25rem",
+      <div className="glass-panel" style={{
+        padding: "13px 15px",
+        marginTop: "14px",
         display: "flex",
         flexWrap: "wrap",
         alignItems: "center",
-        gap: "0.625rem",
+        gap: "9px",
       }}>
         <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate sursele</option>
@@ -286,7 +290,7 @@ export default function REFeedPage() {
         <button
           onClick={() => { loadFeed(); loadStats(); }}
           disabled={loading}
-          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}
         >
           <RefreshCw style={{ width: "14px", height: "14px", animation: loading ? "spin 1s linear infinite" : undefined }} />
           Actualizează
@@ -294,7 +298,7 @@ export default function REFeedPage() {
 
         <button
           onClick={downloadExcel}
-          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
         >
           <FileSpreadsheet style={{ width: "14px", height: "14px" }} />
           Export Excel
@@ -338,7 +342,7 @@ export default function REFeedPage() {
       {loading ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
       ) : displayedListings.length === 0 ? (
-        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem" }}>
+        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px" }}>
           Niciun anunț. Adaugă keyword-uri și așteaptă scanarea (la 30 min) sau apasă „Scanează acum”.
         </div>
       ) : (
@@ -366,7 +370,7 @@ export default function REFeedPage() {
           <button
             onClick={loadMoreListings}
             disabled={loadingMore}
-            style={{ padding: "0.6rem 1.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", color: "var(--text-primary)", cursor: loadingMore ? "default" : "pointer", opacity: loadingMore ? 0.6 : 1, fontSize: "0.875rem" }}
+            style={{ padding: "0.6rem 1.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "var(--text-primary)", cursor: loadingMore ? "default" : "pointer", opacity: loadingMore ? 0.6 : 1, fontSize: "0.875rem" }}
           >
             {loadingMore ? "Se încarcă…" : `Încarcă mai multe (${feedTotal - listings.length} rămase)`}
           </button>
@@ -387,8 +391,8 @@ export default function REFeedPage() {
       {toast && (
         <div style={{
           position: "fixed", bottom: "5rem", left: "50%", transform: "translateX(-50%)",
-          backgroundColor: "var(--bg-card)", color: "var(--text-primary)",
-          border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+          background: "var(--bg-card)", backdropFilter: "blur(20px)", color: "var(--text-primary)",
+          border: "1px solid var(--border-color)", borderRadius: "10px",
           padding: "0.5rem 0.875rem", fontSize: "0.8125rem",
           boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
           zIndex: 200,

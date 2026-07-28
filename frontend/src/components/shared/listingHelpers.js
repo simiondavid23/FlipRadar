@@ -29,9 +29,9 @@ export function formatListedDate(iso) {
 }
 
 export function marginColor(pct) {
-  if (pct === null || pct === undefined) return "var(--text-secondary)";
+  if (pct === null || pct === undefined) return "var(--text-tertiary)";
   if (pct >= 25) return "#4ade80";
-  if (pct >= 10) return "#facc15";
+  if (pct >= 10) return "#fde047";
   return "#fb923c";
 }
 

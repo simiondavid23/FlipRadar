@@ -17,9 +17,9 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
 
   const inputStyle = {
-    backgroundColor: "var(--bg-dark)",
+    background: "rgba(4,9,18,.45)",
     border: "1px solid var(--border-color)",
-    borderRadius: "0.75rem",
+    borderRadius: "12px",
     color: "var(--text-primary)",
     fontSize: "0.875rem",
     width: "100%",
@@ -83,7 +83,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "rgba(4,9,18,.45)" }}>
       <div style={{ padding: "1.25rem 2rem" }}>
         <Link href="/login" style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}>
           <Image
@@ -112,14 +112,14 @@ export default function ResetPasswordPage() {
           </div>
 
           {error && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.875rem", borderRadius: "0.75rem", marginBottom: "1.25rem", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.15)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.875rem", borderRadius: "12px", marginBottom: "1.25rem", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.15)" }}>
               <AlertCircle style={{ width: "16px", height: "16px", color: "#f87171", flexShrink: 0 }} />
               <p style={{ color: "#f87171", fontSize: "0.8125rem", margin: 0 }}>{error}</p>
             </div>
           )}
 
           {success && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.875rem", borderRadius: "0.75rem", marginBottom: "1.25rem", backgroundColor: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.15)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.875rem", borderRadius: "12px", marginBottom: "1.25rem", backgroundColor: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.15)" }}>
               <CheckCircle style={{ width: "16px", height: "16px", color: "#4ade80", flexShrink: 0 }} />
               <p style={{ color: "#4ade80", fontSize: "0.8125rem", margin: 0 }}>{success}</p>
             </div>
@@ -134,7 +134,7 @@ export default function ResetPasswordPage() {
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@exemplu.com" required style={inputStyle} />
                 </div>
               </div>
-              <button type="submit" disabled={loading} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", borderRadius: "0.75rem", color: "var(--text-primary)", fontWeight: 500, fontSize: "0.875rem", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", boxShadow: "0 4px 14px rgba(37,99,235,0.35)", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
+              <button type="submit" disabled={loading} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", borderRadius: "12px", color: "var(--text-primary)", fontWeight: 500, fontSize: "0.875rem", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", boxShadow: "0 4px 14px rgba(37,99,235,0.35)", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
                 {loading ? "Se cauta..." : <>Continua <ArrowRight style={{ width: "16px", height: "16px" }} /></>}
               </button>
             </form>
@@ -142,7 +142,7 @@ export default function ResetPasswordPage() {
 
           {step === 2 && (
             <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-              <div style={{ padding: "0.875rem", borderRadius: "0.75rem", backgroundColor: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+              <div style={{ padding: "0.875rem", borderRadius: "12px", backgroundColor: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
                   <HelpCircle style={{ width: "14px", height: "14px", color: "#60a5fa" }} />
                   <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Intrebare</span>
@@ -175,10 +175,10 @@ export default function ResetPasswordPage() {
               </div>
 
               <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button type="button" onClick={() => { setStep(1); setAnswer(""); setNewPassword(""); setConfirmPassword(""); setError(""); }} style={{ flex: 1, borderRadius: "0.75rem", color: "var(--text-secondary)", fontWeight: 500, fontSize: "0.875rem", border: "1px solid var(--border-color)", cursor: "pointer", backgroundColor: "transparent", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
+                <button type="button" onClick={() => { setStep(1); setAnswer(""); setNewPassword(""); setConfirmPassword(""); setError(""); }} style={{ flex: 1, borderRadius: "12px", color: "var(--text-secondary)", fontWeight: 500, fontSize: "0.875rem", border: "1px solid var(--border-color)", cursor: "pointer", backgroundColor: "transparent", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
                   Inapoi
                 </button>
-                <button type="submit" disabled={loading} style={{ flex: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", borderRadius: "0.75rem", color: "var(--text-primary)", fontWeight: 500, fontSize: "0.875rem", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", boxShadow: "0 4px 14px rgba(37,99,235,0.35)", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
+                <button type="submit" disabled={loading} style={{ flex: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", borderRadius: "12px", color: "var(--text-primary)", fontWeight: 500, fontSize: "0.875rem", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", boxShadow: "0 4px 14px rgba(37,99,235,0.35)", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
                   {loading ? "Se proceseaza..." : <>Reseteaza parola <ArrowRight style={{ width: "16px", height: "16px" }} /></>}
                 </button>
               </div>

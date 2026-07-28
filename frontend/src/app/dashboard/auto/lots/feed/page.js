@@ -88,8 +88,8 @@ export default function AutoLotsFeedPage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <Car style={{ width: "20px", height: "20px", color: "white" }} />
+          <div style={{ padding: "8px", borderRadius: "10px", background: "rgba(34,211,238,.09)", border: "1px solid rgba(34,211,238,.26)", display: "flex" }}>
+            <Car style={{ width: "17px", height: "17px", color: "#7ee7f8" }} strokeWidth={1.8} />
           </div>
           <div>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Feed Loturi Auto</h1>
@@ -104,9 +104,9 @@ export default function AutoLotsFeedPage() {
 
       {/* Filter bar */}
       <div style={{
-        backgroundColor: "var(--bg-card)",
+        background: "var(--bg-card)", backdropFilter: "blur(20px)",
         border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
+        borderRadius: "12px",
         padding: "1rem",
         marginBottom: "1.25rem",
         display: "flex",
@@ -138,7 +138,7 @@ export default function AutoLotsFeedPage() {
       {loading ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
       ) : lots.length === 0 ? (
-        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem" }}>
+        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px" }}>
           Niciun lot în această categorie. Adaugă keyword-uri și apasă „Scanează acum” sau așteaptă scanarea automată (la 15 min).
         </div>
       ) : (

@@ -20,17 +20,17 @@ import { alertsAPI, productsAPI, trackedProductsAPI } from "@/lib/api";
  */
 
 const overlayStyle = {
-  position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 100,
+  position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", zIndex: 100,
   display: "flex", alignItems: "flex-start", justifyContent: "center",
   padding: "3rem 1rem", overflowY: "auto",
 };
 const cardStyle = {
-  width: "100%", maxWidth: "640px", backgroundColor: "var(--bg-card)",
-  border: "1px solid var(--border-color)", borderRadius: "0.875rem", padding: "1.5rem",
+  width: "100%", maxWidth: "640px", background: "var(--bg-card)", backdropFilter: "blur(20px)",
+  border: "1px solid var(--border-color)", borderRadius: "14px", padding: "1.5rem",
 };
 const inputStyle = {
-  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
+  width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+  borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
   fontSize: "0.875rem", outline: "none",
 };
 const labelStyle = {
@@ -38,11 +38,10 @@ const labelStyle = {
   color: "var(--text-secondary)", marginBottom: "0.375rem",
 };
 const primaryBtn = {
-  padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)",
-  color: "white", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+  padding: "9px 18px", borderRadius: "12px", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
 };
 const secondaryBtn = {
-  padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "transparent",
+  padding: "0.5rem 1.25rem", borderRadius: "10px", backgroundColor: "transparent",
   color: "var(--text-secondary)", border: "1px solid var(--border-color)",
   cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
 };
@@ -71,7 +70,7 @@ function hostOf(u) {
 
 const chipStyle = (selected) => ({
   display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.125rem",
-  padding: "0.5rem 0.75rem", borderRadius: "0.5rem", cursor: "pointer", textAlign: "left",
+  padding: "0.5rem 0.75rem", borderRadius: "10px", cursor: "pointer", textAlign: "left",
   backgroundColor: selected ? "rgba(59,130,246,0.15)" : "var(--bg-dark)",
   border: `1px solid ${selected ? "var(--blue-primary)" : "var(--border-color)"}`,
   color: "var(--text-primary)", fontSize: "0.8125rem", fontWeight: 600,
@@ -238,7 +237,7 @@ export default function AddByLinkWizard({ url, onClose }) {
             {data.image_url && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={data.image_url} alt={data.name}
-                style={{ width: "84px", height: "84px", objectFit: "contain", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)" }} />
+                style={{ width: "84px", height: "84px", objectFit: "contain", borderRadius: "10px", background: "rgba(4,9,18,.45)" }} />
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 0.5rem" }}>
@@ -249,7 +248,7 @@ export default function AddByLinkWizard({ url, onClose }) {
                 <span style={badge("rgba(147,51,234,0.15)", "#a78bfa")}>{hostOf(url)}</span>
                 <StockBadge inStock={data.in_stock} />
                 {data.domain_validated === false && (
-                  <span style={badge("rgba(250,204,21,0.15)", "#facc15")}>
+                  <span style={badge("rgba(250,204,21,0.15)", "#fde047")}>
                     Domeniu nevalidat — monitorizare best-effort
                   </span>
                 )}
@@ -325,7 +324,7 @@ export default function AddByLinkWizard({ url, onClose }) {
               onChange={(e) => setTargetPrice(e.target.value)}
               placeholder={`ex: ${shownPrice}`} style={inputStyle} />
             {!targetValid && (
-              <p style={{ ...hintStyle, color: "#facc15" }}>Tinta trebuie sa fie un numar mai mare decat 0.</p>
+              <p style={{ ...hintStyle, color: "#fde047" }}>Tinta trebuie sa fie un numar mai mare decat 0.</p>
             )}
           </div>
 
@@ -343,7 +342,7 @@ export default function AddByLinkWizard({ url, onClose }) {
                 : "Completeaza intai tinta de pret — alerta se creeaza pe ea."}
             </p>
             {!dropValid && (
-              <p style={{ ...hintStyle, color: "#facc15" }}>Pragul trebuie sa fie intre 1 si 99.</p>
+              <p style={{ ...hintStyle, color: "#fde047" }}>Pragul trebuie sa fie intre 1 si 99.</p>
             )}
           </div>
         </div>

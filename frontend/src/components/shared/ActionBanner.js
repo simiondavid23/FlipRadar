@@ -13,23 +13,27 @@ export default function ActionBanner({
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
-    <div style={{
-      backgroundColor: "rgba(37,99,235,0.1)",
-      border: "0.5px solid rgba(37,99,235,0.3)",
-      borderRadius: "0.5rem",
-      padding: "0.625rem 1rem",
-      display: "flex", flexWrap: "wrap",
-      alignItems: "center", gap: "0.75rem",
-      backdropFilter: "blur(8px)",
-    }}>
+    <div
+      className="glass-panel"
+      style={{
+        padding: "11px 13px",
+        display: "flex", flexWrap: "wrap",
+        alignItems: "center", gap: "8px",
+        borderRadius: "14px",
+      }}
+    >
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".14em", color: "var(--text-mono)", padding: "0 4px" }}>
+        ACȚIUNI ÎN MASĂ
+      </span>
+
       {onCompareOpen && comparisonCount >= 1 && (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontSize: "0.875rem", color: "var(--text-primary)", fontWeight: 600 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: 500 }}>
             {comparisonCount} listing(uri) selectate pentru comparare
           </span>
           {comparisonCount >= 2 && (
             <button onClick={onCompareOpen} style={primaryBannerBtn}>
-              <GitCompareArrows style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.25rem" }} />
+              <GitCompareArrows style={{ width: "12px", height: "12px", display: "inline", marginRight: "5px", verticalAlign: "-2px" }} />
               Compară
             </button>
           )}
@@ -40,14 +44,14 @@ export default function ActionBanner({
       {bulkCount > 0 && (
         <div style={{
           marginLeft: comparisonCount > 0 ? "auto" : 0,
-          display: "inline-flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap",
+          display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
         }}>
-          <span style={{ fontSize: "0.875rem", color: "var(--text-primary)", fontWeight: 600 }}>
+          <span style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: 500 }}>
             {bulkCount} anunțuri selectate
           </span>
           {confirmDelete ? (
             <>
-              <span style={{ fontSize: "0.75rem", color: "#fca5a5" }}>
+              <span style={{ fontSize: "11.5px", color: "#fca5a5" }}>
                 Sigur vrei să ștergi {bulkCount} anunțuri? Acțiunea nu poate fi anulată.
               </span>
               <button onClick={() => { onBulkDelete(); setConfirmDelete(false); }} style={dangerBtn}>
@@ -72,28 +76,38 @@ export default function ActionBanner({
   );
 }
 
-const primaryBannerBtn = {
-  padding: "0.4rem 0.75rem",
-  backgroundColor: "var(--blue-primary)",
-  color: "white", border: "none",
-  borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 600,
+const btnBase = {
+  padding: "6px 13px",
+  borderRadius: "9px",
+  fontFamily: "var(--font-sans)",
+  fontSize: "11.5px",
+  fontWeight: 500,
   cursor: "pointer",
+  transition: "all .15s ease",
+  whiteSpace: "nowrap",
+};
+
+const primaryBannerBtn = {
+  ...btnBase,
+  fontWeight: 600,
+  border: "1px solid rgba(34,211,238,.42)",
+  background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)",
+  color: "#7ee7f8",
+  boxShadow: "0 0 18px rgba(34,211,238,.14)",
 };
 
 const ghostBtn = {
-  padding: "0.4rem 0.75rem",
-  backgroundColor: "var(--bg-dark)",
+  ...btnBase,
+  background:
+    "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.26), rgba(59,130,246,.08) 55%, transparent) border-box",
+  border: "1px solid transparent",
   color: "var(--text-secondary)",
-  border: "1px solid var(--border-color)",
-  borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 500,
-  cursor: "pointer",
 };
 
 const dangerBtn = {
-  padding: "0.4rem 0.75rem",
-  backgroundColor: "rgba(239,68,68,0.15)",
+  ...btnBase,
+  fontWeight: 600,
+  background: "linear-gradient(135deg, rgba(248,113,113,.14), rgba(248,113,113,.03) 60%, transparent)",
+  border: "1px solid rgba(248,113,113,.36)",
   color: "#fca5a5",
-  border: "1px solid rgba(239,68,68,0.3)",
-  borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 600,
-  cursor: "pointer",
 };

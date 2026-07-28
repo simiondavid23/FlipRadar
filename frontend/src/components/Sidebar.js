@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -7,44 +7,37 @@ import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard, Search, Bell, LogOut,
   Heart, Globe, Boxes, Receipt,
-  ChevronDown, ChevronRight, BarChart2,
-  Radar, Target, Bookmark, Settings, MessageSquare,
-  Calculator, Car, Home, Activity, Rss, Tag
+  BarChart2, Radar, Target, Bookmark, Settings,
+  Calculator, Rss, Tag, Activity
 } from "lucide-react";
 
-// Sidebar-ul ramane mereu dark — pattern UX standard (GitHub, VS Code, Notion).
-// Culorile sunt hardcodate pentru ca CSS variables se schimba in light mode
-// pe restul aplicatiei, dar sidebar-ul ramane intunecat indiferent de tema.
-const SIDEBAR_BG = "#1e293b";
-const SIDEBAR_BORDER = "#334155";
-const TEXT_PRIMARY = "#f8fafc";
-const TEXT_SECONDARY = "#94a3b8";
-const TEXT_MUTED = "#64748b";
-const HOVER_BG = "rgba(255,255,255,0.05)";
-const ACTIVE_BG = "#2563eb";
+// Sidebar-ul "Prism Obsidian": panou flotant din sticla, nav plat cu etichete de
+// grup mono, item activ pill cu punct cyan + index. Culorile sunt hardcodate
+// pentru ca panoul ramane intunecat indiferent de restul temei.
+const ICON = { width: 14, height: 14, strokeWidth: 1.8, flexShrink: 0 };
 
 const categories = [
   {
     id: "catalog",
     label: "Catalog",
     items: [
-      { name: "Descopera Oportunitati", href: "/dashboard/products", icon: Search },
+      { name: "Descoperă Oportunități", href: "/dashboard/products", icon: Search },
       { name: "Scanare Magazine", href: "/dashboard/scraping", icon: Globe, flag: "can_use_scraping" },
-      { name: "Produse Urmarite", href: "/dashboard/tracked-products", icon: Heart },
+      { name: "Produse Urmărite", href: "/dashboard/tracked-products", icon: Heart },
     ],
   },
   {
     id: "radar",
-    label: "Radar Piata",
+    label: "Radar Piața",
     items: [
-      { name: "Feed Anunturi", href: "/dashboard/radar", icon: Radar },
+      { name: "Feed Anunțuri", href: "/dashboard/radar", icon: Radar },
       { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
       { name: "Salvate & Ignorate", href: "/dashboard/radar/saved", icon: Bookmark },
     ],
   },
   {
     id: "auto_lots",
-    label: "Loturi Automobile - IN LUCRU",
+    label: "Loturi Automobile — În lucru",
     items: [
       { name: "Feed Loturi", href: "/dashboard/auto/lots/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/auto/lots/keywords", icon: Tag },
@@ -56,7 +49,6 @@ const categories = [
   {
     id: "auto_listings",
     label: "Auto Anunțuri",
-    icon: Car,
     items: [
       { name: "Feed Anunțuri", href: "/dashboard/auto-listings/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/auto-listings/keywords", icon: Tag },
@@ -66,7 +58,6 @@ const categories = [
   {
     id: "real_estate",
     label: "Imobiliare",
-    icon: Home,
     items: [
       { name: "Feed Anunțuri", href: "/dashboard/real-estate-monitor/feed", icon: Rss },
       { name: "Keyword-uri", href: "/dashboard/real-estate-monitor/keywords", icon: Tag },
@@ -100,155 +91,199 @@ function filterItemsForUser(items, user) {
   });
 }
 
-function findInitiallyOpenCategory(pathname) {
-  for (const cat of categories) {
-    if (cat.items.some((it) => it.href === pathname)) return cat.id;
-  }
-  return null;
+// Diacriticele nu trebuie sa strice cautarea in nav ("anunturi" gaseste "Anunțuri").
+// NFD desparte si virgula de sub ț/ș (U+0326), deci intervalul acopera ambele familii.
+const norm = (s) =>
+  String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+function initialsOf(user) {
+  const src = user?.full_name || user?.username || user?.email || "";
+  const parts = src.trim().split(/[\s._-]+/).filter(Boolean);
+  if (parts.length === 0) return "FR";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const [openCategory, setOpenCategory] = useState(() => findInitiallyOpenCategory(pathname));
+  const [query, setQuery] = useState("");
 
-  const toggleCategory = (id) => {
-    setOpenCategory((prev) => (prev === id ? null : id));
-  };
+  // Indexul mono din dreapta itemului activ = pozitia paginii in nav (01, 02, …).
+  const { groups, indexOf } = useMemo(() => {
+    const idx = { "/dashboard": 1 };
+    let n = 1;
+    const gs = categories
+      .map((cat) => ({ ...cat, items: filterItemsForUser(cat.items, user) }))
+      .filter((cat) => cat.items.length > 0);
+    for (const cat of gs) {
+      for (const it of cat.items) idx[it.href] = ++n;
+    }
+    return { groups: gs, indexOf: idx };
+  }, [user]);
+
+  const q = norm(query);
+  const visibleGroups = q
+    ? groups
+        .map((cat) => ({ ...cat, items: cat.items.filter((it) => norm(it.name).includes(q) || norm(cat.label).includes(q)) }))
+        .filter((cat) => cat.items.length > 0)
+    : groups;
 
   const dashboardActive = pathname === "/dashboard";
+  const showDashboardLink = !q || norm("Tablou de Bord").includes(q);
+  const pad = (n) => String(n).padStart(2, "0");
 
   return (
-    <div
-      style={{
-        position: "fixed", left: 0, top: 0, bottom: 0, width: "240px",
-        backgroundColor: SIDEBAR_BG, borderRight: `1px solid ${SIDEBAR_BORDER}`,
-        display: "flex", flexDirection: "column", zIndex: 50,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", padding: "1.25rem 1.5rem", borderBottom: `1px solid ${SIDEBAR_BORDER}` }}>
+    <aside className="app-sidebar">
+      {/* Logo + wordmark */}
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "18px 18px 14px" }}>
         <Image
-          src="/flipradar-logo.svg"
+          src="/flipradar-icon.svg"
           alt="FlipRadar"
-          width={180}
-          height={39}
+          width={30}
+          height={30}
           priority
-          style={{ height: "auto" }}
+          style={{ borderRadius: "8px", boxShadow: "0 4px 14px rgba(34,211,238,.3)" }}
         />
+        <div>
+          <div style={{ fontSize: "14.5px", fontWeight: 700, letterSpacing: "-.2px", color: "#e6edf9" }}>
+            Flip<span style={{ color: "#7ee7f8" }}>Radar</span>
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "7.5px", letterSpacing: ".22em", color: "#38bdf8", marginTop: "1px" }}>
+            PRODUCT RESEARCH
+          </div>
+        </div>
       </div>
 
-      <nav style={{ flex: 1, padding: "0.75rem", overflowY: "auto" }}>
-        <Link href="/dashboard"
+      {/* Cautare in nav */}
+      <label
+        style={{
+          margin: "0 12px 4px",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "8px 12px",
+          borderRadius: "99px",
+          background:
+            "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.1) 50%, transparent) border-box",
+          border: "1px solid transparent",
+          cursor: "text",
+        }}
+      >
+        <Search style={{ width: "13px", height: "13px", color: "#54648a", flexShrink: 0 }} strokeWidth={1.8} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Caută…"
+          aria-label="Caută în meniu"
           style={{
-            display: "flex", alignItems: "center", gap: "0.75rem",
-            padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
-            fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none",
-            backgroundColor: dashboardActive ? ACTIVE_BG : "transparent",
-            color: dashboardActive ? "white" : TEXT_SECONDARY,
-            marginBottom: "0.5rem",
-            transition: "all 0.15s ease",
+            flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
+            color: "#e6edf9", fontSize: "11.5px", fontFamily: "var(--font-sans)", padding: 0,
           }}
-          onMouseEnter={(e) => { if (!dashboardActive) { e.currentTarget.style.backgroundColor = HOVER_BG; e.currentTarget.style.color = TEXT_PRIMARY; }}}
-          onMouseLeave={(e) => { if (!dashboardActive) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = TEXT_SECONDARY; }}}
+        />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)", fontSize: "8px", color: "#41547a",
+            border: "1px solid rgba(94,140,255,.18)", borderRadius: "5px", padding: "1px 5px", flexShrink: 0,
+          }}
         >
-          <LayoutDashboard style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-          <span>Tablou de Bord</span>
-        </Link>
+          ⌘K
+        </span>
+      </label>
 
-        {categories.map((cat) => {
-          const visibleItems = filterItemsForUser(cat.items, user);
-          if (visibleItems.length === 0) return null;
-          const isOpen = openCategory === cat.id;
-          const hasActiveChild = visibleItems.some((it) => it.href === pathname);
-          return (
-            <div key={cat.id} style={{ marginBottom: "0.25rem" }}>
-              <button
-                onClick={() => toggleCategory(cat.id)}
-                style={{
-                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                  gap: "0.5rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
-                  fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: hasActiveChild ? TEXT_PRIMARY : TEXT_MUTED,
-                  backgroundColor: "transparent", border: "none", cursor: "pointer",
-                  transition: "color 0.15s ease",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = TEXT_PRIMARY; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = hasActiveChild ? TEXT_PRIMARY : TEXT_MUTED; }}
-              >
-                <span>{cat.label}</span>
-                {isOpen ? (
-                  <ChevronDown style={{ width: "14px", height: "14px" }} />
-                ) : (
-                  <ChevronRight style={{ width: "14px", height: "14px" }} />
-                )}
-              </button>
+      <nav style={{ flex: 1, padding: "8px 10px 0", overflowY: "auto" }}>
+        {showDashboardLink && (
+          <Link href="/dashboard" className={`pill-nav-item${dashboardActive ? " active" : ""}`}>
+            {dashboardActive ? <span className="pill-nav-dot" /> : <LayoutDashboard style={ICON} />}
+            <span>Tablou de Bord</span>
+            {dashboardActive && <span className="pill-nav-idx">{pad(indexOf["/dashboard"])}</span>}
+          </Link>
+        )}
 
-              {isOpen && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "2px" }}>
-                  {visibleItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
-                    return (
-                      <Link key={item.href} href={item.href}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "0.75rem",
-                          padding: "0.5rem 0.875rem 0.5rem 1.75rem", borderRadius: "0.625rem",
-                          fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none",
-                          backgroundColor: isActive ? ACTIVE_BG : "transparent",
-                          color: isActive ? "white" : TEXT_SECONDARY,
-                          transition: "all 0.15s ease",
-                        }}
-                        onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = HOVER_BG; e.currentTarget.style.color = TEXT_PRIMARY; }}}
-                        onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = TEXT_SECONDARY; }}}
-                      >
-                        <Icon style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-                        <span>{item.name}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+        {visibleGroups.map((cat) => (
+          <div key={cat.id} style={{ marginTop: "12px" }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".18em",
+                textTransform: "uppercase", color: "#41547a", padding: "0 13px 5px",
+              }}
+            >
+              {cat.label}
             </div>
-          );
-        })}
+            {cat.items.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link key={item.href} href={item.href} className={`pill-nav-item${isActive ? " active" : ""}`}>
+                  {isActive ? <span className="pill-nav-dot" /> : <Icon style={ICON} />}
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</span>
+                  {isActive && <span className="pill-nav-idx">{pad(indexOf[item.href])}</span>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+        <div style={{ height: "10px" }} />
       </nav>
 
-      <div style={{ padding: "0.75rem", borderTop: `1px solid ${SIDEBAR_BORDER}` }}>
-        {user && (
-          <div style={{ padding: "0.375rem 0.875rem", marginBottom: "0.25rem" }}>
-            <p style={{ fontSize: "0.8125rem", fontWeight: 500, color: TEXT_PRIMARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user.full_name || user.username}
-            </p>
-            <p style={{ fontSize: "0.6875rem", color: TEXT_SECONDARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user.email}
-            </p>
+      {/* Footer — cont + setari + logout */}
+      <div style={{ padding: "12px", borderTop: "1px solid rgba(94,140,255,.1)", display: "flex", alignItems: "center", gap: "10px" }}>
+        <div
+          style={{
+            width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg,#22d3ee,#2563eb)",
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700,
+            color: "#04070e", flexShrink: 0,
+          }}
+        >
+          {initialsOf(user)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "#e6edf9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {user?.full_name || user?.username || "Utilizator"}
           </div>
-        )}
-        {/* FlipRadar — ITEM 16: link catre pagina de setari (alerte Flash Deal) */}
-        <Link href="/dashboard/settings"
-          style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
-            fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none",
-            backgroundColor: pathname === "/dashboard/settings" ? ACTIVE_BG : "transparent",
-            color: pathname === "/dashboard/settings" ? "white" : TEXT_SECONDARY,
-            width: "100%", marginBottom: "0.25rem", transition: "all 0.15s ease" }}
-          onMouseEnter={(e) => { if (pathname !== "/dashboard/settings") { e.currentTarget.style.backgroundColor = HOVER_BG; e.currentTarget.style.color = TEXT_PRIMARY; } }}
-          onMouseLeave={(e) => { if (pathname !== "/dashboard/settings") { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = TEXT_SECONDARY; } }}
-        >
-          <Settings style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-          <span>Setari</span>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".08em", color: "#41547a" }}>
+            CONT PRO
+          </div>
+        </div>
+        <Link href="/dashboard/settings" aria-label="Setari" title="Setari" className="sidebar-foot-btn">
+          <Settings style={{ width: "15px", height: "15px" }} strokeWidth={1.8} />
         </Link>
-        <button onClick={logout}
-          style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem",
-            fontSize: "0.8125rem", fontWeight: 500, color: TEXT_SECONDARY, backgroundColor: "transparent",
-            border: "none", cursor: "pointer", width: "100%" }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)"; e.currentTarget.style.color = "#f87171"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = TEXT_SECONDARY; }}
-        >
-          <LogOut style={{ width: "16px", height: "16px", flexShrink: 0 }} />
-          <span>Deconectare</span>
+        <button onClick={logout} aria-label="Deconectare" title="Deconectare" className="sidebar-foot-btn danger">
+          <LogOut style={{ width: "15px", height: "15px" }} strokeWidth={1.8} />
         </button>
       </div>
-    </div>
+
+      <style>{`
+        .app-sidebar {
+          position: fixed;
+          top: 18px;
+          left: 18px;
+          bottom: 18px;
+          z-index: 50;
+          width: 238px;
+          border-radius: 20px;
+          background: rgba(10,17,32,.6);
+          backdrop-filter: blur(24px);
+          border: 1px solid rgba(34,211,238,.13);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px rgba(0,0,0,.45);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .sidebar-foot-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: none;
+          border: none;
+          padding: 0;
+          color: #5b6b8c;
+          cursor: pointer;
+          transition: color 0.15s ease;
+        }
+        .sidebar-foot-btn:hover { color: #7ee7f8; }
+        .sidebar-foot-btn.danger:hover { color: #f87171; }
+      `}</style>
+    </aside>
   );
 }

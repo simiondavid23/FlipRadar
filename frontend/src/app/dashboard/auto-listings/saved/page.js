@@ -21,6 +21,7 @@ export default function AutoSavedPage() {
     <SavedIgnoredView
       title="Salvate & Ignorate"
       icon={Car}
+      breadcrumb={["AUTO ANUNȚURI", "SALVATE"]}
       fetchList={fetchList}
       updateStatus={(id, status) => autoListingsAPI.updateStatus(id, status)}
       deleteListing={(id) => autoListingsAPI.deleteListing(id)}

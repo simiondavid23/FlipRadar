@@ -4,22 +4,17 @@
 // și îl scoate din listă. Randare cu ListingFeedCard/ListingDetailModal ale modulului,
 // injectate prin render-props (`renderCard`/`renderModal`) ca să rămână identice cu feed-ul.
 import { useState, useEffect, useCallback } from "react";
+import TopBar from "./TopBar";
+import PageHeading, { Hl } from "./PageHeading";
 
 const TABS = [
   { value: "saved", label: "Salvate" },
   { value: "ignored", label: "Ignorate" },
 ];
 
-function tabPill(active) {
-  return {
-    padding: "0.5rem 1.25rem", borderRadius: "999px", fontSize: "0.875rem", fontWeight: 600,
-    cursor: "pointer", border: "1px solid var(--border-color)",
-    backgroundColor: active ? "var(--blue-primary)" : "transparent",
-    color: active ? "white" : "var(--text-secondary)", transition: "all 0.15s ease",
-  };
-}
-
-export default function SavedIgnoredView({ title, icon: Icon, fetchList, updateStatus, deleteListing, renderCard, renderModal }) {
+export default function SavedIgnoredView({
+  title, icon: Icon, breadcrumb = ["SALVATE"], fetchList, updateStatus, deleteListing, renderCard, renderModal,
+}) {
   const [tab, setTab] = useState("saved");
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -58,31 +53,43 @@ export default function SavedIgnoredView({ title, icon: Icon, fetchList, updateS
   const onIgnore = (l) => changeStatus(l.id, l.status === "ignored" ? "active" : "ignored");
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          {Icon && <Icon style={{ width: "22px", height: "22px", color: "#2563eb" }} />}
-          {title}
-        </h1>
-        <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-          Anunțuri salvate și ignorate. Re-apasă acțiunea pentru a le readuce în feed.
-        </p>
-      </div>
+    <div>
+      <TopBar path={breadcrumb} />
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+      <PageHeading
+        icon={Icon}
+        title={title}
+        subtitle={
+          loading
+            ? "Anunțuri salvate și ignorate. Re-apasă acțiunea pentru a le readuce în feed."
+            : <>Anunțuri salvate și ignorate — <Hl>{listings.length} {tab === "saved" ? "salvate" : "ignorate"}</Hl>. Re-apasă acțiunea pentru a le readuce în feed.</>
+        }
+      />
+
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "16px" }}>
         {TABS.map((t) => (
-          <button key={t.value} onClick={() => { setTab(t.value); setSelectedBulk(new Set()); }} style={tabPill(tab === t.value)}>{t.label}</button>
+          <button
+            key={t.value}
+            onClick={() => { setTab(t.value); setSelectedBulk(new Set()); }}
+            className={`tab-pill${tab === t.value ? " active" : ""}`}
+            style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
+          >
+            {tab === t.value && <span className="pill-nav-dot" />}
+            {t.label}
+          </button>
         ))}
       </div>
 
       {loading ? (
-        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        </div>
       ) : listings.length === 0 ? (
-        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem" }}>
+        <div className="glass-panel" style={{ padding: "3rem", textAlign: "center", marginTop: "14px", color: "var(--text-dim)", fontSize: "12.5px" }}>
           {tab === "saved" ? "Niciun anunț salvat." : "Niciun anunț ignorat."}
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(305px, 1fr))", gap: "14px", marginTop: "14px" }}>
           {listings.map((l) => renderCard(l, {
             onOpen: () => setSelected(l),
             onSave: () => onSave(l),
@@ -99,8 +106,6 @@ export default function SavedIgnoredView({ title, icon: Icon, fetchList, updateS
         onSave: () => onSave(selected),
         onIgnore: () => onIgnore(selected),
       })}
-
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

@@ -45,7 +45,7 @@ function AccountField({ label, value }) {
 }
 
 export default function AutoLotCard({ lot, onSave, onDelete, isSaved, busy }) {
-  const plat = PLATFORM[lot.platform] || { label: lot.platform, color: "#64748b" };
+  const plat = PLATFORM[lot.platform] || { label: lot.platform, color: "#a9b8d6" };
   const title = lot.title || [lot.year, lot.make, lot.model].filter(Boolean).join(" ") || "Lot auto";
   const dmgColor = damageColor(lot.damage_primary);
   const auctionDate = fmtDate(lot.auction_date);
@@ -53,10 +53,10 @@ export default function AutoLotCard({ lot, onSave, onDelete, isSaved, busy }) {
 
   return (
     <div style={{
-      backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-      borderRadius: "0.75rem", overflow: "hidden", display: "flex", flexDirection: "column",
+      background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+      borderRadius: "12px", overflow: "hidden", display: "flex", flexDirection: "column",
     }}>
-      <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", backgroundColor: "var(--bg-dark)" }}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", background: "rgba(4,9,18,.45)" }}>
         {lot.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={lot.thumbnail_url} alt={title} loading="lazy"
@@ -67,7 +67,7 @@ export default function AutoLotCard({ lot, onSave, onDelete, isSaved, busy }) {
             <ImageOff style={{ width: "28px", height: "28px" }} />
           </div>
         )}
-        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: plat.color }}>
+        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "8px", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: plat.color }}>
           {plat.label}
         </span>
       </div>
@@ -79,7 +79,7 @@ export default function AutoLotCard({ lot, onSave, onDelete, isSaved, busy }) {
         </h3>
 
         {lot.damage_primary && (
-          <span style={{ fontSize: "0.6875rem", fontWeight: 700, color: dmgColor, border: `1px solid ${dmgColor}`, borderRadius: "0.375rem", padding: "0.0625rem 0.375rem", alignSelf: "flex-start" }}>
+          <span style={{ fontSize: "0.6875rem", fontWeight: 700, color: dmgColor, border: `1px solid ${dmgColor}`, borderRadius: "8px", padding: "0.0625rem 0.375rem", alignSelf: "flex-start" }}>
             {lot.damage_primary}
           </span>
         )}
@@ -124,7 +124,7 @@ export default function AutoLotCard({ lot, onSave, onDelete, isSaved, busy }) {
           )}
           {lot.source_url && (
             <a href={lot.source_url} target="_blank" rel="noopener noreferrer"
-              style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", padding: "0.375rem 0.625rem", borderRadius: "0.5rem", fontSize: "0.7rem", fontWeight: 600, border: "none", backgroundColor: "var(--blue-primary)", color: "white", textDecoration: "none" }}>
+              style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", padding: "0.375rem 0.625rem", borderRadius: "9px", fontSize: "10.5px", fontWeight: 600, background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", textDecoration: "none" }}>
               <ExternalLink style={{ width: "13px", height: "13px" }} /> {plat.label}
             </a>
           )}
@@ -137,7 +137,7 @@ export default function AutoLotCard({ lot, onSave, onDelete, isSaved, busy }) {
 function btnStyle(color, bg, isSaved) {
   return {
     flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem",
-    padding: "0.375rem", borderRadius: "0.5rem", fontSize: "0.7rem", fontWeight: 600,
+    padding: "0.375rem", borderRadius: "10px", fontSize: "0.7rem", fontWeight: 600,
     border: "1px solid var(--border-color)", cursor: isSaved ? "default" : "pointer",
     backgroundColor: bg, color,
   };

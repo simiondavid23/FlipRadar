@@ -16,7 +16,7 @@ const SOURCE_COLORS = {
   "altex.ro": { bg: "rgba(59,130,246,0.2)", fg: "#60a5fa" },
   "sole.ro": { bg: "rgba(236,72,153,0.2)", fg: "#f472b6" },
   "farmaciatei.ro": { bg: "rgba(34,197,94,0.2)", fg: "#4ade80" },
-  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#facc15" },
+  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#fde047" },
   "pcgarage.ro": { bg: "rgba(168,85,247,0.2)", fg: "#c084fc" },
 };
 
@@ -230,7 +230,7 @@ function ProductDetailInner() {
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-        <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
     );
   }
@@ -296,8 +296,8 @@ function ProductDetailInner() {
 
       {/* Product header */}
       <div style={{
-        backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem", padding: "1.5rem", marginBottom: "1rem",
+        background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+        borderRadius: "12px", padding: "1.5rem", marginBottom: "1rem",
       }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
@@ -325,7 +325,7 @@ function ProductDetailInner() {
                   style={{
                     padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
                     backgroundColor: copiedKey === "ean-main" ? "rgba(234,179,8,0.35)" : "rgba(234,179,8,0.15)",
-                    color: "#facc15", fontFamily: "monospace", border: "none", cursor: "pointer",
+                    color: "#fde047", fontFamily: "monospace", border: "none", cursor: "pointer",
                   }}
                 >
                   {copiedKey === "ean-main" ? "Copiat!" : `EAN: ${product.ean}`}
@@ -374,7 +374,7 @@ function ProductDetailInner() {
               title={!product.sources || product.sources.length === 0 ? "Produsul nu are nicio sursa scrapeable" : `Interogheaza ${product.sources.length} sursa/surse`}
               style={{
                 display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-                borderRadius: "0.5rem",
+                borderRadius: "10px",
                 backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80",
                 border: "none",
                 cursor: refreshing || !product.sources || product.sources.length === 0 ? "not-allowed" : "pointer",
@@ -390,7 +390,7 @@ function ProductDetailInner() {
               title="Adauga in Produse Urmarite"
               style={{
                 display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-                borderRadius: "0.5rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa",
+                borderRadius: "10px", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa",
                 border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
               }}
             >
@@ -401,7 +401,7 @@ function ProductDetailInner() {
               title="Creeaza alerta"
               style={{
                 display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-                borderRadius: "0.5rem", backgroundColor: "rgba(234,179,8,0.15)", color: "#facc15",
+                borderRadius: "10px", backgroundColor: "rgba(234,179,8,0.15)", color: "#fde047",
                 border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
               }}
             >
@@ -412,7 +412,7 @@ function ProductDetailInner() {
                 href={product.source_url} target="_blank" rel="noopener noreferrer"
                 style={{
                   display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-                  borderRadius: "0.5rem", backgroundColor: "rgba(59,130,246,0.15)", color: "#60a5fa",
+                  borderRadius: "10px", backgroundColor: "rgba(59,130,246,0.15)", color: "#60a5fa",
                   textDecoration: "none", fontSize: "0.8125rem", fontWeight: 500,
                 }}
               >
@@ -424,7 +424,7 @@ function ProductDetailInner() {
               title="Sterge produs din baza de date"
               style={{
                 display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-                borderRadius: "0.5rem", backgroundColor: "rgba(248,113,113,0.15)", color: "#f87171",
+                borderRadius: "10px", backgroundColor: "rgba(248,113,113,0.15)", color: "#f87171",
                 border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
               }}
             >
@@ -435,7 +435,7 @@ function ProductDetailInner() {
 
         {refreshResults && refreshResults.length > 0 && (
           <div style={{
-            marginTop: "0.75rem", padding: "0.75rem", borderRadius: "0.5rem",
+            marginTop: "0.75rem", padding: "0.75rem", borderRadius: "10px",
             backgroundColor: "rgba(15,23,42,0.6)", border: "1px solid var(--border-color)",
             display: "flex", flexDirection: "column", gap: "0.375rem",
           }}>
@@ -473,8 +473,8 @@ function ProductDetailInner() {
               value={alertForm.alert_type}
               onChange={(e) => setAlertForm({ ...alertForm, alert_type: e.target.value })}
               style={{
-                backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
+                background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+                borderRadius: "8px", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                 fontSize: "0.8125rem", outline: "none", cursor: "pointer",
               }}
             >
@@ -490,8 +490,8 @@ function ProductDetailInner() {
               required
               placeholder="ex: 25.00"
               style={{
-                backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
+                background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+                borderRadius: "8px", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                 fontSize: "0.8125rem", width: "120px", outline: "none",
               }}
             />
@@ -499,8 +499,8 @@ function ProductDetailInner() {
               value={alertForm.currency}
               onChange={(e) => setAlertForm({ ...alertForm, currency: e.target.value })}
               style={{
-                backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
+                background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+                borderRadius: "8px", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                 fontSize: "0.8125rem", outline: "none", cursor: "pointer",
               }}
             >
@@ -509,8 +509,7 @@ function ProductDetailInner() {
               <option value="USD">USD</option>
             </select>
             <button type="submit" style={{
-              padding: "0.375rem 0.875rem", borderRadius: "0.375rem", backgroundColor: "#2563eb",
-              color: "var(--text-primary)", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+              padding: "6px 13px", borderRadius: "9px", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
             }}>
               Creeaza alerta
             </button>
@@ -542,8 +541,8 @@ function ProductDetailInner() {
         if (product.resale_price == null) {
           return (
             <div style={{
-              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-              borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+              background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+              borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem",
             }}>
               {primaryRef ? (
                 <div>
@@ -560,21 +559,21 @@ function ProductDetailInner() {
                     value={resaleValue} onChange={(e) => setResaleValue(e.target.value)}
                     placeholder={`ex: 100 ${money}`}
                     style={{
-                      backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                      borderRadius: "0.375rem", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
+                      background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+                      borderRadius: "8px", padding: "0.375rem 0.625rem", color: "var(--text-primary)",
                       fontSize: "0.8125rem", width: "140px", outline: "none",
                     }}
                   />
                   <button type="button" disabled={resaleSaving} onClick={saveResalePrice}
                     style={{
-                      padding: "0.375rem 0.875rem", borderRadius: "0.375rem", backgroundColor: "var(--green-primary)",
-                      color: "white", border: "none", cursor: resaleSaving ? "wait" : "pointer", fontSize: "0.8125rem", fontWeight: 500,
+                      padding: "0.375rem 0.875rem", borderRadius: "8px", backgroundColor: "var(--green-primary)",
+                      cursor: resaleSaving ? "wait" : "pointer", fontSize: "12.5px", fontWeight: 600,
                     }}>
                     {resaleSaving ? "Se salveaza..." : "Salveaza"}
                   </button>
                   <button type="button" onClick={() => { setResaleEditing(false); setResaleValue(""); }}
                     style={{
-                      padding: "0.375rem 0.75rem", borderRadius: "0.375rem", backgroundColor: "transparent",
+                      padding: "0.375rem 0.75rem", borderRadius: "8px", backgroundColor: "transparent",
                       color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem",
                     }}>
                     Anuleaza
@@ -589,7 +588,7 @@ function ProductDetailInner() {
                     onClick={() => { setResaleValue(product.resale_price ?? ""); setResaleEditing(true); }}
                     style={{
                       display: "flex", alignItems: "center", gap: "0.375rem",
-                      padding: "0.5rem 0.875rem", borderRadius: "0.5rem",
+                      padding: "0.5rem 0.875rem", borderRadius: "10px",
                       backgroundColor: "rgba(167,139,250,0.15)", color: "#a78bfa",
                       border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
                     }}>
@@ -618,16 +617,16 @@ function ProductDetailInner() {
 
         return (
           <div style={{
-            backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
+            background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
             borderLeft: `3px solid ${vColor}`,
-            borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+            borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
               <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                 Analiza Profitabilitate
               </h2>
               <span style={{
-                padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 700,
+                padding: "0.25rem 0.625rem", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 700,
                 backgroundColor: `${vColor}22`, color: vColor, letterSpacing: "0.03em",
               }}>
                 {vLabel}
@@ -669,8 +668,8 @@ function ProductDetailInner() {
 
       {/* FASHION-3b — referinte de revanzare (net-ul vine calculat din backend) */}
       <div style={{
-        backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+        background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+        borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
           <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
@@ -679,7 +678,7 @@ function ProductDetailInner() {
           <button type="button" onClick={() => setRefDialog({})}
             style={{
               display: "flex", alignItems: "center", gap: "0.375rem",
-              padding: "0.5rem 0.875rem", borderRadius: "0.5rem",
+              padding: "0.5rem 0.875rem", borderRadius: "10px",
               backgroundColor: "rgba(167,139,250,0.15)", color: "#a78bfa",
               border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
             }}>
@@ -697,7 +696,7 @@ function ProductDetailInner() {
             {references.map((r) => (
               <div key={r.id} style={{
                 display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.75rem",
-                backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem", flexWrap: "wrap",
+                background: "rgba(4,9,18,.45)", borderRadius: "10px", flexWrap: "wrap",
                 border: r.is_primary ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-color)",
               }}>
                 <span style={{
@@ -728,7 +727,7 @@ function ProductDetailInner() {
                 {!r.is_primary && (
                   <button type="button" disabled={refBusy === r.id} onClick={() => handleSetPrimary(r.id)}
                     style={{
-                      padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem",
+                      padding: "0.25rem 0.625rem", borderRadius: "8px", fontSize: "0.75rem",
                       backgroundColor: "transparent", color: "#4ade80",
                       border: "1px solid rgba(34,197,94,0.4)", cursor: "pointer",
                     }}>
@@ -737,7 +736,7 @@ function ProductDetailInner() {
                 )}
                 <button type="button" onClick={() => setRefDialog({ reference: r })}
                   style={{
-                    padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem",
+                    padding: "0.25rem 0.625rem", borderRadius: "8px", fontSize: "0.75rem",
                     backgroundColor: "transparent", color: "var(--text-secondary)",
                     border: "1px solid var(--border-color)", cursor: "pointer",
                   }}>
@@ -770,8 +769,8 @@ function ProductDetailInner() {
 
       {product.sources && product.sources.length > 0 && (
         <div style={{
-          backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+          background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+          borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem",
         }}>
           <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.75rem" }}>
             Surse stocate ({product.sources.length})
@@ -782,7 +781,7 @@ function ProductDetailInner() {
               return (
                 <div key={s.id} style={{
                   display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.75rem",
-                  backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem",
+                  background: "rgba(4,9,18,.45)", borderRadius: "10px",
                   border: isCheapest ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-color)",
                 }}>
                   <button
@@ -845,8 +844,8 @@ function ProductDetailInner() {
       {/* Sugestii surse cross-shop (potrivire pe nume) — asteapta confirmare */}
       {suggestions && suggestions.length > 0 && (
         <div style={{
-          backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+          background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+          borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem",
         }}>
           <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>
             Sugestii surse noi ({suggestions.length})
@@ -857,11 +856,11 @@ function ProductDetailInner() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {suggestions.map((sug) => {
               const busy = suggestionBusy === sug.id;
-              const sc = SOURCE_COLORS[sug.source] || { bg: "rgba(234,179,8,0.15)", fg: "#facc15" };
+              const sc = SOURCE_COLORS[sug.source] || { bg: "rgba(234,179,8,0.15)", fg: "#fde047" };
               return (
                 <div key={sug.id} style={{
                   display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.75rem",
-                  backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem",
+                  background: "rgba(4,9,18,.45)", borderRadius: "10px",
                   border: "1px solid rgba(234,179,8,0.3)",
                 }}>
                   <span style={{
@@ -890,7 +889,7 @@ function ProductDetailInner() {
                     title="Confirma si ataseaza ca sursa"
                     style={{
                       display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.375rem 0.625rem",
-                      borderRadius: "0.375rem", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80",
+                      borderRadius: "8px", backgroundColor: "rgba(34,197,94,0.15)", color: "#4ade80",
                       border: "none", cursor: busy ? "wait" : "pointer", fontSize: "0.75rem", fontWeight: 500, opacity: busy ? 0.6 : 1,
                     }}
                   >
@@ -901,7 +900,7 @@ function ProductDetailInner() {
                     title="Respinge sugestia"
                     style={{
                       display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.375rem 0.625rem",
-                      borderRadius: "0.375rem", backgroundColor: "rgba(248,113,113,0.15)", color: "#f87171",
+                      borderRadius: "8px", backgroundColor: "rgba(248,113,113,0.15)", color: "#f87171",
                       border: "none", cursor: busy ? "wait" : "pointer", fontSize: "0.75rem", fontWeight: 500, opacity: busy ? 0.6 : 1,
                     }}
                   >
@@ -928,8 +927,8 @@ function ProductDetailInner() {
 
         return (
           <div style={{
-            backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-            borderRadius: "0.75rem", padding: "1.25rem", marginBottom: "1rem",
+            background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+            borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem",
           }}>
             <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.875rem" }}>
               Comparatie preturi pe magazine
@@ -942,7 +941,7 @@ function ProductDetailInner() {
                   <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} width={110} />
                   <Tooltip
                     cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                    contentStyle={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                    contentStyle={{ background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", fontSize: "0.75rem" }}
                     labelStyle={{ color: "var(--text-secondary)" }}
                     itemStyle={{ color: "var(--text-primary)" }}
                     formatter={(v, n, item) => [`${Number(v).toFixed(2)} ${item?.payload?.currency || ""}`, "Pret"]}
@@ -987,21 +986,21 @@ function ProductDetailInner() {
 
       {/* Price stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1rem" }}>
-        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
+        <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret minim</p>
           <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#4ade80", margin: 0 }}>{lowest_price ?? "—"} {product.currency}</p>
         </div>
-        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
+        <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Minim 30 zile</p>
           <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#22d3ee", margin: 0 }}>
             {min30d != null ? `${min30d} ${product.currency}` : "—"}
           </p>
         </div>
-        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
+        <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret mediu</p>
           <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{average_price ?? "—"} {product.currency}</p>
         </div>
-        <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", textAlign: "center" }}>
+        <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Pret maxim</p>
           <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#f87171", margin: 0 }}>{highest_price ?? "—"} {product.currency}</p>
         </div>
@@ -1009,8 +1008,8 @@ function ProductDetailInner() {
 
       {/* Price chart */}
       <div style={{
-        backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem", padding: "1.5rem",
+        background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+        borderRadius: "12px", padding: "1.5rem",
       }}>
         <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1.25rem" }}>
           Evolutia pretului
@@ -1040,9 +1039,9 @@ function ProductDetailInner() {
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "var(--bg-card)",
+                    background: "var(--bg-card)", backdropFilter: "blur(20px)",
                     border: "1px solid var(--border-color)",
-                    borderRadius: "0.5rem",
+                    borderRadius: "10px",
                     fontSize: "0.8125rem",
                   }}
                   labelStyle={{ color: "var(--text-secondary)" }}
@@ -1077,8 +1076,8 @@ function ProductDetailInner() {
       {/* Price history table with source */}
       {price_history && price_history.length > 0 && (
         <div style={{
-          backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem", padding: "1.5rem", marginTop: "1rem",
+          background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)",
+          borderRadius: "12px", padding: "1.5rem", marginTop: "1rem",
         }}>
           <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>
             Istoric preturi detaliat

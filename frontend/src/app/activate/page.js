@@ -1,8 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
-import Image from "next/image";
-import { KeyRound, ArrowRight, AlertCircle, TrendingUp, ShieldCheck, Zap, Copy, Check } from "lucide-react";
+import { KeyRound, ArrowRight, AlertCircle, Copy, Check, Lock } from "lucide-react";
 import { licenseAPI } from "@/lib/api";
+import AuthShell, {
+  AuthCardHeader, authLabelStyle, authFieldStyle, authInputStyle,
+} from "@/components/shared/AuthShell";
+
+// Cheile emise au forma FLIP.<payload>.<semnatura>; acceptam si formatul
+// scurt cu cratime din materialele de vanzare, deci validam doar prefixul.
+const looksValid = (k) => /^FLIP[.-]\S+/i.test(k.trim());
 
 export default function ActivatePage() {
   const [licenseKey, setLicenseKey] = useState("");
@@ -72,265 +78,132 @@ export default function ActivatePage() {
     }
   };
 
-  const inputStyle = {
-    width: "100%",
-    borderRadius: "0.75rem",
-    color: "var(--text-primary)",
-    fontSize: "0.875rem",
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    backgroundColor: "var(--bg-dark)",
-    border: "1px solid var(--border-color)",
-    paddingLeft: "3rem",
-    paddingRight: "1rem",
-    paddingTop: "0.75rem",
-    paddingBottom: "0.75rem",
-    outline: "none",
-  };
-
-  const labelStyle = { display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.625rem", color: "var(--text-secondary)" };
-
   if (checking) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-dark)" }}>
-        <div style={{ width: "2rem", height: "2rem", border: "3px solid var(--border-color)", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#04070e" }}>
+        <div style={{ width: "2rem", height: "2rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
     );
   }
 
+  const formatOk = licenseKey.trim().length > 0 && looksValid(licenseKey);
+
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
-      <div className="login-topbar" style={{ alignItems: "center", padding: "1.5rem", position: "relative", zIndex: 10 }}>
-        <Image
-          src="/flipradar-logo.svg"
-          alt="FlipRadar"
-          width={180}
-          height={39}
-          priority
-          style={{ height: "auto" }}
-        />
-      </div>
+    <AuthShell>
+      <AuthCardHeader
+        title="Activare licență"
+        subtitle="Introdu cheia primită la prima activare pe acest computer"
+      />
 
-      <div className="login-grid" style={{ flex: 1, display: "grid", alignItems: "center" }}>
-        <div className="login-branding" style={{ flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", position: "relative", overflow: "hidden" }}>
-          <div
-            style={{
-              position: "absolute", inset: 0,
-              backgroundImage: `linear-gradient(rgba(51, 65, 85, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(51, 65, 85, 0.3) 1px, transparent 1px)`,
-              backgroundSize: "60px 60px",
-              maskImage: "radial-gradient(ellipse at center, black 40%, transparent 75%)",
-              WebkitMaskImage: "radial-gradient(ellipse at center, black 40%, transparent 75%)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute", top: "50%", left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: "500px", height: "500px", borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, transparent 70%)",
-            }}
-          />
-          <div style={{ position: "relative", zIndex: 10, textAlign: "center", maxWidth: "32rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <h1 style={{ fontSize: "2.25rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.2 }}>
-              Activează-ți <span style={{ color: "#60a5fa" }}>licența</span> FlipRadar
-            </h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "1.125rem" }}>
-              O singură activare pe acest calculator. După ce introduci cheia, aplicația pornește automat la fiecare deschidere.
-            </p>
-            <div style={{ alignSelf: "center", display: "inline-flex", flexDirection: "column", gap: "0.75rem", paddingTop: "1rem" }}>
-              {[
-                { icon: TrendingUp, text: "Analiza automata a profitabilitatii" },
-                { icon: Zap, text: "Alerte in timp real pentru oportunitati" },
-                { icon: ShieldCheck, text: "Verificare offline, fara cont online" },
-              ].map(({ icon: Icon, text }, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                  <div style={{ width: "2.25rem", height: "2.25rem", borderRadius: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, backgroundColor: "rgba(37, 99, 235, 0.15)" }}>
-                    <Icon style={{ width: "1rem", height: "1rem", color: "#60a5fa" }} />
-                  </div>
-                  <span style={{ color: "var(--text-secondary)", fontSize: "0.875rem", textAlign: "left" }}>{text}</span>
-                </div>
-              ))}
-            </div>
+      {error && (
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: "9px", padding: "11px 13px",
+            borderRadius: "11px", marginBottom: "16px",
+            background: "rgba(248,113,113,.08)", border: "1px solid rgba(248,113,113,.3)",
+          }}
+        >
+          <AlertCircle style={{ width: "14px", height: "14px", color: "#f87171", flexShrink: 0 }} strokeWidth={1.8} />
+          <p style={{ color: "#fca5a5", fontSize: "12px", margin: 0 }}>{error}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div>
+          <label style={authLabelStyle}>Cheie de licență</label>
+          <div style={authFieldStyle}>
+            <KeyRound style={{ width: "14px", height: "14px", color: "#54648a", flexShrink: 0 }} strokeWidth={1.8} />
+            <input
+              type="text"
+              value={licenseKey}
+              onChange={(e) => setLicenseKey(e.target.value)}
+              placeholder="FLIP-XXXX-XXXX-XXXX"
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+              style={{ ...authInputStyle, fontFamily: "var(--font-mono)", letterSpacing: ".12em" }}
+            />
           </div>
+          {formatOk && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px" }}>
+              <Check style={{ width: "11px", height: "11px", color: "#4ade80" }} strokeWidth={2.4} />
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".08em", color: "#4ade80" }}>
+                FORMAT VALID · SE VERIFICĂ LA ACTIVARE
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="login-form-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
-          <div style={{ width: "100%", maxWidth: "28rem" }}>
-            <div className="login-mobile-logo" style={{ textAlign: "center", marginBottom: "2rem" }}>
-              <Image
-                src="/flipradar-icon.svg"
-                alt=""
-                width={56}
-                height={56}
-                priority
-                style={{ marginBottom: "0.75rem" }}
-              />
-              <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>FlipRadar</h1>
+        {machineCode && (
+          <div>
+            <label style={authLabelStyle}>Codul acestui computer</label>
+            <div
+              style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                borderRadius: "11px", background: "rgba(4,9,18,.5)",
+                border: "1px solid rgba(94,140,255,.11)", padding: "10px 10px 10px 13px",
+              }}
+            >
+              <code
+                style={{
+                  flex: 1, fontFamily: "var(--font-mono)", fontSize: "12px",
+                  letterSpacing: ".06em", color: "#e6edf9", userSelect: "all", overflowWrap: "anywhere",
+                }}
+              >
+                {machineCode}
+              </code>
+              <button
+                type="button"
+                onClick={handleCopy}
+                aria-label="Copiază codul acestui computer"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "5px", flexShrink: 0,
+                  borderRadius: "9px", border: "1px solid rgba(94,140,255,.16)",
+                  background: "transparent", color: copied ? "#4ade80" : "var(--text-dim)",
+                  fontFamily: "var(--font-sans)", fontSize: "11px", cursor: "pointer",
+                  padding: "5px 10px", transition: "color 0.2s",
+                }}
+              >
+                {copied ? (
+                  <><Check style={{ width: "12px", height: "12px" }} strokeWidth={2} /> Copiat</>
+                ) : (
+                  <><Copy style={{ width: "12px", height: "12px" }} strokeWidth={2} /> Copiază</>
+                )}
+              </button>
             </div>
-
-            <div style={{ marginBottom: "2.5rem", textAlign: "center" }}>
-              <h2 style={{ fontSize: "1.875rem", fontWeight: 600, color: "var(--text-primary)" }}>Activare</h2>
-              <p style={{ color: "var(--text-secondary)", marginTop: "0.75rem", fontSize: "1rem" }}>Lipește cheia de activare<br />primită de la furnizor</p>
-            </div>
-
-            {error && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "1rem", borderRadius: "0.75rem", marginBottom: "1.5rem", backgroundColor: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.15)" }}>
-                <AlertCircle style={{ width: "1rem", height: "1rem", color: "#f87171", flexShrink: 0 }} />
-                <p style={{ color: "#f87171", fontSize: "0.875rem", margin: 0 }}>{error}</p>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.5rem", marginBottom: 0 }}>
-              <div>
-                <label style={labelStyle}>Cheie de activare</label>
-                <div style={{ position: "relative" }}>
-                  <KeyRound style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", width: "1.25rem", height: "1.25rem", color: "var(--text-muted)", pointerEvents: "none", zIndex: 10 }} />
-                  <input
-                    type="text"
-                    value={licenseKey}
-                    onChange={(e) => setLicenseKey(e.target.value)}
-                    placeholder="FLIP.…"
-                    autoComplete="off"
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    required
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              {machineCode && (
-                <div>
-                  <label style={labelStyle}>Codul acestui computer</label>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.75rem",
-                      borderRadius: "0.75rem",
-                      backgroundColor: "var(--bg-dark)",
-                      border: "1px solid var(--border-color)",
-                      padding: "0.75rem 0.75rem 0.75rem 1rem",
-                    }}
-                  >
-                    <code
-                      style={{
-                        flex: 1,
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                        fontSize: "0.875rem",
-                        letterSpacing: "0.06em",
-                        color: "var(--text-primary)",
-                        userSelect: "all",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {machineCode}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      aria-label="Copiază codul acestui computer"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.375rem",
-                        flexShrink: 0,
-                        borderRadius: "0.5rem",
-                        border: "1px solid var(--border-color)",
-                        backgroundColor: "transparent",
-                        color: copied ? "#4ade80" : "var(--text-secondary)",
-                        fontSize: "0.8125rem",
-                        cursor: "pointer",
-                        paddingLeft: "0.625rem",
-                        paddingRight: "0.625rem",
-                        paddingTop: "0.375rem",
-                        paddingBottom: "0.375rem",
-                        transition: "color 0.2s",
-                      }}
-                    >
-                      {copied ? (
-                        <>
-                          <Check style={{ width: "0.875rem", height: "0.875rem" }} />
-                          Copiat
-                        </>
-                      ) : (
-                        <>
-                          <Copy style={{ width: "0.875rem", height: "0.875rem" }} />
-                          Copiază
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", lineHeight: 1.5, margin: "0.625rem 0 0" }}>
-                    Trimite acest cod vânzătorului pentru a primi o cheie de activare legată de acest computer.
-                  </p>
-                </div>
-              )}
-
-              <div style={{ paddingTop: "0.5rem" }}>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "0.5rem",
-                    borderRadius: "0.75rem",
-                    color: "var(--text-primary)",
-                    fontWeight: 500,
-                    fontSize: "0.875rem",
-                    border: "none",
-                    cursor: loading ? "not-allowed" : "pointer",
-                    opacity: loading ? 0.5 : 1,
-                    background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
-                    boxShadow: "0 4px 14px rgba(37, 99, 235, 0.35)",
-                    paddingTop: "0.875rem",
-                    paddingBottom: "0.875rem",
-                    transition: "box-shadow 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!loading) e.currentTarget.style.boxShadow = "0 6px 20px rgba(37, 99, 235, 0.5)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = "0 4px 14px rgba(37, 99, 235, 0.35)";
-                  }}
-                >
-                  {loading ? (
-                    <div style={{ width: "1.25rem", height: "1.25rem", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-                  ) : (
-                    <>Activează <ArrowRight style={{ width: "1rem", height: "1rem" }} /></>
-                  )}
-                </button>
-              </div>
-            </form>
-
-            <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "2rem", lineHeight: 1.6 }}>
-              Cheia se primește de la furnizor și se lipește o singură dată. Verificarea se face local, fără conexiune la internet.
+            <p style={{ color: "#54648a", fontSize: "11px", lineHeight: 1.5, margin: "8px 0 0" }}>
+              Trimite acest cod vânzătorului pentru a primi o cheie de activare legată de acest computer.
             </p>
           </div>
-        </div>
-      </div>
+        )}
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .login-topbar { display: flex; }
-        .login-branding { display: flex; }
-        .login-mobile-logo { display: none; }
-        .login-grid { grid-template-columns: 1fr 1fr; }
-        @media (max-width: 1024px) {
-          .login-topbar { display: none; }
-          .login-branding { display: none; }
-          .login-mobile-logo { display: block; }
-          .login-grid { grid-template-columns: 1fr; }
-          .login-form-wrap { padding: 1.5rem; }
-        }
-        @media (min-width: 1024px) {
-          .login-form-wrap { padding: 3rem; }
-        }
-      `}</style>
-    </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn-auth"
+        >
+          {loading ? (
+            <div style={{ width: "16px", height: "16px", border: "2px solid rgba(34,211,238,.5)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          ) : (
+            <>Activează pe acest computer <ArrowRight style={{ width: "13px", height: "13px" }} strokeWidth={2} /></>
+          )}
+        </button>
+
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: "9px", padding: "10px 13px",
+            borderRadius: "11px", background: "rgba(4,9,18,.5)", border: "1px solid rgba(94,140,255,.11)",
+          }}
+        >
+          <Lock style={{ width: "13px", height: "13px", color: "#41547a", flexShrink: 0 }} strokeWidth={1.8} />
+          <span style={{ fontSize: "11px", color: "#54648a", lineHeight: 1.5 }}>
+            Cheia se leagă de acest computer la prima activare și pornește automat aplicația la următoarele deschideri.
+            Verificarea se face local, fără conexiune la internet.
+          </span>
+        </div>
+      </form>
+    </AuthShell>
   );
 }

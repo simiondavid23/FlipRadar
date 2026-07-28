@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { productsAPI, trackedProductsAPI } from "@/lib/api";
 import Link from "next/link";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
 import { Search, Plus, Eye, ExternalLink, Package, X, ChevronRight, Trash2, Pencil, Tag, Save, Filter, RefreshCcw } from "lucide-react";
 
 // FlipRadar — ITEM 9: optiuni fixe pentru selectorul de sursa. Valorile trebuie
@@ -25,20 +27,32 @@ function computeRoi(price, resale) {
 function RoiBadge({ price, resale }) {
   const roi = computeRoi(price, resale);
   if (roi == null) return null;
-  let bg, color, label;
-  if (roi >= 30) { bg = "rgba(22,163,74,0.15)"; color = "#4ade80"; label = `ROI ridicat ${roi.toFixed(1)}%`; }
-  else if (roi >= 15) { bg = "rgba(234,179,8,0.15)"; color = "#facc15"; label = `ROI mediu ${roi.toFixed(1)}%`; }
-  else if (roi >= 0) { bg = "rgba(251,146,60,0.15)"; color = "#fb923c"; label = `ROI scazut ${roi.toFixed(1)}%`; }
-  else { bg = "rgba(239,68,68,0.15)"; color = "#f87171"; label = "Neprofitabil"; }
+  let rgb, color, label;
+  if (roi >= 30) { rgb = "74,222,128"; color = "#4ade80"; label = `ROI ridicat ${roi.toFixed(1)}%`; }
+  else if (roi >= 15) { rgb = "253,224,71"; color = "#fde047"; label = `ROI mediu ${roi.toFixed(1)}%`; }
+  else if (roi >= 0) { rgb = "251,146,60"; color = "#fb923c"; label = `ROI scazut ${roi.toFixed(1)}%`; }
+  else { rgb = "248,113,113"; color = "#f87171"; label = "Neprofitabil"; }
   return (
     <span style={{
-      padding: "2px 8px", borderRadius: "20px",
-      fontSize: "11px", fontWeight: 600,
-      backgroundColor: bg, color,
+      padding: "2.5px 7px", borderRadius: "7px",
+      fontFamily: "var(--font-mono)", fontSize: "8.5px", fontWeight: 700, letterSpacing: ".08em",
+      textTransform: "uppercase",
+      background: `rgba(${rgb},0.14)`, border: `1px solid rgba(${rgb},0.4)`, color,
     }}>
       {label}
     </span>
   );
+}
+
+// Chip mono pentru codurile copiabile (SKU / EAN / sursa) din randul de produs.
+function codeChipStyle(rgb, color, copied) {
+  return {
+    padding: "2.5px 7px", borderRadius: "7px",
+    fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".08em",
+    background: `rgba(${rgb},${copied ? 0.28 : 0.14})`,
+    border: `1px solid rgba(${rgb},0.4)`,
+    color, cursor: "pointer",
+  };
 }
 
 export default function ProductsPage() {
@@ -305,9 +319,9 @@ export default function ProductsPage() {
   };
 
   const inputBaseStyle = {
-    backgroundColor: "var(--bg-dark)",
+    background: "rgba(4,9,18,.45)",
     border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem",
+    borderRadius: "10px",
     padding: "0.5rem 0.75rem",
     color: "var(--text-primary)",
     fontSize: "0.875rem",
@@ -331,46 +345,36 @@ export default function ProductsPage() {
     .slice(0, 8);
 
   return (
-    <div style={{ maxWidth: "960px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Descopera Oportunitati</h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-            Cauta produse si identifica oportunitati de revanzare
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <select
-            value={sortBy}
-            onChange={(e) => handleSortChange(e.target.value)}
-            style={{ ...inputBaseStyle, width: "auto", cursor: "pointer", paddingTop: "0.5rem", paddingBottom: "0.5rem" }}
-          >
-            <option value="newest">Sorteaza: Implicit</option>
-            <option value="price_asc">Pret: crescator</option>
-            <option value="price_desc">Pret: descrescator</option>
-            <option value="roi_desc">ROI: descrescator</option>
-            <option value="name_asc">Nume: A-Z</option>
-          </select>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            style={{
-              display: "flex", alignItems: "center", gap: "0.5rem",
-              padding: "0.5rem 1rem", borderRadius: "0.5rem",
-              backgroundColor: showAddForm ? "transparent" : "var(--blue-primary)",
-              color: showAddForm ? "var(--text-secondary)" : "white",
-              border: showAddForm ? "1px solid var(--border-color)" : "none",
-              cursor: "pointer", fontSize: "0.875rem", fontWeight: 500,
-              transition: "all 0.15s ease",
-            }}
-          >
-            {showAddForm ? <><X style={{ width: "16px", height: "16px" }} /> Inchide</> : <><Plus style={{ width: "16px", height: "16px" }} /> Adauga Produs</>}
-          </button>
-        </div>
-      </div>
+    <div>
+      <TopBar path={["CATALOG", "OPORTUNITĂȚI"]}>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className={showAddForm ? "btn-neutral" : "btn-cyan"}
+        >
+          {showAddForm ? <><X style={{ width: "13px", height: "13px" }} strokeWidth={2} /> Închide</> : <><Plus style={{ width: "13px", height: "13px" }} strokeWidth={2.2} /> Adaugă produs</>}
+        </button>
+      </TopBar>
+
+      <PageHeading
+        icon={Search}
+        title="Descoperă Oportunități"
+        subtitle={<>Caută produse și identifică oportunități de revânzare — <Hl>{products.length} produse</Hl> în vizualizare.</>}
+      >
+        <select
+          value={sortBy}
+          onChange={(e) => handleSortChange(e.target.value)}
+          style={{ ...inputBaseStyle, width: "auto", cursor: "pointer", padding: "8px 12px" }}
+        >
+          <option value="newest">Sorteaza: Implicit</option>
+          <option value="price_asc">Pret: crescator</option>
+          <option value="price_desc">Pret: descrescator</option>
+          <option value="roi_desc">ROI: descrescator</option>
+          <option value="name_asc">Nume: A-Z</option>
+        </select>
+      </PageHeading>
 
       {/* Search bar + filter toggle */}
-      <form onSubmit={handleSearch} style={{ marginBottom: "1rem" }}>
+      <form onSubmit={handleSearch} style={{ marginTop: "16px" }}>
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <div style={{ flex: 1, position: "relative" }}>
             <Search
@@ -396,26 +400,11 @@ export default function ProductsPage() {
           <button
             type="button"
             onClick={() => setShowFilters((s) => !s)}
-            style={{
-              padding: "0.625rem 1rem", borderRadius: "0.5rem",
-              backgroundColor: hasActiveFilters || showFilters ? "var(--blue-dim)" : "transparent",
-              color: hasActiveFilters || showFilters ? "var(--blue-light)" : "var(--text-secondary)",
-              border: "1px solid var(--border-color)", cursor: "pointer",
-              fontSize: "0.875rem", fontWeight: 500,
-              display: "flex", alignItems: "center", gap: "0.5rem",
-            }}
+            className={hasActiveFilters || showFilters ? "btn-cyan" : "btn-neutral"}
           >
-            <Filter style={{ width: "16px", height: "16px" }} /> Filtre
+            <Filter style={{ width: "13px", height: "13px" }} strokeWidth={1.8} /> Filtre
           </button>
-          <button
-            type="submit"
-            style={{
-              padding: "0.625rem 1.25rem", borderRadius: "0.5rem",
-              backgroundColor: "var(--blue-primary)", color: "var(--text-primary)",
-              border: "none", cursor: "pointer",
-              fontSize: "0.875rem", fontWeight: 500,
-            }}
-          >
+          <button type="submit" className="btn-cyan">
             Cauta
           </button>
         </div>
@@ -425,7 +414,7 @@ export default function ProductsPage() {
       {showFilters && (
         <div
           style={{
-            backgroundColor: "var(--bg-card)",
+            background: "var(--bg-card)", backdropFilter: "blur(20px)",
             border: "1px solid var(--border-color)",
             borderRadius: "var(--radius-card)",
             padding: "1.25rem",
@@ -465,8 +454,8 @@ export default function ProductsPage() {
             {showBrandDropdown && brandSuggestions.length > 0 && (
               <div style={{
                 position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
-                marginTop: "0.25rem", backgroundColor: "var(--bg-card)",
-                border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+                marginTop: "0.25rem", background: "var(--bg-card)", backdropFilter: "blur(20px)",
+                border: "1px solid var(--border-color)", borderRadius: "10px",
                 overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
               }}>
                 {brandSuggestions.map((b) => (
@@ -555,14 +544,13 @@ export default function ProductsPage() {
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button onClick={handleApplyFilters} style={{
-              padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)",
-              color: "var(--text-primary)", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+              padding: "9px 18px", borderRadius: "12px", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
               display: "flex", alignItems: "center", gap: "0.375rem",
             }}>
               <Filter style={{ width: "14px", height: "14px" }} /> Aplica filtre
             </button>
             <button onClick={handleResetFilters} style={{
-              padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "transparent",
+              padding: "0.5rem 1.25rem", borderRadius: "10px", backgroundColor: "transparent",
               color: "var(--text-secondary)", border: "1px solid var(--border-color)",
               cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
               display: "flex", alignItems: "center", gap: "0.375rem",
@@ -577,9 +565,9 @@ export default function ProductsPage() {
       {showAddForm && (
         <div
           style={{
-            backgroundColor: "var(--bg-card)",
+            background: "var(--bg-card)", backdropFilter: "blur(20px)",
             border: "1px solid var(--border-color)",
-            borderRadius: "0.75rem",
+            borderRadius: "12px",
             padding: "1.5rem",
             marginBottom: "1.5rem",
           }}
@@ -658,13 +646,12 @@ export default function ProductsPage() {
             </div>
             <div style={{ display: "flex", gap: "0.75rem" }}>
               <button type="submit" style={{
-                padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)",
-                color: "var(--text-primary)", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 500,
+                padding: "9px 18px", borderRadius: "12px", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 500,
               }}>
                 Salveaza
               </button>
               <button type="button" onClick={() => setShowAddForm(false)} style={{
-                padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "transparent",
+                padding: "0.5rem 1.25rem", borderRadius: "10px", backgroundColor: "transparent",
                 color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.875rem",
               }}>
                 Anuleaza
@@ -677,7 +664,7 @@ export default function ProductsPage() {
       {/* Products list */}
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "8rem" }}>
-          <div style={{ width: "2rem", height: "2rem", border: "3px solid var(--blue-primary)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ width: "2rem", height: "2rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
         </div>
       ) : products.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -685,9 +672,9 @@ export default function ProductsPage() {
             <div
               key={product.id}
               style={{
-                backgroundColor: "var(--bg-card)",
+                background: "var(--bg-card)", backdropFilter: "blur(20px)",
                 border: "1px solid var(--border-color)",
-                borderRadius: "0.75rem",
+                borderRadius: "12px",
                 padding: "1.25rem",
                 transition: "border-color 0.15s ease",
               }}
@@ -706,12 +693,7 @@ export default function ProductsPage() {
                         type="button"
                         onClick={() => copyToClipboard(product.sku, `sku-${product.id}`)}
                         title="Click pentru a copia SKU-ul"
-                        style={{
-                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
-                          backgroundColor: copiedKey === `sku-${product.id}` ? "rgba(34,197,94,0.35)" : "rgba(34,197,94,0.15)",
-                          color: "#4ade80", fontFamily: "monospace",
-                          border: "none", cursor: "pointer",
-                        }}
+                        style={codeChipStyle("74,222,128", "#4ade80", copiedKey === `sku-${product.id}`)}
                       >
                         {copiedKey === `sku-${product.id}` ? "Copiat!" : `SKU: ${product.sku}`}
                       </button>
@@ -721,12 +703,7 @@ export default function ProductsPage() {
                         type="button"
                         onClick={() => copyToClipboard(product.ean, `ean-${product.id}`)}
                         title="Click pentru a copia EAN-ul"
-                        style={{
-                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
-                          backgroundColor: copiedKey === `ean-${product.id}` ? "rgba(234,179,8,0.35)" : "rgba(234,179,8,0.15)",
-                          color: "#facc15", fontFamily: "monospace",
-                          border: "none", cursor: "pointer",
-                        }}
+                        style={codeChipStyle("253,224,71", "#fde047", copiedKey === `ean-${product.id}`)}
                       >
                         {copiedKey === `ean-${product.id}` ? "Copiat!" : `EAN: ${product.ean}`}
                       </button>
@@ -737,16 +714,12 @@ export default function ProductsPage() {
                           type="button"
                           onClick={() => copyToClipboard(product.source_url, `url-${product.id}`)}
                           title="Click pentru a copia linkul sursei"
-                          style={{
-                            padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
-                            backgroundColor: copiedKey === `url-${product.id}` ? "rgba(147,51,234,0.35)" : "rgba(147,51,234,0.15)",
-                            color: "#a78bfa", border: "none", cursor: "pointer",
-                          }}
+                          style={codeChipStyle("147,51,234", "#c4b5fd", copiedKey === `url-${product.id}`)}
                         >
                           {copiedKey === `url-${product.id}` ? "Copiat!" : product.source}
                         </button>
                       ) : (
-                        <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: "rgba(147,51,234,0.15)", color: "#a78bfa" }}>
+                        <span style={{ ...codeChipStyle("147,51,234", "#c4b5fd", false), cursor: "default" }}>
                           {product.source}
                         </span>
                       )
@@ -755,8 +728,8 @@ export default function ProductsPage() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                     {product.current_price != null && (
-                      <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "#4ade80" }}>
-                        {product.current_price} {product.currency}
+                      <span style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "-.4px", color: "#ffffff" }}>
+                        {product.current_price} <span style={{ fontSize: "11.5px", fontWeight: 500, color: "var(--text-tertiary)" }}>{product.currency}</span>
                       </span>
                     )}
                     {/* Resale price inline edit */}
@@ -779,7 +752,7 @@ export default function ProductsPage() {
                           disabled={inlineResaleSaving}
                           onClick={() => saveInlineResale(product)}
                           style={{
-                            padding: "0.25rem 0.625rem", borderRadius: "0.375rem",
+                            padding: "0.25rem 0.625rem", borderRadius: "8px",
                             backgroundColor: "var(--green-primary)", color: "var(--text-primary)",
                             border: "none", cursor: "pointer", fontSize: "0.75rem",
                             display: "flex", alignItems: "center", gap: "0.25rem",
@@ -791,7 +764,7 @@ export default function ProductsPage() {
                           type="button"
                           onClick={cancelInlineResale}
                           style={{
-                            padding: "0.25rem 0.5rem", borderRadius: "0.375rem",
+                            padding: "0.25rem 0.5rem", borderRadius: "8px",
                             backgroundColor: "transparent", color: "var(--text-secondary)",
                             border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.75rem",
                           }}
@@ -827,9 +800,9 @@ export default function ProductsPage() {
                         type="button"
                         onClick={() => startInlineResale(product)}
                         style={{
-                          padding: "0.25rem 0.625rem", borderRadius: "0.375rem",
+                          padding: "0.25rem 0.625rem", borderRadius: "8px",
                           backgroundColor: "transparent",
-                          color: "var(--blue-light)", border: "1px dashed var(--border-color)",
+                          color: "#8fb5f7", border: "1px dashed var(--border-color)",
                           cursor: "pointer", fontSize: "0.75rem",
                           display: "flex", alignItems: "center", gap: "0.25rem",
                         }}
@@ -849,7 +822,7 @@ export default function ProductsPage() {
                     onClick={() => handleTrackProduct(product.id)}
                     title="Urmareste produsul (monitorizare pret)"
                     style={{
-                      padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent",
+                      padding: "0.5rem", borderRadius: "10px", backgroundColor: "transparent",
                       border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease",
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "#a78bfa"; }}
@@ -864,7 +837,7 @@ export default function ProductsPage() {
                       rel="noopener noreferrer"
                       title="Deschide sursa"
                       style={{
-                        padding: "0.5rem", borderRadius: "0.5rem", display: "flex",
+                        padding: "0.5rem", borderRadius: "10px", display: "flex",
                         color: "var(--text-secondary)", transition: "all 0.15s ease", textDecoration: "none",
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "var(--blue-light)"; }}
@@ -877,7 +850,7 @@ export default function ProductsPage() {
                     onClick={() => (editingId === product.id ? cancelEdit() : startEdit(product))}
                     title={editingId === product.id ? "Anuleaza editarea" : "Editeaza produs"}
                     style={{
-                      padding: "0.5rem", borderRadius: "0.5rem",
+                      padding: "0.5rem", borderRadius: "10px",
                       backgroundColor: editingId === product.id ? "rgba(96,165,250,0.15)" : "transparent",
                       border: "none", cursor: "pointer",
                       color: editingId === product.id ? "var(--blue-light)" : "var(--text-secondary)",
@@ -892,7 +865,7 @@ export default function ProductsPage() {
                     onClick={() => handleDeleteProduct(product)}
                     title="Sterge produs din baza de date"
                     style={{
-                      padding: "0.5rem", borderRadius: "0.5rem", backgroundColor: "transparent",
+                      padding: "0.5rem", borderRadius: "10px", backgroundColor: "transparent",
                       border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease",
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(248,113,113,0.1)"; e.currentTarget.style.color = "#f87171"; }}
@@ -903,7 +876,7 @@ export default function ProductsPage() {
                   <Link
                     href={`/dashboard/products/detail?id=${product.id}`}
                     title="Vezi detalii"
-                    style={{ padding: "0.5rem", borderRadius: "0.5rem", display: "flex", color: "var(--text-secondary)", textDecoration: "none", transition: "all 0.15s ease" }}
+                    style={{ padding: "0.5rem", borderRadius: "10px", display: "flex", color: "var(--text-secondary)", textDecoration: "none", transition: "all 0.15s ease" }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text-primary)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
                   >
@@ -1000,14 +973,13 @@ export default function ProductsPage() {
                   </div>
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <button type="submit" disabled={editSaving} style={{
-                      padding: "0.5rem 1rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)",
-                      color: "var(--text-primary)", border: "none", cursor: editSaving ? "wait" : "pointer",
+                      padding: "9px 16px", borderRadius: "12px", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", border: "none", cursor: editSaving ? "wait" : "pointer",
                       fontSize: "0.8125rem", fontWeight: 500, opacity: editSaving ? 0.7 : 1,
                     }}>
                       {editSaving ? "Se salveaza..." : "Salveaza modificarile"}
                     </button>
                     <button type="button" onClick={cancelEdit} style={{
-                      padding: "0.5rem 1rem", borderRadius: "0.5rem", backgroundColor: "transparent",
+                      padding: "0.5rem 1rem", borderRadius: "10px", backgroundColor: "transparent",
                       color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem",
                     }}>
                       Anuleaza
@@ -1021,9 +993,9 @@ export default function ProductsPage() {
       ) : (
         <div
           style={{
-            backgroundColor: "var(--bg-card)",
+            background: "var(--bg-card)", backdropFilter: "blur(20px)",
             border: "1px solid var(--border-color)",
-            borderRadius: "0.75rem",
+            borderRadius: "12px",
             padding: "3rem",
             textAlign: "center",
           }}

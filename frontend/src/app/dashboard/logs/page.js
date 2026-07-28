@@ -2,6 +2,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Activity, Pause, Play } from "lucide-react";
 import { logsAPI, dashboardAPI } from "@/lib/api";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
+import StatCardsRow from "@/components/shared/StatCardsRow";
 
 // EventSource se conecteaza direct la backend (alt origin decat Next),
 // folosind acelasi base URL ca instanta axios.
@@ -29,7 +32,19 @@ const LEVEL_COLORS = {
 const ALL_LEVELS = ["OK", "ERR", "WARN", "INFO", "SCAN", "NOTIF", "AI", "CLEAN"];
 
 function levelCfg(level) {
-  return LEVEL_COLORS[level] || { fg: "var(--text-secondary)", bg: "rgba(148,163,184,0.15)" };
+  return LEVEL_COLORS[level] || { fg: "var(--text-dim)", bg: "rgba(148,163,184,0.15)" };
+}
+
+// Cursorul care semnaleaza ca stream-ul SSE e deschis (blink din globals).
+function StreamCursor() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 16px 4px" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "10.5px", color: "#22d3ee" }}>▍</span>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", letterSpacing: ".1em", color: "var(--text-mono)", animation: "blink 1.6s infinite" }}>
+        ASCULT STREAM-UL…
+      </span>
+    </div>
+  );
 }
 
 // Evidentiaza in mesaj: "siruri citate", numere (48, 34%, 2300) si
@@ -89,64 +104,68 @@ function SchedulerStatusCard() {
   const running = data.scheduler_running;
   const jobs = data.jobs || [];
   // Variabilele spec (--fill-success/--fill-danger) au fallback pe paleta reală a app-ului.
-  const dotColor = running ? "var(--fill-success, #4ade80)" : "var(--fill-danger, #ef4444)";
+  const dotColor = running ? "#4ade80" : "#f87171";
 
   return (
-    <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", marginBottom: "1.25rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: dotColor }} />
-        <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+    <div className="glass-panel" style={{ padding: "15px 18px", marginTop: "14px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "11px", gap: "10px", flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13.5px", fontWeight: 600, color: "var(--text-primary)" }}>
+          <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: dotColor, boxShadow: `0 0 8px ${dotColor}` }} />
           Status Scheduler{running ? "" : " — oprit"}
-        </h2>
+        </span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".14em", color: "var(--text-mono)" }}>
+          {jobs.length} JOBURI ACTIVE
+        </span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "9px" }}>
         {jobs.map((j) => (
           <div
             key={j.id}
             style={{
-              minHeight: "56px",
-              padding: "0.5rem 0.75rem",
+              minHeight: "52px",
+              padding: "9px 12px",
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
               position: "relative",
-              background: "var(--surface-1, var(--bg-dark))",
-              border: "0.5px solid var(--border, var(--border-color))",
-              borderRadius: "var(--radius, var(--radius-md, 8px))",
+              background: "rgba(4,9,18,.55)",
+              border: "1px solid rgba(94,140,255,.11)",
+              borderRadius: "11px",
             }}
           >
             <div
               title={j.name}
               style={{
-                fontSize: "13px",
+                fontSize: "12px",
                 fontWeight: 500,
                 color: "var(--text-primary)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                paddingRight: "16px",
+                paddingRight: "14px",
               }}
             >
               {j.name}
             </div>
-            <div style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap", marginTop: "2px" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", color: "var(--text-muted)", whiteSpace: "nowrap", marginTop: "3px" }}>
               {_fmtNextRun(j.next_run)}
             </div>
             <div
               style={{
                 position: "absolute",
-                top: "8px",
-                right: "8px",
-                width: "6px",
-                height: "6px",
+                top: "9px",
+                right: "9px",
+                width: "5px",
+                height: "5px",
                 borderRadius: "50%",
                 background: dotColor,
+                boxShadow: `0 0 6px ${dotColor}`,
               }}
             />
           </div>
         ))}
         {jobs.length === 0 && (
-          <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Niciun job activ.</span>
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Niciun job activ.</span>
         )}
       </div>
     </div>
@@ -235,35 +254,26 @@ export default function LogsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <Activity style={{ width: "22px", height: "22px", color: "#2563eb" }} />
-          Jurnale Live
-        </h1>
-        <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-          Flux în timp real al activității scraperelor (SSE)
-        </p>
-      </div>
+    <div>
+      <TopBar path={["MONITORIZARE", "JURNALE LIVE"]} />
+
+      <PageHeading
+        icon={Activity}
+        title="Jurnale Live"
+        subtitle={<>Flux în timp real al activității scraperelor — <Hl>{visibleLogs.length} linii</Hl> în buffer.</>}
+        meta={activeModule ? `${activeModule.toUpperCase()} · STREAM` : null}
+      />
 
       {/* Stats cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.875rem", marginBottom: "1.25rem" }}>
-        {statCards.map((c) => (
-          <div key={c.label} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>{c.value}</div>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.125rem" }}>{c.label}</div>
-          </div>
-        ))}
-      </div>
+      <StatCardsRow cards={statCards.map((c) => ({ ...c, color: "#7ee7f8" }))} />
 
       {/* Status Scheduler — panou de context deasupra stream-ului */}
       <SchedulerStatusCard />
 
       {/* Panou tabbed cu stream */}
-      <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden" }}>
+      <div style={{ marginTop: "12px", borderRadius: "16px", background: "rgba(3,7,14,.82)", backdropFilter: "blur(20px)", border: "1px solid rgba(94,140,255,.13)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.04)", overflow: "hidden" }}>
         {/* Tab-uri module */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem", padding: "0.75rem 0.875rem", borderBottom: "1px solid var(--border-color)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", padding: "11px 14px", borderBottom: "1px solid rgba(94,140,255,.1)", background: "rgba(4,9,18,.5)" }}>
           {MODULES.map((m) => {
             const active = activeModule === m.key;
             const modStats = stats[m.key] || {};
@@ -271,15 +281,10 @@ export default function LogsPage() {
               <button
                 key={m.key}
                 onClick={() => switchModule(m.key)}
-                style={{
-                  padding: "0.375rem 0.875rem", borderRadius: "999px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
-                  border: `1px solid ${active ? "rgba(37,99,235,0.3)" : "var(--border-color)"}`,
-                  backgroundColor: active ? "rgba(37,99,235,0.15)" : "transparent",
-                  color: active ? "#60a5fa" : "var(--text-secondary)",
-                  display: "inline-flex", alignItems: "center", gap: "0.375rem",
-                }}
+                className={`tab-pill${active ? " active" : ""}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "6px 14px", fontSize: "11.5px" }}
               >
-                {modStats.active && <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "#4ade80" }} />}
+                {modStats.active && <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 7px #4ade80" }} />}
                 {m.label}
               </button>
             );
@@ -287,7 +292,8 @@ export default function LogsPage() {
         </div>
 
         {/* Filtre nivel + auto-scroll */}
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem", padding: "0.625rem 0.875rem", borderBottom: "1px solid var(--border-color)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", padding: "10px 14px", borderBottom: "1px solid rgba(94,140,255,.1)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".14em", color: "var(--text-mono)", marginRight: "4px" }}>NIVELE</span>
           {ALL_LEVELS.map((lvl) => {
             const cfg = levelCfg(lvl);
             const hidden = hiddenLevels.has(lvl);
@@ -297,11 +303,13 @@ export default function LogsPage() {
                 onClick={() => toggleLevel(lvl)}
                 title={hidden ? "Arată" : "Ascunde"}
                 style={{
-                  padding: "0.125rem 0.5rem", borderRadius: "0.375rem", fontSize: "0.6875rem", fontWeight: 700, cursor: "pointer",
+                  padding: "3px 10px", borderRadius: "99px",
+                  fontFamily: "var(--font-mono)", fontSize: "8.5px", fontWeight: 700, letterSpacing: ".08em",
+                  cursor: "pointer",
                   border: `1px solid ${cfg.fg}55`,
-                  backgroundColor: hidden ? "transparent" : cfg.bg,
+                  background: hidden ? "transparent" : cfg.bg,
                   color: hidden ? "var(--text-muted)" : cfg.fg,
-                  opacity: hidden ? 0.5 : 1,
+                  opacity: hidden ? 0.45 : 1,
                   textDecoration: hidden ? "line-through" : "none",
                 }}
               >
@@ -312,14 +320,15 @@ export default function LogsPage() {
           <button
             onClick={() => setAutoScroll((v) => !v)}
             style={{
-              marginLeft: "auto", padding: "0.25rem 0.625rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer",
-              border: "1px solid var(--border-color)",
-              backgroundColor: autoScroll ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
-              color: autoScroll ? "#60a5fa" : "var(--text-secondary)",
-              display: "inline-flex", alignItems: "center", gap: "0.25rem",
+              marginLeft: "auto", padding: "5px 11px", borderRadius: "9px", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+              fontFamily: "var(--font-sans)",
+              border: `1px solid ${autoScroll ? "rgba(34,211,238,.4)" : "rgba(94,140,255,.16)"}`,
+              background: autoScroll ? "rgba(34,211,238,.12)" : "transparent",
+              color: autoScroll ? "#7ee7f8" : "var(--text-dim)",
+              display: "inline-flex", alignItems: "center", gap: "5px",
             }}
           >
-            {autoScroll ? <Pause style={{ width: "12px", height: "12px" }} /> : <Play style={{ width: "12px", height: "12px" }} />}
+            {autoScroll ? <Pause style={{ width: "11px", height: "11px" }} /> : <Play style={{ width: "11px", height: "11px" }} />}
             Auto-scroll
           </button>
         </div>
@@ -328,14 +337,14 @@ export default function LogsPage() {
         <div
           ref={logBoxRef}
           style={{
-            height: "320px", overflowY: "auto",
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            fontSize: "0.75rem", padding: "0.5rem 0",
-            backgroundColor: "var(--bg-dark)",
+            height: "340px", overflowY: "auto",
+            fontFamily: "var(--font-mono)",
+            fontSize: "10.5px", padding: "12px 0",
+            background: "transparent",
           }}
         >
           {visibleLogs.length === 0 ? (
-            <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+            <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-mono)", fontSize: "11px", letterSpacing: ".1em" }}>
               Niciun eveniment încă. Logurile apar pe măsură ce scraperele rulează.
             </div>
           ) : (
@@ -345,14 +354,14 @@ export default function LogsPage() {
                 <div
                   key={e.id}
                   className="log-row"
-                  style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.1875rem 0.875rem", lineHeight: 1.45 }}
+                  style={{ display: "flex", alignItems: "baseline", gap: "10px", padding: "3px 16px", lineHeight: 1.5 }}
                 >
-                  <span style={{ width: "68px", flexShrink: 0, color: "var(--text-muted)" }}>{e.id ? new Date(e.id).toLocaleTimeString("ro-RO", { hour12: false }) : e.ts}</span>
+                  <span style={{ flexShrink: 0, color: "#2b3a5c" }}>{e.id ? new Date(e.id).toLocaleTimeString("ro-RO", { hour12: false }) : e.ts}</span>
                   <span
                     style={{
-                      width: "38px", flexShrink: 0, textAlign: "center",
-                      color: cfg.fg, fontWeight: 700, fontSize: "0.625rem",
-                      backgroundColor: cfg.bg, borderRadius: "0.25rem", padding: "0.0625rem 0",
+                      minWidth: "34px", flexShrink: 0, textAlign: "center",
+                      color: cfg.fg, fontWeight: 700, fontSize: "8px", letterSpacing: ".08em",
+                      background: cfg.bg, borderRadius: "5px", padding: "1.5px 7px",
                     }}
                   >
                     {e.level}
@@ -362,8 +371,8 @@ export default function LogsPage() {
                       <span
                         key={i}
                         style={{
-                          color: part.hi ? "var(--text-primary)" : "var(--text-secondary)",
-                          fontWeight: part.hi ? 500 : 400,
+                          color: part.hi ? "#7ee7f8" : "var(--text-tertiary)",
+                          fontWeight: part.hi ? 700 : 400,
                         }}
                       >
                         {part.text}
@@ -374,10 +383,14 @@ export default function LogsPage() {
               );
             })
           )}
+          <StreamCursor />
         </div>
       </div>
 
-      <style>{`.log-row:hover { background-color: var(--bg-card); }`}</style>
+      <style>{`
+        .log-row:hover { background: rgba(34,211,238,.035); }
+        @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
+      `}</style>
     </div>
   );
 }

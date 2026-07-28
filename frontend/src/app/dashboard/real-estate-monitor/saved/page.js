@@ -15,6 +15,7 @@ export default function RESavedPage() {
     <SavedIgnoredView
       title="Salvate & Ignorate"
       icon={Home}
+      breadcrumb={["IMOBILIARE", "SALVATE"]}
       fetchList={fetchList}
       updateStatus={(id, status) => realEstateMonitorAPI.updateStatus(id, status)}
       deleteListing={(id) => realEstateMonitorAPI.deleteListing(id)}

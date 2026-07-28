@@ -15,9 +15,9 @@ export default function RealEstateCard({ listing, onSave, onDelete, isSaved, bus
   const savedAt = listing.created_at ? new Date(listing.created_at).toLocaleDateString("ro-RO") : null;
 
   return (
-    <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       {/* Thumbnail mare (16:10) */}
-      <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 10", backgroundColor: "var(--bg-dark)", overflow: "hidden" }}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 10", background: "rgba(4,9,18,.45)", overflow: "hidden" }}>
         {listing.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={listing.thumbnail_url} alt={listing.titlu || ""} loading="lazy"
@@ -28,11 +28,11 @@ export default function RealEstateCard({ listing, onSave, onDelete, isSaved, bus
             <ImageOff style={{ width: "32px", height: "32px" }} />
           </div>
         )}
-        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: accent }}>
+        <span style={{ position: "absolute", top: "0.5rem", left: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "8px", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: accent }}>
           {rePlatformLabel(listing.platform)}
         </span>
         {listing.tip_anunt && (
-          <span style={{ position: "absolute", top: "0.5rem", right: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "0.375rem", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: "rgba(0,0,0,0.55)", textTransform: "capitalize" }}>
+          <span style={{ position: "absolute", top: "0.5rem", right: "0.5rem", padding: "0.125rem 0.5rem", borderRadius: "8px", fontSize: "0.6875rem", fontWeight: 700, color: "white", backgroundColor: "rgba(0,0,0,0.55)", textTransform: "capitalize" }}>
             {listing.tip_anunt}
           </span>
         )}
@@ -77,7 +77,7 @@ export default function RealEstateCard({ listing, onSave, onDelete, isSaved, bus
           )}
           {listing.source_url && (
             <a href={listing.source_url} target="_blank" rel="noopener noreferrer" title="Deschide"
-              style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", padding: "0.375rem", borderRadius: "0.5rem", fontSize: "0.7rem", fontWeight: 600, border: "none", backgroundColor: "var(--blue-primary)", color: "white", textDecoration: "none" }}>
+              style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", padding: "0.375rem", borderRadius: "9px", fontSize: "10.5px", fontWeight: 600, background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", textDecoration: "none" }}>
               <ExternalLink style={{ width: "13px", height: "13px" }} /> Deschide
             </a>
           )}
@@ -90,7 +90,7 @@ export default function RealEstateCard({ listing, onSave, onDelete, isSaved, bus
 function btn(color, bg) {
   return {
     flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem",
-    padding: "0.375rem", borderRadius: "0.5rem", fontSize: "0.7rem", fontWeight: 600,
+    padding: "0.375rem", borderRadius: "10px", fontSize: "0.7rem", fontWeight: 600,
     border: "1px solid var(--border-color)", cursor: "pointer", backgroundColor: bg, color,
   };
 }

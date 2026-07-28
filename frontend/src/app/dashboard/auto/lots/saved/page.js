@@ -45,7 +45,7 @@ export default function AutoLotsSavedPage() {
           <Loader2 style={{ width: "2rem", height: "2rem", color: "var(--blue-primary)", animation: "spin 1s linear infinite" }} />
         </div>
       ) : items.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "3rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", color: "var(--text-secondary)" }}>
+        <div style={{ textAlign: "center", padding: "3rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", color: "var(--text-secondary)" }}>
           Nu ai loturi salvate. Salveaza loturi din „Cauta Loturi”.
         </div>
       ) : (

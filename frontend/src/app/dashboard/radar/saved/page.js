@@ -11,7 +11,7 @@ import {
   RadarDetailBanner,
 } from "../page";
 
-const scoreCfgOf = (s) => SCORE_COLORS[s] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
+const scoreCfgOf = (s) => SCORE_COLORS[s] || { bg: "rgba(148,163,184,0.14)", border: "rgba(148,163,184,0.35)", text: "#a9b8d6" };
 const platformCfgOf = (p) => PLATFORM_COLORS[p] || PLATFORM_COLORS.olx;
 const openLabelOf = (p) => PLATFORM_LABELS[p?.toLowerCase()] || "Deschide anunțul";
 
@@ -82,6 +82,7 @@ export default function RadarSavedPage() {
     <SavedIgnoredView
       title="Salvate & Ignorate"
       icon={Radar}
+      breadcrumb={["RADAR PIAȚA", "SALVATE"]}
       fetchList={fetchList}
       updateStatus={(id, status) => radarAPI.updateListingStatus(id, status)}
       deleteListing={(id) => radarAPI.deleteListing(id)}

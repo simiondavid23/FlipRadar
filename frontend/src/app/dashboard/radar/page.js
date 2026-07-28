@@ -13,6 +13,12 @@ import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import ActionBanner from "@/components/shared/ActionBanner";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
+import {
+  GRADE_COLORS, tabPillStyle, selectStyle, inputStyle, labelStyle,
+  modalOverlayStyle, modalPanelStyle,
+} from "@/lib/uiStyles";
 
 const PLATFORMS = [
   { value: "", label: "Toate platformele" },
@@ -33,12 +39,12 @@ const SCORES = [
 ];
 
 export const PLATFORM_COLORS = {
-  olx: { bg: "rgba(37,99,235,0.15)", border: "#2563eb", text: "#60a5fa" },
-  vinted: { bg: "rgba(147,51,234,0.15)", border: "#9333ea", text: "#c4b5fd" },
-  okazii: { bg: "rgba(22,163,74,0.15)", border: "#16a34a", text: "#4ade80" },
-  facebook: { bg: "rgba(30,58,138,0.25)", border: "#1e40af", text: "#93c5fd" },
-  lajumate: { bg: "rgba(249,115,22,0.15)", border: "#f97316", text: "#fdba74" },
-  publi24: { bg: "rgba(21,128,61,0.18)", border: "#15803d", text: "#86efac" },
+  olx: { bg: "rgba(37,99,235,0.14)", border: "rgba(37,99,235,0.4)", text: "#8fb5f7" },
+  vinted: { bg: "rgba(147,51,234,0.14)", border: "rgba(147,51,234,0.4)", text: "#c4b5fd" },
+  okazii: { bg: "rgba(74,222,128,0.14)", border: "rgba(74,222,128,0.4)", text: "#4ade80" },
+  facebook: { bg: "rgba(30,58,138,0.24)", border: "rgba(30,58,138,0.5)", text: "#93c5fd" },
+  lajumate: { bg: "rgba(251,146,60,0.14)", border: "rgba(251,146,60,0.4)", text: "#fdba74" },
+  publi24: { bg: "rgba(74,222,128,0.12)", border: "rgba(34,197,94,0.4)", text: "#86efac" },
 };
 
 // FIX 7 — eticheta dinamica pentru butonul "Deschide" in functie de platforma.
@@ -51,20 +57,7 @@ export const PLATFORM_LABELS = {
   publi24: "Deschide pe Publi24",
 };
 
-// FIX 2 — tab-uri pill (Feed Automat / Căutare Manuală).
-function tabPillStyle(active) {
-  return {
-    padding: "0.5rem 1.25rem",
-    borderRadius: "999px",
-    fontSize: "0.875rem",
-    fontWeight: 600,
-    cursor: "pointer",
-    border: "1px solid var(--border-color)",
-    backgroundColor: active ? "var(--blue-primary)" : "transparent",
-    color: active ? "white" : "var(--text-secondary)",
-    transition: "all 0.15s ease",
-  };
-}
+// FIX 2 — tab-uri pill (Feed Automat / Căutare Manuală). Sursa: uiStyles.
 
 // MODULE 4 — platforme pentru cautarea manuala (single-select, ca in modalul keyword).
 const SEARCH_PLATFORMS = [
@@ -76,12 +69,10 @@ const SEARCH_PLATFORMS = [
   { value: "publi24", label: "Publi24" },
 ];
 
-export const SCORE_COLORS = {
-  A: { bg: "rgba(22,163,74,0.18)", border: "#16a34a", text: "#4ade80" },
-  B: { bg: "rgba(59,130,246,0.18)", border: "#3b82f6", text: "#60a5fa" },
-  C: { bg: "rgba(250,204,21,0.18)", border: "#facc15", text: "#fde047" },
-  D: { bg: "rgba(249,115,22,0.18)", border: "#f97316", text: "#fb923c" },
-};
+export const SCORE_COLORS = GRADE_COLORS;
+
+// Fallback pentru anunturile fara scor calculat.
+const NEUTRAL_SCORE = { bg: "rgba(148,163,184,0.14)", border: "rgba(148,163,184,0.35)", text: "#a9b8d6" };
 
 export const SCORE_EXPLANATIONS = {
   A: "Marjă excelentă — deal prioritar",
@@ -118,10 +109,21 @@ function formatListedDate(iso) {
 }
 
 function marginColor(pct) {
-  if (pct === null || pct === undefined) return "var(--text-secondary)";
+  if (pct === null || pct === undefined) return "var(--text-tertiary)";
   if (pct >= 25) return "#4ade80";
-  if (pct >= 10) return "#facc15";
+  if (pct >= 10) return "#fde047";
   return "#fb923c";
+}
+
+// Toggle cyan cu eticheta, folosit in bara de filtre.
+function FilterToggle({ checked, onChange, label }) {
+  return (
+    <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "7px 12px", borderRadius: "10px", cursor: "pointer" }}>
+      <input type="checkbox" checked={checked} onChange={onChange} style={{ position: "absolute", opacity: 0, width: 0, height: 0 }} />
+      <span className={`toggle-cyan${checked ? " on" : ""}`} aria-hidden="true" />
+      <span style={{ fontSize: "12px", color: checked ? "var(--text-secondary)" : "var(--text-dim)" }}>{label}</span>
+    </label>
+  );
 }
 
 const FEED_PER_PAGE = 100;
@@ -391,78 +393,63 @@ export default function RadarFeedPage() {
     }
   };
 
-  const selectStyle = {
-    backgroundColor: "var(--bg-dark)",
-    border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem",
-    padding: "0.5rem 0.75rem",
-    color: "var(--text-primary)",
-    fontSize: "0.8125rem",
-    outline: "none",
-    cursor: "pointer",
-    minWidth: "160px",
-  };
-
   const byScore = stats.listings_by_score || {};
   const statCards = [
-    { label: "Anunțuri găsite", value: stats.total_listings_found ?? 0, color: "#60a5fa" },
-    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
+    { label: "Anunțuri găsite", value: stats.total_listings_found ?? 0, color: "#7ee7f8" },
+    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#8fb5f7" },
     { label: "Grad A", value: byScore.A ?? 0, color: "#4ade80" },
     { label: "Grad B", value: byScore.B ?? 0, color: "#60a5fa" },
   ];
 
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
+    <div>
+      <TopBar path={["RADAR PIAȚA", "FEED"]}>
+        {activeTab === "auto" && <ScanNowButton onScan={handleScanNow} scanning={scanning} />}
+      </TopBar>
+
       {/* Header permanent (vizibil pe ambele tab-uri) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Radar style={{ width: "22px", height: "22px", color: "#2563eb" }} />
-            Feed Anunțuri
-          </h1>
-          {activeTab === "auto" && (
-            <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-              Anunțuri găsite în timp real ({listings.length} active în vizualizare)
-            </p>
-          )}
-        </div>
-      </div>
+      <PageHeading
+        icon={Radar}
+        title="Feed Anunțuri"
+        subtitle={
+          activeTab === "auto"
+            ? <>Anunțuri găsite în timp real — <Hl>{displayedListings.length} active</Hl> în vizualizare.</>
+            : "Caută live pe platforme, fără să salvezi în feed."
+        }
+        meta={activeTab === "auto" && feedTotal ? `${feedTotal} ANUNȚURI ÎN TOTAL` : null}
+      />
 
       {/* FIX 2 — Tab-uri: Feed Automat / Căutare Manuală */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
-        <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
-        <button onClick={() => setActiveTab("manual")} style={tabPillStyle(activeTab === "manual")}>Căutare Manuală</button>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "16px" }}>
+        <button onClick={() => setActiveTab("auto")} style={{ ...tabPillStyle(activeTab === "auto"), display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          {activeTab === "auto" && <span className="pill-nav-dot" />}
+          Feed Automat
+        </button>
+        <button onClick={() => setActiveTab("manual")} style={{ ...tabPillStyle(activeTab === "manual"), display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          {activeTab === "manual" && <span className="pill-nav-dot" />}
+          Căutare Manuală
+        </button>
       </div>
 
       {activeTab === "manual" && <ManualSearchTab />}
 
-      {/* Faza 2 — scanare manuală + statistici (sub tab-uri, mirror Auto/Imobiliare) */}
-      {activeTab === "auto" && (
-        <>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
-            <ScanNowButton onScan={handleScanNow} scanning={scanning} />
-          </div>
-          <StatCardsRow cards={statCards} />
-        </>
-      )}
+      {/* Faza 2 — statistici de feed (sub tab-uri, mirror Auto/Imobiliare) */}
+      {activeTab === "auto" && <StatCardsRow cards={statCards} />}
 
       {activeTab === "auto" && (loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
         </div>
       ) : (
       <>
       {/* Bară filtre */}
-      <div style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        padding: "1rem",
-        marginBottom: "1.25rem",
+      <div className="glass-panel" style={{
+        padding: "13px 15px",
+        marginTop: "14px",
         display: "flex",
         flexWrap: "wrap",
         alignItems: "center",
-        gap: "0.625rem",
+        gap: "9px",
       }}>
         <select value={filters.platform} onChange={(e) => setFilters({ ...filters, platform: e.target.value })} style={selectStyle}>
           {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
@@ -484,41 +471,17 @@ export default function RadarFeedPage() {
               );
             })}
         </select>
-        <label style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          padding: "0.5rem 0.75rem",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.5rem",
-          backgroundColor: "var(--bg-dark)",
-          color: "var(--text-primary)",
-          fontSize: "0.8125rem",
-          cursor: "pointer",
-        }}>
-          <input
-            type="checkbox"
-            checked={filters.hide_filtered}
-            onChange={(e) => setFilters({ ...filters, hide_filtered: e.target.checked })}
-            style={{ width: "auto", margin: 0 }}
-          />
-          Ascunde sub prag AI
-        </label>
+        <FilterToggle
+          checked={filters.hide_filtered}
+          onChange={(e) => setFilters({ ...filters, hide_filtered: e.target.checked })}
+          label="Ascunde sub prag AI"
+        />
         {/* RP-1 — ascunde vanzatorii riscanti (client-side) */}
-        <label style={{
-          display: "inline-flex", alignItems: "center", gap: "0.5rem",
-          padding: "0.5rem 0.75rem", border: "1px solid var(--border-color)",
-          borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)",
-          color: "var(--text-primary)", fontSize: "0.8125rem", cursor: "pointer",
-        }}>
-          <input
-            type="checkbox"
-            checked={hideRisky}
-            onChange={(e) => setHideRisky(e.target.checked)}
-            style={{ width: "auto", margin: 0 }}
-          />
-          Ascunde vânzătorii riscanți
-        </label>
+        <FilterToggle
+          checked={hideRisky}
+          onChange={(e) => setHideRisky(e.target.checked)}
+          label="Ascunde vânzătorii riscanți"
+        />
         {/* RP-1 — sortare */}
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
           <option value="">Sortare: implicită</option>
@@ -537,45 +500,20 @@ export default function RadarFeedPage() {
           }}
         />
 
+        <div style={{ flex: 1 }} />
+
         <button
           onClick={loadListings}
           disabled={refreshing}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.5rem 0.875rem",
-            backgroundColor: "var(--blue-primary)",
-            color: "white",
-            border: "none",
-            borderRadius: "0.5rem",
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            cursor: refreshing ? "wait" : "pointer",
-            opacity: refreshing ? 0.7 : 1,
-          }}
+          className="btn-cyan"
+          style={{ padding: "8px 15px", borderRadius: "10px", fontSize: "12px" }}
         >
-          <RefreshCw style={{ width: "14px", height: "14px", animation: refreshing ? "spin 1s linear infinite" : undefined }} />
+          <RefreshCw style={{ width: "13px", height: "13px", animation: refreshing ? "spin 1s linear infinite" : undefined }} strokeWidth={2} />
           Actualizează
         </button>
 
-        <button
-          onClick={downloadExcel}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.5rem 0.875rem",
-            backgroundColor: "rgba(22,163,74,0.15)",
-            color: "#4ade80",
-            border: "1px solid rgba(22,163,74,0.3)",
-            borderRadius: "0.5rem",
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <FileSpreadsheet style={{ width: "14px", height: "14px" }} />
+        <button onClick={downloadExcel} className="btn-green" style={{ padding: "8px 15px", borderRadius: "10px", fontSize: "12px" }}>
+          <FileSpreadsheet style={{ width: "13px", height: "13px" }} strokeWidth={1.8} />
           Export Excel
         </button>
       </div>
@@ -585,7 +523,7 @@ export default function RadarFeedPage() {
         position: "sticky",
         top: 0,
         zIndex: 20,
-        marginBottom: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "0.75rem" : 0,
+        marginTop: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "14px" : 0,
       }}>
         <div style={{
           maxHeight: (selectedBulk.size > 0 || selectedForComparison.length > 0) ? "160px" : "0px",
@@ -624,13 +562,12 @@ export default function RadarFeedPage() {
 
       {/* Grilă listinguri */}
       {listings.length === 0 ? (
-        <div style={{
+        <div className="glass-panel" style={{
           textAlign: "center",
           padding: "3rem",
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem",
-          color: "var(--text-secondary)",
+          marginTop: "14px",
+          color: "var(--text-dim)",
+          fontSize: "12.5px",
         }}>
           Niciun anunț în feed. Verifică să ai keyword-uri active și platforme activate.
         </div>
@@ -638,15 +575,16 @@ export default function RadarFeedPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-            gap: "1rem",
+            gridTemplateColumns: "repeat(auto-fill, minmax(305px, 1fr))",
+            gap: "14px",
+            marginTop: "14px",
           }}
         >
           {displayedListings.map((l) => (
             <ListingFeedCard
               key={l.id}
               listing={l}
-              scoreCfg={SCORE_COLORS[l.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" }}
+              scoreCfg={SCORE_COLORS[l.score] || NEUTRAL_SCORE}
               scoreBadge={l.score}
               platformCfg={PLATFORM_COLORS[l.platform] || PLATFORM_COLORS.olx}
               platformBadge={l.platform}
@@ -671,22 +609,23 @@ export default function RadarFeedPage() {
       )}
 
       {listings.length > 0 && listings.length < feedTotal && (
-        <div style={{ textAlign: "center", marginTop: "1.25rem" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "18px" }}>
           <button
             onClick={loadMoreListings}
             disabled={refreshing}
+            className="glass-chip load-more"
             style={{
-              padding: "0.6rem 1.5rem",
-              backgroundColor: "var(--bg-card)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "0.5rem",
-              color: "var(--text-primary)",
+              padding: "9px 26px",
+              borderRadius: "12px",
+              color: "var(--text-secondary)",
+              fontFamily: "var(--font-sans)",
+              fontSize: "12.5px",
+              fontWeight: 500,
               cursor: refreshing ? "default" : "pointer",
               opacity: refreshing ? 0.6 : 1,
-              fontSize: "0.875rem",
             }}
           >
-            {refreshing ? "Se încarcă…" : `Încarcă mai multe (${feedTotal - listings.length} rămase)`}
+            {refreshing ? "Se încarcă…" : `Încarcă mai multe · ${feedTotal - listings.length} rămase`}
           </button>
         </div>
       )}
@@ -698,7 +637,7 @@ export default function RadarFeedPage() {
         <ListingDetailModal
           listing={selected}
           images={selected.images || []}
-          scoreCfg={SCORE_COLORS[selected.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" }}
+          scoreCfg={SCORE_COLORS[selected.score] || NEUTRAL_SCORE}
           scoreBadge={selected.score}
           scoreExplanation={SCORE_EXPLANATIONS[selected.score]}
           platformCfg={PLATFORM_COLORS[selected.platform] || PLATFORM_COLORS.olx}
@@ -734,16 +673,14 @@ export default function RadarFeedPage() {
       {/* Notificare toast */}
       {toast && (
         <div style={{
-          position: "fixed", bottom: "5rem", left: "50%", transform: "translateX(-50%)",
-          backgroundColor: "var(--bg-card)", color: "var(--text-primary)",
-          border: "1px solid var(--border-color)", borderRadius: "0.5rem",
-          padding: "0.5rem 0.875rem", fontSize: "0.8125rem",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          position: "fixed", bottom: "2.5rem", left: "50%", transform: "translateX(-50%)",
+          background: "rgba(4,9,18,.92)", backdropFilter: "blur(14px)", color: "var(--text-primary)",
+          border: "1px solid rgba(34,211,238,.3)", borderRadius: "12px",
+          padding: "9px 15px", fontSize: "12.5px",
+          boxShadow: "0 12px 30px rgba(0,0,0,.5)",
           zIndex: 200,
         }}>{toast}</div>
       )}
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -790,30 +727,15 @@ function ManualSearchTab() {
     }
   };
 
-  const inputStyle = {
-    width: "100%",
-    backgroundColor: "var(--bg-dark)",
-    border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem",
-    padding: "0.5rem 0.75rem",
-    color: "var(--text-primary)",
-    fontSize: "0.875rem",
-    outline: "none",
-  };
-  const labelStyle = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
-
   return (
     <div>
       {/* Formular căutare */}
-      <div style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        padding: "1.25rem",
-        marginBottom: "1.25rem",
+      <div className="glass-panel" style={{
+        padding: "18px",
+        marginTop: "16px",
         display: "flex",
         flexDirection: "column",
-        gap: "0.875rem",
+        gap: "14px",
       }}>
         <div>
           <label style={labelStyle}>Keyword *</label>
@@ -827,7 +749,7 @@ function ManualSearchTab() {
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <div>
             <label style={labelStyle}>Preț maxim (RON)</label>
             <input type="number" min="0" step="any" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="ex: 2000" style={inputStyle} />
@@ -840,19 +762,13 @@ function ManualSearchTab() {
 
         <div>
           <label style={labelStyle}>Platformă</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
             {SEARCH_PLATFORMS.map((p) => (
               <button
                 key={p.value}
                 type="button"
                 onClick={() => { setSearchPlatform(p.value); setSearchMainCat(""); setSearchSubCat(""); }}
-                style={{
-                  padding: "0.375rem 0.875rem", borderRadius: "0.5rem", fontSize: "0.8125rem",
-                  fontWeight: searchPlatform === p.value ? 600 : 400, cursor: "pointer",
-                  border: searchPlatform === p.value ? "2px solid #2563eb" : "1px solid var(--border-color)",
-                  backgroundColor: searchPlatform === p.value ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
-                  color: searchPlatform === p.value ? "#60a5fa" : "var(--text-secondary)",
-                }}
+                className={`tab-pill${searchPlatform === p.value ? " active" : ""}`}
               >{p.label}</button>
             ))}
           </div>
@@ -863,7 +779,7 @@ function ManualSearchTab() {
           const selectedMain = currentPlatformCats.find((c) => c.value === searchMainCat);
           const hasSubs = (selectedMain?.subcategories?.length || 0) > 0;
           return (
-            <div style={{ display: "grid", gridTemplateColumns: hasSubs ? "1fr 1fr" : "1fr", gap: "0.75rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: hasSubs ? "1fr 1fr" : "1fr", gap: "12px" }}>
               <div>
                 <label style={labelStyle}>Categorie principală</label>
                 <select value={searchMainCat} onChange={(e) => { setSearchMainCat(e.target.value); setSearchSubCat(""); }} style={inputStyle}>
@@ -889,26 +805,9 @@ function ManualSearchTab() {
         })()}
 
         <div>
-          <button
-            onClick={runSearch}
-            disabled={loading}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              padding: "0.5rem 1.25rem",
-              backgroundColor: "var(--blue-primary)",
-              color: "white",
-              border: "none",
-              borderRadius: "0.5rem",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              cursor: loading ? "wait" : "pointer",
-              opacity: loading ? 0.7 : 1,
-            }}
-          >
-            <Radar style={{ width: "16px", height: "16px" }} />
-            {loading ? "Se caută..." : "Caută"}
+          <button onClick={runSearch} disabled={loading} className="btn-cyan">
+            <Radar style={{ width: "14px", height: "14px" }} strokeWidth={2} />
+            {loading ? "Se caută…" : "Caută"}
           </button>
         </div>
       </div>
@@ -916,21 +815,20 @@ function ManualSearchTab() {
       {/* Rezultate */}
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "12rem" }}>
-          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
         </div>
       ) : results === null ? null : results.length === 0 ? (
-        <div style={{
+        <div className="glass-panel" style={{
           textAlign: "center",
           padding: "3rem",
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem",
-          color: "var(--text-secondary)",
+          marginTop: "14px",
+          color: "var(--text-dim)",
+          fontSize: "12.5px",
         }}>
           Niciun rezultat găsit pentru această căutare.
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(305px, 1fr))", gap: "14px", marginTop: "14px" }}>
           {results.map((listing, idx) => (
             <ManualResultCard key={`${listing.url || "r"}-${idx}`} listing={listing} />
           ))}
@@ -948,17 +846,17 @@ function ManualResultCard({ listing }) {
 
   return (
     <div
-      style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-      }}
+      className="glass-panel"
+      style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}
     >
       {/* Imagine */}
-      <div style={{ position: "relative", height: "180px", backgroundColor: "var(--bg-dark)" }}>
+      <div
+        style={{
+          position: "relative", height: "168px",
+          background: "repeating-linear-gradient(45deg, rgba(94,140,255,.055) 0 12px, rgba(94,140,255,.015) 12px 24px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
         {image ? (
           <img
             src={image}
@@ -967,31 +865,34 @@ function ManualResultCard({ listing }) {
             onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
         ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}>
-            <ImageOff style={{ width: "36px", height: "36px" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-mono)" }}>
+            <ImageOff style={{ width: "16px", height: "16px" }} strokeWidth={1.6} />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", letterSpacing: ".18em" }}>FĂRĂ FOTO</span>
           </div>
         )}
 
         {/* Insignă platformă */}
         <div style={{
-          position: "absolute", top: "0.5rem", right: "0.5rem",
-          padding: "0.25rem 0.625rem",
-          backgroundColor: platformCfg.bg,
+          position: "absolute", top: "9px", right: "9px",
+          padding: "3px 8px",
+          background: platformCfg.bg,
           border: `1px solid ${platformCfg.border}`,
-          borderRadius: "0.375rem",
+          borderRadius: "7px",
           color: platformCfg.text,
-          fontSize: "0.6875rem",
-          fontWeight: 600,
+          fontFamily: "var(--font-mono)",
+          fontSize: "8.5px",
+          letterSpacing: ".08em",
           textTransform: "uppercase",
+          backdropFilter: "blur(8px)",
         }}>
           {listing.platform}
         </div>
       </div>
 
       {/* Conținut card */}
-      <div style={{ padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1 }}>
+      <div style={{ padding: "13px 14px", display: "flex", flexDirection: "column", gap: "7px", flex: 1 }}>
         <h3 style={{
-          fontSize: "0.875rem",
+          fontSize: "13px",
           fontWeight: 600,
           color: "var(--text-primary)",
           margin: 0,
@@ -1000,34 +901,37 @@ function ManualResultCard({ listing }) {
           WebkitBoxOrient: "vertical",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          minHeight: "2.6em",
-          lineHeight: "1.3",
+          minHeight: "2.7em",
+          lineHeight: "1.35",
         }}>
           {listing.title}
         </h3>
 
-        <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>
-          {Math.round(listing.price)} {listing.currency}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "5px" }}>
+          <span style={{ fontSize: "20px", fontWeight: 700, letterSpacing: "-.4px", color: "#ffffff" }}>{Math.round(listing.price)}</span>
+          <span style={{ fontSize: "11.5px", fontWeight: 500, color: "var(--text-tertiary)" }}>{listing.currency}</span>
         </div>
 
         {margin !== null && margin !== undefined && (
-          <div style={{ fontSize: "0.75rem", color: marginColor(margin) }}>
-            Marjă estimată: <strong>{Math.round(margin)}%</strong>
+          <div style={{ fontSize: "11.5px", color: marginColor(margin) }}>
+            Marjă estimată · <strong>{Math.round(margin)}%</strong>
           </div>
         )}
 
-        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "0.125rem" }}>
+        <div style={{ fontSize: "10.5px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
           {listing.location && <span>{listing.location}</span>}
-          {listing.condition && <span>Condiție: {listing.condition}</span>}
+          {listing.location && listing.condition && <span style={{ color: "var(--text-faint)" }}>·</span>}
+          {listing.condition && <span>{listing.condition}</span>}
         </div>
 
-        <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "6px", marginTop: "auto", paddingTop: "8px" }}>
           <button
             onClick={() => window.open(listing.url, "_blank", "noopener,noreferrer")}
-            style={{ flex: 1, padding: "0.4rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
+            className="btn-cyan"
+            style={{ flex: 1, justifyContent: "center", padding: "6px 8px", borderRadius: "9px", fontSize: "10.5px" }}
             title={PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           >
-            <ExternalLink style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
+            <ExternalLink style={{ width: "11px", height: "11px" }} strokeWidth={2} />
             {PLATFORM_LABELS[listing.platform?.toLowerCase()] || "Deschide anunțul"}
           </button>
         </div>
@@ -1076,22 +980,22 @@ export function RadarDetailBanner({ listing, onLoadVintedDetail, onLoadFacebookD
   return (
     <>
       {listing.platform === "vinted" && vintedDetailStatus === "loading" && (
-        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+        <div style={{ padding: "0 1.25rem", fontSize: "10.5px", color: "var(--text-muted)", fontStyle: "italic" }}>
           Se încarcă poze și descriere complete de pe Vinted...
         </div>
       )}
       {listing.platform === "vinted" && vintedDetailStatus === "failed" && (
-        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+        <div style={{ padding: "0 1.25rem", fontSize: "10.5px", color: "var(--text-muted)", fontStyle: "italic" }}>
           Detalii suplimentare indisponibile momentan (limitare temporară Vinted) — vor fi reîncercate la următoarea deschidere.
         </div>
       )}
       {listing.platform === "facebook" && facebookDetailStatus === "loading" && (
-        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+        <div style={{ padding: "0 1.25rem", fontSize: "10.5px", color: "var(--text-muted)", fontStyle: "italic" }}>
           Se încarcă descriere și galerie complete de pe Facebook...
         </div>
       )}
       {listing.platform === "facebook" && facebookDetailStatus === "failed" && (
-        <div style={{ padding: "0 1.25rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+        <div style={{ padding: "0 1.25rem", fontSize: "10.5px", color: "var(--text-muted)", fontStyle: "italic" }}>
           Detalii suplimentare indisponibile momentan — vor fi reîncercate la următoarea deschidere.
         </div>
       )}
@@ -1110,53 +1014,40 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
   const oldestIdx = founds.indexOf(Math.min(...founds));
 
   return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 110, padding: "1.5rem",
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.875rem",
-        maxWidth: "1100px", width: "100%",
-        maxHeight: "90vh", overflowY: "auto",
-        padding: "1.25rem",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-          <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)" }}>
+    <div onClick={onClose} style={{ ...modalOverlayStyle, zIndex: 110 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...modalPanelStyle, maxWidth: "1100px", padding: "20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+          <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 600, color: "var(--text-primary)" }}>
             Comparare listinguri
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>
-            <X style={{ width: "20px", height: "20px" }} />
+          <button onClick={onClose} className="btn-icon" aria-label="Închide">
+            <X style={{ width: "15px", height: "15px" }} strokeWidth={1.8} />
           </button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${listings.length}, 1fr)`, gap: "0.875rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${listings.length}, 1fr)`, gap: "14px" }}>
           {listings.map((l, idx) => {
-            const sc = SCORE_COLORS[l.score] || { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8" };
+            const sc = SCORE_COLORS[l.score] || NEUTRAL_SCORE;
             const pc = PLATFORM_COLORS[l.platform] || PLATFORM_COLORS.olx;
             return (
-              <div key={l.id} style={{
-                backgroundColor: "var(--bg-dark)",
-                border: "1px solid var(--border-color)",
-                borderRadius: "0.625rem", padding: "0.75rem",
-                display: "flex", flexDirection: "column", gap: "0.5rem",
+              <div key={l.id} className="glass-chip" style={{
+                borderRadius: "14px", padding: "12px",
+                display: "flex", flexDirection: "column", gap: "8px",
               }}>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", minHeight: "2.4rem" }}>
+                <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--text-primary)", minHeight: "2.4rem", lineHeight: 1.35 }}>
                   {l.title}
                 </div>
-                <div style={{ display: "flex", gap: "0.375rem" }}>
+                <div style={{ display: "flex", gap: "6px" }}>
                   {l.score && (
-                    <span style={{ padding: "0.125rem 0.5rem", backgroundColor: sc.bg, border: `1px solid ${sc.border}`, borderRadius: "0.375rem", color: sc.text, fontSize: "0.7rem", fontWeight: 700 }}>{l.score}</span>
+                    <span style={{ padding: "2px 8px", background: sc.bg, border: `1px solid ${sc.border}`, borderRadius: "7px", color: sc.text, fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700 }}>{l.score}</span>
                   )}
-                  <span style={{ padding: "0.125rem 0.5rem", backgroundColor: pc.bg, border: `1px solid ${pc.border}`, borderRadius: "0.375rem", color: pc.text, fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase" }}>{l.platform}</span>
+                  <span style={{ padding: "2.5px 7px", background: pc.bg, border: `1px solid ${pc.border}`, borderRadius: "7px", color: pc.text, fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".08em", textTransform: "uppercase" }}>{l.platform}</span>
                 </div>
-                <div style={{ width: "100%", height: "160px", overflow: "hidden", backgroundColor: "var(--bg-card)", borderRadius: "0.375rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: "100%", height: "160px", overflow: "hidden", background: "repeating-linear-gradient(45deg, rgba(94,140,255,.055) 0 12px, rgba(94,140,255,.015) 12px 24px)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   {l.images?.[0] ? (
                     <img src={l.images[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
-                    <ImageOff style={{ width: "32px", height: "32px", color: "var(--text-muted)" }} />
+                    <ImageOff style={{ width: "22px", height: "22px", color: "var(--text-mono)" }} strokeWidth={1.6} />
                   )}
                 </div>
                 <CompareRow label="Preț cerut" value={`${Math.round(l.price)} ${l.currency}`} highlight={idx === lowestPriceIdx} good />
@@ -1170,30 +1061,39 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
                 <CompareRow label="Postat" value={l.listed_at ? formatListedDate(l.listed_at) : "Necunoscut"} highlight={idx === oldestIdx} bad />
                 <CompareRow label="Vânzător" value={l.seller_name || "—"} />
                 {l.ai_review && (
-                  <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", fontStyle: "italic", marginTop: "0.25rem" }}>
+                  <div style={{ fontSize: "10.5px", color: "var(--text-tertiary)", fontStyle: "italic", marginTop: "2px" }}>
                     {l.ai_review.slice(0, 140)}{l.ai_review.length > 140 ? "…" : ""}
                   </div>
                 )}
-                <div style={{ display: "flex", gap: "0.25rem", marginTop: "auto" }}>
+                <div style={{ display: "flex", gap: "4px", marginTop: "auto", alignItems: "center" }}>
                   <button
                     onClick={() => onSave(l.id)}
                     title="Salvează"
-                    style={smallActionBtn("#4ade80", l.status === "saved" ? "rgba(22,163,74,0.3)" : "rgba(22,163,74,0.15)", "rgba(22,163,74,0.3)")}
+                    style={smallActionBtn("#4ade80", l.status === "saved" ? "rgba(74,222,128,0.2)" : "rgba(74,222,128,0.08)", "rgba(74,222,128,0.32)")}
                   >
                     {l.status === "saved"
-                      ? <><Check style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />Salvat</>
-                      : <Bookmark style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
+                      ? <><Check style={{ width: "11px", height: "11px", display: "inline", marginRight: "4px", verticalAlign: "middle" }} />Salvat</>
+                      : <Bookmark style={{ width: "11px", height: "11px", display: "inline", verticalAlign: "middle" }} />}
                   </button>
                   <button
                     onClick={() => onIgnore(l.id)}
                     title="Ignoră"
-                    style={smallActionBtn("var(--text-secondary)", l.status === "ignored" ? "rgba(100,116,139,0.3)" : "var(--bg-card)", "var(--border-color)")}
+                    style={smallActionBtn("var(--text-dim)", l.status === "ignored" ? "rgba(148,163,184,0.18)" : "rgba(148,163,184,0.07)", "rgba(148,163,184,0.2)")}
                   >
                     {l.status === "ignored"
-                      ? <><Check style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />Ignorat</>
-                      : <EyeOff style={{ width: "12px", height: "12px", display: "inline", verticalAlign: "middle" }} />}
+                      ? <><Check style={{ width: "11px", height: "11px", display: "inline", marginRight: "4px", verticalAlign: "middle" }} />Ignorat</>
+                      : <EyeOff style={{ width: "11px", height: "11px", display: "inline", verticalAlign: "middle" }} />}
                   </button>
-                  <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ ...smallActionBtn("white", "var(--blue-primary)", "var(--blue-primary)"), textDecoration: "none", marginLeft: "auto" }}>↗ Deschide</a>
+                  <a
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-cyan"
+                    style={{ marginLeft: "auto", padding: "5px 10px", borderRadius: "8px", fontSize: "10.5px" }}
+                  >
+                    <ExternalLink style={{ width: "11px", height: "11px" }} strokeWidth={2} />
+                    Deschide
+                  </a>
                 </div>
               </div>
             );
@@ -1207,8 +1107,8 @@ function CompareModal({ listings, onClose, onSave, onIgnore }) {
 function CompareRow({ label, value, highlight, good, bad }) {
   const color = highlight ? (good ? "#4ade80" : bad ? "#fca5a5" : "var(--text-primary)") : "var(--text-primary)";
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", gap: "0.5rem" }}>
-      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11.5px", gap: "8px" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text-mono)", alignSelf: "center" }}>{label}</span>
       <span style={{ color, fontWeight: highlight ? 700 : 500, textAlign: "right" }}>{value}</span>
     </div>
   );
@@ -1216,10 +1116,11 @@ function CompareRow({ label, value, highlight, good, bad }) {
 
 function smallActionBtn(color, bg, border) {
   return {
-    padding: "0.3rem 0.5rem",
-    backgroundColor: bg, color,
+    padding: "5px 9px",
+    background: bg, color,
     border: `1px solid ${border}`,
-    borderRadius: "0.375rem", fontSize: "0.7rem",
+    borderRadius: "8px", fontSize: "10.5px",
+    fontFamily: "var(--font-sans)",
     fontWeight: 600, cursor: "pointer",
     display: "inline-flex", alignItems: "center",
   };

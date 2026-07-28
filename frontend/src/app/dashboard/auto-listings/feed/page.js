@@ -14,6 +14,8 @@ import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import ActionBanner from "@/components/shared/ActionBanner";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
 
 const PLATFORM_LABELS = {
   autovit: "Autovit", olx_auto: "OLX Auto", mobile_de: "Mobile.de",
@@ -198,48 +200,53 @@ export default function AutoFeedPage() {
 
   const byGrade = stats.by_grade || {};
   const statCards = [
-    { label: "Anunțuri găsite", value: stats.total_listings ?? 0, color: "#60a5fa" },
-    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#a78bfa" },
+    { label: "Anunțuri găsite", value: stats.total_listings ?? 0, color: "#7ee7f8" },
+    { label: "Keyword-uri active", value: stats.active_keywords ?? 0, color: "#8fb5f7" },
     { label: "Grade A", value: byGrade.A || 0, color: "#4ade80" },
   ];
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      {/* Header — structură identică cu Radar (iconiță simplă în h1, fără badge colorat) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Car style={{ width: "22px", height: "22px", color: "#2563eb" }} />
-            Feed Anunțuri Auto
-          </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>Anunțuri monitorizate, scorate și cu calcul de import</p>
-        </div>
-      </div>
+    <div>
+      <TopBar path={["AUTO ANUNȚURI", "FEED"]}>
+        {activeTab === "auto" && <ScanNowButton onScan={handleScanNow} scanning={scanning} />}
+      </TopBar>
+
+      {/* Header — structură identică cu Radar */}
+      <PageHeading
+        icon={Car}
+        title="Feed Anunțuri Auto"
+        subtitle={
+          activeTab === "auto"
+            ? <>Anunțuri monitorizate, scorate și cu calcul de import — <Hl>{sortedListings.length} în vizualizare</Hl>.</>
+            : "Caută live pe platformele auto, fără să salvezi în feed."
+        }
+      />
 
       {/* Tab-uri Feed Automat / Căutare Manuală (stil identic cu Radar) */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
-        <button onClick={() => setActiveTab("auto")} style={tabPillStyle(activeTab === "auto")}>Feed Automat</button>
-        <button onClick={() => setActiveTab("manual")} style={tabPillStyle(activeTab === "manual")}>Căutare Manuală</button>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "16px" }}>
+        <button onClick={() => setActiveTab("auto")} style={{ ...tabPillStyle(activeTab === "auto"), display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          {activeTab === "auto" && <span className="pill-nav-dot" />}
+          Feed Automat
+        </button>
+        <button onClick={() => setActiveTab("manual")} style={{ ...tabPillStyle(activeTab === "manual"), display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          {activeTab === "manual" && <span className="pill-nav-dot" />}
+          Căutare Manuală
+        </button>
       </div>
 
       {activeTab === "manual" && <ManualSearchTab />}
 
       {activeTab === "auto" && (
       <>
-      {/* Scanare manuală — rând dedicat aliniat dreapta (ca la Radar) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
-        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
-      </div>
-
       {/* Facebook session expired banner */}
       {stats.has_facebook_keywords && stats.facebook_session_valid === false && (
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", marginBottom: "1.25rem", backgroundColor: "rgba(245,158,11,0.08)", border: "0.5px solid rgba(245,158,11,0.3)", borderRadius: "0.625rem" }}>
-          <AlertTriangle style={{ width: "18px", height: "18px", color: "#fbbf24", flexShrink: 0 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 14px", marginTop: "14px", background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: "12px" }}>
+          <AlertTriangle style={{ width: "16px", height: "16px", color: "#fb923c", flexShrink: 0 }} strokeWidth={1.8} />
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "#fbbf24", margin: 0 }}>Sesiunea Facebook a expirat</p>
-            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0.125rem 0 0" }}>
+            <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Sesiunea Facebook a expirat</p>
+            <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
               Keyword-urile de tip Facebook Auto nu vor returna rezultate. Reautentifică-te din{" "}
-              <a href="/dashboard/settings" style={{ color: "#fbbf24", fontWeight: 500 }}>Setări → Facebook</a>
+              <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>
               {" "}pentru a reactiva scanarea.
             </p>
           </div>
@@ -247,8 +254,8 @@ export default function AutoFeedPage() {
       )}
 
       {scanMsg && (
-        <p style={{ fontSize: "0.8125rem", color: "#60a5fa", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-          <Info style={{ width: "15px", height: "15px", flexShrink: 0 }} /> {scanMsg}
+        <p style={{ fontSize: "12px", color: "#7ee7f8", marginTop: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <Info style={{ width: "14px", height: "14px", flexShrink: 0 }} strokeWidth={1.8} /> {scanMsg}
         </p>
       )}
 
@@ -256,16 +263,13 @@ export default function AutoFeedPage() {
       <StatCardsRow cards={statCards} />
 
       {/* Filter bar */}
-      <div style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        padding: "1rem",
-        marginBottom: "1.25rem",
+      <div className="glass-panel" style={{
+        padding: "13px 15px",
+        marginTop: "14px",
         display: "flex",
         flexWrap: "wrap",
         alignItems: "center",
-        gap: "0.625rem",
+        gap: "9px",
       }}>
         <select value={filters.platform} onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))} style={selectStyle}>
           <option value="">Toate platformele</option>
@@ -305,7 +309,7 @@ export default function AutoFeedPage() {
         <button
           onClick={() => { loadFeed(); loadStats(); }}
           disabled={loading}
-          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}
         >
           <RefreshCw style={{ width: "14px", height: "14px", animation: loading ? "spin 1s linear infinite" : undefined }} />
           Actualizează
@@ -313,7 +317,7 @@ export default function AutoFeedPage() {
 
         <button
           onClick={downloadExcel}
-          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", backgroundColor: "rgba(22,163,74,0.15)", color: "#4ade80", border: "1px solid rgba(22,163,74,0.3)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
         >
           <FileSpreadsheet style={{ width: "14px", height: "14px" }} />
           Export Excel
@@ -368,7 +372,7 @@ export default function AutoFeedPage() {
       {loading ? (
         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>Se încarcă...</div>
       ) : listings.length === 0 ? (
-        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem" }}>
+        <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px" }}>
           Niciun anunț în această categorie. Adaugă keyword-uri și așteaptă scanarea automată (la 10 min).
         </div>
       ) : (
@@ -395,7 +399,7 @@ export default function AutoFeedPage() {
           <button
             onClick={loadMoreListings}
             disabled={loadingMore}
-            style={{ padding: "0.6rem 1.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", color: "var(--text-primary)", cursor: loadingMore ? "default" : "pointer", opacity: loadingMore ? 0.6 : 1, fontSize: "0.875rem" }}
+            style={{ padding: "0.6rem 1.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "var(--text-primary)", cursor: loadingMore ? "default" : "pointer", opacity: loadingMore ? 0.6 : 1, fontSize: "0.875rem" }}
           >
             {loadingMore ? "Se încarcă…" : `Încarcă mai multe (${feedTotal - listings.length} rămase)`}
           </button>
@@ -455,7 +459,7 @@ function AutoCardOverlay({ listing }) {
   return (
     <>
       {isImport && (
-        <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.2)", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>
+        <span style={{ position: "absolute", bottom: "0.5rem", left: "0.5rem", fontSize: "0.625rem", fontWeight: 600, color: "#a78bfa", backgroundColor: "rgba(124,58,237,0.2)", padding: "0.125rem 0.5rem", borderRadius: "8px" }}>
           Import
         </span>
       )}
@@ -505,12 +509,12 @@ function AutoImportScore({ listing }) {
   const importData = listing.import_score_json;
   if (!IMPORT_PLATFORMS.includes(listing.platform) || !importData) return null;
   return (
-    <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "0.625rem", padding: "0.875rem 1rem", margin: "0 1.25rem 1.25rem" }}>
+    <div style={{ backgroundColor: "rgba(124,58,237,0.07)", border: "0.5px solid rgba(124,58,237,0.25)", borderRadius: "10px", padding: "0.875rem 1rem", margin: "0 1.25rem 1.25rem" }}>
       <div style={{ fontSize: "0.75rem", color: "#a78bfa", fontWeight: 600, marginBottom: "0.625rem" }}>IMPORT SCORE</div>
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
         {["pe_platforma", "pe_roti"].map((mode) => (
           <button key={mode} onClick={() => setImportMode(mode)} style={{
-            padding: "0.25rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
+            padding: "0.25rem 0.75rem", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
             backgroundColor: importMode === mode ? "rgba(124,58,237,0.2)" : "var(--bg-dark)",
             color: importMode === mode ? "#a78bfa" : "var(--text-secondary)",
             border: importMode === mode ? "1px solid rgba(124,58,237,0.4)" : "1px solid var(--border-color)",
@@ -642,14 +646,14 @@ function AutoCompareModal({ listings, onClose, onSave, onIgnore }) {
   const highestMarginIdx = margins.indexOf(Math.max(...margins));
   return (
     <div onClick={onClose} style={{
-      position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)",
+      position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 110, padding: "1.5rem",
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        backgroundColor: "var(--bg-card)",
+        background: "var(--bg-card)", backdropFilter: "blur(20px)",
         border: "1px solid var(--border-color)",
-        borderRadius: "0.875rem",
+        borderRadius: "14px",
         maxWidth: "1100px", width: "100%",
         maxHeight: "90vh", overflowY: "auto",
         padding: "1.25rem",
@@ -670,17 +674,17 @@ function AutoCompareModal({ listings, onClose, onSave, onIgnore }) {
             const img = validImg(l.image_url) || validImg(Array.isArray(l.images_json) ? l.images_json[0] : null);
             return (
               <div key={l.id} style={{
-                backgroundColor: "var(--bg-dark)",
+                background: "rgba(4,9,18,.45)",
                 border: "1px solid var(--border-color)",
-                borderRadius: "0.625rem", padding: "0.75rem",
+                borderRadius: "10px", padding: "0.75rem",
                 display: "flex", flexDirection: "column", gap: "0.5rem",
               }}>
                 <div style={{ display: "flex", gap: "0.375rem" }}>
                   {l.grade && (
-                    <span style={{ padding: "0.125rem 0.5rem", backgroundColor: sc.bg, border: `1px solid ${sc.border}`, borderRadius: "0.375rem", color: sc.text, fontSize: "0.7rem", fontWeight: 700 }}>{l.grade}</span>
+                    <span style={{ padding: "0.125rem 0.5rem", backgroundColor: sc.bg, border: `1px solid ${sc.border}`, borderRadius: "8px", color: sc.text, fontSize: "0.7rem", fontWeight: 700 }}>{l.grade}</span>
                   )}
                 </div>
-                <div style={{ width: "100%", height: "160px", overflow: "hidden", backgroundColor: "var(--bg-card)", borderRadius: "0.375rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: "100%", height: "160px", overflow: "hidden", background: "var(--bg-card)", backdropFilter: "blur(20px)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   {img ? (
                     <img src={img} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
@@ -743,7 +747,7 @@ function smallActionBtn(color, bg, border) {
     padding: "0.3rem 0.5rem",
     backgroundColor: bg, color,
     border: `1px solid ${border}`,
-    borderRadius: "0.375rem", fontSize: "0.7rem",
+    borderRadius: "8px", fontSize: "0.7rem",
     fontWeight: 600, cursor: "pointer",
     display: "inline-flex", alignItems: "center",
   };
@@ -752,8 +756,8 @@ function smallActionBtn(color, bg, border) {
 function actBtn(color) {
   return {
     display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 0.875rem",
-    backgroundColor: "var(--bg-dark)", color, border: `1px solid ${color === "var(--text-secondary)" ? "var(--border-color)" : color + "55"}`,
-    borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
+    background: "rgba(4,9,18,.45)", color, border: `1px solid ${color === "var(--text-secondary)" ? "var(--border-color)" : color + "55"}`,
+    borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer",
   };
 }
 
@@ -858,7 +862,7 @@ function ManualSearchTab() {
 
   return (
     <div>
-      <form onSubmit={doSearch} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+      <form onSubmit={doSearch} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
         {/* Platformă — o singură (pill-uri, ca la Radar) */}
         <div>
           <label style={labelStyle}>Platformă</label>
@@ -867,7 +871,7 @@ function ManualSearchTab() {
               const active = platform === p.value;
               return (
                 <button key={p.value} type="button" onClick={() => changePlatform(p.value)} style={{
-                  padding: "0.375rem 0.875rem", borderRadius: "0.5rem", fontSize: "0.8125rem",
+                  padding: "0.375rem 0.875rem", borderRadius: "10px", fontSize: "0.8125rem",
                   fontWeight: active ? 600 : 400, cursor: "pointer",
                   border: active ? "2px solid #2563eb" : "1px solid var(--border-color)",
                   backgroundColor: active ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
@@ -920,7 +924,7 @@ function ManualSearchTab() {
         )}
 
         <div>
-          <button type="submit" style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
+          <button type="submit" style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.25rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
             <Car style={{ width: "16px", height: "16px" }} /> Caută
           </button>
         </div>
@@ -944,7 +948,7 @@ function ManualSearchTab() {
             </div>
           </>
         ) : (
-          <div style={{ textAlign: "center", padding: "2.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", color: "var(--text-secondary)" }}>
+          <div style={{ textAlign: "center", padding: "2.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", color: "var(--text-secondary)" }}>
             Niciun anunț găsit pentru filtrele selectate.
           </div>
         )

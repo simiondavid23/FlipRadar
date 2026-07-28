@@ -37,7 +37,7 @@ const PLATFORM_COLORS = {
 };
 
 export const rePlatformLabel = (v) => RE_PLATFORMS.find((p) => p.value === v)?.label || v || "";
-export const rePlatformColor = (v) => PLATFORM_COLORS[v] || "#64748b";
+export const rePlatformColor = (v) => PLATFORM_COLORS[v] || "#a9b8d6";
 
 export const JUDETE = [
   "Alba", "Arad", "Arges", "Bacau", "Bihor", "Bistrita-Nasaud", "Botosani", "Braila",

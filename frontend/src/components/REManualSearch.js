@@ -16,8 +16,8 @@ const PLATFORMS = [
 ];
 
 const inputStyle = {
-  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
+  width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+  borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
 };
 const lbl = { display: "block", fontSize: "0.7rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.25rem" };
 const liKey = (l) => `${l.platform}:${l.external_id || l.source_url}`;
@@ -26,7 +26,7 @@ function Chip({ active, onClick, children }) {
   return (
     <label onClick={onClick} style={{
       display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", cursor: "pointer",
-      padding: "0.3rem 0.625rem", borderRadius: "0.5rem", fontWeight: 600,
+      padding: "0.3rem 0.625rem", borderRadius: "10px", fontWeight: 600,
       color: active ? "var(--blue-light)" : "var(--text-secondary)",
       border: `1px solid ${active ? "var(--blue-primary)" : "var(--border-color)"}`,
       backgroundColor: active ? "var(--blue-dim)" : "transparent",
@@ -117,7 +117,7 @@ export default function REManualSearch() {
 
   return (
     <div>
-      <form onSubmit={doSearch} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", padding: "1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form onSubmit={doSearch} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
         {/* Platformă — o singură selecție */}
         <div>
           <label style={lbl}>Platformă</label>
@@ -166,7 +166,7 @@ export default function REManualSearch() {
 
         <div>
           <button type="button" onClick={() => setShowAdv((s) => !s)}
-            style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.375rem 0.75rem", borderRadius: "0.5rem", border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "var(--text-secondary)", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.375rem 0.75rem", borderRadius: "10px", border: "1px solid var(--border-color)", backgroundColor: "transparent", color: "var(--text-secondary)", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>
             <SlidersHorizontal style={{ width: "14px", height: "14px" }} /> Filtre avansate
           </button>
           {showAdv && (
@@ -199,7 +199,7 @@ export default function REManualSearch() {
         </div>
 
         <div>
-          <button type="submit" style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.5rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
+          <button type="submit" style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1.5rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
             <Home style={{ width: "16px", height: "16px" }} /> Caută
           </button>
           <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem", margin: "0.5rem 0 0" }}>
@@ -226,7 +226,7 @@ export default function REManualSearch() {
             </div>
           </>
         ) : (
-          <div style={{ textAlign: "center", padding: "2.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", color: "var(--text-secondary)" }}>
+          <div style={{ textAlign: "center", padding: "2.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", color: "var(--text-secondary)" }}>
             Niciun anunț găsit pentru filtrele selectate.
           </div>
         )

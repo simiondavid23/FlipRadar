@@ -1,11 +1,16 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { radarAPI } from "@/lib/api";
-import { modalFooterStyle } from "@/lib/uiStyles";
+import {
+  modalFooterStyle, modalOverlayStyle, modalPanelStyle, inputStyle,
+  platformChipStyle, marginColorOf,
+} from "@/lib/uiStyles";
 import DeleteKeywordModal from "@/components/DeleteKeywordModal";
 import NotifToggle from "@/components/NotifToggle";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
 import {
-  Target, Plus, Pencil, Trash2, X, Save, ToggleLeft, ToggleRight, TrendingUp, Mail, MessageSquare
+  Target, Plus, Pencil, Trash2, X, Save, TrendingUp, Mail, MessageSquare, Clock
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -876,69 +881,44 @@ export default function RadarKeywordsPage() {
     return { value: v, pct };
   }, [form.max_price, form.resale_price]);
 
-  const inputStyle = {
-    width: "100%",
-    backgroundColor: "var(--bg-dark)",
-    border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem",
-    padding: "0.5rem 0.75rem",
-    color: "var(--text-primary)",
-    fontSize: "0.875rem",
-    outline: "none",
-  };
-
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-        <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
     );
   }
 
+  const activeCount = keywords.filter((k) => k.is_active).length;
+
   return (
-    <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Target style={{ width: "22px", height: "22px", color: "#2563eb" }} />
-            Keyword-uri Urmărite
-          </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-            Configurează ce caută Radar-ul pe platformele active ({keywords.length} keyword-uri)
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.5rem 0.875rem",
-            backgroundColor: "var(--blue-primary)",
-            color: "white",
-            border: "none",
-            borderRadius: "0.5rem",
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <Plus style={{ width: "16px", height: "16px" }} />
+    <div>
+      <TopBar path={["RADAR PIAȚA", "KEYWORD-URI"]} />
+
+      <PageHeading
+        icon={Target}
+        title="Keyword-uri Urmărite"
+        subtitle={<>Configurează ce caută Radar-ul pe platformele active — <Hl>{keywords.length} keyword-uri</Hl>, {activeCount} active.</>}
+      >
+        <button onClick={openCreate} className="btn-cyan">
+          <Plus style={{ width: "13px", height: "13px" }} strokeWidth={2.2} />
           Adaugă keyword
         </button>
-      </div>
+      </PageHeading>
 
       {/* Acțiuni în masă */}
-      <div style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "0.75rem",
-        padding: "0.75rem",
-        marginBottom: "1rem",
+      <div className="glass-panel" style={{
+        padding: "11px 13px",
+        marginTop: "16px",
+        borderRadius: "14px",
         display: "flex",
         flexWrap: "wrap",
-        gap: "0.5rem",
+        alignItems: "center",
+        gap: "8px",
       }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".14em", color: "var(--text-mono)", padding: "0 4px" }}>
+          ACȚIUNI ÎN MASĂ
+        </span>
         <button onClick={() => bulkSet(() => true, true)} style={bulkBtn}>Activează toate</button>
         <button onClick={() => bulkSet(() => true, false)} style={bulkBtn}>Dezactivează toate</button>
         <button onClick={() => bulkSet((k) => k.platforms?.includes("olx"), true)} style={bulkBtn}>Activează OLX</button>
@@ -948,38 +928,32 @@ export default function RadarKeywordsPage() {
 
       {/* Listă keyword-uri */}
       {keywords.length === 0 ? (
-        <div style={{
+        <div className="glass-panel" style={{
           textAlign: "center",
           padding: "2.5rem",
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem",
-          color: "var(--text-secondary)",
+          marginTop: "14px",
+          color: "var(--text-dim)",
+          fontSize: "12.5px",
         }}>
           Nu ai keyword-uri configurate. Apasă „Adaugă keyword” ca să începi.
         </div>
       ) : (
-        <div style={{
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem",
-          overflow: "hidden",
-        }}>
+        <div className="glass-panel" style={{ marginTop: "14px", overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+            <table className="data-table" style={{ minWidth: "1080px" }}>
               <thead>
-                <tr style={{ backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)" }}>
+                <tr>
                   <th style={th}>Keyword</th>
                   <th style={th}>Preț min</th>
                   <th style={th}>Preț max</th>
                   <th style={th}>Revânzare</th>
-                  <th style={th}>Marjă țintă</th>
+                  <th style={th}>Marjă</th>
                   <th style={th}>Categorie</th>
                   <th style={th}>Platforme</th>
                   <th style={th}>Interval</th>
-                  <th style={th}>Notificări</th>
+                  <th style={th}>Notif.</th>
                   <th style={th}>Status</th>
-                  <th style={th}>Acțiuni</th>
+                  <th style={{ ...th, textAlign: "right" }}>Acțiuni</th>
                 </tr>
               </thead>
               <tbody>
@@ -992,19 +966,21 @@ export default function RadarKeywordsPage() {
                     catch { return []; }
                   })();
                   return (
-                    <tr key={k.id} style={{ borderTop: "1px solid var(--border-color)" }}>
+                    <tr key={k.id}>
                       <td style={td}>
-                        <div>{k.name}</div>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{k.name}</div>
                         {k.active_hours_start !== null && k.active_hours_start !== undefined &&
                           k.active_hours_end !== null && k.active_hours_end !== undefined && (
                             <span style={{
                               display: "inline-flex",
                               alignItems: "center",
-                              gap: "0.2rem",
-                              fontSize: "0.7rem",
-                              color: "var(--text-secondary)",
-                              marginTop: "0.2rem",
+                              gap: "3px",
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "8px",
+                              color: "var(--text-muted)",
+                              marginTop: "4px",
                             }}>
+                              <Clock style={{ width: "9px", height: "9px" }} strokeWidth={2} />
                               {String(k.active_hours_start).padStart(2, "0")}:00
                               {" – "}
                               {String(k.active_hours_end).padStart(2, "0")}:00
@@ -1021,30 +997,31 @@ export default function RadarKeywordsPage() {
                           if (ff.location_county) parts.push(ff.location_county);
                           if (ff.plz) parts.push(`PLZ ${ff.plz}`);
                           return (
-                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: "2px", maxWidth: "260px" }}>
-                              <span style={{ color: "var(--blue-light)", fontWeight: 600 }}>{plat}</span>
+                            <div style={{ fontSize: "10.5px", color: "var(--text-muted)", marginTop: "3px", maxWidth: "260px" }}>
+                              <span style={{ color: "#8fb5f7", fontWeight: 600 }}>{plat}</span>
                               {cat ? ` · ${cat}` : ""}{parts.length ? ` · ${parts.join(" · ")}` : ""}
                             </div>
                           );
                         })()}
                         {excludeWords.length > 0 && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginTop: "0.25rem" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
                             {excludeWords.map((word) => (
                               <span key={word} style={{
-                                fontSize: "0.6875rem", padding: "0.125rem 0.4rem",
-                                backgroundColor: "rgba(239,68,68,0.12)", color: "#fca5a5",
-                                borderRadius: "0.25rem", display: "inline-block"
+                                fontSize: "9.5px", padding: "1.5px 7px",
+                                background: "rgba(248,113,113,.09)", color: "#fca5a5",
+                                border: "1px solid rgba(248,113,113,.22)",
+                                borderRadius: "6px", display: "inline-block", whiteSpace: "nowrap",
                               }}>
-                                {word}
+                                − {word}
                               </span>
                             ))}
                           </div>
                         )}
                       </td>
-                      <td style={td}>{k.min_price ? `${Math.round(k.min_price)} RON` : "—"}</td>
-                      <td style={td}>{Math.round(k.max_price)} RON</td>
-                      <td style={td}>{Math.round(k.resale_price)} RON</td>
-                      <td style={{ ...td, color: m >= 25 ? "#4ade80" : m >= 10 ? "#facc15" : "#fb923c" }}>
+                      <td style={{ ...td, ...numCell, color: "var(--text-dim)" }}>{k.min_price ? `${Math.round(k.min_price)} RON` : "—"}</td>
+                      <td style={{ ...td, ...numCell, color: "var(--text-primary)", fontWeight: 500 }}>{Math.round(k.max_price)} RON</td>
+                      <td style={{ ...td, ...numCell, color: "var(--text-primary)", fontWeight: 500 }}>{Math.round(k.resale_price)} RON</td>
+                      <td style={{ ...td, ...numCell, color: marginColorOf(m), fontWeight: 700 }}>
                         {Math.round(m)}%
                       </td>
                       <td style={td} title={k.category_label || k.category || ""}>
@@ -1055,33 +1032,45 @@ export default function RadarKeywordsPage() {
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                           verticalAlign: "bottom",
+                          fontSize: "11.5px",
+                          color: "var(--text-dim)",
                         }}>
                           {k.category_label || k.category || "—"}
                         </span>
                       </td>
-                      <td style={td}>{(k.platforms || []).join(", ")}</td>
-                      <td style={td}>{k.poll_interval_minutes} min</td>
                       <td style={td}>
-                        <span style={{ display: "inline-flex", gap: "0.25rem", fontSize: "0.95rem" }}>
-                          <span title="Email" style={{ opacity: k.notify_email ? 1 : 0.25, display: "inline-flex" }}><Mail style={{ width: "14px", height: "14px" }} /></span>
-                          <span title="Discord" style={{ opacity: k.notify_discord ? 1 : 0.25, display: "inline-flex" }}><MessageSquare style={{ width: "14px", height: "14px" }} /></span>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                          {(k.platforms || []).map((p) => (
+                            <span key={p} style={platformChipStyle(p)}>{p}</span>
+                          ))}
+                          {(k.platforms || []).length === 0 && <span style={{ color: "var(--text-muted)" }}>—</span>}
+                        </div>
+                      </td>
+                      <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-dim)" }}>{k.poll_interval_minutes} min</td>
+                      <td style={td}>
+                        <span style={{ display: "inline-flex", gap: "6px" }}>
+                          <span title="Email" style={{ opacity: k.notify_email ? 1 : 0.22, display: "inline-flex", color: "#7ee7f8" }}><Mail style={{ width: "13px", height: "13px" }} strokeWidth={1.8} /></span>
+                          <span title="Discord" style={{ opacity: k.notify_discord ? 1 : 0.22, display: "inline-flex", color: "#7ee7f8" }}><MessageSquare style={{ width: "13px", height: "13px" }} strokeWidth={1.8} /></span>
                         </span>
                       </td>
                       <td style={td}>
-                        <button onClick={() => toggle(k.id)} style={{ background: "none", border: "none", cursor: "pointer", color: k.is_active ? "#4ade80" : "var(--text-muted)" }}>
-                          {k.is_active ? <ToggleRight style={{ width: "22px", height: "22px" }} /> : <ToggleLeft style={{ width: "22px", height: "22px" }} />}
-                        </button>
+                        <button
+                          onClick={() => toggle(k.id)}
+                          className={`toggle-cyan${k.is_active ? " on" : ""}`}
+                          aria-label={k.is_active ? "Dezactivează" : "Activează"}
+                          title={k.is_active ? "Activ" : "Inactiv"}
+                        />
                       </td>
                       <td style={td}>
-                        <div style={{ display: "flex", gap: "0.375rem" }}>
+                        <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
                           <button onClick={() => openTrend(k)} style={iconBtn} title="Trend preț">
-                            <TrendingUp style={{ width: "14px", height: "14px" }} />
+                            <TrendingUp style={{ width: "13px", height: "13px" }} strokeWidth={1.8} />
                           </button>
                           <button onClick={() => openEdit(k)} style={iconBtn} title="Editează">
-                            <Pencil style={{ width: "14px", height: "14px" }} />
+                            <Pencil style={{ width: "13px", height: "13px" }} strokeWidth={1.8} />
                           </button>
                           <button onClick={() => handleDeleteClick(k)} style={{ ...iconBtn, color: "#f87171" }} title="Șterge">
-                            <Trash2 style={{ width: "14px", height: "14px" }} />
+                            <Trash2 style={{ width: "13px", height: "13px" }} strokeWidth={1.8} />
                           </button>
                         </div>
                       </td>
@@ -1096,9 +1085,9 @@ export default function RadarKeywordsPage() {
 
       {/* Wizard marketplace (3 pasi) */}
       {showWizard && (() => {
-        const wlabel = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
-        const primaryBtn = { padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600 };
-        const secondaryBtn = { padding: "0.5rem 1.25rem", borderRadius: "0.5rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 };
+        const wlabel = { display: "block", fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".15em", textTransform: "uppercase", color: "var(--text-mono)", marginBottom: "6px" };
+        const primaryBtn = { padding: "9px 20px", borderRadius: "12px", border: "1px solid rgba(34,211,238,.42)", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: "12.5px", fontWeight: 600, boxShadow: "0 0 22px rgba(34,211,238,.16)" };
+        const secondaryBtn = { padding: "9px 20px", borderRadius: "12px", background: "rgba(148,163,184,.07)", color: "var(--text-dim)", border: "1px solid rgba(148,163,184,.2)", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: "12.5px", fontWeight: 500 };
         const f = wizardData.filters || {};
         const plat = wizardData.platform;
         const platLabel = WIZARD_PLATFORMS.find((p) => p.value === plat)?.label || "";
@@ -1111,10 +1100,10 @@ export default function RadarKeywordsPage() {
                 const checked = Array.isArray(f.condition) && f.condition.includes(c);
                 return (
                   <label key={c} style={{
-                    display: "inline-flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem",
-                    color: checked ? "var(--blue-light)" : "var(--text-secondary)", cursor: "pointer",
-                    padding: "0.3rem 0.6rem", border: `1px solid ${checked ? "var(--blue-primary)" : "var(--border-color)"}`,
-                    borderRadius: "0.5rem", backgroundColor: checked ? "var(--blue-dim)" : "transparent",
+                    display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px",
+                    color: checked ? "#7ee7f8" : "var(--text-dim)", cursor: "pointer",
+                    padding: "6px 11px", border: `1px solid ${checked ? "rgba(34,211,238,.4)" : "rgba(94,140,255,.16)"}`,
+                    borderRadius: "10px", background: checked ? "rgba(34,211,238,.1)" : "transparent",
                   }}>
                     <input type="checkbox" checked={checked} onChange={() => toggleWizardCondition(c)} />
                     {c}
@@ -1150,25 +1139,21 @@ export default function RadarKeywordsPage() {
 
         return (
           <div onClick={closeWizard} style={{
-            position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 100,
-            display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "3rem 1rem", overflowY: "auto",
+            ...modalOverlayStyle, alignItems: "flex-start", padding: "3rem 1rem", overflowY: "auto",
           }}>
-            <div onClick={(e) => e.stopPropagation()} style={{
-              width: "100%", maxWidth: "640px", backgroundColor: "var(--bg-card)",
-              border: "1px solid var(--border-color)", borderRadius: "0.875rem", padding: "1.5rem",
-            }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ ...modalPanelStyle, maxWidth: "640px", padding: "22px" }}>
               {/* Header + pasi */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+                <h2 style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                   Adauga keyword — Pasul {wizardStep} din 3
                 </h2>
-                <button onClick={closeWizard} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}>
-                  <X style={{ width: "20px", height: "20px" }} />
+                <button onClick={closeWizard} className="btn-icon" aria-label="Închide">
+                  <X style={{ width: "15px", height: "15px" }} strokeWidth={1.8} />
                 </button>
               </div>
               <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
                 {[1, 2, 3].map((s) => (
-                  <div key={s} style={{ flex: 1, height: "4px", borderRadius: "2px", backgroundColor: s <= wizardStep ? "var(--blue-primary)" : "var(--border-color)" }} />
+                  <div key={s} style={{ flex: 1, height: "3px", borderRadius: "2px", background: s <= wizardStep ? "linear-gradient(90deg,#22d3ee,#2563eb)" : "rgba(94,140,255,.13)" }} />
                 ))}
               </div>
 
@@ -1185,11 +1170,11 @@ export default function RadarKeywordsPage() {
                         <button key={p.value} type="button"
                           onClick={() => setWizardData({ ...EMPTY_WIZARD, platform: p.value })}
                           style={{
-                            padding: "0.875rem", borderRadius: "0.625rem", cursor: "pointer", textAlign: "left",
+                            padding: "0.875rem", borderRadius: "10px", cursor: "pointer", textAlign: "left",
                             fontSize: "0.8125rem", fontWeight: 600,
                             backgroundColor: active ? "var(--blue-dim)" : "var(--bg-dark)",
                             color: active ? "var(--blue-light)" : "var(--text-primary)",
-                            border: `1px solid ${active ? "var(--blue-primary)" : "var(--border-color)"}`,
+                            border: `1px solid ${active ? "rgba(34,211,238,.42)" : "rgba(94,140,255,.16)"}`,
                           }}>
                           {p.label}
                         </button>
@@ -1339,9 +1324,9 @@ export default function RadarKeywordsPage() {
                           const active = f.offer_type === t;
                           return (
                             <button key={t} type="button" onClick={() => setWizardFilter("offer_type", t)}
-                              style={{ flex: 1, padding: "0.5rem", borderRadius: "0.5rem", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+                              style={{ flex: 1, padding: "0.5rem", borderRadius: "10px", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
                                 backgroundColor: active ? "var(--blue-dim)" : "var(--bg-dark)", color: active ? "var(--blue-light)" : "var(--text-primary)",
-                                border: `1px solid ${active ? "var(--blue-primary)" : "var(--border-color)"}` }}>
+                                border: `1px solid ${active ? "rgba(34,211,238,.42)" : "rgba(94,140,255,.16)"}` }}>
                               {t}
                             </button>
                           );
@@ -1393,32 +1378,19 @@ export default function RadarKeywordsPage() {
       {showForm && (
         <div
           onClick={() => setShowForm(false)}
-          style={{
-            position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 100, padding: "1.5rem",
-          }}
+          style={modalOverlayStyle}
         >
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={submit}
-            style={{
-              backgroundColor: "var(--bg-card)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "0.875rem",
-              maxWidth: "620px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              padding: "1.25rem",
-            }}
+            style={{ ...modalPanelStyle, maxWidth: "620px", padding: "20px" }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+              <h2 style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                 {editingId ? "Editează keyword" : "Adaugă keyword"}
               </h2>
-              <button type="button" onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>
-                <X style={{ width: "20px", height: "20px" }} />
+              <button type="button" onClick={() => setShowForm(false)} className="btn-icon" aria-label="Închide">
+                <X style={{ width: "15px", height: "15px" }} strokeWidth={1.8} />
               </button>
             </div>
 
@@ -1429,11 +1401,13 @@ export default function RadarKeywordsPage() {
                     <button key={p.value} type="button"
                       onClick={() => { setFormPlatform(p.value); setFormMainCat(""); setFormSubCat(""); setForm((prev) => ({ ...prev, platforms: [p.value] })); }}
                       style={{
-                        padding: "0.375rem 0.875rem", borderRadius: "0.5rem", fontSize: "0.8125rem",
-                        fontWeight: formPlatform === p.value ? 600 : 400, cursor: "pointer",
-                        border: formPlatform === p.value ? "2px solid #2563eb" : "1px solid var(--border-color)",
-                        backgroundColor: formPlatform === p.value ? "rgba(37,99,235,0.15)" : "var(--bg-dark)",
-                        color: formPlatform === p.value ? "#60a5fa" : "var(--text-secondary)",
+                        padding: "7px 16px", borderRadius: "99px", fontSize: "12px",
+                        fontFamily: "var(--font-sans)",
+                        fontWeight: formPlatform === p.value ? 600 : 500, cursor: "pointer",
+                        border: formPlatform === p.value ? "1px solid rgba(34,211,238,.28)" : "1px solid rgba(94,140,255,.13)",
+                        background: formPlatform === p.value ? "rgba(255,255,255,.08)" : "transparent",
+                        boxShadow: formPlatform === p.value ? "inset 0 1px 0 rgba(255,255,255,.12), 0 0 18px rgba(34,211,238,.14)" : "none",
+                        color: formPlatform === p.value ? "#fff" : "var(--text-dim)",
                       }}
                     >{p.label}</button>
                   ))}
@@ -1497,8 +1471,8 @@ export default function RadarKeywordsPage() {
               </Field>
 
               {marginPreview && (
-                <div style={{ padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem" }}>
-                  Marjă estimată: <strong style={{ color: marginPreview.pct >= 25 ? "#4ade80" : marginPreview.pct >= 10 ? "#facc15" : "#fb923c" }}>
+                <div style={{ padding: "8px 12px", background: "rgba(4,9,18,.45)", border: "1px solid rgba(94,140,255,.13)", borderRadius: "10px", fontSize: "12.5px" }}>
+                  Marjă estimată: <strong style={{ color: marginPreview.pct >= 25 ? "#4ade80" : marginPreview.pct >= 10 ? "#fde047" : "#fb923c" }}>
                     {Math.round(marginPreview.value)} RON ({Math.round(marginPreview.pct)}%)
                   </strong>
                   {parseFloat(form.min_price) > 0 && (
@@ -1516,10 +1490,10 @@ export default function RadarKeywordsPage() {
 
               <Field label="Exclude cuvinte din titlu (Enter pentru a adăuga)">
                 <div style={{
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "0.5rem",
-                  backgroundColor: "var(--bg-dark)",
-                  padding: "0.375rem 0.5rem",
+                  border: "1px solid rgba(94,140,255,.16)",
+                  borderRadius: "10px",
+                  background: "rgba(4,9,18,.5)",
+                  padding: "6px 8px",
                   display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem",
                   minHeight: "2.5rem",
                 }}>
@@ -1531,7 +1505,7 @@ export default function RadarKeywordsPage() {
                       color: "#60a5fa",
                       fontSize: "0.75rem",
                       padding: "0.125rem 0.5rem",
-                      borderRadius: "0.375rem",
+                      borderRadius: "8px",
                     }}>
                       {chip}
                       <button
@@ -1571,10 +1545,10 @@ export default function RadarKeywordsPage() {
 
               <Field label={<>Exclude cuvinte din descriere (Enter pentru a adăuga)<span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", fontWeight: 400, marginLeft: "0.5rem" }}>— funcționează pe OLX și Vinted</span></>}>
                 <div style={{
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "0.5rem",
-                  backgroundColor: "var(--bg-dark)",
-                  padding: "0.375rem 0.5rem",
+                  border: "1px solid rgba(94,140,255,.16)",
+                  borderRadius: "10px",
+                  background: "rgba(4,9,18,.5)",
+                  padding: "6px 8px",
                   display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem",
                   minHeight: "2.5rem",
                 }}>
@@ -1586,7 +1560,7 @@ export default function RadarKeywordsPage() {
                       color: "#60a5fa",
                       fontSize: "0.75rem",
                       padding: "0.125rem 0.5rem",
-                      borderRadius: "0.375rem",
+                      borderRadius: "8px",
                     }}>
                       {chip}
                       <button
@@ -1656,7 +1630,7 @@ export default function RadarKeywordsPage() {
                 </Field>
               )}
               {editingId ? (
-                <div style={{ padding: "0.6rem", border: "1px solid var(--border-color)", borderRadius: "0.5rem", backgroundColor: "var(--bg-dark)" }}>
+                <div style={{ padding: "10px", border: "1px solid rgba(94,140,255,.13)", borderRadius: "10px", background: "rgba(4,9,18,.45)" }}>
                   <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.4rem" }}>
                     Testează excluderile (pe configurația salvată)
                   </div>
@@ -1673,7 +1647,7 @@ export default function RadarKeywordsPage() {
                           setTestResult(r.data);
                         } catch { setTestResult({ error: true }); }
                       }}
-                      style={{ padding: "0.4rem 0.8rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                      className="btn-cyan" style={{ padding: "7px 14px", borderRadius: "10px", fontSize: "12px" }}
                     >
                       Testează
                     </button>
@@ -1742,10 +1716,10 @@ export default function RadarKeywordsPage() {
               </Field>
 
               {/* Praguri de grad (opțional) — gol ⇒ implicit A≥40% · B≥25% · C≥10% */}
-              <div style={{ border: "1px solid var(--border-color)", borderRadius: "0.5rem", overflow: "hidden" }}>
+              <div style={{ border: "1px solid rgba(94,140,255,.13)", borderRadius: "10px", overflow: "hidden" }}>
                 <button type="button" onClick={() => setShowGrades((v) => !v)}
                   style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)", border: "none", cursor: "pointer",
+                    padding: "8px 12px", background: "rgba(4,9,18,.45)", border: "none", cursor: "pointer",
                     color: "var(--text-secondary)", fontSize: "0.8125rem", fontWeight: 600 }}>
                   <span>Praguri de grad (opțional)</span>
                   <span style={{ fontSize: "1rem", lineHeight: 1 }}>{showGrades ? "−" : "+"}</span>
@@ -1825,10 +1799,10 @@ export default function RadarKeywordsPage() {
               </div>
 
               <div style={{
-                backgroundColor: "transparent",
-                border: "1px solid var(--border-color)",
-                borderRadius: "0.5rem",
-                padding: "1rem",
+                background: "rgba(4,9,18,.3)",
+                border: "1px solid rgba(94,140,255,.13)",
+                borderRadius: "12px",
+                padding: "14px",
                 display: "flex",
                 flexDirection: "column",
                 gap: "0.75rem",
@@ -1857,10 +1831,10 @@ export default function RadarKeywordsPage() {
             </div>
 
             <div style={modalFooterStyle}>
-              <button type="button" onClick={() => setShowForm(false)} style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>
+              <button type="button" onClick={() => setShowForm(false)} className="btn-neutral">
                 Anulează
               </button>
-              <button type="submit" style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+              <button type="submit" className="btn-cyan">
                 <Save style={{ width: "14px", height: "14px" }} />
                 Salvează
               </button>
@@ -1896,14 +1870,14 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
   const trendColors = {
     crescator: { bg: "rgba(239,68,68,0.15)", border: "#ef4444", text: "#fca5a5", label: "↑ Crescător" },
     descrescator: { bg: "rgba(22,163,74,0.15)", border: "#16a34a", text: "#4ade80", label: "↓ Descrescător" },
-    stabil: { bg: "rgba(100,116,139,0.15)", border: "#64748b", text: "#94a3b8", label: "→ Stabil" },
+    stabil: { bg: "rgba(148,163,184,0.14)", border: "rgba(148,163,184,0.35)", text: "#a9b8d6", label: "→ Stabil" },
   };
   const trendCfg = trendColors[data?.trend_direction] || trendColors.stabil;
   return (
     <div
       onClick={onClose}
       style={{
-        position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)",
+        position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)",
         display: "flex", alignItems: "center", justifyContent: "center",
         zIndex: 100, padding: "1.5rem",
       }}
@@ -1911,9 +1885,10 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "0.875rem",
+          background: "rgba(8,14,27,0.94)", backdropFilter: "blur(24px)",
+          border: "1px solid rgba(34,211,238,0.16)",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.6)",
+          borderRadius: "14px",
           maxWidth: "900px", width: "100%",
           maxHeight: "90vh", overflowY: "auto",
           padding: "1.25rem",
@@ -1934,12 +1909,13 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
               key={d}
               onClick={() => onDaysChange(d)}
               style={{
-                padding: "0.375rem 0.75rem",
-                backgroundColor: days === d ? "var(--blue-primary)" : "var(--bg-dark)",
-                color: days === d ? "white" : "var(--text-secondary)",
-                border: "1px solid var(--border-color)",
-                borderRadius: "0.5rem",
-                fontSize: "0.8125rem",
+                padding: "6px 13px",
+                background: days === d ? "rgba(34,211,238,.16)" : "rgba(4,9,18,.45)",
+                color: days === d ? "#7ee7f8" : "var(--text-dim)",
+                border: `1px solid ${days === d ? "rgba(34,211,238,.4)" : "rgba(94,140,255,.13)"}`,
+                borderRadius: "10px",
+                fontFamily: "var(--font-sans)",
+                fontSize: "12px",
                 fontWeight: 500,
                 cursor: "pointer",
               }}
@@ -1951,7 +1927,7 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
 
         {loading ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "300px" }}>
-            <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+            <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
           </div>
         ) : !data || data.series.length === 0 ? (
           <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-secondary)" }}>
@@ -1962,11 +1938,11 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
             <div style={{ height: "320px", width: "100%" }}>
               <ResponsiveContainer>
                 <LineChart data={data.series} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
-                  <XAxis dataKey="date" stroke="var(--text-muted)" style={{ fontSize: "0.7rem" }} />
-                  <YAxis stroke="var(--text-muted)" style={{ fontSize: "0.7rem" }} />
+                  <CartesianGrid stroke="rgba(94,140,255,.07)" strokeDasharray="4 6" />
+                  <XAxis dataKey="date" stroke="#2b3a5c" tick={{ fill: "#2b3a5c", fontSize: 9, fontFamily: "var(--font-mono)" }} />
+                  <YAxis stroke="#2b3a5c" tick={{ fill: "#2b3a5c", fontSize: 9, fontFamily: "var(--font-mono)" }} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                    contentStyle={{ background: "rgba(4,9,18,.9)", backdropFilter: "blur(14px)", border: "1px solid rgba(34,211,238,.3)", borderRadius: "12px", fontSize: "11px" }}
                     labelStyle={{ color: "var(--text-primary)" }}
                   />
                   <Legend wrapperStyle={{ fontSize: "0.75rem" }} />
@@ -1974,7 +1950,7 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
                   <Line type="monotone" dataKey="min_price" name="Cel mai mic" stroke="#4ade80" strokeDasharray="4 3" strokeWidth={1.5} dot={false} />
                   <Line type="monotone" dataKey="max_price" name="Cel mai mare" stroke="#f87171" strokeDasharray="4 3" strokeWidth={1.5} dot={false} />
                   {kw.max_price ? (
-                    <ReferenceLine y={kw.max_price} stroke="#facc15" strokeDasharray="6 4" label={{ value: "Bugetul tău max", position: "right", fontSize: 10, fill: "#facc15" }} />
+                    <ReferenceLine y={kw.max_price} stroke="#fde047" strokeDasharray="6 4" label={{ value: "Bugetul tău max", position: "right", fontSize: 10, fill: "#fde047" }} />
                   ) : null}
                   {kw.resale_price ? (
                     <ReferenceLine y={kw.resale_price} stroke="#a78bfa" strokeDasharray="6 4" label={{ value: "Preț revânzare", position: "right", fontSize: 10, fill: "#a78bfa" }} />
@@ -1986,8 +1962,8 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
               <StatCard label="Preț mediu" value={`${Math.round(data.overall_avg)} RON`} color="#60a5fa" />
               <StatCard label="Cel mai mic găsit" value={`${Math.round(data.overall_min)} RON`} color="#4ade80" />
               <div style={{
-                padding: "0.75rem", backgroundColor: "var(--bg-dark)",
-                border: `1px solid ${trendCfg.border}`, borderRadius: "0.5rem", textAlign: "center",
+                padding: "12px", background: "rgba(4,9,18,.45)",
+                border: `1px solid ${trendCfg.border}`, borderRadius: "10px", textAlign: "center",
               }}>
                 <div style={{ fontSize: "1rem", fontWeight: 700, color: trendCfg.text }}>{trendCfg.label}</div>
                 <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>Tendință</div>
@@ -2005,9 +1981,9 @@ function TrendModal({ kw, data, days, loading, onClose, onDaysChange }) {
 
 function StatCard({ label, value, color }) {
   return (
-    <div style={{ padding: "0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", textAlign: "center" }}>
-      <div style={{ fontSize: "1rem", fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>{label}</div>
+    <div className="glass-card-gradient" style={{ padding: "14px 16px", textAlign: "center" }}>
+      <div style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "-.4px", color }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--text-mono)", marginTop: "4px" }}>{label}</div>
     </div>
   );
 }
@@ -2067,17 +2043,17 @@ function VintedCatalogPicker({ selectedId, selectedPath, onPick, onClear, inputS
               placeholder="Caută categoria..."
               style={{ ...inputStyle, flex: 1 }}
             />
-            <button type="button" onClick={runSearch} style={{ padding: "0.4rem 0.75rem", backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.8125rem", cursor: "pointer" }}>
+            <button type="button" onClick={runSearch} className="btn-neutral" style={{ padding: "7px 13px", borderRadius: "10px", fontSize: "12px" }}>
               Caută
             </button>
           </div>
           {searchRes.length > 0 && (
-            <div style={{ maxHeight: "160px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "0.375rem", marginBottom: "0.4rem" }}>
+            <div style={{ maxHeight: "160px", overflowY: "auto", border: "1px solid rgba(94,140,255,.13)", borderRadius: "10px", marginBottom: "6px" }}>
               {searchRes.map((s) => (
                 <div
                   key={s.id}
                   onClick={() => { onPick(s.id, s.path); setSearchRes([]); setChosen([]); setSearchQ(""); }}
-                  style={{ padding: "0.35rem 0.5rem", fontSize: "0.78rem", cursor: "pointer", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)" }}
+                  style={{ padding: "7px 10px", fontSize: "12px", cursor: "pointer", color: "var(--text-secondary)", borderBottom: "1px solid rgba(94,140,255,.07)" }}
                 >
                   {s.path}
                 </div>
@@ -2122,43 +2098,56 @@ function VintedCatalogPicker({ selectedId, selectedPath, onPick, onClear, inputS
 function Field({ label, children }) {
   return (
     <label style={{ display: "block" }}>
-      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>{label}</div>
+      <div style={{
+        fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".15em",
+        textTransform: "uppercase", color: "var(--text-mono)", marginBottom: "6px",
+      }}>{label}</div>
       {children}
     </label>
   );
 }
 
-const th = { textAlign: "left", padding: "0.625rem 0.75rem", fontWeight: 600, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" };
-const td = { padding: "0.625rem 0.75rem", color: "var(--text-primary)" };
+// Stilurile de tabel vin din clasa .data-table (globals.css); obiectele de mai jos
+// doar completeaza celulele care au nevoie de suprascrieri punctuale.
+const th = {};
+const td = { color: "var(--text-secondary)" };
+// Coloanele numerice nu au voie sa rupa "4000 RON" pe doua randuri.
+const numCell = { whiteSpace: "nowrap" };
+
 const iconBtn = {
-  padding: "0.375rem",
-  backgroundColor: "var(--bg-dark)",
-  border: "1px solid var(--border-color)",
-  borderRadius: "0.375rem",
-  color: "var(--text-secondary)",
+  padding: "5px",
+  background: "transparent",
+  border: "none",
+  borderRadius: "7px",
+  color: "var(--text-dim)",
   cursor: "pointer",
   display: "inline-flex",
   alignItems: "center",
+  opacity: 0.8,
+  transition: "all .15s ease",
 };
 
 const bulkBtn = {
-  padding: "0.375rem 0.75rem",
-  backgroundColor: "var(--bg-dark)",
-  border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem",
+  padding: "6px 13px",
+  background:
+    "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.26), rgba(59,130,246,.08) 55%, transparent) border-box",
+  border: "1px solid transparent",
+  borderRadius: "9px",
   color: "var(--text-secondary)",
-  fontSize: "0.75rem",
+  fontFamily: "var(--font-sans)",
+  fontSize: "11.5px",
   fontWeight: 500,
   cursor: "pointer",
+  transition: "all .15s ease",
 };
 
 function CarFiltersSection({ value, onChange, inputStyle }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
   return (
     <div style={{
-      backgroundColor: "var(--bg-dark)",
-      border: "1px solid var(--border-color)",
-      borderRadius: "0.5rem",
+      background: "rgba(4,9,18,.45)",
+      border: "1px solid rgba(94,140,255,.13)",
+      borderRadius: "10px",
       padding: "0.875rem",
       display: "flex",
       flexDirection: "column",

@@ -84,10 +84,10 @@ function RegisterForm() {
 
   const inputStyle = {
     width: "100%",
-    borderRadius: "0.75rem",
+    borderRadius: "12px",
     color: "var(--text-primary)",
     fontSize: "0.875rem",
-    backgroundColor: "var(--bg-dark)",
+    background: "rgba(4,9,18,.45)",
     border: "1px solid var(--border-color)",
     paddingLeft: "3rem",
     paddingRight: "1rem",
@@ -117,7 +117,7 @@ function RegisterForm() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "var(--bg-dark)" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "rgba(4,9,18,.45)" }}>
       <div className="register-topbar" style={{ alignItems: "center", padding: "1.5rem", position: "relative", zIndex: 10 }}>
         <Image
           src="/flipradar-logo.svg"
@@ -162,7 +162,7 @@ function RegisterForm() {
                 { icon: ShieldCheck, text: "Date verificate din surse multiple" },
               ].map(({ icon: Icon, text }, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                  <div style={{ width: "2.25rem", height: "2.25rem", borderRadius: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, backgroundColor: "rgba(37, 99, 235, 0.15)" }}>
+                  <div style={{ width: "2.25rem", height: "2.25rem", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, backgroundColor: "rgba(37, 99, 235, 0.15)" }}>
                     <Icon style={{ width: "1rem", height: "1rem", color: "#60a5fa" }} />
                   </div>
                   <span style={{ color: "var(--text-secondary)", fontSize: "0.875rem", textAlign: "left" }}>{text}</span>
@@ -192,14 +192,14 @@ function RegisterForm() {
             </div>
 
             {error && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "1rem", borderRadius: "0.75rem", marginBottom: "1.5rem", backgroundColor: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.15)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "1rem", borderRadius: "12px", marginBottom: "1.5rem", backgroundColor: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.15)" }}>
                 <AlertCircle style={{ width: "1rem", height: "1rem", color: "#f87171", flexShrink: 0 }} />
                 <p style={{ color: "#f87171", fontSize: "0.875rem", margin: 0 }}>{error}</p>
               </div>
             )}
 
             {success && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "1rem", borderRadius: "0.75rem", marginBottom: "1.5rem", backgroundColor: "rgba(34, 197, 94, 0.08)", border: "1px solid rgba(34, 197, 94, 0.15)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "1rem", borderRadius: "12px", marginBottom: "1.5rem", backgroundColor: "rgba(34, 197, 94, 0.08)", border: "1px solid rgba(34, 197, 94, 0.15)" }}>
                 <CheckCircle style={{ width: "1rem", height: "1rem", color: "#4ade80", flexShrink: 0 }} />
                 <p style={{ color: "#4ade80", fontSize: "0.875rem", margin: 0 }}>Cont creat cu succes! Redirectionare...</p>
               </div>
@@ -250,7 +250,7 @@ function RegisterForm() {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "0.5rem",
-                  borderRadius: "0.75rem",
+                  borderRadius: "12px",
                   color: "var(--text-primary)",
                   fontWeight: 500,
                   fontSize: "0.875rem",
@@ -280,9 +280,9 @@ function RegisterForm() {
             </form>
 
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", margin: "2rem 0" }}>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "var(--bg-card)" }} />
+              <div style={{ flex: 1, height: "1px", background: "var(--bg-card)", backdropFilter: "blur(20px)" }} />
               <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>sau</span>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "var(--bg-card)" }} />
+              <div style={{ flex: 1, height: "1px", background: "var(--bg-card)", backdropFilter: "blur(20px)" }} />
             </div>
 
             <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "1rem" }}>

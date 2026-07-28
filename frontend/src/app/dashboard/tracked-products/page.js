@@ -4,6 +4,8 @@ import Link from "next/link";
 import { trackedProductsAPI } from "@/lib/api";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import { styleFor } from "@/lib/sourceStyles";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
 import { Heart, Trash2, Bell, Package, ExternalLink, Activity } from "lucide-react";
 
 // Pills de status + pills per magazin (sursa = domeniul salvat de scrapere).
@@ -117,41 +119,38 @@ export default function TrackedProductsPage() {
     }
   };
 
-  const pillStyle = (active) => ({
-    padding: "0.375rem 0.875rem",
-    borderRadius: "999px",
-    fontSize: "0.8125rem",
-    fontWeight: 500,
-    cursor: "pointer",
-    border: "1px solid var(--border-color)",
-    backgroundColor: active ? "var(--blue-dim)" : "transparent",
-    color: active ? "var(--blue-light)" : "var(--text-secondary)",
-    transition: "all 0.15s ease",
-  });
+  const monitoredCount = items.filter((p) => p.monitoring_active).length;
 
   return (
-    <div style={{ maxWidth: "1080px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "0.625rem" }}>
-          <Heart style={{ width: "1.5rem", height: "1.5rem", color: "#f472b6" }} />
-          Produse Urmarite
-        </h1>
-        <p style={{ color: "var(--text-secondary)", marginTop: "0.375rem", fontSize: "0.875rem" }}>
-          Produsele tale salvate. Activeaza monitorizarea pentru a urmari evolutia pretului si a primi alerte.
-        </p>
-      </div>
+    <div>
+      <TopBar path={["CATALOG", "PRODUSE URMĂRITE"]} />
+
+      <PageHeading
+        icon={Heart}
+        title="Produse Urmărite"
+        subtitle={<>Produsele tale salvate — <Hl>{items.length} urmărite</Hl>, {monitoredCount} cu monitorizare activă.</>}
+      />
 
       {/* Filtre rapide (pills) */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", marginTop: "16px" }}>
         {STATUS_FILTERS.map((f) => (
-          <button key={f.value} onClick={() => setActiveFilter(f.value)} style={pillStyle(activeFilter === f.value)}>
+          <button
+            key={f.value}
+            onClick={() => setActiveFilter(f.value)}
+            className={`tab-pill${activeFilter === f.value ? " active" : ""}`}
+            style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
+          >
+            {activeFilter === f.value && <span className="pill-nav-dot" />}
             {f.label}
           </button>
         ))}
-        <span style={{ width: "1px", backgroundColor: "var(--border-color)", margin: "0.25rem 0.25rem" }} />
+        <span style={{ width: "1px", height: "18px", background: "rgba(94,140,255,.16)", margin: "0 4px" }} />
         {SOURCE_FILTERS.map((f) => (
-          <button key={f.value} onClick={() => setActiveFilter(f.value)} style={pillStyle(activeFilter === f.value)}>
+          <button
+            key={f.value}
+            onClick={() => setActiveFilter(f.value)}
+            className={`tab-pill${activeFilter === f.value ? " active" : ""}`}
+          >
             {f.label}
           </button>
         ))}
@@ -161,10 +160,10 @@ export default function TrackedProductsPage() {
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "8rem" }}>
-          <div style={{ width: "2rem", height: "2rem", border: "3px solid var(--blue-primary)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ width: "2rem", height: "2rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
         </div>
       ) : filtered.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(305px, 1fr))", gap: "14px", marginTop: "14px" }}>
           {filtered.map((product) => {
             const style = styleFor(product.source);
             const cur = product.currency || "RON";
@@ -192,29 +191,30 @@ export default function TrackedProductsPage() {
               && product.current_price != null
               && product.current_price <= product.alert_threshold;
             return (
-              <div key={product.id} style={{
-                backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-                borderRadius: "0.75rem", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem",
+              <div key={product.id} className="glass-panel lift-hover" style={{
+                padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px",
               }}>
                 {/* Imagine + nume */}
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Link href={`/dashboard/products/detail?id=${product.id}`} style={{
-                      fontSize: "0.875rem", fontWeight: 600, color: "var(--text-primary)", textDecoration: "none",
+                      fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", textDecoration: "none",
                       display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                      lineHeight: 1.35,
                     }}>
                       {product.name}
                     </Link>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginTop: "0.375rem", flexWrap: "wrap" }}>
                       {product.source && (
-                        <span style={{ padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", backgroundColor: style.bg, color: style.fg }}>
+                        <span style={{ fontFamily: "var(--font-mono)", padding: "2.5px 7px", borderRadius: "7px", fontSize: "8.5px", letterSpacing: ".08em", textTransform: "uppercase", background: style.bg, border: `1px solid ${style.fg}55`, color: style.fg }}>
                           {product.source}
                         </span>
                       )}
                       {variation != null && (
                         <span style={{
-                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", fontWeight: 600,
-                          backgroundColor: variation < 0 ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                          padding: "2px 7px", borderRadius: "7px", fontFamily: "var(--font-mono)", fontSize: "9px", fontWeight: 700,
+                          background: variation < 0 ? "rgba(74,222,128,0.14)" : "rgba(248,113,113,0.14)",
+                          border: `1px solid ${variation < 0 ? "rgba(74,222,128,0.4)" : "rgba(248,113,113,0.4)"}`,
                           color: variation < 0 ? "#4ade80" : "#f87171",
                         }}>
                           {variation < 0 ? "▼" : "▲"} {variation > 0 ? "+" : ""}{variation.toFixed(1)}%
@@ -222,9 +222,9 @@ export default function TrackedProductsPage() {
                       )}
                       {underTarget && (
                         <span style={{
-                          padding: "0.125rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem", fontWeight: 600,
-                          backgroundColor: "rgba(34,197,94,0.25)", color: "#4ade80",
-                          border: "1px solid rgba(34,197,94,0.5)",
+                          padding: "2px 7px", borderRadius: "7px", fontFamily: "var(--font-mono)", fontSize: "9px", fontWeight: 700,
+                          background: "rgba(74,222,128,0.14)", color: "#4ade80",
+                          border: "1px solid rgba(74,222,128,0.45)",
                         }}>
                           Sub tinta
                         </span>
@@ -236,12 +236,12 @@ export default function TrackedProductsPage() {
                 {/* Pret */}
                 <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
                   {product.current_price != null && (
-                    <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "#4ade80" }}>
-                      {product.current_price} {cur}
+                    <span style={{ fontSize: "20px", fontWeight: 700, letterSpacing: "-.4px", color: "#ffffff" }}>
+                      {product.current_price} <span style={{ fontSize: "11.5px", fontWeight: 500, color: "var(--text-tertiary)" }}>{cur}</span>
                     </span>
                   )}
                   {hasDiscount && (
-                    <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", textDecoration: "line-through" }}>
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)", textDecoration: "line-through" }}>
                       {product.original_price} {cur}
                     </span>
                   )}
@@ -249,7 +249,7 @@ export default function TrackedProductsPage() {
 
                 {/* Categorie + subcategorie */}
                 {(product.category || product.subcategory) && (
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: 0 }}>
+                  <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: 0 }}>
                     {[product.category, product.subcategory].filter(Boolean).join(" · ")}
                   </p>
                 )}
@@ -265,50 +265,40 @@ export default function TrackedProductsPage() {
                     cursor: busy ? "wait" : "pointer",
                   }}
                 >
-                  <span style={{
-                    width: "36px", height: "20px", borderRadius: "999px", flexShrink: 0, position: "relative",
-                    backgroundColor: product.monitoring_active ? "var(--green-primary)" : "var(--border-color)",
-                    transition: "background-color 0.15s ease",
-                  }}>
-                    <span style={{
-                      position: "absolute", top: "2px", left: product.monitoring_active ? "18px" : "2px",
-                      width: "16px", height: "16px", borderRadius: "50%", backgroundColor: "#fff",
-                      transition: "left 0.15s ease",
-                    }} />
-                  </span>
-                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: product.monitoring_active ? "#4ade80" : "var(--text-secondary)" }}>
+                  <span className={`toggle-cyan${product.monitoring_active ? " on" : ""}`} aria-hidden="true" />
+                  <span style={{ fontSize: "12px", fontWeight: 500, color: product.monitoring_active ? "#7ee7f8" : "var(--text-dim)" }}>
                     {product.monitoring_active ? "Monitorizat activ" : "Monitorizare inactiva"}
                   </span>
                 </button>
 
                 {/* Sectiune monitorizare activa */}
                 {product.monitoring_active && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border-color)" }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingTop: "10px", borderTop: "1px solid rgba(94,140,255,.1)" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-muted)" }}>
                       <Activity style={{ width: "13px", height: "13px" }} />
                       Pretul este verificat automat periodic
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-                      <Bell style={{ width: "14px", height: "14px", color: "var(--text-secondary)" }} />
+                      <Bell style={{ width: "13px", height: "13px", color: "var(--text-mono)" }} strokeWidth={1.8} />
                       <input
                         type="number" step="0.01" min="0"
                         value={draftValue}
                         onChange={(e) => setAlertDrafts((prev) => ({ ...prev, [product.id]: e.target.value }))}
                         placeholder="Alerta pret"
                         style={{
-                          flex: 1, minWidth: 0, backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-                          borderRadius: "0.375rem", padding: "0.3125rem 0.5rem", color: "var(--text-primary)",
-                          fontSize: "0.8125rem", outline: "none",
+                          flex: 1, minWidth: 0,
+                          background: "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.08) 55%, transparent) border-box",
+                          border: "1px solid transparent",
+                          borderRadius: "9px", padding: "6px 10px", color: "var(--text-primary)",
+                          fontSize: "12px", fontFamily: "var(--font-sans)", outline: "none",
                         }}
                       />
                       <button
                         type="button"
                         onClick={() => setAlert(product)}
                         disabled={busy}
-                        style={{
-                          padding: "0.3125rem 0.75rem", borderRadius: "0.375rem", backgroundColor: "var(--blue-primary)",
-                          color: "var(--text-primary)", border: "none", cursor: busy ? "wait" : "pointer", fontSize: "0.75rem", fontWeight: 500,
-                        }}
+                        className="btn-cyan"
+                        style={{ padding: "6px 12px", borderRadius: "9px", fontSize: "11px" }}
                       >
                         Seteaza
                       </button>
@@ -321,9 +311,10 @@ export default function TrackedProductsPage() {
                       return (
                         <div style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: "32px" }}>
                           {history.map((pr, idx) => (
+                            // maxWidth: cu un singur punct, flex:1 ar intinde bara pe tot randul
                             <div key={idx} style={{
-                              flex: 1, height: `${6 + ((pr - min) / range) * 26}px`,
-                              backgroundColor: "var(--blue-primary)", borderRadius: "2px", opacity: 0.7,
+                              flex: 1, maxWidth: "26px", height: `${6 + ((pr - min) / range) * 26}px`,
+                              background: "linear-gradient(180deg,#22d3ee,#2563eb)", borderRadius: "2px", opacity: 0.75,
                             }} />
                           ))}
                         </div>
@@ -336,7 +327,7 @@ export default function TrackedProductsPage() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: "0.5rem" }}>
                   {product.source_url ? (
                     <a href={product.source_url} target="_blank" rel="noopener noreferrer"
-                      style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem", color: "var(--text-secondary)", textDecoration: "none" }}>
+                      style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-dim)", textDecoration: "none" }}>
                       <ExternalLink style={{ width: "13px", height: "13px" }} /> Deschide sursa
                     </a>
                   ) : <span />}
@@ -345,8 +336,9 @@ export default function TrackedProductsPage() {
                     onClick={() => removeItem(product)}
                     disabled={busy}
                     style={{
-                      display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem",
-                      backgroundColor: "transparent", border: "none", cursor: busy ? "wait" : "pointer", color: "#f87171",
+                      display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px",
+                      fontFamily: "var(--font-sans)",
+                      background: "transparent", border: "none", cursor: busy ? "wait" : "pointer", color: "#f87171",
                     }}
                   >
                     <Trash2 style={{ width: "13px", height: "13px" }} /> Elimina
@@ -357,19 +349,14 @@ export default function TrackedProductsPage() {
           })}
         </div>
       ) : (
-        <div style={{
-          backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-          borderRadius: "0.75rem", padding: "3rem", textAlign: "center",
-        }}>
-          <Package style={{ width: "3rem", height: "3rem", margin: "0 auto 1rem", color: "var(--text-secondary)" }} />
-          <p style={{ fontSize: "1rem", color: "var(--text-primary)", marginBottom: "0.375rem" }}>
+        <div className="glass-panel" style={{ padding: "3rem", textAlign: "center", marginTop: "14px" }}>
+          <Package style={{ width: "2.5rem", height: "2.5rem", margin: "0 auto 14px", color: "var(--text-mono)", display: "block" }} strokeWidth={1.5} />
+          <p style={{ fontSize: "13px", color: "var(--text-primary)", marginBottom: "6px" }}>
             Nu ai niciun produs salvat.
           </p>
-          <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+          <p style={{ fontSize: "12.5px", color: "var(--text-dim)" }}>
             Adauga produse din{" "}
-            <Link href="/dashboard/products" style={{ color: "var(--blue-light)", textDecoration: "none" }}>
-              Descopera Oportunitati
-            </Link>.
+            <Link href="/dashboard/products">Descopera Oportunitati</Link>.
           </p>
         </div>
       )}

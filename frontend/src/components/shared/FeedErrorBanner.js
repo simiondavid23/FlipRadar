@@ -9,30 +9,21 @@ export default function FeedErrorBanner({ message, onRetry }) {
     <div
       role="alert"
       style={{
-        display: "flex", alignItems: "center", gap: "0.625rem",
-        padding: "0.625rem 0.875rem", marginBottom: "1rem",
-        backgroundColor: "rgba(220,38,38,0.08)",
-        border: "1px solid rgba(220,38,38,0.35)",
-        borderRadius: "0.5rem",
-        color: "#fca5a5", fontSize: "0.8125rem",
+        display: "flex", alignItems: "center", gap: "10px",
+        padding: "11px 14px", marginTop: "14px",
+        borderRadius: "12px",
+        background:
+          "linear-gradient(rgba(8,14,27,.72),rgba(8,14,27,.72)) padding-box, linear-gradient(135deg, rgba(248,113,113,.45), rgba(248,113,113,.06) 55%, transparent) border-box",
+        border: "1px solid transparent",
+        backdropFilter: "blur(20px)",
+        color: "#fca5a5", fontSize: "12.5px",
       }}
     >
-      <AlertTriangle style={{ width: "16px", height: "16px", flexShrink: 0 }} />
+      <AlertTriangle style={{ width: "15px", height: "15px", flexShrink: 0 }} strokeWidth={1.8} />
       <span style={{ flex: 1 }}>{message}</span>
       {onRetry && (
-        <button
-          onClick={onRetry}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: "0.3rem",
-            padding: "0.3rem 0.7rem",
-            backgroundColor: "transparent",
-            border: "1px solid rgba(220,38,38,0.45)",
-            borderRadius: "0.375rem",
-            color: "#fca5a5", fontSize: "0.75rem", fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <RefreshCw style={{ width: "13px", height: "13px" }} />
+        <button onClick={onRetry} className="btn-danger" style={{ padding: "6px 12px", fontSize: "11.5px" }}>
+          <RefreshCw style={{ width: "12px", height: "12px" }} strokeWidth={2} />
           Reîncearcă
         </button>
       )}

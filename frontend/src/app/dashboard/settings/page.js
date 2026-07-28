@@ -10,6 +10,8 @@ import {
 import {
   isPushSupported, registerPushNotifications, unregisterPushNotifications
 } from "@/lib/push";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading from "@/components/shared/PageHeading";
 
 const EMPTY_PROXY = { enabled: false, host: "", port: "", username: "", password: "", password_set: false };
 
@@ -225,7 +227,7 @@ export default function SettingsPage() {
 
   // FB-LOGIN — in timpul asteptarii butonul e inlocuit de un mesaj (toate starile).
   const fbActionButton = (label) => fbConnecting ? (
-    <span style={{ color: "#facc15", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+    <span style={{ color: "#fde047", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
       <AlertCircle style={{ width: "14px", height: "14px" }} />
       Se așteaptă login-ul în fereastra de browser deschisă...
     </span>
@@ -284,26 +286,21 @@ export default function SettingsPage() {
   };
 
   return (
-    <div style={{ maxWidth: "900px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.375rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#2563eb", display: "flex" }}>
-            <SettingsIcon style={{ width: "20px", height: "20px", color: "white" }} />
-          </div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Setări</h1>
-        </div>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginLeft: "3rem" }}>
-          Preferințele contului tău
-        </p>
-      </div>
+    <div style={{ maxWidth: "900px" }}>
+      <TopBar path={["SETĂRI"]} />
+
+      <PageHeading
+        icon={SettingsIcon}
+        title="Setări"
+        subtitle="Preferințele contului tău — notificări, platforme, AI, șabloane și taxe de revânzare."
+      />
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid #2563eb", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
         </div>
       ) : !settings ? (
-        <div style={{ padding: "1.5rem", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.75rem", textAlign: "center" }}>
+        <div style={{ padding: "1.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "12px", textAlign: "center" }}>
           <p style={{ color: "#f87171", fontSize: "0.875rem", margin: "0 0 0.75rem" }}>
             Nu am putut încărca setările. Verifică dacă serverul răspunde.
           </p>
@@ -346,7 +343,7 @@ export default function SettingsPage() {
               onToggle={() => togglePlatform("platform_mobilede_enabled")}
             />
 
-            <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem", border: "1px solid var(--border-color)" }}>
+            <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", background: "rgba(4,9,18,.45)", borderRadius: "10px", border: "1px solid var(--border-color)" }}>
               {fbStatus.status === "active" ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
                   <span style={{ color: "#4ade80", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
@@ -365,7 +362,7 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-                  <span style={{ color: "#facc15", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+                  <span style={{ color: "#fde047", fontSize: "0.8125rem", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
                     <AlertCircle style={{ width: "14px", height: "14px" }} />
                     Sesiune Facebook inactivă
                   </span>
@@ -421,14 +418,14 @@ export default function SettingsPage() {
             <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Alerte preț</div>
             <WebhookInput label="Alerte preț & Flash Deals" value={settings.discord_webhook_alerts || ""} onChange={(v) => update({ discord_webhook_alerts: v })} onTest={() => testWebhook(settings.discord_webhook_alerts)} />
 
-            <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", backgroundColor: "var(--bg-dark)", borderRadius: "0.5rem", border: "1px solid var(--border-color)" }}>
+            <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", background: "rgba(4,9,18,.45)", borderRadius: "10px", border: "1px solid var(--border-color)" }}>
               <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>Prag Flash Deal</label>
               <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
                 Un produs urmărit care scade brusc cu cel puțin acest procent declanșează o alertă Flash Deal pe webhook-ul de mai sus.
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                 <input type="number" min={5} max={50} value={flashThreshold} onChange={(e) => setFlashThreshold(e.target.value)}
-                  style={{ width: "5rem", padding: "0.375rem 0.5rem", backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", fontSize: "0.8125rem" }} />
+                  style={{ width: "5rem", padding: "0.375rem 0.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "8px", fontSize: "0.8125rem" }} />
                 <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>%</span>
                 <button onClick={saveFlashThreshold} disabled={savingThreshold} style={smallBtn("#4ade80")}>
                   {savingThreshold ? "Se salvează..." : "Salvează pragul"}
@@ -532,11 +529,11 @@ export default function SettingsPage() {
           {/* Push notifications */}
           <Section title="Notificări Push Browser">
             {!isPushSupported() ? (
-              <div style={{ padding: "0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
+              <div style={{ padding: "0.75rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
                 Browserul tău nu suportă notificări push.
               </div>
             ) : !pushStatus.configured ? (
-              <div style={{ padding: "0.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", color: "#facc15", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div style={{ padding: "0.75rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "#fde047", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <AlertCircle style={{ width: "14px", height: "14px" }} />
                 Notificările push nu sunt configurate pe server (VAPID_PUBLIC_KEY lipsește din .env).
               </div>
@@ -544,7 +541,7 @@ export default function SettingsPage() {
               <>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
                   <span style={{
-                    color: pushStatus.subscribed ? "#4ade80" : "#facc15",
+                    color: pushStatus.subscribed ? "#4ade80" : "#fde047",
                     fontSize: "0.875rem",
                     display: "inline-flex",
                     alignItems: "center",
@@ -754,7 +751,7 @@ function ResaleFeesSection() {
         const d = drafts[p.id] || {};
         return (
           <div key={p.id} style={{
-            border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+            border: "1px solid var(--border-color)", borderRadius: "10px",
             padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -797,7 +794,7 @@ function ResaleFeesSection() {
 
       {showForm ? (
         <div style={{
-          border: "1px solid var(--border-color)", borderRadius: "0.5rem",
+          border: "1px solid var(--border-color)", borderRadius: "10px",
           padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem",
         }}>
           <div style={grid}>
@@ -850,15 +847,9 @@ function ResaleFeesSection() {
 
 function Section({ title, children }) {
   return (
-    <section style={{
-      backgroundColor: "var(--bg-card)",
-      border: "1px solid var(--border-color)",
-      borderRadius: "0.75rem",
-      padding: "1.25rem",
-      marginBottom: "1rem",
-    }}>
-      <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "0.875rem" }}>{title}</h2>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+    <section className="glass-panel" style={{ padding: "18px", marginTop: "14px" }}>
+      <h2 style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "14px" }}>{title}</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
         {children}
       </div>
     </section>
@@ -873,26 +864,38 @@ const FG_INTERVAL_OPTIONS = [
   { value: 1, label: "1 oră" }, { value: 2, label: "2 ore" }, { value: 4, label: "4 ore" },
 ];
 const fgInputStyle = {
-  width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)", fontSize: "0.875rem", outline: "none",
+  width: "100%",
+  background: "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.08) 55%, transparent) border-box",
+  border: "1px solid transparent",
+  borderRadius: "10px", padding: "8px 12px", color: "var(--text-primary)",
+  fontSize: "12.5px", fontFamily: "var(--font-sans)", outline: "none",
 };
-const fgLabelStyle = { display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.375rem" };
+const fgLabelStyle = {
+  display: "block", fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".15em",
+  textTransform: "uppercase", color: "var(--text-mono)", marginBottom: "6px",
+};
 const fgIconBtn = {
-  display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0.375rem",
-  backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.375rem",
-  color: "var(--text-secondary)", cursor: "pointer",
+  display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "6px",
+  background: "rgba(255,255,255,.03)", border: "1px solid rgba(94,140,255,.14)", borderRadius: "9px",
+  color: "var(--text-tertiary)", cursor: "pointer",
 };
 const fgPrimaryBtn = {
-  display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
-  backgroundColor: "var(--blue-primary)", color: "white", border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+  display: "inline-flex", alignItems: "center", gap: "8px", padding: "9px 16px", borderRadius: "12px",
+  background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)",
+  color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", cursor: "pointer",
+  fontFamily: "var(--font-sans)", fontSize: "12.5px", fontWeight: 600,
+  boxShadow: "0 0 22px rgba(34,211,238,.16), inset 0 1px 0 rgba(255,255,255,.1)",
 };
 const fgSecondaryBtn = {
-  display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
-  backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
+  display: "inline-flex", alignItems: "center", gap: "8px", padding: "9px 16px", borderRadius: "12px",
+  background: "rgba(148,163,184,.07)", color: "var(--text-dim)", border: "1px solid rgba(148,163,184,.2)",
+  cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: "12.5px", fontWeight: 500,
 };
 const fgDangerBtn = {
-  display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", borderRadius: "0.5rem",
-  backgroundColor: "transparent", color: "#f87171", border: "1px solid var(--border-color)", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600,
+  display: "inline-flex", alignItems: "center", gap: "8px", padding: "9px 16px", borderRadius: "12px",
+  background: "linear-gradient(135deg, rgba(248,113,113,.14), rgba(248,113,113,.03) 60%, transparent)",
+  color: "#fca5a5", border: "1px solid rgba(248,113,113,.36)",
+  cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: "12.5px", fontWeight: 600,
 };
 
 // Status cookies pentru un grup (portat din vechea pagina standalone Grupuri Facebook).
@@ -990,8 +993,8 @@ function MessageTemplatesSection() {
   };
 
   const tInput = {
-    width: "100%", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
+    width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
+    borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
     fontSize: "0.875rem", outline: "none",
   };
 
@@ -1003,7 +1006,7 @@ function MessageTemplatesSection() {
         </p>
         <button onClick={openCreate} style={{
           display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem",
-          backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem",
+          background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px",
           fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", flexShrink: 0,
         }}>
           <Plus style={{ width: "16px", height: "16px" }} /> Șablon nou
@@ -1011,16 +1014,16 @@ function MessageTemplatesSection() {
       </div>
 
       {items.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "1.75rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
+        <div style={{ textAlign: "center", padding: "1.75rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
           Nu ai niciun șablon. Creează unul cu butonul de mai sus.
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "0.75rem" }}>
           {items.map((t) => (
-            <div key={t.id} style={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div key={t.id} style={{ background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
                 <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)" }}>{t.name}</h3>
-                <span style={{ padding: "0.125rem 0.5rem", backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "0.375rem", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase" }}>{t.platform}</span>
+                <span style={{ padding: "0.125rem 0.5rem", backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "8px", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase" }}>{t.platform}</span>
               </div>
               <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{t.template_text}</p>
               <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
@@ -1033,8 +1036,8 @@ function MessageTemplatesSection() {
       )}
 
       {showForm && (
-        <div onClick={() => setShowForm(false)} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-          <form onClick={(e) => e.stopPropagation()} onSubmit={submit} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", maxWidth: "560px", width: "100%", maxHeight: "90vh", overflowY: "auto", padding: "1.25rem" }}>
+        <div onClick={() => setShowForm(false)} style={{ position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+          <form onClick={(e) => e.stopPropagation()} onSubmit={submit} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "14px", maxWidth: "560px", width: "100%", maxHeight: "90vh", overflowY: "auto", padding: "1.25rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.875rem" }}>
               <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)" }}>{editingId ? "Editează șablon" : "Șablon nou"}</h2>
               <button type="button" onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}><X style={{ width: "20px", height: "20px" }} /></button>
@@ -1058,14 +1061,14 @@ function MessageTemplatesSection() {
                 <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.375rem" }}>Click pe un placeholder pentru a-l insera la poziția cursorului:</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
                   {TEMPLATE_PLACEHOLDERS.map((ph) => (
-                    <button key={ph} type="button" onClick={() => insertPlaceholder(ph)} style={{ padding: "0.25rem 0.5rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.375rem", color: "var(--blue-light)", fontFamily: "monospace", fontSize: "0.75rem", cursor: "pointer" }}>{ph}</button>
+                    <button key={ph} type="button" onClick={() => insertPlaceholder(ph)} style={{ padding: "0.25rem 0.5rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "8px", color: "#8fb5f7", fontFamily: "monospace", fontSize: "0.75rem", cursor: "pointer" }}>{ph}</button>
                   ))}
                 </div>
               </div>
             </div>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
-              <button type="button" onClick={() => setShowForm(false)} style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", cursor: "pointer" }}>Anulează</button>
-              <button type="submit" style={{ padding: "0.5rem 0.875rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}><Save style={{ width: "14px", height: "14px" }} />Salvează</button>
+              <button type="button" onClick={() => setShowForm(false)} style={{ padding: "0.5rem 0.875rem", background: "rgba(4,9,18,.45)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", fontSize: "0.8125rem", cursor: "pointer" }}>Anulează</button>
+              <button type="submit" style={{ padding: "0.5rem 0.875rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}><Save style={{ width: "14px", height: "14px" }} />Salvează</button>
             </div>
           </form>
         </div>
@@ -1144,14 +1147,14 @@ function FacebookGroupsSection() {
         tale de tip „Grupuri Facebook” apar automat în Feed Imobiliare.
       </p>
       <div>
-        <button onClick={() => { setEditing(null); setShowModal(true); }} style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}>
+        <button onClick={() => { setEditing(null); setShowModal(true); }} style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}>
           <Plus style={{ width: "16px", height: "16px" }} /> Adaugă grup
         </button>
       </div>
       {loading ? (
         <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem" }}>Se încarcă...</div>
       ) : configs.length === 0 ? (
-        <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem", backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.5rem" }}>
+        <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px" }}>
           Niciun grup configurat. Apasă „Adaugă grup”.
         </div>
       ) : (
@@ -1160,7 +1163,7 @@ function FacebookGroupsSection() {
             const kws = fgToList(cfg.keywords); const negs = fgToList(cfg.negative_keywords);
             const cs = cookieStatus(cfg); const CsIcon = cs.icon; const expanded = expandedId === cfg.id;
             return (
-              <div key={cfg.id} style={{ backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)", borderRadius: "0.625rem", padding: "0.875rem" }}>
+              <div key={cfg.id} style={{ background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", padding: "0.875rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem", flexWrap: "wrap" }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: "0.9375rem", fontWeight: 600, color: "var(--text-primary)" }}>{cfg.group_name}</div>
@@ -1265,7 +1268,7 @@ function FacebookGroupModal({ config, onClose, onSaved }) {
   const chipBox = (list, setList) => (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginTop: "0.375rem" }}>
       {list.map((w) => (
-        <span key={w} style={{ fontSize: "0.6875rem", padding: "0.125rem 0.4rem", borderRadius: "0.25rem", backgroundColor: "var(--bg-dark)", color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+        <span key={w} style={{ fontSize: "0.6875rem", padding: "0.125rem 0.4rem", borderRadius: "0.25rem", background: "rgba(4,9,18,.45)", color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
           {w}<button onClick={() => setList(list.filter((x) => x !== w))} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: 0 }}>×</button>
         </span>
       ))}
@@ -1273,8 +1276,8 @@ function FacebookGroupModal({ config, onClose, onSaved }) {
   );
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "0.875rem", width: "100%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "14px", width: "100%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem", borderBottom: "1px solid var(--border-color)" }}>
           <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{config ? "Editează grup" : "Adaugă grup"}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><X style={{ width: "20px", height: "20px" }} /></button>
@@ -1300,8 +1303,8 @@ function FacebookGroupModal({ config, onClose, onSaved }) {
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)" }}>
-          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
-          <button onClick={submit} disabled={saving} style={{ padding: "0.5rem 1.25rem", backgroundColor: "var(--blue-primary)", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
+          <button onClick={onClose} style={{ padding: "0.5rem 1rem", backgroundColor: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer" }}>Anulează</button>
+          <button onClick={submit} disabled={saving} style={{ padding: "0.5rem 1.25rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>
             {saving ? "Se salvează..." : config ? "Salvează" : "Adaugă"}
           </button>
         </div>
@@ -1314,19 +1317,22 @@ function PlatformToggle({ label, subtitle, enabled, onToggle }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "0.5rem 0.75rem", backgroundColor: "var(--bg-dark)",
-      border: "1px solid var(--border-color)", borderRadius: "0.5rem",
-      gap: "0.5rem",
+      padding: "10px 13px", background: "rgba(4,9,18,.45)",
+      border: "1px solid rgba(94,140,255,.11)", borderRadius: "11px",
+      gap: "10px",
     }}>
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <span style={{ fontSize: "0.875rem", color: "var(--text-primary)", fontWeight: 500 }}>{label}</span>
+        <span style={{ fontSize: "12.5px", color: "var(--text-primary)", fontWeight: 500 }}>{label}</span>
         {subtitle && (
-          <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{subtitle}</span>
+          <span style={{ fontSize: "10.5px", color: "var(--text-muted)", marginTop: "2px" }}>{subtitle}</span>
         )}
       </div>
-      <button onClick={onToggle} style={{ background: "none", border: "none", cursor: "pointer", color: enabled ? "#4ade80" : "var(--text-muted)", flexShrink: 0 }}>
-        {enabled ? <ToggleRight style={{ width: "26px", height: "26px" }} /> : <ToggleLeft style={{ width: "26px", height: "26px" }} />}
-      </button>
+      <button
+        onClick={onToggle}
+        aria-pressed={enabled}
+        aria-label={label}
+        className={`toggle-cyan${enabled ? " on" : ""}`}
+      />
     </div>
   );
 }
@@ -1334,7 +1340,7 @@ function PlatformToggle({ label, subtitle, enabled, onToggle }) {
 function WebhookInput({ label, value, onChange, onTest }) {
   return (
     <div>
-      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".15em", textTransform: "uppercase", color: "var(--text-mono)", marginBottom: "6px" }}>{label}</div>
       <div style={{ display: "flex", gap: "0.375rem" }}>
         <input
           type="text"
@@ -1344,19 +1350,21 @@ function WebhookInput({ label, value, onChange, onTest }) {
           style={{ ...inputStyle, flex: 1 }}
         />
         <button onClick={onTest} style={{
-          padding: "0.5rem 0.75rem",
-          backgroundColor: "rgba(147,51,234,0.15)",
+          padding: "8px 13px",
+          background: "linear-gradient(135deg, rgba(147,51,234,.2), rgba(147,51,234,.05) 60%, transparent)",
           color: "#c4b5fd",
-          border: "1px solid rgba(147,51,234,0.3)",
-          borderRadius: "0.5rem",
-          fontSize: "0.75rem",
+          border: "1px solid rgba(147,51,234,.4)",
+          borderRadius: "10px",
+          fontFamily: "var(--font-sans)",
+          fontSize: "11.5px",
           fontWeight: 600,
           cursor: "pointer",
           display: "inline-flex",
           alignItems: "center",
-          gap: "0.25rem",
+          gap: "5px",
+          whiteSpace: "nowrap",
         }}>
-          <Send style={{ width: "12px", height: "12px" }} />
+          <Send style={{ width: "12px", height: "12px" }} strokeWidth={2} />
           Testează
         </button>
       </div>
@@ -1366,40 +1374,44 @@ function WebhookInput({ label, value, onChange, onTest }) {
 
 const inputStyle = {
   width: "100%",
-  backgroundColor: "var(--bg-dark)",
-  border: "1px solid var(--border-color)",
-  borderRadius: "0.5rem",
-  padding: "0.5rem 0.75rem",
+  background: "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.08) 55%, transparent) border-box",
+  border: "1px solid transparent",
+  borderRadius: "10px",
+  padding: "8px 12px",
   color: "var(--text-primary)",
-  fontSize: "0.875rem",
+  fontSize: "12.5px",
+  fontFamily: "var(--font-sans)",
   outline: "none",
 };
 
 function primaryBtn(disabled) {
   return {
-    padding: "0.5rem 0.875rem",
-    backgroundColor: "var(--blue-primary)",
-    color: "white",
-    border: "none",
-    borderRadius: "0.5rem",
-    fontSize: "0.8125rem",
+    padding: "9px 16px",
+    background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)",
+    color: "#7ee7f8",
+    border: "1px solid rgba(34,211,238,.42)",
+    borderRadius: "12px",
+    fontFamily: "var(--font-sans)",
+    fontSize: "12.5px",
     fontWeight: 600,
     cursor: disabled ? "wait" : "pointer",
-    opacity: disabled ? 0.7 : 1,
+    opacity: disabled ? 0.6 : 1,
+    boxShadow: "0 0 22px rgba(34,211,238,.16), inset 0 1px 0 rgba(255,255,255,.1)",
     display: "inline-flex",
     alignItems: "center",
-    gap: "0.375rem",
+    gap: "8px",
   };
 }
 
 function smallBtn(color) {
   return {
-    padding: "0.3rem 0.625rem",
-    backgroundColor: "var(--bg-card)",
+    padding: "6px 11px",
+    background: "rgba(4,9,18,.45)",
     color,
     border: `1px solid ${color}55`,
-    borderRadius: "0.375rem",
-    fontSize: "0.75rem",
+    borderRadius: "9px",
+    fontFamily: "var(--font-sans)",
+    fontSize: "11.5px",
     fontWeight: 500,
     cursor: "pointer",
     display: "inline-flex",

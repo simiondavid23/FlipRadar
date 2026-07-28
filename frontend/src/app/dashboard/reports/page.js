@@ -9,37 +9,21 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend,
 } from "recharts";
+import TopBar from "@/components/shared/TopBar";
+import PageHeading, { Hl } from "@/components/shared/PageHeading";
+import KpiCard from "@/components/shared/KpiCard";
 
-function StatCard({ title, value, icon: Icon, color, subtitle, valueColor }) {
-  return (
-    <div
-      style={{
-        backgroundColor: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "1rem",
-        padding: "1.25rem",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.75rem" }}>
-        <div style={{
-          padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: color,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <Icon style={{ width: "16px", height: "16px", color: "var(--text-primary)" }} />
-        </div>
-        <p style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>{title}</p>
-      </div>
-      <p style={{ fontSize: "1.75rem", fontWeight: 700, color: valueColor || "var(--text-primary)", lineHeight: 1, margin: 0 }}>
-        {value}
-      </p>
-      {subtitle && (
-        <p style={{ fontSize: "0.75rem", marginTop: "0.5rem", color: "var(--text-secondary)" }}>{subtitle}</p>
-      )}
-    </div>
-  );
-}
+// Tooltip glass + axe mono, comune graficelor din pagina.
+const tooltipStyle = {
+  background: "rgba(4,9,18,.9)",
+  backdropFilter: "blur(14px)",
+  border: "1px solid rgba(34,211,238,.3)",
+  borderRadius: "12px",
+  fontSize: "11px",
+  fontFamily: "var(--font-sans)",
+  boxShadow: "0 12px 30px rgba(0,0,0,.5)",
+};
+const axisTick = { fill: "#2b3a5c", fontSize: 8, fontFamily: "var(--font-mono)" };
 
 function toIsoDate(d) {
   const yyyy = d.getFullYear();
@@ -114,13 +98,7 @@ export default function ReportsPage() {
       <button
         key={value}
         onClick={() => handlePreset(value)}
-        style={{
-          padding: "0.5rem 1rem", borderRadius: "0.5rem",
-          backgroundColor: active ? "var(--blue-primary)" : "transparent",
-          color: active ? "white" : "var(--text-secondary)",
-          border: active ? "none" : "1px solid var(--border-color)",
-          cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
-        }}
+        className={`tab-pill${active ? " active" : ""}`}
       >
         {label}
       </button>
@@ -128,39 +106,34 @@ export default function ReportsPage() {
   };
 
   const inputStyle = {
-    backgroundColor: "var(--bg-dark)", border: "1px solid var(--border-color)",
-    borderRadius: "0.5rem", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
-    fontSize: "0.8125rem", outline: "none",
+    background: "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.08) 55%, transparent) border-box",
+    border: "1px solid transparent",
+    borderRadius: "10px", padding: "7px 11px", color: "var(--text-primary)",
+    fontSize: "12px", fontFamily: "var(--font-sans)", outline: "none",
   };
 
   // Stiluri pentru tabelul "Top 3 produse dupa profit"
-  const thLeft = { textAlign: "left", padding: "0.5rem 0.375rem", color: "var(--text-secondary)", fontWeight: 600, borderBottom: "1px solid var(--border-color)" };
+  const thLeft = { textAlign: "left", padding: "8px 6px", fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".15em", textTransform: "uppercase", color: "var(--text-mono)", fontWeight: 400, borderBottom: "1px solid rgba(94,140,255,.1)" };
   const thRight = { ...thLeft, textAlign: "right" };
-  const tdLeft = { padding: "0.625rem 0.375rem", color: "var(--text-primary)", borderBottom: "1px solid var(--border-color)" };
+  const tdLeft = { padding: "10px 6px", fontSize: "12.5px", color: "var(--text-secondary)", borderBottom: "1px solid rgba(94,140,255,.07)" };
   const tdRight = { ...tdLeft, textAlign: "right" };
 
   return (
-    <div style={{ maxWidth: "960px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.375rem" }}>
-          <div style={{ padding: "0.5rem", borderRadius: "0.625rem", backgroundColor: "#9333ea", display: "flex" }}>
-            <BarChart2 style={{ width: "20px", height: "20px", color: "var(--text-primary)" }} />
-          </div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-            Statistici & Profit
-          </h1>
-        </div>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginLeft: "3rem" }}>
-          Analiza performantei portofoliului tau
-        </p>
-      </div>
+    <div>
+      <TopBar path={["GESTIUNE", "STATISTICI"]} />
+
+      <PageHeading
+        icon={BarChart2}
+        title="Statistici & Profit"
+        subtitle={summary
+          ? <>Analiza performanței portofoliului tău — <Hl>{summary.total_vanzari || 0} vânzări</Hl> în interval.</>
+          : "Analiza performanței portofoliului tău."}
+      />
 
       {/* Date range selector */}
-      <div style={{
-        backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-        borderRadius: "var(--radius-card)", padding: "1rem", marginBottom: "1.5rem",
-        display: "flex", alignItems: "center", gap: "0.625rem", flexWrap: "wrap",
+      <div className="glass-panel" style={{
+        padding: "13px 15px", marginTop: "16px",
+        display: "flex", alignItems: "center", gap: "9px", flexWrap: "wrap",
       }}>
         {presetBtn("7", "7 zile")}
         {presetBtn("30", "30 zile")}
@@ -173,20 +146,13 @@ export default function ReportsPage() {
               onChange={(e) => setCustomFrom(e.target.value)}
               style={inputStyle}
             />
-            <span style={{ color: "var(--text-secondary)", fontSize: "0.8125rem" }}>—</span>
+            <span style={{ color: "var(--text-mono)", fontSize: "12px" }}>—</span>
             <input
               type="date" value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
               style={inputStyle}
             />
-            <button
-              onClick={handleApplyCustom}
-              style={{
-                padding: "0.5rem 1rem", borderRadius: "0.5rem",
-                backgroundColor: "var(--blue-primary)", color: "var(--text-primary)",
-                border: "none", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500,
-              }}
-            >
+            <button onClick={handleApplyCustom} className="btn-cyan" style={{ padding: "8px 15px", borderRadius: "10px", fontSize: "12px" }}>
               Aplica
             </button>
           </>
@@ -194,55 +160,56 @@ export default function ReportsPage() {
       </div>
 
       {error && (
-        <p style={{ color: "#f87171", fontSize: "0.8125rem", marginBottom: "1rem", padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239,68,68,0.1)" }}>
+        <p style={{ color: "#f87171", fontSize: "12.5px", marginTop: "14px", padding: "11px 14px", borderRadius: "12px", background: "rgba(248,113,113,0.09)", border: "1px solid rgba(248,113,113,0.3)" }}>
           {error}
         </p>
       )}
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-          <div style={{ width: "2.5rem", height: "2.5rem", border: "4px solid var(--blue-primary)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ width: "2.5rem", height: "2.5rem", border: "3px solid rgba(34,211,238,.4)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
         </div>
       ) : summary ? (
         <>
           {/* FlipRadar — B: sectiunea "Rezumat Profitabilitate" (deasupra graficului pe zile) */}
-          <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)", margin: "0 0 1rem" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", margin: "24px 0 0" }}>
             Rezumat Profitabilitate
           </h2>
 
-          {/* 4 KPI cards 2x2 */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
-            <StatCard
-              title="Venituri totale"
-              value={`${(summary.venit_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
+          {/* 4 KPI cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(225px,1fr))", gap: "14px", marginTop: "14px" }}>
+            <KpiCard
+              idx="01"
               icon={Euro}
-              color="#2563eb"
-              subtitle="Suma incasarilor brute"
-              valueColor="var(--blue-light)"
+              label="Venituri totale"
+              value={(summary.venit_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              unit="EUR"
+              note="suma incasarilor brute"
             />
-            <StatCard
-              title="Profit total"
-              value={`${(summary.profit_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2 })} EUR`}
+            <KpiCard
+              idx="02"
               icon={TrendingUp}
-              color="#16a34a"
-              subtitle={`Dupa scaderea costurilor${summary.vanzari_fara_cost > 0 ? ` · ${summary.vanzari_fara_cost} fara cost declarat` : ""}`}
-              valueColor={summary.profit_total >= 0 ? "#4ade80" : "#f87171"}
+              label="Profit total"
+              value={(summary.profit_total || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              unit="EUR"
+              chip={summary.vanzari_fara_cost > 0 ? `${summary.vanzari_fara_cost} fără cost` : null}
+              chipTone="warn"
+              note="dupa scaderea costurilor"
             />
-            <StatCard
-              title="ROI"
-              value={`${(summary.roi_mediu || 0).toFixed(2)}%`}
+            <KpiCard
+              idx="03"
               icon={Target}
-              color="#9333ea"
-              subtitle="profit / cost, doar vanzari cu cost declarat"
-              valueColor="#a78bfa"
+              label="ROI"
+              value={(summary.roi_mediu || 0).toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              unit="%"
+              note="profit / cost declarat"
             />
-            <StatCard
-              title="Nr. vanzari"
-              value={summary.total_vanzari || 0}
+            <KpiCard
+              idx="04"
               icon={ShoppingCart}
-              color="#ca8a04"
-              subtitle="Tranzactii inregistrate"
-              valueColor="#facc15"
+              label="Nr. vânzări"
+              value={summary.total_vanzari || 0}
+              note="tranzactii inregistrate"
             />
           </div>
 
@@ -251,18 +218,18 @@ export default function ReportsPage() {
             <Link
               href="/dashboard/products?roi_max=10"
               style={{
-                display: "flex", alignItems: "center", gap: "0.75rem", textDecoration: "none",
-                backgroundColor: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.3)",
-                borderLeft: "3px solid #ea580c", borderRadius: "1rem",
-                padding: "1rem 1.25rem", marginBottom: "1.5rem",
+                display: "flex", alignItems: "center", gap: "12px", textDecoration: "none",
+                background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)",
+                borderLeft: "3px solid #fb923c", borderRadius: "14px",
+                padding: "14px 18px", marginTop: "14px",
               }}
             >
               <AlertTriangle style={{ width: "20px", height: "20px", color: "#fb923c", flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#fb923c", margin: 0 }}>
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#fb923c", margin: 0 }}>
                   {lowRoiCount} {lowRoiCount === 1 ? "produs din catalog are" : "produse din catalog au"} profit estimat sub 10%
                 </p>
-                <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>
+                <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "4px 0 0" }}>
                   Vezi produsele cu marja mica si ajusteaza preturile de revanzare →
                 </p>
               </div>
@@ -270,26 +237,23 @@ export default function ReportsPage() {
           )}
 
           {/* FlipRadar — B: Top 3 produse dupa profit + Categorii dupa ROI mediu */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "14px" }}>
             {/* Top 3 produse dupa profit */}
-            <div style={{
-              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-              borderRadius: "1rem", padding: "1.5rem",
-            }}>
-              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>
+            <div className="glass-panel" style={{ padding: "18px" }}>
+              <h2 style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
                 Top 3 produse dupa profit
               </h2>
               {(() => {
                 const top3 = (summary.top_produse || []).slice(0, 3);
                 if (top3.length === 0) {
                   return (
-                    <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.8125rem", paddingTop: "1rem" }}>
+                    <p style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "12.5px", paddingTop: "1rem" }}>
                       Nicio vanzare inregistrata in interval.
                     </p>
                   );
                 }
                 return (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
                         <th style={thLeft}>Produs</th>
@@ -314,11 +278,8 @@ export default function ReportsPage() {
             </div>
 
             {/* Categorii dupa ROI mediu */}
-            <div style={{
-              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-              borderRadius: "1rem", padding: "1.5rem",
-            }}>
-              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem" }}>
+            <div className="glass-panel" style={{ padding: "18px" }}>
+              <h2 style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
                 Categorii dupa ROI mediu
               </h2>
               {(() => {
@@ -327,7 +288,7 @@ export default function ReportsPage() {
                   .sort((a, b) => b.roi - a.roi);
                 if (cats.length === 0) {
                   return (
-                    <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.8125rem", paddingTop: "1rem" }}>
+                    <p style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "12.5px", paddingTop: "1rem" }}>
                       Nu exista vanzari in intervalul selectat.
                     </p>
                   );
@@ -336,16 +297,17 @@ export default function ReportsPage() {
                   <div style={{ width: "100%", height: 240 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={cats} layout="vertical" margin={{ top: 5, right: 28, left: 0, bottom: 0 }}>
-                        <CartesianGrid stroke="var(--border-color)" horizontal={false} />
-                        <XAxis type="number" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} unit="%" />
-                        <YAxis type="category" dataKey="categorie" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} width={110} />
+                        <CartesianGrid stroke="rgba(94,140,255,.07)" strokeDasharray="4 6" horizontal={false} />
+                        <XAxis type="number" tick={axisTick} tickLine={false} axisLine={false} unit="%" />
+                        <YAxis type="category" dataKey="categorie" tick={{ fill: "#7d90b5", fontSize: 10, fontFamily: "var(--font-sans)" }} tickLine={false} axisLine={false} width={110} />
                         <Tooltip
-                          contentStyle={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
-                          labelStyle={{ color: "var(--text-secondary)" }}
+                          contentStyle={tooltipStyle}
+                          labelStyle={{ color: "#41547a", fontSize: "10px" }}
                           itemStyle={{ color: "var(--text-primary)" }}
                           formatter={(v) => [`${Number(v).toFixed(2)}%`, "ROI mediu"]}
                         />
-                        <Bar dataKey="roi" fill="#16a34a" radius={[0, 4, 4, 0]} />
+                        {/* maxBarSize: cu o singura categorie bara ar umple toata banda si ar arata ca un bloc */}
+                        <Bar dataKey="roi" fill="#22d3ee" fillOpacity={0.75} radius={[0, 4, 4, 0]} maxBarSize={22} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -355,37 +317,32 @@ export default function ReportsPage() {
           </div>
 
           {/* Time series chart */}
-          <div
-            style={{
-              backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)",
-              borderRadius: "1rem", padding: "1.5rem", marginBottom: "1.5rem",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+          <div className="glass-panel" style={{ padding: "18px", marginTop: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+              <h2 style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                 Evolutie venit si profit
               </h2>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Valori in EUR</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".13em", color: "var(--text-mono)" }}>VALORI ÎN EUR</span>
             </div>
             <div style={{ width: "100%", height: 280 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={summary.vanzari_pe_zi || []}>
-                  <CartesianGrid stroke="var(--border-color)" vertical={false} />
-                  <XAxis dataKey="data" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                  <CartesianGrid stroke="rgba(94,140,255,.07)" strokeDasharray="4 6" vertical={false} />
+                  <XAxis dataKey="data" tick={axisTick} tickLine={false} axisLine={false} />
+                  <YAxis tick={axisTick} tickLine={false} axisLine={false} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-color)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
-                    labelStyle={{ color: "var(--text-secondary)" }}
+                    contentStyle={tooltipStyle}
+                    labelStyle={{ color: "#41547a", fontSize: "10px" }}
                     itemStyle={{ color: "var(--text-primary)" }}
                     formatter={(v, name) => [`${Number(v).toFixed(2)} EUR`, name === "venit" ? "Venit" : "Profit"]}
                   />
                   <Legend
                     iconType="circle"
                     formatter={(value) => value === "venit" ? "Venit" : "Profit"}
-                    wrapperStyle={{ fontSize: "0.75rem" }}
+                    wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".1em", textTransform: "uppercase" }}
                   />
-                  <Line type="monotone" dataKey="venit" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="profit" stroke="#22c55e" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="venit" stroke="#22d3ee" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="profit" stroke="#2563eb" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

@@ -12,7 +12,7 @@
 export const SOURCE_STYLES = {
   // ── electro (RETAIL-3a / 5c) ──
   "altex.ro": { bg: "rgba(59,130,246,0.2)", fg: "#60a5fa" },       // albastru
-  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#facc15" },        // galben
+  "emag.ro": { bg: "rgba(250,204,21,0.2)", fg: "#fde047" },        // galben
   "cel.ro": { bg: "rgba(14,165,233,0.2)", fg: "#38bdf8" },         // cyan
   "vexio.ro": { bg: "rgba(20,184,166,0.2)", fg: "#2dd4bf" },       // turcoaz
   "mediagalaxy.ro": { bg: "rgba(239,68,68,0.2)", fg: "#f87171" },  // rosu
