@@ -982,12 +982,161 @@ def test_sufixele_inselatoare_access2_raman_respinse(url):
     assert _is_allowed_shop_url(url) is False
 
 
-def test_flanco_ramane_in_afara_allow_list_ului():
-    """flanco.ro are treapta consemnata in _IMPERSONATE_OVERRIDES, dar NU e validat:
-    OG-ul divergea pe produsele cu reducere (ACCESS-1b). Override-ul de amprenta nu
-    trebuie sa deschida singur poarta — validarea ramane conditia de intrare."""
-    from app.services.scraper_service import _IMPERSONATE_OVERRIDES, _is_allowed_shop_url
+def test_override_de_amprenta_nu_deschide_singur_poarta(monkeypatch):
+    """Un domeniu cu treapta in _IMPERSONATE_OVERRIDES nu devine prin asta permis:
+    validarea (VALIDATED_DOMAINS) ramane singura conditie de intrare in allow-list.
 
-    assert "flanco.ro" in _IMPERSONATE_OVERRIDES
-    assert "flanco.ro" not in ppe.VALIDATED_DOMAINS
-    assert _is_allowed_shop_url("https://www.flanco.ro/produs.html") is False
+    Testul foloseste un domeniu SINTETIC, nu unul real: la ACCESS-2 rolul asta il
+    juca flanco.ro, dar a fost promovat la CONTENT-2 si invariantul ar fi disparut
+    odata cu el. Cele doua liste au scopuri diferite (una spune CUM ceri, cealalta
+    DACA ai voie sa ceri) si trebuie sa ramana independente.
+    """
+    import app.services.scraper_service as ss
+
+    monkeypatch.setitem(ss._IMPERSONATE_OVERRIDES, "magazin-inchis.ro", "firefox135")
+
+    assert ss._impersonate_for("https://magazin-inchis.ro/p/1") == "firefox135"
+    assert "magazin-inchis.ro" not in ppe.VALIDATED_DOMAINS
+    assert ss._is_allowed_shop_url("https://magazin-inchis.ro/p/1") is False
+
+
+# ── CONTENT-2: microdata ca a patra sursa, dupa override/JSON-LD/OG ───────────
+# Forma reprodusa e cea masurata pe evomag.ro (sonda CONTENT-1b, 2026-07-28):
+# scope Product, meta priceCurrency, span itemprop=price cu atribut `content` in
+# format masina, span availability cu URL-ul schema.org.
+
+def _microdata(*, price='<span itemprop="price" content="1349.99">1349.99</span>',
+               currency='<meta itemprop="priceCurrency" content="RON"/>',
+               availability='<span itemprop="availability" '
+                            'content="http://schema.org/InStock">In stock</span>',
+               name='<h1 itemprop="name">Televizor LED TCL 55V6C</h1>') -> str:
+    """Pagina fara Product in ld+json si fara pret OG — doar microdata."""
+    return _page(body=f'<div itemscope itemtype="http://schema.org/Product">{name}'
+                      f'<div itemscope itemtype="http://schema.org/Offer">'
+                      f'{currency}{price}{availability}</div></div>')
+
+
+def test_microdata_completa_da_pret_moneda_si_stoc():
+    """Cazul evomag: tot ce descrie produsul sta in microdata."""
+    data = parse_product_html(_microdata(), URL)
+
+    assert data["price"] == 1349.99
+    assert data["currency"] == "RON"
+    assert data["in_stock"] is True
+    assert data["method"] == "microdata"
+    assert data["name"] == "Televizor LED TCL 55V6C"
+
+
+def test_microdata_cu_doua_preturi_nu_furnizeaza_nimic():
+    """Regula de siguranta: la ambiguitate microdata TACE. Un pret gresit ajunge in
+    istoric si in alerte, deci ambiguitatea ramane esec, nu ghicitoare.
+
+    Reason-ul e no_product_data, nu invalid_price: cu doua elemente nu se seteaza
+    nici macar price_seen — nu stim ca am "vazut" un pret, stim ca n-am putut alege.
+    """
+    html = _microdata(price='<span itemprop="price" content="1349.99">1349.99</span>'
+                            '<span itemprop="price" content="1449.99">1449.99</span>')
+
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(html, URL)
+
+    assert exc.value.reason == "no_product_data"
+
+
+def test_microdata_fara_content_parseaza_textul_formatat():
+    """Fara atribut `content` ramane textul, deci formatarea romaneasca trece prin
+    _parse_price_any (1.349,99 -> 1349.99), nu prin float() strict."""
+    data = parse_product_html(
+        _microdata(price='<span itemprop="price">1.349,99 lei</span>'), URL)
+
+    assert data["price"] == 1349.99
+    assert data["method"] == "microdata"
+
+
+def test_jsonld_are_precedenta_peste_microdata():
+    """Preturi DIFERITE in cele doua surse: castiga JSON-LD, iar `method` ramane
+    jsonld — microdata nu suprascrie niciodata, doar completeaza."""
+    html = _page(
+        head=_ld("""
+        {"@context": "https://schema.org", "@type": "Product", "name": "Produs JSONLD",
+         "offers": {"@type": "Offer", "price": "999.00", "priceCurrency": "RON"}}
+        """),
+        body='<div itemscope itemtype="http://schema.org/Product">'
+             '<h1 itemprop="name">Produs MICRODATA</h1>'
+             '<span itemprop="price" content="111.00">111.00</span></div>')
+
+    data = parse_product_html(html, URL)
+
+    assert data["price"] == 999.00
+    assert data["name"] == "Produs JSONLD"
+    assert data["method"] == "jsonld"
+
+
+def test_og_are_precedenta_peste_microdata():
+    """Acelasi test pentru treapta a treia: OG bate microdata."""
+    html = _page(
+        head='<meta property="og:title" content="Produs OG"/>'
+             '<meta property="product:price:amount" content="777.00"/>'
+             '<meta property="product:price:currency" content="RON"/>',
+        body='<div itemscope itemtype="http://schema.org/Product">'
+             '<h1 itemprop="name">Produs MICRODATA</h1>'
+             '<span itemprop="price" content="111.00">111.00</span></div>')
+
+    data = parse_product_html(html, URL)
+
+    assert data["price"] == 777.00
+    assert data["name"] == "Produs OG"
+    assert data["method"] == "og"
+
+
+def test_microdata_completeaza_doar_stocul_cand_pretul_vine_din_jsonld():
+    """Fallback-ul e PER CAMP: JSON-LD da pretul dar nu si availability, deci stocul
+    se ia din microdata. Masurat live pe flanco.ro — pret neschimbat, stoc completat.
+    """
+    html = _page(
+        head=_ld("""
+        {"@context": "https://schema.org", "@type": "Product", "name": "Produs JSONLD",
+         "offers": {"@type": "Offer", "price": "999.00", "priceCurrency": "RON"}}
+        """),
+        body='<div itemscope itemtype="http://schema.org/Product">'
+             '<span itemprop="availability" content="https://schema.org/OutOfStock">'
+             'Stoc epuizat</span></div>')
+
+    data = parse_product_html(html, URL)
+
+    assert data["price"] == 999.00          # neatins
+    assert data["method"] == "jsonld"       # neatins
+    assert data["in_stock"] is False        # completat din microdata
+
+
+# ── CONTENT-2: domeniile noi intra in allow-list-ul C-14 ─────────────────────
+
+@pytest.mark.parametrize("url", [
+    "https://www.flanco.ro/produs.html",
+    "https://flanco.ro/produs.html",
+    "https://www.evomag.ro/categorie/produs-4207097.html",
+])
+def test_domeniile_content2_sunt_permise(url):
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is True
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil-flanco.ro.attacker.com/produs.html",
+    "https://flanco.ro.attacker.com/produs.html",
+    "https://evomag.ro.attacker.com/produs.html",
+])
+def test_sufixele_inselatoare_content2_raman_respinse(url):
+    from app.services.scraper_service import _is_allowed_shop_url
+
+    assert _is_allowed_shop_url(url) is False
+
+
+def test_flanco_are_si_treapta_de_impersonate():
+    """flanco.ro e in allow-list DOAR impreuna cu treapta lui: pe chrome ia 403, deci
+    fara override-ul din scraper_service ar fi validat dar necitibil."""
+    from app.services.scraper_service import _IMPERSONATE_OVERRIDES, _impersonate_for
+
+    assert _IMPERSONATE_OVERRIDES["flanco.ro"] == "firefox135"
+    assert _impersonate_for("https://www.flanco.ro/produs.html") == "firefox135"

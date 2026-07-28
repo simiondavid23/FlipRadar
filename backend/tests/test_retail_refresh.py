@@ -143,6 +143,7 @@ def test_validated_domains_santinela():
         "aboutyou.ro", "trendyol.com",                # FASHION-4
         "endclothing.com", "zalando.ro",              # ACCESS-2
         "43einhalb.com",                              # ACCESS-2
+        "flanco.ro", "evomag.ro",                     # CONTENT-2
     }
 
 

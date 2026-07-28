@@ -66,11 +66,10 @@ _IMPERSONATE_OVERRIDES: dict[str, str] = {
     # ACCESS-1/1b (2026-07-28): 403 challenge pe toate treptele chrome
     # (131/136/146/latest); trece curat pe firefox135, 3/3 match de pret.
     "43einhalb.com": "firefox135",
-    # ACCESS-1/1b (2026-07-28): aceeasi situatie de acces (chrome pica pe
-    # paginile de produs, firefox135 trece). INERT deocamdata: flanco.ro nu e
-    # in allow-list-ul C-14 (nici scraper de cautare, nici VALIDATED_DOMAINS)
-    # — validarea a picat pe divergenta OG la produsele cu reducere; intra la
-    # valul content cu price_selector, iar treapta de aici il asteapta.
+    # ACCESS-1/1b (2026-07-28): aceeasi situatie de acces — chrome pica pe paginile
+    # de produs, firefox135 trece. ACTIV de la CONTENT-2: flanco.ro a intrat in
+    # VALIDATED_DOMAINS, deci e in allow-list-ul C-14 si chiar se cere prin poarta
+    # guarded. Fara treapta de aici, domeniul ar fi validat dar necitibil (403).
     "flanco.ro": "firefox135",
 }
 

@@ -5,10 +5,21 @@ si intoarce un dict normalizat. Parsarea (`parse_product_html`) e PURA — fara
 retea, fara DB — ca sa fie testabila offline pe HTML capturat; fetch-ul live
 (`extract_product`) refoloseste infrastructura existenta din scraper_service.
 
-Ordinea surselor, per camp: override pe domeniu > JSON-LD > OpenGraph.
+Ordinea surselor, per camp: override pe domeniu > JSON-LD > OpenGraph > microdata.
 JSON-LD (schema.org/Product) e sursa principala fiindca e stabila intre magazine
 si nu depinde de clase CSS; OG e plasa de siguranta; DOMAIN_OVERRIDES ramane
 supapa pentru magazinele care nu publica date structurate corecte.
+
+Microdata (schema.org in atribute HTML: itemprop name/price/priceCurrency/
+availability) a intrat ultima, la CONTENT-2, pentru magazinele care publica datele
+de produs EXCLUSIV asa — evomag.ro nu are niciun Product in ld+json si nici og:title
+sau og:price. E un fallback MARGINIT prin constructie: completeaza doar campurile
+ramase GOALE dupa celelalte trei surse, niciodata nu suprascrie. Pe un domeniu deja
+validat pretul ramane deci exact cel de dinainte; ce se poate schimba e un camp care
+era None — in practica `in_stock`, unde sursa principala nu publica availability
+(masurat pe flanco.ro la validarea offline: pret neschimbat, stoc completat din
+microdata). Pretul din microdata are in plus o regula de siguranta la ambiguitate
+(vezi _collect_microdata).
 
 Modulul nu logheaza nimic (log_manager ramane la apelanti) si nu importa
 scraper_service la nivel de modul — vezi comentariul din extract_product.
@@ -180,23 +191,35 @@ VALIDATED_DOMAINS: set[str] = {
     # _IMPERSONATE_OVERRIDES (scraper_service), deci domeniul e citibil doar prin
     # poarta guarded. JSON-LD, preturi EUR.
     "43einhalb.com",
+
+    # ── valul CONTENT-2 (sondele CONTENT-1/1b, 2026-07-28) ────────────────────
+    # Doua domenii ratate anterior, amandoua reabilitate prin ANALIZA DUMP-ULUI, nu
+    # prin insistenta: unul avea o concluzie gresita, celalalt o sursa necitita.
+
+    # firefox135 via _IMPERSONATE_OVERRIDES; extrage prin OG (site-ul nu publica
+    # ld+json deloc, ldjson=0). 8/8 match cumulat pe doua sonde, inclusiv pe produse
+    # cu reducere, unde OG da pretul PLATIT, nu cel taiat.
+    # MISMATCH-ul din ACCESS-1b (extras 5199.00 vs "afisat" 5468.99) a fost EROARE DE
+    # PROTOCOL, nu de extractie: pretul asteptat fusese notat ca cel taiat. Dump-ul
+    # arata pagina consistenta pe 5199.00 in toti cei 5 purtatori de pret (OG,
+    # meta itemprop, price_info, gtmProduct, DOM), iar 5468.99 sta in
+    # `.pretVechiTaiat` — referinta Omnibus pe 30 de zile; diferenta 269.99 e exact
+    # "Economisesti" din pagina.
+    "flanco.ro",
+    # chrome131; publica pretul EXCLUSIV in microdata — ld+json nu are niciun Product
+    # (doar BreadcrumbList/ElectronicsStore/Organization/WebSite) si nu exista nici
+    # og:title, nici og:price. Un singur `itemprop=price` per pagina, cu `content` in
+    # format masina, plus priceCurrency=RON si availability publicate. 3/3 match prin
+    # fallback-ul de microdata adaugat in acest commit.
+    "evomag.ro",
 }
 # NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 # pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
 # produs la sonda RETAIL-3a; refresh-ul lui ramane pe fetch_pcgarage_price_from_url,
 # care trece de Cloudflare cu retry).
 #
-# Ratate in valul RETAIL-5c, fiecare din alt motiv:
-#   flanco.ro  — ACCESUL e REZOLVAT (ACCESS-1, 2026-07-28): 403-ul era de treapta,
-#                nu de site — firefox135 deschide paginile, si treapta e consemnata
-#                in _IMPERSONATE_OVERRIDES (scraper_service), inerta pana cand
-#                domeniul intra in allow-list. A picat insa VALIDAREA, la ACCESS-1b:
-#                pe produsele cu reducere OG-ul da pretul gresit (extras 5199.00 vs
-#                5468.99 afisat), adica exact ce ar scrie preturi false in istoric.
-#                Candidat de price_selector in valul content, ca evomag.ro.
-#   evomag.ro  — no_product_data pe pagini care s-au incarcat corect (200): nu
-#                publica datele structurate pe care le citim. Candidat de override
-#                (price_selector/price_regex), investigatie separata.
+# Ratate in valul RETAIL-5c: flanco.ro si evomag.ro — amandoua PROMOVATE la valul
+# CONTENT-2 (sondele 2026-07-28). Vezi nota valului din VALIDATED_DOMAINS.
 #
 # Ratate in valurile FASHION-1 si FASHION-2 (sonde 2026-07-26):
 #   aboutyou.ro si trendyol.com — PROMOVATE la valul FASHION-4 (sonda 2026-07-28):
@@ -636,6 +659,79 @@ def _collect_og(soup):
     }
 
 
+def _collect_microdata(soup):
+    """Microdata schema.org (itemprop in atribute HTML) — a PATRA sursa, ultima.
+
+    Exista magazine care publica datele de produs doar asa: evomag.ro (sonda
+    CONTENT-1b, 2026-07-28) are ld+json fara niciun Product (doar BreadcrumbList /
+    ElectronicsStore / Organization / WebSite) si nu are nici og:title, nici
+    og:price — tot ce descrie produsul sta in microdata.
+
+    SCOPARE: daca pagina are EXACT un `itemtype=.../Product`, cautam doar in el.
+    Fara scopare, `itemprop="name"` prinde si titluri din afara produsului (pe
+    evomag: 2 elemente in pagina, 1 singur in scope), iar pe paginile cu recenzii
+    ar intra si autorii (Review/Rating au propriile scope-uri). Cu 0 sau mai multe
+    scope-uri Product cautam in tot documentul si lasam regulile de mai jos sa
+    decida.
+
+    Pretul are REGULA DE SIGURANTA proprie: cu 0 sau >=2 elemente de pret nu
+    furnizam nimic, nici macar `price_seen`. Un pret gresit ajunge in istoric si in
+    alerte, deci ambiguitatea trebuie sa ramana esec, nu ghicitoare.
+    """
+    scopes = soup.select('[itemtype*="schema.org/Product"]')
+    root = scopes[0] if len(scopes) == 1 else soup
+
+    def _valoare(el):
+        """content= are prioritate (e forma pentru masini), altfel textul."""
+        return _clean_text(el.get("content")) or _clean_text(el.get_text(" ", strip=True))
+
+    # --- pret ---
+    price, price_seen = None, False
+    preturi = root.select('[itemprop="price"]')
+    if len(preturi) == 1:
+        el = preturi[0]
+        price_seen = True
+        continut = _clean_text(el.get("content"))
+        if continut:
+            # `content` e prin conventie format masina ("1349.99"), deci float()
+            # STRICT: prin _parse_price_any, "1234.567" ar fi citit ca mii.
+            try:
+                price = float(continut)
+            except (TypeError, ValueError):
+                price = None
+        else:
+            price = _parse_price_any(el.get_text(" ", strip=True))
+        if price is not None and price <= 0:
+            price = None
+
+    # --- nume: un singur candidat, sau h1-ul dintre ei ---
+    name = None
+    nume = root.select('[itemprop="name"]')
+    if len(nume) == 1:
+        name = _valoare(nume[0])
+    elif len(nume) > 1:
+        titluri = [el for el in nume if el.name == "h1"]
+        if len(titluri) == 1:
+            name = _valoare(titluri[0])
+
+    # --- moneda ---
+    currency = None
+    monede = root.select('[itemprop="priceCurrency"]')
+    if monede:
+        currency = _normalize_currency(_valoare(monede[0]))
+
+    # --- stoc: URL-ul schema.org, din content= sau href= (<link itemprop=...>) ---
+    in_stock = None
+    stocuri = root.select('[itemprop="availability"]')
+    if stocuri:
+        el = stocuri[0]
+        in_stock = _normalize_availability(
+            _clean_text(el.get("content")) or _clean_text(el.get("href")) or "")
+
+    return {"name": name, "price": price, "currency": currency,
+            "in_stock": in_stock, "price_seen": price_seen}
+
+
 # ── API public ────────────────────────────────────────────────────────────────
 
 def _canonical_url(soup, url: str) -> str:
@@ -670,6 +766,27 @@ def parse_product_html(html: str, url: str) -> dict:
 
     domain = _domain_of(url)
     override_applied = _apply_override(soup, html or "", result, DOMAIN_OVERRIDES.get(domain) or {})
+
+    # CONTENT-2: microdata completeaza DOAR campurile ramase goale dupa override,
+    # JSON-LD si OG. Fallback marginit prin constructie — pe un domeniu unde
+    # sursele de dinainte au dat un camp, microdata nu are ce suprascrie, deci nu
+    # poate schimba comportamentul niciunui domeniu deja validat.
+    micro = _collect_microdata(soup)
+    if not result["name"] and micro["name"]:
+        result["name"] = micro["name"]
+    if result["price"] is None:
+        if micro["price"] is not None:
+            result["price"] = micro["price"]
+            result["price_seen"] = True
+            method = "microdata"
+        elif micro["price_seen"]:
+            # Exista un pret in pagina, dar nu s-a putut citi -> invalid_price,
+            # nu no_product_data (aceeasi distinctie ca la celelalte surse).
+            result["price_seen"] = True
+    if not result["currency"] and micro["currency"]:
+        result["currency"] = micro["currency"]
+    if result["in_stock"] is None and micro["in_stock"] is not None:
+        result["in_stock"] = micro["in_stock"]
 
     name, price = result["name"], result["price"]
     if not name:
