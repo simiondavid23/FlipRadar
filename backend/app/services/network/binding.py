@@ -144,7 +144,10 @@ def _bind_target(platform: str) -> tuple[Optional[str], Optional[str]]:
             return None, None
         device = rot.bind_device()
     except Exception as exc:
-        _note_available(False, f"{type(exc).__name__}")
+        # Textul excepției, nu doar tipul: cauza cea mai probabila e o greseala in .env
+        # (ex. MODEM_ROTATION_METHOD scris gresit -> ValueError din build_rotator), iar
+        # un mesaj care spune doar „indisponibil" trimite omul sa caute la modem.
+        _note_available(False, f"{type(exc).__name__}: {str(exc)[:120]}")
         return None, None
 
     _note_available(True)

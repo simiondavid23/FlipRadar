@@ -114,9 +114,14 @@ class Outcome(str, Enum):
 
 
 BLOCK_MARKERS: tuple[str, ...] = (
-    "captcha-delivery", "cf-challenge", "just a moment",
+    "captcha-delivery", "cf-challenge", "<title>just a moment",
     "imperva", "incapsula", "access denied", "zugriff verweigert",
 )
+# „just a moment" e ancorat pe <title> pentru ca e singura expresie englezeasca
+# obisnuita din lista: intr-o descriere de vanzator sub 40 KB ar clasifica pagina
+# BLOCKED si, pe Vinted, ar arma breaker-ul de 6 ore. Cloudflare serveste exact
+# `<title>Just a moment...</title>`, deci ancora pe titlu e si specifica, si suficienta
+# (varianta „just a moment..." cu puncte tot ar prinde proza: „just a moment... hai sa vad").
 
 # Pagina reala e mare; substringul "datadome" apare si in SDK-ul client de pe
 # pagina normala. Peste pragul asta, prezenta markerilor nu mai e concludenta.

@@ -74,6 +74,28 @@ scheduler = BackgroundScheduler(
 )
 
 
+def _check_rotator_config() -> None:
+    """NET-5.2b — configuratia rotatorului se valideaza la BOOT, nu la primul scrape.
+
+    `MODEM_ROTATION_METHOD` scris gresit face `build_rotator()` sa arunce ValueError, iar
+    `get_rotator()` nu prinde nimic si lasa `_instance` pe None — deci fiecare apel
+    ulterior re-arunca. Simptomul ar aparea abia dupa 5 minute, pe toate platformele
+    legate deodata, ca „bind indisponibil". Aici se vede la pornire, o data.
+
+    Nu opreste procesul: o configuratie gresita de rotatie nu trebuie sa impiedice
+    pornirea aplicatiei — restul functioneaza fara ea. Bonus: incalzeste singletonul,
+    deci primul scrape nu mai plateste constructia.
+    """
+    try:
+        from app.services.network.rotator import get_rotator
+        _rot = get_rotator()
+        print(f"[Network] Rotator: {type(_rot).__name__}")
+    except Exception as exc:
+        print(f"[Network] CONFIGURATIE INVALIDA pentru rotatie IP: {exc}")
+        print("[Network] Verifica MODEM_ROTATION_METHOD in .env "
+              "(valori valide: dataswitch, reboot). Rotatia ramane inactiva.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Instaleaza Chromium pentru Playwright la prima pornire (idempotent — sare
@@ -107,6 +129,8 @@ async def lifespan(app: FastAPI):
             id=f"radar_scan_{_p}", replace_existing=True,
             next_run_time=datetime.now() + timedelta(seconds=15 * _i),
         )
+
+    _check_rotator_config()
 
     # RP-2 — refresh arbore categorii Vinted: săptămânal (duminică 04:30) + o singură
     # încercare la startup dacă tabelul e gol. Eșecul (block Vinted) NU blochează app-ul.

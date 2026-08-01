@@ -139,6 +139,17 @@ def test_exceptia_din_rotator_e_fail_open(monkeypatch, logs):
     assert len(_warns(logs)) == 1
 
 
+def test_warnul_poarta_cauza_reala_nu_doar_tipul(monkeypatch, logs):
+    # Config gresita in .env, nu modem lipsa: mesajul trebuie sa spuna ASTA, altfel
+    # omul cauta la infinit un adaptor care functioneaza perfect.
+    def _boom():
+        raise ValueError("metoda necunoscuta: datswitch. Valide: dataswitch, reboot")
+    monkeypatch.setattr(binding, "get_rotator", _boom)
+    assert binding.curl_kwargs("mobilede") == {}
+    warns = _warns(logs)
+    assert len(warns) == 1 and "metoda necunoscuta" in warns[0]
+
+
 # ── ramificarea pe OS ────────────────────────────────────────────────────────────
 
 def test_windows_curl_fara_prefix(monkeypatch):

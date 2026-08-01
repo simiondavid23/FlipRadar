@@ -167,8 +167,14 @@ def guard_before_request(domain: str) -> dict:
         return {"allowed": True, "reason": None, "open_until": b["open_until"]}
 
 
-def guard_after_response(domain: str, blocked: bool) -> None:
-    """Actualizeaza breaker-ul DUPA un raspuns (apelata din get_html)."""
+def guard_after_response(domain: str, blocked: bool, status: int | None = None) -> None:
+    """Actualizeaza breaker-ul DUPA un raspuns (apelata din get_html).
+
+    `status` e optional (apelurile vechi raman valide) si serveste doar mesajului:
+    de la NET-5.1 „blocat" nu mai inseamna neaparat 403 — `classify` numara si 401, si
+    200-cu-marker — deci un text hardcodat pe 403 ar trimite pe cineva sa caute in
+    jurnale un cod care nu apare niciodata acolo.
+    """
     with _guard_lock:
         b = _breaker.setdefault(domain, _new_breaker())
         now = _now()
@@ -185,7 +191,9 @@ def guard_after_response(domain: str, blocked: bool) -> None:
                 b["open_until"] = now + _BREAKER_COOLDOWN_S
                 b["warned_skip"] = False
                 log_manager.emit("radar", "WARN",
-                    f"Vinted breaker DESCHIS {_BREAKER_COOLDOWN_S // 3600}h ({_BREAKER_THRESHOLD}×403 consecutive) ({domain})")
+                    f"Vinted breaker DESCHIS {_BREAKER_COOLDOWN_S // 3600}h "
+                    f"({_BREAKER_THRESHOLD} raspunsuri de blocare consecutive, "
+                    f"ultimul HTTP {status or '?'}) ({domain})")
         else:
             if was_half_open:
                 log_manager.emit("radar", "OK", f"Vinted breaker INCHIS (proba a reusit) ({domain})")
@@ -242,7 +250,7 @@ def get_html(url: str, referer: str | None = None):
         blocked = _looks_blocked(resp.status_code, resp.text or "")
     except Exception:
         blocked = False
-    guard_after_response(domain, blocked)
+    guard_after_response(domain, blocked, status=resp.status_code)
     return resp
 
 

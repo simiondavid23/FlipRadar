@@ -99,6 +99,15 @@ def test_datadome_singur_nu_e_marker():
     assert classify(status=200, body="datadome ... please solve the captcha") is Outcome.BLOCKED
 
 
+def test_just_a_moment_e_ancorat_pe_titlu():
+    # Singura expresie englezeasca obisnuita din lista: intr-o descriere de vanzator ar
+    # clasifica pagina BLOCKED si, pe Vinted, ar arma breaker-ul de 6 ore.
+    proza = "<html><body>Trimit coletul just a moment dupa plata, promit!</body></html>"
+    assert classify(status=200, body=proza) is Outcome.OK
+    cloudflare = "<html><head><title>Just a moment...</title></head><body></body></html>"
+    assert classify(status=200, body=cloudflare) is Outcome.BLOCKED
+
+
 def test_extra_markers_se_adauga_nu_inlocuiesc():
     body = "<html>acces restrictionat temporar</html>"
     assert classify(status=200, body=body) is Outcome.OK
@@ -120,3 +129,21 @@ def test_delegarea_vinted_looks_blocked_pastreaza_cele_4_cazuri():
     # Cel mai fragil: 404 curat NU e blocaj. Daca cade, calea RAD-1 (item sters) se
     # rupe si listingurile sterse se reincearca la nesfarsit, arzand plafonul zilnic.
     assert _looks_blocked(404, "<html><body>Not found</body></html>") is False
+
+
+def test_mesajul_breakerului_nu_mai_hardcodeaza_403(monkeypatch):
+    """NET-5.2b — de cand `classify` numara si 401 si 200-cu-marker drept blocaj,
+    un breaker deschis de doua 401-uri raportand „403 consecutive" ar trimite pe cineva
+    sa caute in jurnale un cod care nu apare niciodata acolo."""
+    import app.services.radar.vinted_html as vh
+
+    vh._breaker.clear()
+    emis = []
+    monkeypatch.setattr(vh.log_manager, "emit",
+                        lambda modul, nivel, mesaj, *a, **k: emis.append(mesaj))
+    for _ in range(2):
+        vh.guard_after_response("vinted.ro", blocked=True, status=401)
+    deschis = [m for m in emis if "breaker DESCHIS" in m]
+    assert len(deschis) == 1
+    assert "401" in deschis[0] and "403" not in deschis[0]
+    vh._breaker.clear()
