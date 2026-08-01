@@ -23,6 +23,12 @@ Semnale:
     anti-fals-pozitiv (spre deosebire de „0 rezultate", care poate însemna și „nu e
     nimic nou"), iar la 5 cicluri × 5 minute alerta ar veni după 25 de minute de blocaj.
 
+NET-5.3: `note_rotation` numără rotațiile de IP de la ultimul ciclu viu, iar textele de
+alertă capătă sufixul „, după N rotații de IP". Streak-urile NU se resetează la rotație:
+altfel scenariul „blocat → rotim → tot blocat" n-ar atinge niciodată pragul și n-ar pleca
+nicio alertă — am roti în gol până la epuizarea bugetului orar, fără ca nimeni să afle.
+Contorul se resetează doar la recovery real (`r > 0`).
+
 Un ciclu cu blocaje are de regulă și `r == 0`, deci incrementează și `_zero_streak` —
 corect și dorit, dar în `suspect` se intră o singură dată. De aceea lanțul de praguri
 evaluează „blocat" ÎNAINTEA celorlalte: e diagnosticul cel mai precis.
@@ -71,20 +77,21 @@ _last_alive_at: dict[str, float] = {}  # SCHED-1 — ultimul ciclu cu rezultate 
 _zero_streak: dict[str, int] = {}
 _error_streak: dict[str, int] = {}
 _blocked_streak: dict[str, int] = {}
+_rotations_since_alive: dict[str, int] = {}   # NET-5.3 — rotatii de la ultimul ciclu viu
 _suspect: set[str] = set()
 
 
 _TEXT_DOWN_ZERO = (
     "⚠️ Radar Piață — platforma {p} pare blocată: {n} cicluri consecutive fără niciun "
-    "rezultat, în timp ce alte platforme returnează normal. Verifică live logs."
+    "rezultat, în timp ce alte platforme returnează normal{rot}. Verifică live logs."
 )
 _TEXT_DOWN_ERR = (
     "⚠️ Radar Piață — platforma {p} pare blocată: scraperul a crăpat în {n} cicluri "
-    "consecutive. Verifică live logs."
+    "consecutive{rot}. Verifică live logs."
 )
 _TEXT_DOWN_BLOCKED = (
     "⚠️ Radar Piață — platforma {p} returnează răspunsuri de blocare (403 / captcha / "
-    "interstițial) în {n} cicluri consecutive. Verifică live logs."
+    "interstițial) în {n} cicluri consecutive{rot}. Verifică live logs."
 )
 _TEXT_RECOVERY = "✅ Radar Piață — platforma {p} și-a revenit: rezultate primite din nou."
 
@@ -100,6 +107,7 @@ def _reset_state() -> None:
     _zero_streak.clear()
     _error_streak.clear()
     _blocked_streak.clear()
+    _rotations_since_alive.clear()
     _suspect.clear()
 
 
@@ -129,6 +137,22 @@ def note_error(platform: str) -> None:
         return
     _acc_scanned.add(platform)
     _acc_errors[platform] = _acc_errors.get(platform, 0) + 1
+
+
+def note_rotation(platform: str) -> None:
+    """NET-5.3 — o rotatie de IP ceruta pentru `platform`.
+
+    Apelat de `rotate_for` INAINTE de rotatie: o rotatie esuata e tot o rotatie ceruta.
+    NU depinde de un ciclu deschis — o rotatie e un fapt, indiferent daca watchdog-ul
+    urmareste ciclul in momentul ala.
+    """
+    _rotations_since_alive[platform] = _rotations_since_alive.get(platform, 0) + 1
+
+
+def _rot_suffix(platform: str) -> str:
+    """„, după N rotații de IP" cand N > 0, altfel sir gol."""
+    n = _rotations_since_alive.get(platform, 0)
+    return f", după {n} rotații de IP" if n else ""
 
 
 def note_blocked(platform: str) -> None:
@@ -163,6 +187,9 @@ def close_cycle(db, platform: str) -> None:
             _zero_streak[p] = 0
             _error_streak[p] = 0
             _blocked_streak[p] = 0
+            # NET-5.3 — contorul de rotatii se reseteaza DOAR la recovery real, niciodata
+            # de rotatia in sine (vezi close_cycle / note_rotation).
+            _rotations_since_alive[p] = 0
         else:
             # 0 rezultate: streak zero doar daca o ALTA platforma a fost vie recent
             # (guard fals-pozitiv: daca TOTUL tace, probabil e net-ul, nu platforma).
@@ -184,15 +211,16 @@ def close_cycle(db, platform: str) -> None:
                 bs = _blocked_streak.get(p, 0)
                 # NET-5.1 — blocajul se evalueaza primul: e diagnosticul cel mai precis,
                 # iar un ciclu blocat incrementeaza si _zero_streak (vezi docstring).
+                rot = _rot_suffix(p)
                 if bs >= _BLOCKED_STREAK_THRESHOLD:
                     _suspect.add(p)
-                    _dispatch_alert(db, _TEXT_DOWN_BLOCKED.format(p=p, n=bs), "WARN")
+                    _dispatch_alert(db, _TEXT_DOWN_BLOCKED.format(p=p, n=bs, rot=rot), "WARN")
                 elif es >= _ERROR_STREAK_THRESHOLD:
                     _suspect.add(p)
-                    _dispatch_alert(db, _TEXT_DOWN_ERR.format(p=p, n=es), "WARN")
+                    _dispatch_alert(db, _TEXT_DOWN_ERR.format(p=p, n=es, rot=rot), "WARN")
                 elif zs >= _ZERO_STREAK_THRESHOLD:
                     _suspect.add(p)
-                    _dispatch_alert(db, _TEXT_DOWN_ZERO.format(p=p, n=zs), "WARN")
+                    _dispatch_alert(db, _TEXT_DOWN_ZERO.format(p=p, n=zs, rot=rot), "WARN")
 
     _acc_results.pop(p, None)
     _acc_errors.pop(p, None)

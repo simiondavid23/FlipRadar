@@ -43,7 +43,13 @@ _MIN_INTERVAL = {"vinted.ro": 20.0}      # era 6.0 (RP-1) — cadenta mai lenta
 _DEFAULT_MIN_INTERVAL = 3.0
 _JITTER_MAX = {"vinted.ro": 10.0}        # interval efectiv Vinted: 20–30s
 _DEFAULT_JITTER_MAX = 1.0
-_DAILY_CAP = {"vinted.ro": 250}          # requesturi HTML / zi calendaristica
+_DAILY_CAP = {"vinted.ro": 250}          # requesturi HTML / zi calendaristica, PER IP
+# NET-5.3 — plasa globala: NU se reseteaza la rotatie. Fara ea, bucla „250 requesturi ->
+# blocaj -> rotatie -> inca 250" ajunge la ~1250/ora, exact cadenta care a produs
+# incidentul RP-1.1 (degradare progresiva pana la 403 pe toate paginile HTML). Plafonul
+# per-IP se reseteaza pentru ca un IP nou chiar primeste buget nou de la DataDome; cel
+# global exista ca rotatia sa nu devina o cale de ocolire a propriei discipline.
+_DAILY_GLOBAL_CAP = {"vinted.ro": 750}
 _BREAKER_THRESHOLD = 2                    # blocked-uri consecutive -> breaker deschis
 _BREAKER_COOLDOWN_S = 6 * 3600           # pauza dupa deschidere
 
@@ -65,8 +71,10 @@ _domain_lock = threading.Lock()
 # guard: breaker + plafon zilnic
 _guard_lock = threading.Lock()
 _breaker: dict[str, dict] = {}                 # {domeniu: {consec, open_until, half_open, warned_skip}}
-_daily: dict[str, tuple[str, int]] = {}        # {domeniu: (data_azi, count)}
+_daily: dict[str, tuple[str, int]] = {}        # {domeniu: (data_azi, count)} — PER IP
 _daily_cap_warned: dict[str, str] = {}         # {domeniu: data_ultimului_warn}
+_daily_global: dict[str, tuple[str, int]] = {}   # idem, dar NU se reseteaza la rotatie
+_daily_global_warned: dict[str, str] = {}
 
 
 def _new_breaker() -> dict:
@@ -99,6 +107,10 @@ def _jitter_for(domain: str) -> float:
 
 def _cap_for(domain: str):
     return next((c for d, c in _DAILY_CAP.items() if domain.endswith(d)), None)
+
+
+def _global_cap_for(domain: str):
+    return next((c for d, c in _DAILY_GLOBAL_CAP.items() if domain.endswith(d)), None)
 
 
 def _today_str() -> str:
@@ -146,25 +158,61 @@ def guard_before_request(domain: str) -> dict:
                 return {"allowed": False, "reason": "breaker_open", "open_until": b["open_until"]}
             b["half_open"] = True  # aceasta cerere e proba
 
-        # 2) plafon zilnic
+        # 2) plafoane zilnice. Cel GLOBAL se verifica PRIMUL: are prioritate in mesaj,
+        # altfel utilizatorul vede „plafon atins", roteste, si nu se schimba nimic.
+        # Ambele contoare se incrementeaza abia dupa ce cererea e permisa.
+        today = _today_str()
+        gcap = _global_cap_for(domain)
+        gdate, gcount = _daily_global.get(domain, (today, 0))
+        if gdate != today:
+            gdate, gcount = today, 0
+        if gcap is not None and gcount >= gcap:
+            _daily_global[domain] = (gdate, gcount)
+            if b["half_open"]:
+                b["half_open"] = False
+            if _daily_global_warned.get(domain) != today:
+                _daily_global_warned[domain] = today
+                log_manager.emit("radar", "WARN",
+                    f"Plafon GLOBAL zilnic Vinted atins ({gcap}) — nici rotatia de IP nu il "
+                    f"reseteaza, enrichment in pauza pana maine ({domain})")
+            return {"allowed": False, "reason": "daily_global_cap", "open_until": 0.0}
+
         cap = _cap_for(domain)
+        date, count = _daily.get(domain, (today, 0))
+        if date != today:
+            date, count = today, 0
+        if cap is not None and count >= cap:
+            _daily[domain] = (date, count)
+            if b["half_open"]:
+                b["half_open"] = False  # nu trimitem proba daca plafonul e atins
+            if _daily_cap_warned.get(domain) != today:
+                _daily_cap_warned[domain] = today
+                log_manager.emit("radar", "WARN",
+                    f"Plafon zilnic Vinted atins ({cap}) — enrichment in pauza pana maine ({domain})")
+            return {"allowed": False, "reason": "daily_cap", "open_until": 0.0}
+
         if cap is not None:
-            today = _today_str()
-            date, count = _daily.get(domain, (today, 0))
-            if date != today:
-                date, count = today, 0
-            if count >= cap:
-                _daily[domain] = (date, count)
-                if b["half_open"]:
-                    b["half_open"] = False  # nu trimitem proba daca plafonul e atins
-                if _daily_cap_warned.get(domain) != today:
-                    _daily_cap_warned[domain] = today
-                    log_manager.emit("radar", "WARN",
-                        f"Plafon zilnic Vinted atins ({cap}) — enrichment in pauza pana maine ({domain})")
-                return {"allowed": False, "reason": "daily_cap", "open_until": 0.0}
             _daily[domain] = (date, count + 1)
+        if gcap is not None:
+            _daily_global[domain] = (gdate, gcount + 1)
 
         return {"allowed": True, "reason": None, "open_until": b["open_until"]}
+
+
+def reset_for_new_ip() -> None:
+    """NET-5.3 — apelat dupa o rotatie cu `changed=True`. Blocajul era pe IP-ul VECHI.
+
+    Se reseteaza breaker-ul (fara asta rotesti pe un IP curat si enrichment-ul ramane
+    oprit SASE ORE degeaba) si contorul per-IP (un IP nou chiar primeste buget nou de la
+    DataDome). NU se reseteaza `_daily_global` — vezi comentariul de la _DAILY_GLOBAL_CAP.
+    """
+    with _guard_lock:
+        _breaker.clear()
+        _daily.clear()
+        _daily_cap_warned.clear()
+    log_manager.emit("radar", "INFO",
+                     "Vinted: IP nou — breaker si plafon per-IP resetate "
+                     "(plafonul global ramane)")
 
 
 def guard_after_response(domain: str, blocked: bool, status: int | None = None) -> None:

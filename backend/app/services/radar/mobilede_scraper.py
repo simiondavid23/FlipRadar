@@ -125,7 +125,10 @@ def fetch_mobilede_listing_details(url: str) -> dict:
         # NET-5.1 — azi orice non-200 intorcea dict gol TACUT: nici log, nici semnal.
         outcome = classify(status=resp.status_code, body=html)
         report_outcome("mobilede", outcome)
-        if resp.status_code != 200:
+        # NET-5.3 — un 200-cu-marker e un interstitial: parsarea lui ar da gunoi. Calea
+        # de enrichment genereaza cele mai multe requesturi, deci si cele mai multe
+        # semnale de blocaj.
+        if outcome is Outcome.BLOCKED or resp.status_code != 200:
             print(f"[MobileDeScraper] details HTTP {resp.status_code} ({outcome.value})")
             return {"images": [], "description": None, "specs": {}}
     except Exception as exc:
@@ -187,21 +190,34 @@ def search_mobilede(
         try:
             resp = curl_requests.get(url, **req_kwargs)
             body = resp.text or ""
+            # NET-5.3 — clasificam O SINGURA DATA, inaintea ramurilor pe status, si
+            # tratam BLOCKED uniform indiferent care status l-a produs: 401, 403 SI
+            # 200-cu-marker (interstitialul mobile.de vine si cu 200).
             outcome = classify(status=resp.status_code, body=body)
+            if outcome is Outcome.BLOCKED:
+                if report_outcome("mobilede", outcome):
+                    # IP nou: reincearca IMEDIAT, fara backoff. `continue` CONSUMA
+                    # incercarea — fara asta bucla ar putea deveni infinita cand rotatia
+                    # reuseste de fiecare data.
+                    print(f"[MobileDeScraper] blocat (HTTP {resp.status_code}) - IP nou, "
+                          f"reiau {attempt+1}/3")
+                    continue
+                delay = rate_limit_backoff(attempt, base_delay=3.0)
+                print(f"[MobileDeScraper] blocat (HTTP {resp.status_code}) "
+                      f"retry {attempt+1}/3 dupa {delay:.1f}s")
+                time.sleep(delay)
+                continue
             report_outcome("mobilede", outcome)
             if resp.status_code == 200:
-                # Interstitialul mobile.de vine si cu 200 ("Zugriff verweigert"): il
-                # RAPORTAM, dar fluxul la 200 ramane identic cu cel de dinainte.
                 html = body
                 break
-            # NET-5.1 — BLOCKED capata backoff in loc de `return []` imediat. NOT_FOUND
-            # si statusurile necunoscute pastreaza comportamentul actual.
-            if outcome in (Outcome.RATE_LIMITED, Outcome.BLOCKED):
+            if outcome is Outcome.RATE_LIMITED:
                 delay = rate_limit_backoff(attempt, base_delay=3.0)
                 print(f"[MobileDeScraper] {outcome.value} (HTTP {resp.status_code}) "
                       f"retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
                 continue
+            # NOT_FOUND si statusurile necunoscute: comportamentul actual, nu-l largi.
             print(f"[MobileDeScraper] HTTP {resp.status_code}")
             return []
         except Exception as exc:

@@ -175,7 +175,7 @@ def classify(
 
 def report_outcome(platform: str, outcome: "Outcome") -> bool:
     """Raporteaza rezultatul unui request. Intoarce True daca apelantul poate
-    reincerca imediat pe alt IP (in 5.1 intotdeauna False - rotatia vine in 5.3).
+    reincerca imediat pe alt IP — NET-5.3: doar cand rotatia chiar a schimbat WAN-ul.
 
     Import lazy in corp: base_scraper NU capata dependente la nivel de modul.
     Nu arunca niciodata - un defect in telemetrie nu are voie sa opreasca un scan.
@@ -184,6 +184,8 @@ def report_outcome(platform: str, outcome: "Outcome") -> bool:
         if outcome is Outcome.BLOCKED:
             from app.services.radar import health_watchdog
             health_watchdog.note_blocked(platform)
+            from app.services.network.triggers import rotate_for
+            return rotate_for(platform, outcome)
     except Exception:
         pass
     return False

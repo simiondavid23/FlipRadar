@@ -90,6 +90,13 @@ def _check_rotator_config() -> None:
         from app.services.network.rotator import get_rotator
         _rot = get_rotator()
         print(f"[Network] Rotator: {type(_rot).__name__}")
+        # NET-5.3 §7 — capcana 4: un proces mort intre dataswitch=0 si =1 lasa modemul
+        # OFFLINE. Repararea (`available()` -> `_recover_data_off`) a ramas fara apelant
+        # dupa 5.2c. E cross-proces, deci boot-ul e momentul exact. Verifica intai
+        # link-ul, ca sa nu intarzie pornirea cu 30s cand modemul e configurat dar absent.
+        from app.services.network.triggers import recover_data_if_link_up
+        if recover_data_if_link_up():
+            print("[Network] Modem: date verificate/repornite la boot")
     except Exception as exc:
         print(f"[Network] CONFIGURATIE INVALIDA pentru rotatie IP: {exc}")
         print("[Network] Verifica MODEM_ROTATION_METHOD in .env "
