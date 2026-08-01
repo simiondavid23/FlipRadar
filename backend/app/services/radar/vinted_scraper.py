@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
+from app.services.network import binding
 from app.services.radar.base_scraper import is_excluded
 from app.services.radar import vinted_html
 from app.services.log_manager import log_manager
@@ -22,24 +23,56 @@ from app.services.log_manager import log_manager
 _wrapper = None
 _wrapper_lock = threading.Lock()
 _wrapper_fail_count = 0
+_wrapper_bind = None      # NET-5.2 — bind-ul cu care a fost construit wrapper-ul
+
+
+def _transport_config(cfg: dict):
+    """{"transport": HTTPTransport(**cfg)} sau None cand nu legam nimic.
+
+    La None, `config` NU se trimite deloc la VintedWrapper: `config={}` ar fi
+    echivalent azi, dar absenta e mai sigura la schimbari de biblioteca.
+    """
+    if not cfg:
+        return None
+    import httpx
+    return {"transport": httpx.HTTPTransport(**cfg)}
 
 
 def _get_wrapper():
     """Instanta VintedWrapper la nivel de modul (JSON brut), construita o singura
-    data cu retry x3 + backoff 2/4/8s. None daca nu poate fi construita."""
-    global _wrapper
+    data cu retry x3 + backoff 2/4/8s. None daca nu poate fi construita.
+
+    NET-5.2: la httpx transportul e INGHETAT in client la constructie. Daca bind-ul
+    se schimba (re-enumerare USB dupa reboot, alta adresa DHCP), un wrapper pastrat
+    ar ramane legat la un IP mort si TOATE cautarile Vinted ar intoarce [] tacut — se
+    manifesta ca „Vinted a murit", nu ca eroare de retea. Deci il reconstruim cand
+    bind-ul difera.
+    """
+    global _wrapper, _wrapper_bind
     with _wrapper_lock:
-        if _wrapper is not None:
+        cfg = binding.httpx_config("vinted")
+        bind_key = (cfg.get("local_address"), str(cfg.get("socket_options")))
+        if _wrapper is not None and _wrapper_bind == bind_key:
             return _wrapper
+        if _wrapper is not None:
+            log_manager.emit("radar", "INFO",
+                             "Vinted: bind schimbat, reconstruiesc wrapper-ul")
+            _wrapper = None
         try:
             from vinted_scraper import VintedWrapper
         except Exception as exc:
             log_manager.emit("radar", "ERR", f"Vinted: libraria lipseste: {str(exc)[:80]}")
             return None
+        tcfg = _transport_config(cfg)
         last = None
         for attempt in range(3):
             try:
-                _wrapper = VintedWrapper("https://www.vinted.ro")
+                # PASTRAT: primul attempt poate da 406, n-are legatura cu binding-ul.
+                if tcfg is None:
+                    _wrapper = VintedWrapper("https://www.vinted.ro")
+                else:
+                    _wrapper = VintedWrapper("https://www.vinted.ro", config=tcfg)
+                _wrapper_bind = bind_key
                 return _wrapper
             except Exception as exc:
                 last = exc
@@ -47,14 +80,16 @@ def _get_wrapper():
         log_manager.emit("radar", "ERR",
             f"Vinted wrapper: constructie esuata dupa 3 incercari: {str(last)[:100]}")
         _wrapper = None
+        _wrapper_bind = None
         return None
 
 
 def _invalidate_wrapper():
     """Forteaza reconstruirea sesiunii la urmatorul apel (dupa esecuri repetate)."""
-    global _wrapper, _wrapper_fail_count
+    global _wrapper, _wrapper_fail_count, _wrapper_bind
     with _wrapper_lock:
         _wrapper = None
+        _wrapper_bind = None
         _wrapper_fail_count = 0
 
 

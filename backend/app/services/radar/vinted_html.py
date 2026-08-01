@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 from curl_cffi import requests as curl_requests
 
 from app.services.log_manager import log_manager
+from app.services.network import binding
 
 
 _IMPERSONATE = "chrome131"
@@ -231,7 +232,9 @@ def get_html(url: str, referer: str | None = None):
     sess = get_html_session()
     headers = {"Referer": referer} if referer else None
     try:
-        resp = sess.get(url, headers=headers)
+        # NET-5.2: `interface` e per-request la curl_cffi, deci sesiunea singleton
+        # ramane valida cand se schimba IP-ul modemului.
+        resp = sess.get(url, headers=headers, **binding.curl_kwargs("vinted"))
     except Exception:
         _release_half_open(domain)  # eroare de retea: nu o numaram ca blocaj DataDome
         raise

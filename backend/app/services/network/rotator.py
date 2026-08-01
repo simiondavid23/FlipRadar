@@ -54,6 +54,7 @@ Contract public:
     rotator.rotate(force=False)       -> RotationResult
     rotator.wait_if_rotating(timeout) -> bool, apelat de scrapere
     rotator.bind_ip()                 -> IP local pe interfata modemului
+    rotator.bind_device()             -> numele interfetei (Linux; None pe Windows)
 """
 from __future__ import annotations
 
@@ -117,6 +118,19 @@ def _env_int(key: str, default: int) -> int:
         return int(os.environ.get(key, "").strip() or default)
     except ValueError:
         return default
+
+
+def _asn_key(raw: Optional[str]) -> Optional[str]:
+    """'AS8708 RCS & RDS' -> 'AS8708'. Doar numarul e stabil.
+
+    Campul `as` de la ip-api e text liber al unei terte parti: ziua in care descrierea
+    operatorului se schimba, o comparatie verbatim ar respinge masuratori perfect
+    valide si s-ar manifesta ca „rotatia nu mai merge", fara nimic in log.
+    """
+    if not raw:
+        return None
+    token = str(raw).strip().split()[0].upper()
+    return token if token.startswith("AS") else None
 
 
 def local_ip_towards(target: str, port: int = 80) -> Optional[str]:
@@ -197,6 +211,9 @@ class Rotator:
     def bind_ip(self) -> Optional[str]:
         return None
 
+    def bind_device(self) -> Optional[str]:
+        return None
+
     def wait_if_rotating(self, timeout: float = 180.0) -> bool:
         return True
 
@@ -228,6 +245,7 @@ class HuaweiHilinkRotator(Rotator):
         method: str = METHOD_DATASWITCH,
         pdp_down_s: int = DEFAULT_PDP_DOWN_S,
         escalate_after: int = DEFAULT_ESCALATE_AFTER,
+        expected_asn: Optional[str] = None,
     ) -> None:
         if method not in VALID_METHODS:
             raise ValueError(
@@ -250,7 +268,11 @@ class HuaweiHilinkRotator(Rotator):
         self._last_rotation_at: float = 0.0
         self._history: Deque[float] = deque(maxlen=64)
         self._bind_ip_cache: Optional[str] = None
-        self._expected_asn: Optional[str] = None
+        self._bind_device_cache: Optional[str] = None
+        # Setat din mediu => auto-seedarea din _measure() nu mai are ce face. Fara el,
+        # garda se calibreaza din PRIMA masuratoare reusita, si daca aceea a scurs pe
+        # alta interfata ramane calibrata gresit definitiv.
+        self._expected_asn: Optional[str] = _asn_key(expected_asn) or None
         self._consecutive_no_change: int = 0
 
     # -- sesiune -----------------------------------------------------------
@@ -363,9 +385,56 @@ class HuaweiHilinkRotator(Rotator):
         self._bind_ip_cache = local_ip_towards(self.host)
         return self._bind_ip_cache
 
+    def bind_device(self) -> Optional[str]:
+        """Numele interfetei modemului. None pe Windows (libcurl nu accepta nume de
+        interfata acolo) si None daca nu se poate rezolva. Cache langa bind_ip,
+        invalidat odata cu el.
+
+        Pe Linux, IP-ul singur nu ajunge: cautarea in tabela de rutare e dupa
+        destinatie, adresa sursa nu participa la alegerea rutei. De aceea pe Pi e
+        nevoie de SO_BINDTODEVICE, care cere NUMELE interfetei.
+        """
+        if os.name == "nt":
+            return None
+        if self._bind_device_cache:
+            return self._bind_device_cache
+        ip = self.bind_ip()
+        if not ip:
+            return None
+        # `fcntl` nu exista pe Windows: importul la nivel de modul ar face rotator.py
+        # neimportabil acolo si ar pica toate testele existente. Deci import IN CORP.
+        try:
+            import fcntl
+            import struct
+        except ImportError:
+            return None
+        _SIOCGIFADDR = 0x8915
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            for _idx, name in socket.if_nameindex():
+                try:
+                    addr = socket.inet_ntoa(fcntl.ioctl(
+                        sock.fileno(), _SIOCGIFADDR,
+                        struct.pack("256s", name[:15].encode()))[20:24])
+                except OSError:
+                    continue
+                if addr == ip:
+                    self._bind_device_cache = name
+                    return name
+        except Exception:
+            return None
+        finally:
+            sock.close()
+        return None
+
     def invalidate_bind_ip(self) -> None:
-        """Sterge cache-ul. OBLIGATORIU dupa repornire - vezi capcana 2."""
+        """Sterge cache-ul. OBLIGATORIU dupa repornire - vezi capcana 2.
+
+        Goleste si numele interfetei: dupa repornire adaptorul se re-enumereaza si
+        poate primi alt nume de la udev, nu doar alta adresa.
+        """
         self._bind_ip_cache = None
+        self._bind_device_cache = None
 
     # -- masuratoare -------------------------------------------------------
 
@@ -403,13 +472,15 @@ class HuaweiHilinkRotator(Rotator):
                                reason="niciun serviciu nu a raspuns prin modem")
 
         # Garda anti-scurgere: ASN diferit inseamna ca cererea a iesit pe alta
-        # interfata, deci masuratoarea nu e despre modem.
-        if self._expected_asn and asn and asn != self._expected_asn:
+        # interfata, deci masuratoarea nu e despre modem. Comparatia se face pe NUMARUL
+        # AS, nu pe descrierea operatorului (text liber de la ip-api) - vezi _asn_key.
+        measured = _asn_key(asn)
+        if self._expected_asn and measured and measured != self._expected_asn:
             return Measurement(ip=ip, asn=asn, bind_ip=bind, valid=False,
                                reason=f"ASN diferit ({asn}) - scurgere pe alta cale")
 
-        if asn and not self._expected_asn:
-            self._expected_asn = asn
+        if measured and not self._expected_asn:
+            self._expected_asn = measured
         return Measurement(ip=ip, asn=asn, bind_ip=bind, valid=True)
 
     def _wait_data_path(self, timeout: float = DATA_PATH_TIMEOUT_S) -> Measurement:
@@ -618,6 +689,7 @@ def build_rotator() -> Rotator:
                 or METHOD_DATASWITCH),
         pdp_down_s=_env_int("MODEM_PDP_DOWN_S", DEFAULT_PDP_DOWN_S),
         escalate_after=_env_int("MODEM_ESCALATE_AFTER", DEFAULT_ESCALATE_AFTER),
+        expected_asn=os.environ.get("MODEM_EXPECTED_ASN", "").strip() or None,
     )
 
 

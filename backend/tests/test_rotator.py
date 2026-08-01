@@ -455,6 +455,69 @@ def test_measurement_without_bind_ip_is_invalid():
     assert "fara IP local" in m.reason
 
 
+# --- garda ASN: comparatia propriu-zisa (NET-5.2) --------------------------
+# Sectiune NOUA. Pana acum garda avea un singur test, si acela despre lipsa bind-ului,
+# nu despre comparatie.
+
+def _measure_with(r, asn, ip="86.1.2.3"):
+    """_measure() cu ip-api falsificat, bind_ip fixat. Fara retea."""
+    import json as _json  # local, ca antetul fisierului sa ramana neatins
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = _json.dumps({"query": ip, "as": asn})
+    with patch.object(r, "bind_ip", return_value="192.168.8.100"), \
+         patch("curl_cffi.requests.get", return_value=resp):
+        return r._measure()
+
+
+def test_asn_egal_e_valid():
+    r = HuaweiHilinkRotator(expected_asn="AS8708")
+    m = _measure_with(r, "AS8708 RCS & RDS")
+    assert m.valid is True and m.ip == "86.1.2.3"
+
+
+def test_asn_diferit_e_respins():
+    r = HuaweiHilinkRotator(expected_asn="AS8708")
+    m = _measure_with(r, "AS13210 ACADEMIA DE STUDII ECONOMICE")
+    assert m.valid is False
+    assert "ASN diferit" in m.reason
+
+
+def test_expected_din_mediu_nu_se_auto_seedeaza(monkeypatch):
+    monkeypatch.setenv("MODEM_ROTATION_ENABLED", "true")
+    monkeypatch.setenv("MODEM_EXPECTED_ASN", "AS8708 RCS & RDS")
+    r = build_rotator()
+    assert r._expected_asn == "AS8708"          # normalizat la constructie
+    m = _measure_with(r, "AS13210 ASE")         # scurgere pe alta cale
+    assert m.valid is False
+    assert r._expected_asn == "AS8708"          # NU s-a recalibrat pe scurgere
+
+
+def test_fara_expected_se_auto_seedeaza():
+    # Comportament PASTRAT pentru instalarile care nu seteaza variabila.
+    r = HuaweiHilinkRotator()
+    assert r._expected_asn is None
+    m = _measure_with(r, "AS9999 Operator Nou")
+    assert m.valid is True
+    assert r._expected_asn == "AS9999"
+
+
+def test_numarul_as_si_sirul_intreg_se_potrivesc():
+    # Descrierea operatorului e text liber de la ip-api: doar numarul e stabil.
+    r1 = HuaweiHilinkRotator(expected_asn="AS8708")
+    assert _measure_with(r1, "AS8708 RCS & RDS SA").valid is True
+    r2 = HuaweiHilinkRotator(expected_asn="AS8708 RCS & RDS")
+    assert _measure_with(r2, "AS8708").valid is True
+
+
+def test_asn_none_nu_declanseaza_respingere():
+    # Tri-stare: ip-api fara camp `as` = necunoscut, nu „alta retea".
+    r = HuaweiHilinkRotator(expected_asn="AS8708")
+    m = _measure_with(r, None)
+    assert m.valid is True
+    assert r._expected_asn == "AS8708"
+
+
 # --- throttling ------------------------------------------------------------
 
 def test_cooldown_blocks_second_rotation():

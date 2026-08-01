@@ -13,6 +13,7 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
+from app.services.network import binding
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
 
 
@@ -121,6 +122,7 @@ def fetch_autovit_listing_details(url: str) -> dict:
     req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
     if proxy_cfg:
         req_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
+    req_kwargs.update(binding.curl_kwargs("autovit"))
     try:
         resp = curl_requests.get(url, **req_kwargs)
         if resp.status_code != 200:
@@ -175,6 +177,7 @@ def search_autovit(
     req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
     if proxy_cfg:
         req_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
+    req_kwargs.update(binding.curl_kwargs("autovit"))
 
     html = None
     for attempt in range(3):
