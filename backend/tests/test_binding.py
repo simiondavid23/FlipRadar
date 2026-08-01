@@ -16,18 +16,31 @@ from app.services.network.rotator import NoopRotator, reset_rotator
 
 
 class _StubRotator:
-    def __init__(self, available=True, ip="192.168.8.123", device="usb0", wait=True):
-        self._available = available
+    """NET-5.2c: `available()` ARUNCA deliberat. Ea face I/O HTTP catre modem (30s cu
+    modemul scos), deci orice test care primeste kwargs nevide dovedeste, implicit, ca
+    nu mai e pe calea per-request."""
+
+    def __init__(self, ip="192.168.8.123", device="usb0", wait=True,
+                 disabled_reason=None, host="192.168.8.1", ip_after_replug=None):
         self._ip = ip
+        self._ip_after_replug = ip_after_replug
         self._device = device
         self._wait = wait
+        self.disabled_reason = disabled_reason
+        self.host = host
         self.wait_calls = 0
+        self.invalidated = 0
 
     def available(self):
-        return self._available
+        raise AssertionError("available() nu are voie pe calea per-request (I/O de modem)")
 
     def bind_ip(self):
         return self._ip
+
+    def invalidate_bind_ip(self):
+        self.invalidated += 1
+        if self._ip_after_replug is not None:
+            self._ip = self._ip_after_replug
 
     def bind_device(self):
         return self._device
@@ -37,15 +50,28 @@ class _StubRotator:
         return self._wait
 
 
+def _routes(monkeypatch, modem="192.168.8.123", public="192.168.1.144"):
+    """Tabela de rutare falsificata, cu raspuns pe DESTINATIE. `modem=None` = adaptorul
+    a disparut (Windows ii sterge rutele). Intoarce lista tintelor interogate."""
+    calls = []
+
+    def _fake(target):
+        calls.append(target)
+        return modem if str(target).startswith("192.168.8.") else public
+
+    monkeypatch.setattr(binding, "local_ip_towards", _fake)
+    return calls
+
+
 @pytest.fixture(autouse=True)
 def logs(monkeypatch):
-    """Stare curata, allowlist implicit, log capturat. Implicit ruta default NU trece
-    prin modem (adresa sursa catre internet difera de cea a modemului)."""
+    """Stare curata, allowlist implicit, log capturat. Implicit: modemul e viu si ruta
+    default NU trece prin el (adresa sursa catre internet difera)."""
     binding.reset_state()
     monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "mobilede,vinted")
     captured = []
     monkeypatch.setattr(binding, "_log", lambda level, msg: captured.append((level, msg)))
-    monkeypatch.setattr(binding, "local_ip_towards", lambda target: "192.168.1.144")
+    _routes(monkeypatch)
     yield captured
     binding.reset_state()
 
@@ -105,10 +131,11 @@ def test_rotatie_dezactivata_e_complet_tacuta(monkeypatch, logs):
 
 
 def test_modem_disparut_ramane_zgomotos(monkeypatch, logs):
-    # Rotator REAL (nu Noop) dar indisponibil = anomalie. Daca fix-ul de mai sus ar fi
-    # prea larg si ar tacea la orice indisponibilitate, am reintroduce „binding omis
-    # tacit" — exact defectul pe care fail-open-ul zgomotos il previne.
-    _use(monkeypatch, available=False)
+    # Rotator REAL (nu Noop) dar cu modemul disparut = anomalie. Daca fix-ul de mai sus
+    # ar fi prea larg si ar tacea la orice indisponibilitate, am reintroduce „binding
+    # omis tacit" — exact defectul pe care fail-open-ul zgomotos il previne.
+    _use(monkeypatch)
+    _routes(monkeypatch, modem=None)
     assert binding.curl_kwargs("mobilede") == {}
     warns = _warns(logs)
     assert len(warns) == 1 and "INDISPONIBIL" in warns[0]
@@ -117,10 +144,82 @@ def test_modem_disparut_ramane_zgomotos(monkeypatch, logs):
 
 # ── fail-open ────────────────────────────────────────────────────────────────────
 
-def test_available_false_e_fail_open(monkeypatch, logs):
-    _use(monkeypatch, available=False)
+def test_adaptor_disparut_e_fail_open(monkeypatch, logs):
+    _use(monkeypatch)
+    _routes(monkeypatch, modem=None)      # adaptorul a disparut: fara ruta catre modem
     assert binding.curl_kwargs("mobilede") == {}
     assert len(_warns(logs)) == 1
+
+
+# ── NET-5.2c — zero I/O de modem pe calea per-request ────────────────────────────
+
+def test_available_nu_se_apeleaza_pe_calea_fierbinte(monkeypatch):
+    # `_StubRotator.available()` arunca. Daca ar fi apelata, exceptia ar fi prinsa de
+    # fail-open si kwargs ar iesi goale — deci kwargs nevide = dovada ca nu se apeleaza.
+    _use(monkeypatch)
+    assert binding.curl_kwargs("mobilede") == {"interface": "192.168.8.123"}
+    assert binding.httpx_config("vinted") == {"local_address": "192.168.8.123"}
+
+
+def test_disabled_reason_iese_fara_sa_atinga_semnalul_de_viata(monkeypatch, logs):
+    # Lockout de modem / credentiale gresite: citire de camp, gratis. Nici macar ruta
+    # nu se mai interogheaza — n-are ce sa schimbe.
+    _use(monkeypatch, disabled_reason="credentiale gresite pentru modem (MODEM_PASSWORD)")
+    calls = _routes(monkeypatch)
+    assert binding.curl_kwargs("mobilede") == {}
+    warns = _warns(logs)
+    assert len(warns) == 1 and "credentiale gresite" in warns[0]
+    assert calls == []
+
+
+def test_revenirea_adaptorului_da_kwargs_si_warn_de_revenire(monkeypatch, logs):
+    _use(monkeypatch)
+    _routes(monkeypatch, modem=None)
+    assert binding.curl_kwargs("mobilede") == {}
+    assert len(_warns(logs)) == 1
+    _routes(monkeypatch)                  # adaptorul revine
+    assert binding.curl_kwargs("mobilede") == {"interface": "192.168.8.123"}
+    assert len(_warns(logs)) == 2         # exact unul per tranzitie, in ambele sensuri
+
+
+def test_ruta_cazuta_pe_default_nu_inseamna_modem_viu(monkeypatch, logs):
+    """MASURAT pe Windows: cu adaptorul scos, `local_ip_towards('192.168.8.1')` NU
+    esueaza — adresa nu mai are ruta on-link, cade pe ruta DEFAULT si intoarce IP-ul
+    WiFi. Daca „non-None" ar fi considerat „modem viu", ne-am lega la `bind_ip()`
+    cache-uit (mort) si curl ar arunca errno 10049 in scraper: fail-CLOSED."""
+    _use(monkeypatch)
+    monkeypatch.setattr(binding, "local_ip_towards", lambda target: "192.168.1.144")
+    assert binding.curl_kwargs("mobilede") == {}
+    assert len(_warns(logs)) == 1
+
+
+def test_replug_cu_alta_adresa_invalideaza_cache_ul(monkeypatch):
+    # Replug: adaptorul se re-enumereaza si primeste alt IP. Cache-ul lui bind_ip ar
+    # ramane pe cel mort, iar bind-ul ar esua tacit in scraper.
+    rot = _use(monkeypatch, ip="192.168.8.123", ip_after_replug="192.168.8.77")
+    _routes(monkeypatch, modem="192.168.8.77")
+    assert binding.curl_kwargs("mobilede") == {"interface": "192.168.8.77"}
+    assert rot.invalidated == 1
+
+
+def test_semnalul_de_viata_nu_e_cache_uit(monkeypatch):
+    """Doua apeluri consecutive cu rute diferite trebuie sa dea rezultate diferite.
+
+    Daca detectorul ar fi `bind_ip()` — care e CACHE-UIT — dupa disparitia adaptorului
+    ar intoarce un IP mort, ne-am lega la el si curl ar arunca errno 10049 in scraper:
+    fail-CLOSED din greseala, exact opusul deciziei luate.
+    """
+    _use(monkeypatch)
+    seq = ["192.168.8.123", None]
+
+    def _fake(target):
+        if str(target).startswith("192.168.8."):
+            return seq.pop(0) if seq else None
+        return "192.168.1.144"
+
+    monkeypatch.setattr(binding, "local_ip_towards", _fake)
+    assert binding.curl_kwargs("mobilede") == {"interface": "192.168.8.123"}
+    assert binding.curl_kwargs("mobilede") == {}
 
 
 def test_fara_bind_ip_un_singur_warn(monkeypatch, logs):

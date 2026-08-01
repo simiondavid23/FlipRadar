@@ -214,6 +214,12 @@ class Rotator:
     def bind_device(self) -> Optional[str]:
         return None
 
+    @property
+    def disabled_reason(self) -> Optional[str]:
+        """Motivul dezactivarii definitive, sau None. Citire de camp, fara I/O —
+        `available()` face request-uri catre modem, deci nu e folosibila per-request."""
+        return None
+
     def wait_if_rotating(self, timeout: float = 180.0) -> bool:
         return True
 
@@ -321,6 +327,12 @@ class HuaweiHilinkRotator(Rotator):
             raise  # lockout / credentiale: propaga, nu inghiti
         except Exception:
             return None
+
+    @property
+    def disabled_reason(self) -> Optional[str]:
+        """Read-only: se seteaza doar prin `_disable()` (lockout de modem sau
+        credentiale gresite)."""
+        return self._disabled_reason
 
     def _disable(self, reason: str) -> None:
         self._disabled_reason = reason

@@ -38,7 +38,9 @@ import socket
 import threading
 from typing import Optional
 
-from app.services.network.rotator import NoopRotator, get_rotator, local_ip_towards
+from app.services.network.rotator import (
+    DEFAULT_HOST, NoopRotator, get_rotator, local_ip_towards,
+)
 
 
 _PUBLIC_PROBE = "1.1.1.1"
@@ -115,6 +117,48 @@ def _rotation_disabled() -> bool:
         return False   # nu putem decide -> lasam calea normala sa raporteze zgomotos
 
 
+def _on_modem_link(src: str, host: str) -> bool:
+    """Sursa e pe LINK-ul modemului? LAN-ul HiLink e un /24 (implicit 192.168.8.0/24)."""
+    return src.rsplit(".", 1)[0] == host.rsplit(".", 1)[0]
+
+
+def _live_bind_ip(rot) -> Optional[str]:
+    """IP-ul cu care chiar ne putem lega, verificat NECACHE-UIT la fiecare apel.
+    None = adaptorul modemului nu mai e acolo.
+
+    NET-5.2c — masurat: `available()` face I/O HTTP catre modem (doua `_try_connect`,
+    `timeout=15` fiecare), deci cu modemul scos costa 30s PER REQUEST. La 6 platforme ×
+    3 reincercari × paginare, o pana de modem nu degrada scanerul, il OPREA — adica exact
+    opusul motivului pentru care s-a ales fail-open. `local_ip_towards` consulta tabela de
+    rutare pe un socket UDP neconectat: nu trimite pachete, nu deschide sesiune, nu cere
+    drepturi, si nu poate astepta un timeout de retea.
+
+    DAR „a intors ceva" NU inseamna „modemul e viu" (masurat pe Windows): cand adaptorul
+    dispare, `192.168.8.1` nu mai are ruta on-link, cade pe ruta DEFAULT si intoarce
+    adresa WiFi. Daca ne-am opri la „non-None", am trece de verificare, ne-am lega la
+    `bind_ip()` CACHE-UIT (un IP mort) si curl ar arunca `InterfaceError` errno 10049 in
+    scraper — fail-CLOSED din greseala, opusul deciziei luate. Deci sursa trebuie sa fie
+    pe link-ul modemului.
+
+    `bind_ip()` nu se foloseste ca DETECTOR (e cache-uit), doar ca sursa a adresei — si
+    se re-verifica fata de ruta proaspata: la replug, adaptorul se re-enumereaza si poate
+    primi alta adresa, iar cache-ul ar ramane pe cea moarta (capcana 2 din handover).
+    Invalidarea nu costa I/O.
+    """
+    host = getattr(rot, "host", None) or DEFAULT_HOST
+    src = local_ip_towards(host)
+    if not src or not _on_modem_link(src, host):
+        return None
+    ip = rot.bind_ip()
+    if ip and ip != src:
+        try:
+            rot.invalidate_bind_ip()
+        except Exception:
+            pass
+        ip = rot.bind_ip()
+    return ip or None
+
+
 def routed_platforms() -> frozenset[str]:
     """Allowlist-ul din mediu, citit LA APEL (nu la import) ca sa fie reconfigurabil."""
     raw = os.environ.get("MODEM_ROUTED_PLATFORMS", "")
@@ -135,12 +179,15 @@ def _bind_target(platform: str) -> tuple[Optional[str], Optional[str]]:
         if not rot.wait_if_rotating(_WAIT_TIMEOUT_S):
             _note_available(False, f"rotatie in curs peste {_WAIT_TIMEOUT_S:.0f}s")
             return None, None
-        if not rot.available():
-            _note_available(False, "modemul nu e disponibil")
+        # Dezactivare definitiva (lockout de modem / credentiale gresite): citire de
+        # camp, gratis. `available()` NU se apeleaza aici - vezi _modem_alive.
+        reason = getattr(rot, "disabled_reason", None)
+        if reason:
+            _note_available(False, reason)
             return None, None
-        ip = rot.bind_ip()
+        ip = _live_bind_ip(rot)
         if not ip:
-            _note_available(False, "fara IP local pe interfata modemului")
+            _note_available(False, "fara ruta on-link catre modem (adaptor absent?)")
             return None, None
         device = rot.bind_device()
     except Exception as exc:
