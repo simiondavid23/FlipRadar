@@ -12,7 +12,10 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
-from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
+from app.services.radar.base_scraper import (
+    build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
+    classify, report_outcome, Outcome,
+)
 
 
 _IMPERSONATE = "chrome110"
@@ -116,10 +119,15 @@ def fetch_mobilede_listing_details(url: str) -> dict:
         req_kwargs["proxies"] = {"http": proxy_cfg["http"], "https": proxy_cfg["https"]}
     try:
         resp = curl_requests.get(url, **req_kwargs)
+        html = resp.text or ""
+        # NET-5.1 — azi orice non-200 intorcea dict gol TACUT: nici log, nici semnal.
+        outcome = classify(status=resp.status_code, body=html)
+        report_outcome("mobilede", outcome)
         if resp.status_code != 200:
+            print(f"[MobileDeScraper] details HTTP {resp.status_code} ({outcome.value})")
             return {"images": [], "description": None, "specs": {}}
-        html = resp.text
     except Exception as exc:
+        report_outcome("mobilede", classify(exc=exc))
         print(f"[MobileDeScraper] details eroare: {exc}")
         return {"images": [], "description": None, "specs": {}}
 
@@ -175,17 +183,26 @@ def search_mobilede(
     for attempt in range(3):
         try:
             resp = curl_requests.get(url, **req_kwargs)
+            body = resp.text or ""
+            outcome = classify(status=resp.status_code, body=body)
+            report_outcome("mobilede", outcome)
             if resp.status_code == 200:
-                html = resp.text
+                # Interstitialul mobile.de vine si cu 200 ("Zugriff verweigert"): il
+                # RAPORTAM, dar fluxul la 200 ramane identic cu cel de dinainte.
+                html = body
                 break
-            if resp.status_code == 429:
+            # NET-5.1 — BLOCKED capata backoff in loc de `return []` imediat. NOT_FOUND
+            # si statusurile necunoscute pastreaza comportamentul actual.
+            if outcome in (Outcome.RATE_LIMITED, Outcome.BLOCKED):
                 delay = rate_limit_backoff(attempt, base_delay=3.0)
-                print(f"[MobileDeScraper] 429 retry {attempt+1}/3 dupa {delay:.1f}s")
+                print(f"[MobileDeScraper] {outcome.value} (HTTP {resp.status_code}) "
+                      f"retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
                 continue
             print(f"[MobileDeScraper] HTTP {resp.status_code}")
             return []
         except Exception as exc:
+            report_outcome("mobilede", classify(exc=exc))
             print(f"[MobileDeScraper] Eroare ({attempt+1}/3): {exc}")
             time.sleep(rate_limit_backoff(attempt, base_delay=3.0))
 

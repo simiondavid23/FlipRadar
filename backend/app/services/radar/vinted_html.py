@@ -262,14 +262,15 @@ def decode_next_f(html: str) -> str:
 
 def _looks_blocked(status: int, html: str) -> bool:
     """Pagina reala e mare; substringul 'datadome' e doar SDK-ul client. Block real
-    = 403 sau interstitial mic cu markeri de challenge."""
-    low = (html or "").lower()
-    if status == 403:
-        return True
-    if status == 200 and len(html) < 40000 and (
-            "captcha-delivery" in low or ("datadome" in low and "captcha" in low)):
-        return True
-    return False
+    = 403 sau interstitial mic cu markeri de challenge.
+
+    NET-5.1: euristica traieste acum in `base_scraper.classify`, ca sa fie una singura
+    pentru toate scraperele. Import lazy in corp — vinted_html nu capata dependenta la
+    nivel de modul. Comportamentul pe 404 curat NU se schimba (nu e blocaj): calea
+    RAD-1 „item sters/vandut" depinde de asta.
+    """
+    from app.services.radar.base_scraper import classify, Outcome
+    return classify(status=status, body=html) is Outcome.BLOCKED
 
 
 def fetch_item_page(item_id_or_url) -> dict | None:

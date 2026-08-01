@@ -6,6 +6,7 @@ Okazii si Facebook si ca scrapere viitoare sa nu re-inventeze logica.
 """
 import os
 import random
+from enum import Enum
 from typing import Optional
 
 
@@ -91,4 +92,93 @@ def is_excluded(title: str, exclude_words: list[str]) -> bool:
         w = (w or "").strip().lower()
         if w and w in title_low:
             return True
+    return False
+
+
+# ── NET-5.1 — clasificator de blocaje ────────────────────────────────────────────
+# „Platforma a returnat 0" nu spune nimic: poate fi blocaj, markup schimbat sau chiar
+# zero rezultate reale. Clasificatorul separa cazurile ca alertele sa fie precise.
+
+
+class Outcome(str, Enum):
+    """Rezultatul unui request in termeni de DIAGNOSTIC, nu de HTTP.
+
+    Baza `str`: se logheaza si se serializeaza direct, fara `.value` peste tot.
+    """
+    OK = "ok"
+    BLOCKED = "blocked"
+    RATE_LIMITED = "rate_limited"
+    SITE_CHANGED = "site_changed"
+    TRANSIENT = "transient"
+    NOT_FOUND = "not_found"
+
+
+BLOCK_MARKERS: tuple[str, ...] = (
+    "captcha-delivery", "cf-challenge", "just a moment",
+    "imperva", "incapsula", "access denied", "zugriff verweigert",
+)
+
+# Pagina reala e mare; substringul "datadome" apare si in SDK-ul client de pe
+# pagina normala. Peste pragul asta, prezenta markerilor nu mai e concludenta.
+INTERSTITIAL_MAX_BYTES = 40_000
+
+
+def _has_block_marker(low: str, markers: tuple[str, ...]) -> bool:
+    """`datadome` SINGUR nu e marker (SDK-ul client apare si pe pagina buna) —
+    conteaza doar impreuna cu `captcha`."""
+    if any(m in low for m in markers):
+        return True
+    return "datadome" in low and "captcha" in low
+
+
+def classify(
+    status: Optional[int] = None,
+    body: Optional[str] = None,
+    exc: Optional[BaseException] = None,
+    parsed: Optional[int] = None,
+    extra_markers: Optional[tuple[str, ...]] = None,
+    interstitial_max_bytes: int = INTERSTITIAL_MAX_BYTES,
+) -> Outcome:
+    """Clasifica rezultatul unui request de scraper.
+
+    ORDINEA de decizie e parte din contract, nu detaliu de implementare: un 429 cu
+    markeri in body ramane RATE_LIMITED (altfel am reincerca gresit), iar un 403 e
+    BLOCKED indiferent ce contine body-ul.
+
+    `parsed is None` inseamna „nu s-a parsat inca", NU zero — doar `parsed == 0`
+    inseamna markup schimbat. `extra_markers` se ADAUGA la cele comune.
+    """
+    if exc is not None:
+        return Outcome.TRANSIENT
+    if status == 404:
+        return Outcome.NOT_FOUND
+    if status in (401, 403):
+        return Outcome.BLOCKED
+    if status == 429:
+        return Outcome.RATE_LIMITED
+    if status is not None and status >= 500:
+        return Outcome.TRANSIENT
+    if status == 200:
+        markers = BLOCK_MARKERS + tuple(extra_markers or ())
+        if body and len(body) < interstitial_max_bytes and _has_block_marker(
+                body.lower(), markers):
+            return Outcome.BLOCKED
+        if parsed is not None and parsed == 0:
+            return Outcome.SITE_CHANGED
+    return Outcome.OK
+
+
+def report_outcome(platform: str, outcome: "Outcome") -> bool:
+    """Raporteaza rezultatul unui request. Intoarce True daca apelantul poate
+    reincerca imediat pe alt IP (in 5.1 intotdeauna False - rotatia vine in 5.3).
+
+    Import lazy in corp: base_scraper NU capata dependente la nivel de modul.
+    Nu arunca niciodata - un defect in telemetrie nu are voie sa opreasca un scan.
+    """
+    try:
+        if outcome is Outcome.BLOCKED:
+            from app.services.radar import health_watchdog
+            health_watchdog.note_blocked(platform)
+    except Exception:
+        pass
     return False

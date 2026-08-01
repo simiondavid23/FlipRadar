@@ -18,6 +18,14 @@ Semnale:
     net-ul, nu platforma). Prag: 5 cicluri.
   • „erori": scraperul a crăpat (except din `_run_scraper`) în cicluri consecutive.
     Prag: 3 cicluri (fără guard any_alive — o excepție e semnal puternic).
+  • „blocat" (NET-5.1): `base_scraper.classify` a returnat BLOCKED (403/429-interstitial/
+    captcha) în cicluri consecutive. Prag: 2 — un 403 nu are nevoie de guard
+    anti-fals-pozitiv (spre deosebire de „0 rezultate", care poate însemna și „nu e
+    nimic nou"), iar la 5 cicluri × 5 minute alerta ar veni după 25 de minute de blocaj.
+
+Un ciclu cu blocaje are de regulă și `r == 0`, deci incrementează și `_zero_streak` —
+corect și dorit, dar în `suspect` se intră o singură dată. De aceea lanțul de praguri
+evaluează „blocat" ÎNAINTEA celorlalte: e diagnosticul cel mai precis.
 
 Stare `suspect`: la atingerea unui prag → o singură alertă WARN (live logs + Discord);
 cât e suspect nu se mai alertează. Recovery: primul ciclu cu >0 rezultate → alertă OK
@@ -44,6 +52,7 @@ from app.services.radar.discord_service import send_system_alert
 
 _ZERO_STREAK_THRESHOLD = 5   # cicluri consecutive cu 0 rezultate (cu alta platforma vie)
 _ERROR_STREAK_THRESHOLD = 3  # cicluri consecutive cu exceptii de scraper
+_BLOCKED_STREAK_THRESHOLD = 2  # un 403 e semnal mult mai puternic decat 0 rezultate
 _ALIVE_WINDOW_S = 30 * 60    # SCHED-1 — cat timp o platforma ramane "vie" pentru guard
 
 
@@ -56,10 +65,12 @@ def _now() -> float:
 _open_platforms: set[str] = set()    # SCHED-1 — cicluri deschise (mai multe simultan)
 _acc_results: dict[str, int] = {}   # rezultate brute acumulate in ciclul curent, per platforma
 _acc_errors: dict[str, int] = {}    # exceptii in ciclul curent, per platforma
+_acc_blocked: dict[str, int] = {}   # NET-5.1 — raspunsuri BLOCKED in ciclul curent
 _acc_scanned: set[str] = set()      # platforme atinse in ciclul curent
 _last_alive_at: dict[str, float] = {}  # SCHED-1 — ultimul ciclu cu rezultate >0, per platforma
 _zero_streak: dict[str, int] = {}
 _error_streak: dict[str, int] = {}
+_blocked_streak: dict[str, int] = {}
 _suspect: set[str] = set()
 
 
@@ -71,6 +82,10 @@ _TEXT_DOWN_ERR = (
     "⚠️ Radar Piață — platforma {p} pare blocată: scraperul a crăpat în {n} cicluri "
     "consecutive. Verifică live logs."
 )
+_TEXT_DOWN_BLOCKED = (
+    "⚠️ Radar Piață — platforma {p} returnează răspunsuri de blocare (403 / captcha / "
+    "interstițial) în {n} cicluri consecutive. Verifică live logs."
+)
 _TEXT_RECOVERY = "✅ Radar Piață — platforma {p} și-a revenit: rezultate primite din nou."
 
 
@@ -79,10 +94,12 @@ def _reset_state() -> None:
     _open_platforms.clear()
     _acc_results.clear()
     _acc_errors.clear()
+    _acc_blocked.clear()
     _acc_scanned.clear()
     _last_alive_at.clear()
     _zero_streak.clear()
     _error_streak.clear()
+    _blocked_streak.clear()
     _suspect.clear()
 
 
@@ -91,6 +108,7 @@ def open_cycle(platform: str) -> None:
     Ciclurile altor platforme, deschise in paralel, raman intacte."""
     _acc_results.pop(platform, None)
     _acc_errors.pop(platform, None)
+    _acc_blocked.pop(platform, None)
     _acc_scanned.discard(platform)
     _open_platforms.add(platform)
 
@@ -113,6 +131,15 @@ def note_error(platform: str) -> None:
     _acc_errors[platform] = _acc_errors.get(platform, 0) + 1
 
 
+def note_blocked(platform: str) -> None:
+    """NET-5.1 — inregistreaza un raspuns clasificat BLOCKED pentru `platform`.
+    No-op daca platforma nu are un ciclu deschis, exact ca `note_error`."""
+    if platform not in _open_platforms:
+        return
+    _acc_scanned.add(platform)
+    _acc_blocked[platform] = _acc_blocked.get(platform, 0) + 1
+
+
 def close_cycle(db, platform: str) -> None:
     """Evalueaza streak-urile platformei la finalul ciclului EI si emite alerte la
     tranzitii. No-op daca platforma nu are un ciclu deschis.
@@ -126,6 +153,7 @@ def close_cycle(db, platform: str) -> None:
         now = _now()
         r = _acc_results.get(p, 0)
         e = _acc_errors.get(p, 0)
+        b = _acc_blocked.get(p, 0)
         if r > 0:
             # Sanatos: marcam platforma vie INAINTE de recovery, apoi reset streak-uri.
             _last_alive_at[p] = now
@@ -134,6 +162,7 @@ def close_cycle(db, platform: str) -> None:
                 _suspect.discard(p)
             _zero_streak[p] = 0
             _error_streak[p] = 0
+            _blocked_streak[p] = 0
         else:
             # 0 rezultate: streak zero doar daca o ALTA platforma a fost vie recent
             # (guard fals-pozitiv: daca TOTUL tace, probabil e net-ul, nu platforma).
@@ -145,10 +174,20 @@ def close_cycle(db, platform: str) -> None:
                 _error_streak[p] = _error_streak.get(p, 0) + 1
             else:
                 _error_streak[p] = 0
+            if b > 0:
+                _blocked_streak[p] = _blocked_streak.get(p, 0) + 1
+            else:
+                _blocked_streak[p] = 0
             if p not in _suspect:
                 zs = _zero_streak.get(p, 0)
                 es = _error_streak.get(p, 0)
-                if es >= _ERROR_STREAK_THRESHOLD:
+                bs = _blocked_streak.get(p, 0)
+                # NET-5.1 — blocajul se evalueaza primul: e diagnosticul cel mai precis,
+                # iar un ciclu blocat incrementeaza si _zero_streak (vezi docstring).
+                if bs >= _BLOCKED_STREAK_THRESHOLD:
+                    _suspect.add(p)
+                    _dispatch_alert(db, _TEXT_DOWN_BLOCKED.format(p=p, n=bs), "WARN")
+                elif es >= _ERROR_STREAK_THRESHOLD:
                     _suspect.add(p)
                     _dispatch_alert(db, _TEXT_DOWN_ERR.format(p=p, n=es), "WARN")
                 elif zs >= _ZERO_STREAK_THRESHOLD:
@@ -157,6 +196,7 @@ def close_cycle(db, platform: str) -> None:
 
     _acc_results.pop(p, None)
     _acc_errors.pop(p, None)
+    _acc_blocked.pop(p, None)
     _acc_scanned.discard(p)
     _open_platforms.discard(p)
 
