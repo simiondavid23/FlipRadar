@@ -35,6 +35,8 @@ playwright-stealth==2.0.3
 patchright==1.61.2
 curl_cffi==0.15.0
 vinted-scraper==3.1.1
+# Rotatie IP prin modem USB Huawei HiLink (optional, dezactivat implicit)
+huawei-lte-api==1.11.0
 
 # AI (client OpenAI-compatibil: Groq / Google Gemini — PKG-2)
 openai==2.46.0
