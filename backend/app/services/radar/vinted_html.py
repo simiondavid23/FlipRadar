@@ -260,15 +260,35 @@ def _release_half_open(domain: str) -> None:
 
 def guard_status(domain: str) -> dict:
     """Stare READ-ONLY pentru apelanti (ex. scanner-ul, inainte de un batch): decid
-    FARA sa declanseze un request. Nu consuma plafonul, nu porneste proba half-open."""
+    FARA sa declanseze un request. Nu consuma plafonul, nu porneste proba half-open.
+
+    Aceleasi reguli si aceeasi ordine ca `guard_before_request` — breaker, plafon GLOBAL,
+    plafon per-IP. Divergenta costa scump si tacut: `_enrich_vinted_background` intreaba
+    aici inainte de batch, iar daca raspunsul e „allowed" cand plafonul e de fapt atins,
+    fiecare item e refuzat individual si intoarce None — care prin RAD-1 inseamna „esec,
+    reincearca". Itemele raman in coada si se reincearca ciclu dupa ciclu.
+    """
     with _guard_lock:
         b = _breaker.get(domain, _new_breaker())
         now = _now()
         if b["open_until"] > now:
             return {"allowed": False, "reason": "breaker_open", "open_until": b["open_until"]}
+        # NET-5.3d — proba half-open e IN ZBOR (cooldown expirat, open_until inca
+        # nenul): guard_before_request refuza orice alt request pana se decide proba,
+        # deci si aici trebuie refuzat. Divergenta pornea un batch de enrichment in
+        # fereastra probei (~20-50s), ars apoi item cu item.
+        if b["open_until"] > 0 and b["half_open"]:
+            return {"allowed": False, "reason": "breaker_open", "open_until": b["open_until"]}
+        today = _today_str()
+        # Global-ul INAINTEA celui per-IP: altfel utilizatorul vede „plafon atins",
+        # roteste, si nu se schimba nimic.
+        gcap = _global_cap_for(domain)
+        if gcap is not None:
+            gdate, gcount = _daily_global.get(domain, (today, 0))
+            if gdate == today and gcount >= gcap:
+                return {"allowed": False, "reason": "daily_global_cap", "open_until": 0.0}
         cap = _cap_for(domain)
         if cap is not None:
-            today = _today_str()
             date, count = _daily.get(domain, (today, 0))
             if date == today and count >= cap:
                 return {"allowed": False, "reason": "daily_cap", "open_until": 0.0}
@@ -278,27 +298,48 @@ def guard_status(domain: str) -> dict:
 def get_html(url: str, referer: str | None = None):
     """GET prin sesiunea singleton, respectand guard-ul (breaker + plafon zilnic) si
     throttle-ul cu jitter. Intoarce raspunsul sau `None` la SKIP (breaker/plafon) —
-    motivul e interogabil prin `guard_status(domain)`. La 403/blocat, actualizeaza breaker-ul."""
-    domain = _domain_of(url)
-    decision = guard_before_request(domain)
-    if not decision["allowed"]:
-        return None  # marker de skip (get_html NU face HTTP)
+    motivul e interogabil prin `guard_status(domain)`. La 403/blocat, actualizeaza
+    breaker-ul SI raporteaza blocajul (NET-5.3d).
 
-    _rate_limit(domain)
-    sess = get_html_session()
-    headers = {"Referer": referer} if referer else None
-    try:
-        # NET-5.2: `interface` e per-request la curl_cffi, deci sesiunea singleton
-        # ramane valida cand se schimba IP-ul modemului.
-        resp = sess.get(url, headers=headers, **binding.curl_kwargs("vinted"))
-    except Exception:
-        _release_half_open(domain)  # eroare de retea: nu o numaram ca blocaj DataDome
-        raise
-    try:
-        blocked = _looks_blocked(resp.status_code, resp.text or "")
-    except Exception:
-        blocked = False
-    guard_after_response(domain, blocked, status=resp.status_code)
+    Auditul 5.3d a gasit ca Vinted era SINGURA platforma legata care detecta blocajul
+    fara sa-l raporteze: breakerul local se arma 6 ore, dar `rotate_for` nu se apela
+    niciodata de aici (rotatia venea doar daca ALTA platforma lua blocaj), iar
+    watchdog-ul nu vedea niciun `note_blocked` pentru vinted — alerta de blocaj nu
+    pleca niciodata. `True` de la report_outcome inseamna IP nou, iar
+    `reset_for_new_ip` a curatat DEJA breakerul si plafonul per-IP — deci exact o
+    reincercare imediata; bucla `range(2)` o consuma, ca la mobilede. Rotatia a durat
+    ~35s, deci fereastra de throttle e oricum scursa — retry-ul nu doarme."""
+    domain = _domain_of(url)
+    resp = None
+    for _attempt in range(2):
+        decision = guard_before_request(domain)
+        if not decision["allowed"]:
+            return None  # marker de skip (get_html NU face HTTP)
+
+        _rate_limit(domain)
+        sess = get_html_session()
+        headers = {"Referer": referer} if referer else None
+        try:
+            # NET-5.2: `interface` e per-request la curl_cffi, deci sesiunea singleton
+            # ramane valida cand se schimba IP-ul modemului.
+            resp = sess.get(url, headers=headers, **binding.curl_kwargs("vinted"))
+        except Exception:
+            _release_half_open(domain)  # eroare de retea: nu o numaram ca blocaj DataDome
+            raise
+        try:
+            blocked = _looks_blocked(resp.status_code, resp.text or "")
+        except Exception:
+            blocked = False
+        guard_after_response(domain, blocked, status=resp.status_code)
+        if not blocked:
+            return resp
+        # Import lazy, ca la _looks_blocked: vinted_html nu capata dependenta de
+        # aplicatie la nivel de modul.
+        from app.services.radar.base_scraper import report_outcome, Outcome
+        if not report_outcome("vinted", Outcome.BLOCKED):
+            # Fara IP nou: comportamentul de pana acum — apelantul primeste raspunsul
+            # blocat si decide singur (breakerul e deja actualizat).
+            return resp
     return resp
 
 
