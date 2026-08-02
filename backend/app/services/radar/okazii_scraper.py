@@ -109,7 +109,7 @@ def _build_url(keyword: str, category: Optional[str], condition: str,
     return url
 
 
-def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
+def _request(url: str, referer: str = _BASE + "/", retry_blocked: bool = True) -> Optional[str]:
     headers = build_headers({"Referer": referer})
     proxy_cfg = get_proxy_config()
     req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
@@ -131,6 +131,13 @@ def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
                     # rotatia reuseste de fiecare data.
                     log_manager.emit("radar", "WARN", f"Okazii: blocat (HTTP {resp.status_code}) - IP nou, reiau {attempt+1}/3")
                     continue
+                if not retry_blocked:
+                    # Calea de detalii e single-shot pe blocaj (oglinda cu
+                    # fetch_mobilede_listing_details): un blocaj e persistent, iar
+                    # backoff-ul l-ar plati FIECARE item din enrichment — minute de
+                    # sleep si WARN-uri triple per pagina (audit NET-5.3c).
+                    log_manager.emit("radar", "WARN", f"Okazii: blocat (HTTP {resp.status_code}) - fara reincercare pe calea de detalii")
+                    return None
                 delay = rate_limit_backoff(attempt)
                 log_manager.emit("radar", "WARN", f"Okazii: blocat (HTTP {resp.status_code}) retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
@@ -230,7 +237,7 @@ def fetch_okazii_listing_details(url: str) -> dict:
     "seller_id", "seller_rating", "seller_reviews", "okazii_seller_type"}."""
     if not url:
         return {"images": [], "description": None}
-    html = _request(url, referer=_BASE + "/")
+    html = _request(url, referer=_BASE + "/", retry_blocked=False)
     if not html:
         return {"images": [], "description": None}
 

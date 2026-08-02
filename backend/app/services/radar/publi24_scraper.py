@@ -165,7 +165,7 @@ def _build_url(keyword: str, category: Optional[str], judet: Optional[str],
     return f"{_BASE}/{path}?{query}"
 
 
-def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
+def _request(url: str, referer: str = _BASE + "/", retry_blocked: bool = True) -> Optional[str]:
     """GET cu 3 reincercari + backoff pe 429. None la esec."""
     headers = build_headers({"Referer": referer})
     proxy_cfg = get_proxy_config()
@@ -188,6 +188,13 @@ def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
                     # rotatia reuseste de fiecare data.
                     log_manager.emit("radar", "WARN", f"Publi24: blocat (HTTP {resp.status_code}) - IP nou, reiau {attempt+1}/3")
                     continue
+                if not retry_blocked:
+                    # Calea de detalii e single-shot pe blocaj (oglinda cu
+                    # fetch_mobilede_listing_details): un blocaj e persistent, iar
+                    # backoff-ul l-ar plati FIECARE item din enrichment — minute de
+                    # sleep si WARN-uri triple per pagina (audit NET-5.3c).
+                    log_manager.emit("radar", "WARN", f"Publi24: blocat (HTTP {resp.status_code}) - fara reincercare pe calea de detalii")
+                    return None
                 delay = rate_limit_backoff(attempt)
                 log_manager.emit("radar", "WARN", f"Publi24: blocat (HTTP {resp.status_code}) retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
@@ -242,7 +249,7 @@ def fetch_publi24_listing_details(url: str) -> dict:
     (RP-DIAG-2 §7) -> nu se extrage. La orice eroare, dict minim (caller pastreaza ce are)."""
     if not url:
         return {"images": [], "description": None}
-    html = _request(url, referer=_BASE + "/")
+    html = _request(url, referer=_BASE + "/", retry_blocked=False)
     if not html:
         return {"images": [], "description": None}
 

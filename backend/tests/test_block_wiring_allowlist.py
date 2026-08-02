@@ -204,9 +204,81 @@ def test_autovit_details_200_cu_marker_nu_se_parseaza(monkeypatch):
     assert reported == [("autovit", Outcome.BLOCKED)]
 
 
-def test_autovit_details_200_curat_raporteaza_ok(monkeypatch):
-    _, _, reported = _wire(
-        monkeypatch, avs, [_Resp(200, "<html><body>curat</body></html>")], rotates=False)
+def test_autovit_details_200_curat_se_parseaza_si_raporteaza_ok(monkeypatch):
+    # Audit 5.3c: aserteaza CONTINUT extras, nu doar cheile — dict-ul gol de garda
+    # are aceleasi chei, deci un guard care refuza totul ar fi trecut neobservat.
+    html = ('<html><body>'
+            '<img src="https://apollo.olxcdn.com/v1/files/abc;s=320x240">'
+            '<div data-testid="ad-description">Stare foarte buna, unic proprietar.</div>'
+            '</body></html>')
+    _, _, reported = _wire(monkeypatch, avs, [_Resp(200, html)], rotates=False)
     out = avs.fetch_autovit_listing_details("http://x")
-    assert set(out) == {"images", "description", "specs"}
+    assert out["images"] == ["https://apollo.olxcdn.com/v1/files/abc;s=1000x1000"]
+    assert out["description"] == "Stare foarte buna, unic proprietar."
     assert reported == [("autovit", Outcome.OK)]
+
+
+# ── autovit search: caile ne-blocate (audit 5.3c — inainte doar BLOCKED era testat) ──
+
+def test_autovit_429_ramane_rate_limited_nu_blocked(monkeypatch):
+    calls, slept, reported = _run_search_autovit(
+        monkeypatch, [_Resp(429, _MARKER_BODY), _Resp(200, "<html>ok</html>")], rotates=True)
+    assert len(calls) == 2 and len(slept) == 1
+    assert [o for _, o in reported] == [Outcome.RATE_LIMITED, Outcome.OK]
+
+
+def test_autovit_exceptia_se_raporteaza_transient(monkeypatch):
+    calls, slept, reported = _run_search_autovit(
+        monkeypatch, [ConnectionError("reset"), _Resp(200, "<html>ok</html>")], rotates=False)
+    assert len(calls) == 2 and len(slept) == 1
+    assert reported[0] == ("autovit", Outcome.TRANSIENT)
+
+
+def test_autovit_500_intoarce_gol_dupa_un_apel(monkeypatch):
+    calls, slept, reported = _wire(monkeypatch, avs, [_Resp(500, "")], rotates=True)
+    assert avs.search_autovit("bmw", None) == []
+    assert len(calls) == 1 and slept == []
+    assert reported == [("autovit", Outcome.TRANSIENT)]
+
+
+# ── calea de detalii e single-shot pe blocaj (audit 5.3c) ────────────────────────
+# Un blocaj e PERSISTENT (spre deosebire de 429): backoff-ul l-ar plati fiecare item
+# din enrichment — 36 iteme × ~15s = ~10 minute de sleep per pagina. Oglinda cu
+# fetch_mobilede_listing_details, care e single-shot de la 5.3.
+
+_DETAILS = [
+    pytest.param(oks, "okazii", "fetch_okazii_listing_details", id="okazii"),
+    pytest.param(pbs, "publi24", "fetch_publi24_listing_details", id="publi24"),
+    pytest.param(ljs, "lajumate", "fetch_lajumate_listing_details", id="lajumate"),
+]
+
+
+@pytest.mark.parametrize("mod,platform,fn", _DETAILS)
+def test_detaliile_blocate_nu_fac_backoff(monkeypatch, mod, platform, fn):
+    calls, slept, reported = _wire(monkeypatch, mod, [_Resp(403, "blocked")], rotates=False)
+    out = getattr(mod, fn)("http://x")
+    assert out.get("images") == [] and out.get("description") is None
+    assert len(calls) == 1 and slept == []
+    assert reported == [(platform, Outcome.BLOCKED)]
+
+
+@pytest.mark.parametrize("mod,platform,fn", _DETAILS)
+def test_detaliile_blocate_reiau_imediat_pe_ip_nou(monkeypatch, mod, platform, fn):
+    # Rotatia reusita salveaza itemul curent — gratis (fara sleep), spre deosebire
+    # de mobilede details care pierde itemul. Superset benign al referintei.
+    calls, slept, reported = _wire(
+        monkeypatch, mod, [_Resp(403, "blocked"), _Resp(200, "<html>ok</html>")], rotates=True)
+    getattr(mod, fn)("http://x")
+    assert len(calls) == 2 and slept == []
+    assert reported[0] == (platform, Outcome.BLOCKED)
+
+
+@pytest.mark.parametrize("mod,platform,fn", _DETAILS)
+def test_detaliile_pastreaza_retry_pe_429(monkeypatch, mod, platform, fn):
+    # 429 pe detalii avea retry cu backoff DINAINTE de 5.3b — fereastra se inchide
+    # singura, deci reincercarea are sens. Doar blocajul e single-shot.
+    calls, slept, reported = _wire(
+        monkeypatch, mod, [_Resp(429, ""), _Resp(200, "<html>ok</html>")], rotates=False)
+    getattr(mod, fn)("http://x")
+    assert len(calls) == 2 and len(slept) == 1
+    assert reported[0] == (platform, Outcome.RATE_LIMITED)

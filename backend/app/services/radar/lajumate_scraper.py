@@ -183,7 +183,7 @@ def _extract_page_props(html: str) -> dict:
         return {}
 
 
-def _request(url: str) -> Optional[str]:
+def _request(url: str, retry_blocked: bool = True) -> Optional[str]:
     headers = build_headers({"Referer": _BASE + "/"})
     proxy_cfg = get_proxy_config()
     req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
@@ -205,6 +205,13 @@ def _request(url: str) -> Optional[str]:
                     # rotatia reuseste de fiecare data.
                     log_manager.emit("radar", "WARN", f"LaJumate: blocat (HTTP {resp.status_code}) - IP nou, reiau {attempt+1}/3")
                     continue
+                if not retry_blocked:
+                    # Calea de detalii e single-shot pe blocaj (oglinda cu
+                    # fetch_mobilede_listing_details): un blocaj e persistent, iar
+                    # backoff-ul l-ar plati FIECARE item din enrichment — minute de
+                    # sleep si WARN-uri triple per pagina (audit NET-5.3c).
+                    log_manager.emit("radar", "WARN", f"LaJumate: blocat (HTTP {resp.status_code}) - fara reincercare pe calea de detalii")
+                    return None
                 delay = rate_limit_backoff(attempt)
                 log_manager.emit("radar", "WARN", f"LaJumate: blocat (HTTP {resp.status_code}) retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
@@ -308,7 +315,7 @@ def fetch_lajumate_listing_details(url: str) -> dict:
     """
     if not url:
         return {"images": [], "description": None}
-    html = _request(url)
+    html = _request(url, retry_blocked=False)
     if not html:
         return {"images": [], "description": None}
     pp = _extract_page_props(html)
