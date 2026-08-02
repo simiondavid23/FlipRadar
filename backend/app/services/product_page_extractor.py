@@ -352,6 +352,23 @@ def _normalize_availability(value) -> bool | None:
     return None
 
 
+def match_shop_domain(hostname: str, domains) -> str | None:
+    """Intrarea din `domains` care acopera `hostname`: egalitate sau subdomeniu cu
+    GRANITA PE PUNCT (m.emag.ro -> emag.ro; evilcel.ro -> None). Aceeasi regula ca
+    _is_allowed_shop_url din scraper_service — auditul retail a gasit ca lookup-urile
+    pe egalitate exacta lasau subdomeniile legitime fara override si fara refresh
+    (comenzi.farmaciatei.ro salvat ca sursa -> refresh permanent None, tacut).
+    Intrarile CU subdomeniu (en.afew-store.com) raman acoperite doar exact/copil —
+    domeniul gol NU se potriveste cu ele (fail-closed, ca pana acum)."""
+    h = (hostname or "").lower()
+    if h.startswith("www."):
+        h = h[4:]
+    for d in domains:
+        if h == d or h.endswith("." + d):
+            return d
+    return None
+
+
 def _domain_of(url: str) -> str:
     """Hostname lowercase, fara "www." (cheia din DOMAIN_OVERRIDES)."""
     try:
@@ -786,7 +803,8 @@ def parse_product_html(html: str, url: str) -> dict:
             result, method = og, "og"  # gol: nici JSON-LD, nici OG
 
     domain = _domain_of(url)
-    override_applied = _apply_override(soup, html or "", result, DOMAIN_OVERRIDES.get(domain) or {})
+    override_key = match_shop_domain(domain, DOMAIN_OVERRIDES)
+    override_applied = _apply_override(soup, html or "", result, DOMAIN_OVERRIDES.get(override_key) or {})
 
     # CONTENT-2: microdata completeaza DOAR campurile ramase goale dupa override,
     # JSON-LD si OG. Fallback marginit prin constructie — pe un domeniu unde

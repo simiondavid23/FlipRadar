@@ -56,10 +56,14 @@ def _recompute_primary_snapshot(product: Product) -> None:
 # Radar Preturi) scade brusc cu cel putin pragul setat de utilizator, trimite o
 # alerta pe webhook-ul Discord dedicat. Notificarea in-app a fost eliminata in
 # NOTIF-1; dedup-ul e acum exclusiv cel al cozii Discord (24h pe produs+user+pret nou).
-def _check_and_send_restock(db, product, ps):
+def _check_and_send_restock(db, product, ps, price_now=None):
     """RETAIL-3b — o sursa a revenit in stoc (False -> True). Fara prag: revenirea
     e binara, deci notificam toata audienta produsului (owner + watcheri activi),
-    exact ca la flash deals. Discord-only: sablonul de email e construit pe tinta."""
+    exact ca la flash deals. Discord-only: sablonul de email e construit pe tinta.
+
+    RETAIL-AUDIT (5.3e): `price_now` e pretul din refresh-ul CURENT — la momentul
+    apelului `ps.current_price` e inca cel vechi (se aplica mai jos in bucla), iar
+    embed-ul afisa pretul de dinaintea revenirii in stoc."""
     owner_ids = [r[0] for r in db.query(Product.user_id).filter(Product.id == product.id).all()]
     watcher_ids = [r[0] for r in db.query(TrackedProduct.user_id).filter(
         TrackedProduct.product_id == product.id,
@@ -73,7 +77,8 @@ def _check_and_send_restock(db, product, ps):
             if st is None:
                 continue
             embed = build_restock_embed(
-                product_name=product.name, price=ps.current_price,
+                product_name=product.name,
+                price=price_now if price_now is not None else ps.current_price,
                 currency=ps.currency or product.currency or "EUR",
                 source=ps.source, product_url=ps.source_url or product.source_url,
                 variant=ps.variant,
@@ -93,7 +98,11 @@ def _check_and_send_restock(db, product, ps):
 
 
 def _check_and_send_flash_deals(db, product, old_price: float, new_price: float, source: str,
-                                min_30d: float = None, variant: str = ""):
+                                min_30d: float = None, variant: str = "",
+                                currency: str = None, product_url: str = None):
+    """RETAIL-AUDIT (5.3e): `currency`/`product_url` sunt ale SURSEI care a scazut.
+    Inainte, embed-ul folosea moneda si link-ul SNAPSHOT-ului primar (alt magazin):
+    o sursa EUR care scadea 100->80 aparea ca "100 RON -> 80 RON" cu link gresit."""
     drop_pct = (old_price - new_price) / old_price
 
     # Gaseste user_id-urile care au produsul in catalog (owner) sau il monitorizeaza
@@ -120,8 +129,10 @@ def _check_and_send_flash_deals(db, product, old_price: float, new_price: float,
             if st is not None:
                 fd_embed = build_flash_deal_embed(
                     product_name=product.name, old_price=float(old_price),
-                    new_price=float(new_price), currency=product.currency or "EUR",
-                    drop_pct=drop_pct, source=source, product_url=product.source_url,
+                    new_price=float(new_price),
+                    currency=currency or product.currency or "EUR",
+                    drop_pct=drop_pct, source=source,
+                    product_url=product_url or product.source_url,
                     min_30d=min_30d, variant=variant,
                 )
                 fd_lid = f"flashdeal-{product.id}-{user_id}-{new_price}"
@@ -155,68 +166,84 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
     for i, ps in enumerate(rows):
         if i > 0:
             time.sleep(random.uniform(*_SCRAPE_DELAY_RANGE))
-        product = ps.product
-        res = refresh_source(
-            source=ps.source,
-            source_url=ps.source_url,
-            product_name=product.name,
-            sku=product.sku,
-            variant=ps.variant,
-        )
-        new_price = res["price"] if res else None
-        ps.last_checked_at = now
-        old_stock = ps.in_stock
-        # Stocul vine doar de pe calea "url" (pagina de produs). None inseamna
-        # NECUNOSCUT, nu "a iesit din stoc" -> nu suprascrie o stare deja cunoscuta.
-        if res and res.get("in_stock") is not None:
-            ps.in_stock = res["in_stock"]
-        # RETAIL-3b — revenire in stoc: DOAR tranzitia False -> True. None -> True e
-        # "necunoscut devenit cunoscut", nu o revenire: ar notifica in fals la prima
-        # extractie cu stoc a oricarei surse mai vechi.
-        if old_stock is False and ps.in_stock is True:
-            _check_and_send_restock(db, product, ps)
-        catalog_health_watchdog.note_refresh(ps.source, success=(res is not None))
-        if new_price is None:
-            print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({ps.source}). Folosesc pretul stocat: {ps.current_price} {ps.currency}")
-            continue
-        old_price = ps.current_price
-        if old_price != new_price:
-            ps.current_price = new_price
-            # RETAIL-3b — minimul pe 30 de zile, calculat INAINTE de a insera randul
-            # curent: altfel scaderea de acum ar intra in propriul minim si marcajul
-            # "cel mai mic pret" ar fi mereu adevarat. Filtrat pe sursa fiindca moneda
-            # e unica per sursa (alte surse pot fi in alta moneda -> min fara sens).
-            min30 = None
-            if old_price and new_price and new_price < old_price:
-                min30 = db.query(func.min(PriceHistory.price)).filter(
-                    PriceHistory.product_id == product.id,
-                    PriceHistory.source == ps.source,
-                    # FASHION-1a — si pe varianta: marimile aceleiasi surse au
-                    # preturi diferite, deci minimul uneia n-are ce cauta in
-                    # marcajul "cel mai mic pret" al alteia.
-                    PriceHistory.variant == (ps.variant or ""),
-                    PriceHistory.recorded_at >= now - timedelta(days=30),
-                ).scalar()
-            db.add(PriceHistory(
-                product_id=product.id,
-                price=new_price,
-                currency=ps.currency or "EUR",
+        # RETAIL-AUDIT (5.3e): o exceptie NEPREVAZUTA pe o singura sursa omora
+        # intregul ciclu de monitorizare (rollback total, Pasul 2 nemaiajuns).
+        # Caile normale de esec intorc None si sunt tratate; asta e plasa pentru
+        # restul — sursa problematica se sare, ciclul continua.
+        try:
+            product = ps.product
+            res = refresh_source(
                 source=ps.source,
-                variant=ps.variant or "",
-            ))
-            refreshed += 1
-            touched_products[product.id] = product
-            print(f"[AlertChecker] Pret actualizat pentru \"{product.name[:50]}\" ({ps.source}): {old_price} -> {new_price} {ps.currency}")
-            # FlipRadar — la o scadere de pret, verifica daca e Flash Deal.
-            if old_price and new_price and old_price != new_price and new_price < old_price:
-                # RETAIL-3b — scaderea relativa merge si catre check_alerts (Alert.drop_pct).
-                # Pe mai multe surse ale aceluiasi produs pastram scaderea cea mai mare.
-                drop = (float(old_price) - float(new_price)) / float(old_price)
-                price_drops[product.id] = max(price_drops.get(product.id, 0.0), drop)
-                _check_and_send_flash_deals(db, product, float(old_price), float(new_price),
-                                            ps.source, min_30d=min30, variant=ps.variant)
-        else:
-            print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
+                source_url=ps.source_url,
+                product_name=product.name,
+                sku=product.sku,
+                variant=ps.variant,
+            )
+            new_price = res["price"] if res else None
+            ps.last_checked_at = now
+            old_stock = ps.in_stock
+            # Stocul vine doar de pe calea "url" (pagina de produs). None inseamna
+            # NECUNOSCUT, nu "a iesit din stoc" -> nu suprascrie o stare deja cunoscuta.
+            if res and res.get("in_stock") is not None:
+                ps.in_stock = res["in_stock"]
+            # RETAIL-3b — revenire in stoc: DOAR tranzitia False -> True. None -> True e
+            # "necunoscut devenit cunoscut", nu o revenire: ar notifica in fals la prima
+            # extractie cu stoc a oricarei surse mai vechi.
+            if old_stock is False and ps.in_stock is True:
+                _check_and_send_restock(db, product, ps, price_now=new_price)
+            catalog_health_watchdog.note_refresh(ps.source, success=(res is not None))
+            if new_price is None:
+                print(f"[AlertChecker] Nu am putut prelua pretul pentru \"{product.name[:50]}\" ({ps.source}). Folosesc pretul stocat: {ps.current_price} {ps.currency}")
+                continue
+            old_price = ps.current_price
+            if old_price != new_price:
+                ps.current_price = new_price
+                # RETAIL-3b — minimul pe 30 de zile, calculat INAINTE de a insera randul
+                # curent: altfel scaderea de acum ar intra in propriul minim si marcajul
+                # "cel mai mic pret" ar fi mereu adevarat. Filtrat pe sursa fiindca moneda
+                # e unica per sursa (alte surse pot fi in alta moneda -> min fara sens).
+                min30 = None
+                if old_price and new_price and new_price < old_price:
+                    min30 = db.query(func.min(PriceHistory.price)).filter(
+                        PriceHistory.product_id == product.id,
+                        PriceHistory.source == ps.source,
+                        # FASHION-1a — si pe varianta: marimile aceleiasi surse au
+                        # preturi diferite, deci minimul uneia n-are ce cauta in
+                        # marcajul "cel mai mic pret" al alteia.
+                        PriceHistory.variant == (ps.variant or ""),
+                        PriceHistory.recorded_at >= now - timedelta(days=30),
+                    ).scalar()
+                db.add(PriceHistory(
+                    product_id=product.id,
+                    price=new_price,
+                    currency=ps.currency or "EUR",
+                    source=ps.source,
+                    variant=ps.variant or "",
+                ))
+                refreshed += 1
+                touched_products[product.id] = product
+                print(f"[AlertChecker] Pret actualizat pentru \"{product.name[:50]}\" ({ps.source}): {old_price} -> {new_price} {ps.currency}")
+                # FlipRadar — la o scadere de pret, verifica daca e Flash Deal.
+                # RETAIL-AUDIT (5.3e): o "scadere" pe o sursa IESITA din stoc nu e o
+                # oferta cumparabila — tipic e artefactul agregatului de marimi (toate
+                # epuizate -> minim global, ex. 200 -> 100 fara nicio schimbare reala).
+                # Nu alimenteaza nici flash deal, nici Alert.drop_pct. Istoricul se
+                # scrie in continuare: pretul AFISAT e un fapt.
+                if (old_price and new_price and old_price != new_price
+                        and new_price < old_price and ps.in_stock is not False):
+                    # RETAIL-3b — scaderea relativa merge si catre check_alerts (Alert.drop_pct).
+                    # Pe mai multe surse ale aceluiasi produs pastram scaderea cea mai mare.
+                    drop = (float(old_price) - float(new_price)) / float(old_price)
+                    price_drops[product.id] = max(price_drops.get(product.id, 0.0), drop)
+                    _check_and_send_flash_deals(db, product, float(old_price), float(new_price),
+                                                ps.source, min_30d=min30, variant=ps.variant,
+                                                currency=ps.currency, product_url=ps.source_url)
+            else:
+                print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
+        except Exception as exc:
+            print(f"[AlertChecker] Sursa {ps.id} ({ps.source}) a aruncat neasteptat: "
+                  f"{type(exc).__name__}: {str(exc)[:120]} — continui cu restul")
+            continue
     for product in touched_products.values():
         _recompute_primary_snapshot(product)
     # C-17: commit NECONDITIONAT — ps.last_checked_at e setat pe TOATE sursele

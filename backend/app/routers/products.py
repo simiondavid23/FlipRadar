@@ -88,6 +88,11 @@ def attach_source_to_product(
     """
     if not source:
         return
+    # RETAIL-AUDIT (5.3e): un pret 0 venit dintr-o parsare esuata (ex. card de
+    # cautare fara pret) NU e un pret — atasat, devenea snapshot 0 si "0 <= tinta"
+    # declansa alerta de pret la fiecare ciclu. Sursa se ataseaza, pretul nu.
+    if price is not None and not (isinstance(price, (int, float)) and float(price) > 0):
+        price = None
     ps = next((s for s in product.sources
                if s.source == source and (s.variant or "") == variant), None)
     if ps is None and source_url:

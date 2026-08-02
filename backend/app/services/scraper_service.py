@@ -15,6 +15,7 @@ from app.services.log_manager import log_manager
 # DOAR lenes (in corpul lui extract_product, pentru allow-list-ul SSRF), tocmai ca
 # importul asta top-level sa nu inchida un ciclu.
 from app.services.product_page_extractor import (
+    match_shop_domain,
     extract_product,
     ProductExtractionError,
     VALIDATED_DOMAINS,
@@ -155,6 +156,12 @@ def _sync_scrape_altex(query: str, max_results: int) -> list:
             sku = item.get("sku")
             in_stock = bool(item.get("stock_status")) and not item.get("is_eol")
             ean = item.get("ean_codes") or ""
+            # RETAIL-AUDIT (5.3e): numele campului e la plural — daca API-ul intoarce
+            # o LISTA, .strip() pe ea ar da AttributeError in filter_by_code si ar
+            # omori tacut task-ul de cross-shop. Luam primul cod, ca string.
+            if isinstance(ean, (list, tuple)):
+                ean = ean[0] if ean else ""
+            ean = str(ean)
 
             # --- Detectare reducere ---
             # Altex expune:
@@ -328,10 +335,17 @@ def _sync_scrape_sole(query: str, max_results: int) -> list:
 
 
 def _parse_farmaciatei_price(price_text: str) -> float:
-    """Parsează prețuri de forma '29,00 LEI' sau '17,00 LEI' -> 29.00."""
+    """Parsează prețuri de forma '29,00 LEI' sau '1.299,00 LEI' -> 29.0 / 1299.0.
+
+    RETAIL-AUDIT (5.3e): replace-ul simplu al virgulei producea '1.299.00' ->
+    ValueError -> 0.0 TACUT pe ORICE pret >= 1000 RON — punctul e separator de MII
+    in formatul RO, deci se elimina inaintea virgulei zecimale."""
     if not price_text:
         return 0.0
-    cleaned = re.sub(r"[^0-9,\.]", "", price_text).replace(",", ".")
+    cleaned = re.sub(r"[^0-9,\.]", "", price_text)
+    if "," in cleaned:
+        cleaned = cleaned.replace(".", "")
+    cleaned = cleaned.replace(",", ".")
     try:
         return float(cleaned) if cleaned else 0.0
     except ValueError:
@@ -1114,11 +1128,16 @@ def refresh_source(
     if not source or not source_url:
         return None
     domain = source.lower()
+    # RETAIL-AUDIT (5.3e): sursa poate fi salvata cu subdomeniu (m.emag.ro,
+    # comenzi.farmaciatei.ro) — lookup-urile pe egalitate exacta o lasau permanent
+    # stale (nevalidata + fara scraper), tacut. Granita pe punct, ca in allow-list.
+    vdomain = match_shop_domain(domain, VALIDATED_DOMAINS)
+    sdomain = match_shop_domain(domain, _SCRAPERS_BY_SOURCE)
 
     # (a) Domenii validate: pagina de produs e sursa de adevar. Un pret citit direct
     # de acolo bate potrivirea fuzzy din lista de cautare (care poate nimeri alt
     # produs) si e singurul mod in care aflam si disponibilitatea.
-    if domain in VALIDATED_DOMAINS:
+    if vdomain is not None:
         try:
             extracted = extract_product(source_url)
             if variant:
@@ -1149,13 +1168,13 @@ def refresh_source(
     # (b) PCGarage: refresh direct de pe pagina de produs (source_url stocat), ocolind
     # complet cautarea /cauta/ care e challenge-uita agresiv de Cloudflare. Restul
     # aplicatiei (cautare, cross-shop) continua sa foloseasca _sync_scrape_pcgarage.
-    if domain == "pcgarage.ro":
+    if sdomain == "pcgarage.ro" or domain == "pcgarage.ro":
         price = fetch_pcgarage_price_from_url(source_url)
         return {"price": price, "in_stock": None, "method": "pcgarage"} if price else None
 
     # (c) Calea istorica: lansam o cautare cu SKU (mai precisa) sau cu numele si
     # gasim rezultatul cu acelasi source_url.
-    scraper = _SCRAPERS_BY_SOURCE.get(domain)
+    scraper = _SCRAPERS_BY_SOURCE.get(sdomain) if sdomain else None
     if not scraper:
         return None
     # IMPORTANT: `sku` e cautabil DOAR pentru altex.ro, unde e un cod real de produs
@@ -1164,7 +1183,7 @@ def refresh_source(
     # data-product-id) — NECAUTABIL: search-ul cade pe potrivire fuzzy pe cifre si
     # intoarce produse nelegate. De aceea acolo cautam MEREU dupa nume. (Nu reintroduce
     # `sku or product_name` pentru non-altex — sparge refresh-ul pe eMAG/PCGarage.)
-    if source.lower() == "altex.ro":
+    if sdomain == "altex.ro":
         if not sku:
             sku = _altex_sku_from_url(source_url)
         query = (sku or product_name or "").strip()
@@ -1302,13 +1321,24 @@ def find_cross_shop_matches(
     return {"ean_matches": ean_matches, "name_candidates": name_candidates}
 
 
+# RETAIL-AUDIT (5.3e): fara plierea diacriticelor, "căști" nu gasea "Casti ..."
+# (fals negative directe in cautare si in sugestiile cross-shop). Se pliaza AMBELE
+# parti — query-ul si numele — deci merge in orice combinatie.
+_ACCENT_MAP = str.maketrans("ăâîșşțţ", "aaisstt")
+
+
+def _fold(text: str) -> str:
+    """Minuscule + diacritice romanesti pliate (inclusiv variantele cu sedila)."""
+    return (text or "").lower().translate(_ACCENT_MAP)
+
+
 def _tokenize_query(query: str) -> list:
-    """Extrage tokenii semnificativi (minuscule, lungime >= 3) dintr-un query utilizator.
+    """Extrage tokenii semnificativi (minuscule, fara diacritice, lungime >= 3).
 
     Tokenii scurți ("de", "la", "it") sunt eliminați pentru ca cuvintele de umplutură
     să nu strice potrivirea de relevanță.
     """
-    return [t for t in re.findall(r"\w+", (query or "").lower()) if len(t) >= 3]
+    return [t for t in re.findall(r"\w+", _fold(query)) if len(t) >= 3]
 
 
 def filter_by_relevance(products: list, query: str) -> list:
@@ -1334,7 +1364,7 @@ def filter_by_relevance(products: list, query: str) -> list:
 
     filtered = [
         p for p in real
-        if all(tok in (p.get("name") or "").lower() for tok in tokens)
+        if all(tok in _fold(p.get("name")) for tok in tokens)
     ]
 
     if filtered:
@@ -1372,7 +1402,12 @@ def filter_by_code(products: list, code: str, field: str) -> list:
     matched_with_field = []
     matched_without_field = []
     for p in real:
-        v = (p.get(field) or "").strip().lstrip("0")
+        raw = p.get(field)
+        # RETAIL-AUDIT (5.3e): campul poate veni lista (ean_codes la Altex) — fara
+        # coercitie, .strip() pe lista arunca si omoara cautarea dupa cod.
+        if isinstance(raw, (list, tuple)):
+            raw = raw[0] if raw else None
+        v = (str(raw) if raw is not None else "").strip().lstrip("0")
         if not v:
             matched_without_field.append(p)
         elif v == code_norm:
