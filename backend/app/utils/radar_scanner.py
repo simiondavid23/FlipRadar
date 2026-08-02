@@ -95,14 +95,33 @@ _FIRST_SCAN_MAX_PAGES = 3  # keyword nou (last_scan_at None): plafon si mai stra
 def _page_cap_for(platform: str, first_scan: bool) -> Optional[int]:
     """Plafonul de pagini pentru platforma; None = nelimitat (plafon intern in scraper)."""
     cap = _PLATFORM_MAX_PAGES.get((platform or "").lower())
-    if cap is None:
-        return None
-    return min(cap, _FIRST_SCAN_MAX_PAGES) if first_scan else cap
+    if first_scan:
+        # FEED-AUDIT (A8): plafonul primei scanari se aplica TUTUROR platformelor
+        # (inainte, doar celor din _PLATFORM_MAX_PAGES — adica doar Vinted, contrar
+        # intentiei din comentariu; OLX tragea 5 pagini si notifica tot istoricul).
+        return min(cap, _FIRST_SCAN_MAX_PAGES) if cap is not None else _FIRST_SCAN_MAX_PAGES
+    return cap
 
 
 # Seturi globale partajate cu router-ul: cand userul dezactiveaza/sterge un
 # keyword in timp ce scanul ruleaza, marcam id-ul aici si bucla principala
 # verifica la fiecare iteratie ca sa iasa imediat.
+# FAST-1: cu tick-ul joburilor la 1 minut, enrichmenturile de fundal ar rula la
+# fiecare minut si ar arde plafoanele Vinted (250/IP pe zi) in ~30 min. Le tinem
+# la cadenta veche de 5 minute, indiferent de tick.
+_ENRICH_MIN_INTERVAL_S = 300
+_last_enrich_ts: dict = {}
+
+
+def _enrich_due(user_id: int, kind: str) -> bool:
+    key = (int(user_id), kind)
+    now = time.time()
+    if now - _last_enrich_ts.get(key, 0.0) < _ENRICH_MIN_INTERVAL_S:
+        return False
+    _last_enrich_ts[key] = now
+    return True
+
+
 _cancelled_keyword_ids: set[int] = set()
 _deleted_keyword_ids: set[int] = set()
 
@@ -112,7 +131,11 @@ def cancel_keyword_scan(keyword_id: int) -> None:
 
 
 def restore_keyword_scan(keyword_id: int) -> None:
+    """FEED-AUDIT (A3): curata AMBELE seturi. SQLite refoloseste id-ul maxim sters,
+    iar un id ramas in _deleted_keyword_ids facea keyword-ul recreat invizibil
+    pentru scanare pana la restart. create_keyword apeleaza functia asta."""
     _cancelled_keyword_ids.discard(int(keyword_id))
+    _deleted_keyword_ids.discard(int(keyword_id))
 
 
 def mark_keyword_deleted(keyword_id: int) -> None:
@@ -1726,12 +1749,18 @@ def _platform_scan_due(kw, platform: str, now=None) -> bool:
     Fallback pe last_scan_at (legacy) cand platforma nu are inca timestamp propriu —
     la deploy nimic nu porneste ca 'prim-scan'. Tratarea naive/aware ca inainte."""
     now = now or datetime.now(timezone.utc)
-    ts = _parse_platform_last_scan(kw).get(platform)
+    _stamps = _parse_platform_last_scan(kw)
+    ts = _stamps.get(platform)
     if ts:
         try:
             last = datetime.fromisoformat(ts)
         except (TypeError, ValueError):
             last = None
+    elif _stamps:
+        # FEED-AUDIT: platforma ADAUGATA ulterior pe un keyword existent — fallback-ul
+        # pe last_scan_at (reimprospatat de celelalte platforme) o infometa la
+        # nesfarsit. Fara stampila proprie dar cu alte stampile prezente = due ACUM.
+        return True
     else:
         last = kw.last_scan_at
     if last is None:
@@ -2221,9 +2250,21 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                 time.sleep(random.uniform(*_PLATFORM_DELAY_RANGE))
 
             log_manager.emit("radar", "SCAN", f'Keyword "{kw.name}" · {platform} · ciclu #{_cycle_counter.get(platform, 0)}')
+            # FEED-AUDIT (A1): stampila se punea la SFARSITUL scanului -> intervalul
+            # efectiv era interval + durata scanului, adica ~2x ("la 5 min" = ~10).
+            # O capturam la inceput si o folosim la _mark_platform_scanned.
+            _scan_started_at = datetime.now(timezone.utc)
             # RAD-1 — prima scanare se judeca per platforma (SCHED-1), nu global.
-            _first_scan = kw.last_scan_at is None and platform not in _parse_platform_last_scan(kw)
+            # FEED-AUDIT (A2): o platforma fara stampila proprie e prima EI scanare
+            # (plafon strans + fara flood de notificari), chiar pe un keyword vechi;
+            # exceptia e deploy-ul legacy (dict complet gol dar last_scan_at setat).
+            _stamps_now = _parse_platform_last_scan(kw)
+            _first_scan = platform not in _stamps_now and (kw.last_scan_at is None or bool(_stamps_now))
             _page_cap = _page_cap_for(platform, _first_scan)
+            # FAST-1: keyword rapid (sub 5 min) = doar pagina 1 — cadenta inalta cu
+            # amprenta minima; dealurile noi apar oricum pe prima pagina (newest_first).
+            if (kw.poll_interval_minutes or 5) < 5:
+                _page_cap = 1 if _page_cap is None else min(_page_cap, 1)
             # FlipRadar — RP-3: enrichment doar pe anunturi noi. Setul de external_id
             # deja vazute (per user+platforma) e pasat in search_* ca buclele de
             # enrichment sa sara fetch-urile de detaliu pentru ele.
@@ -2377,6 +2418,11 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     )
                     db.add(listing_db)
                     db.flush()
+                    # NOTIF-AUDIT (N1): notificarea de mai jos pleaca imediat si e
+                    # IREVERSIBILA; fara commit aici, un rollback pe un listing
+                    # ulterior pierdea tot batch-ul deja notificat -> reprocesare la
+                    # ciclul urmator cu ID-uri noi -> notificari DUPLICATE + link mort.
+                    db.commit()
                     stats["new_listings"] += 1
 
                     if score_data["score"] == "A":
@@ -2384,7 +2430,10 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                             f'Deal: {listing.get("title","")[:60]} — {int(float(listing.get("price") or 0))} RON · '
                             f'Marjă {int(score_data["margin_pct"] or 0)}% · Grad A')
 
-                    if not score_data["filtered"]:
+                    # FEED-AUDIT (A4): prima scanare a unei platforme aduce istoricul
+                    # (anunturi posibil vechi) — le salvam in feed dar NU notificam;
+                    # flood-ul Discord/email/push pornea la fiecare keyword nou.
+                    if not score_data["filtered"] and not _first_scan:
                         # Discord doar daca keyword-ul are notify_discord activ
                         if getattr(kw, "notify_discord", False):
                             _price = float(listing.get("price") or 0)
@@ -2427,7 +2476,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                                     db, user.id,
                                     title=f"[{score_data['score']}] {listing.get('title', '')[:50]}",
                                     body=(
-                                        f"{int(listing.get('price') or 0)} RON · "
+                                        f"{int(listing.get('price') or 0)} {listing.get('currency') or 'RON'} · "
                                         f"Marjă {score_data['margin_pct']:.0f}% · "
                                         f"{platform} · {listing.get('location') or '—'}"
                                     ),
@@ -2438,12 +2487,19 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                 except Exception as exc:
                     print(f"[RadarScanner] Eroare la procesare listing: {exc}")
                     log_manager.emit("radar", "ERR", f"Eroare {platform}: {str(exc)[:100]}")
+                    # SCRAPE-AUDIT: dupa un IntegrityError la flush, sesiunea ramane
+                    # otravita si TOATE listingurile urmatoare ale keyword-ului esueaza,
+                    # iar commit-ul final arunca. Rollback-ul o face reutilizabila.
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
                     continue
             _new_count = stats["new_listings"] - _new_before
             log_manager.emit("radar", "OK", f"{platform}: {_new_count} anunțuri noi · {len(listings)} verificate")
             # SCHED-1 — platforma a fost scanata efectiv: ii stampilam timestamp-ul ei
             # (si last_scan_at ca maxim global). Platformele sarite mai sus nu ajung aici.
-            _mark_platform_scanned(kw, platform)
+            _mark_platform_scanned(kw, platform, now=_scan_started_at)
             if cancelled_mid_loop:
                 break
 
@@ -2463,7 +2519,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
     # Vinted (pagina HTML, seller+atribute) + backlog OLX (rowuri fara vanzator).
     # SCHED-1 — fiecare enrichment ruleaza in jobul platformei lui (contoare pe chei
     # disjuncte); only_platform None (scan-now manual) le ruleaza pe amandoua, ca inainte.
-    if only_platform in (None, "vinted"):
+    if only_platform in (None, "vinted") and _enrich_due(user.id, "vinted"):
         try:
             _enrich_vinted_background(db, user)
         except Exception as exc:
@@ -2474,7 +2530,8 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                 pass
     if only_platform in (None, "olx"):
         try:
-            _enrich_olx_backlog(db, user)
+            if _enrich_due(user.id, "olx_backlog"):
+                _enrich_olx_backlog(db, user)
         except Exception as exc:
             log_manager.emit("radar", "ERR", f"OLX backlog user {user.id}: {str(exc)[:80]}")
             try:

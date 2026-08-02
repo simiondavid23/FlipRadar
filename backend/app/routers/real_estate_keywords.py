@@ -301,10 +301,12 @@ def bulk_feed_action(
     n = len(rows)
 
     if data.action == "deleted":
+        # SAVED-AUDIT: stergerea fizica anula dedup-ul (existenta randului) — anuntul
+        # revenea la scanul urmator ca "nou" si RE-NOTIFICA. Soft-delete, ca la Auto.
         for row in rows:
-            db.delete(row)   # ștergere fizică (RE nu are status "deleted")
+            row.status = "deleted"
         db.commit()
-        return {"updated": n, "message": f"{n} listinguri șterse."}
+        return {"updated": n, "message": f"{n} listinguri șterse (ascunse; nu vor re-notifica)."}
 
     for row in rows:
         row.status = data.action
@@ -325,7 +327,10 @@ def update_listing_status(
     ).first()
     if not listing:
         raise HTTPException(404, "Listing negăsit.")
-    listing.status = payload.get("status", listing.status)
+    new_status = payload.get("status")
+    if new_status not in ("active", "saved", "ignored", "deleted"):
+        raise HTTPException(400, "Status invalid. Valide: active, saved, ignored, deleted.")
+    listing.status = new_status
     db.commit()
     return {"ok": True}
 
@@ -342,7 +347,9 @@ def delete_listing(
     ).first()
     if not listing:
         raise HTTPException(404, "Listing negăsit.")
-    db.delete(listing); db.commit()
+    # SAVED-AUDIT: soft-delete (vezi bulk) — dedup-ul tine, fara re-notificari.
+    listing.status = "deleted"
+    db.commit()
     return {"ok": True}
 
 

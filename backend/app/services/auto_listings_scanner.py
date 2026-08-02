@@ -213,8 +213,9 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
 
 
 def _notify(kw: AutoKeyword, saved_listing, db: Session):
-    """Trimite notificari (Discord + email) pentru un anunt cu grad A/B."""
-    if saved_listing.grade not in ("A", "B"):
+    """Trimite notificari: Discord pe orice grad (rutarea per canal decide —
+    canalul auto_all primeste si C/D, NOTIF-AUDIT N11); email doar pe A/B."""
+    if saved_listing.grade not in ("A", "B", "C", "D"):
         return
 
     if kw.notify_discord:
@@ -234,7 +235,7 @@ def _notify(kw: AutoKeyword, saved_listing, db: Session):
             log_manager.emit("auto_listings", "WARN",
                 f"Notificare Discord auto esuata: {str(exc)[:80]}")
 
-    if kw.notify_email:
+    if kw.notify_email and saved_listing.grade in ("A", "B"):
         try:
             from app.models.user import User
             from app.services.email_service import is_configured as smtp_configured, send_email
@@ -319,12 +320,22 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None,
                 total_seen += len(results)
                 new_on_page = 0
                 for r in results:
+                    # SCRAPE-AUDIT: km_max si year_to nu au parametri server-side pe
+                    # toate platformele (ex. autovit) — pierderea era TACUTA. Plasa
+                    # locala: fail-open cand valoarea lipseste de pe card.
+                    try:
+                        if kw.km_max and r.get("km") and int(r["km"]) > int(kw.km_max):
+                            continue
+                        if kw.year_to and r.get("year") and int(r["year"]) > int(kw.year_to):
+                            continue
+                    except (TypeError, ValueError):
+                        pass
                     is_new = _save_listing(db, kw, r, resale_price_ron)
                     if is_new:
                         new_on_page += 1
                         total_new += 1
                         # Reload to get computed grade
-                        ext = (r.get("external_id") or r.get("platform_id") or "")
+                        ext = (r.get("external_id") or r.get("platform_id") or "").strip()
                         saved = db.query(AutoFeedListing).filter(
                             AutoFeedListing.user_id == kw.user_id,
                             AutoFeedListing.platform == kw.platform,

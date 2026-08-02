@@ -131,8 +131,13 @@ async def lifespan(app: FastAPI):
     # le mai blocheaza pe celelalte). Start esalonat cu 15s ca sa nu porneasca 8
     # scanari simultan la boot.
     for _i, _p in enumerate(RADAR_PLATFORMS):
+        # FAST-1: tick la 1 minut — decizia reala ramane per (keyword, platforma) in
+        # _platform_scan_due (poll_interval_minutes, implicit 5). Keyword-urile cu
+        # interval 1 min (permise doar pe platformele rapide, vezi routers/radar.py)
+        # sunt scanate ~la minut; restul exact ca inainte. Enrichmenturile de fundal
+        # raman plafonate la 5 min (radar_scanner._enrich_due).
         scheduler.add_job(
-            run_radar_scan_platform, "interval", minutes=5, args=[_p],
+            run_radar_scan_platform, "interval", minutes=1, args=[_p],
             id=f"radar_scan_{_p}", replace_existing=True,
             next_run_time=datetime.now() + timedelta(seconds=15 * _i),
         )
@@ -335,14 +340,10 @@ async def lifespan(app: FastAPI):
         from datetime import datetime, timezone, timedelta
         from app.database import SessionLocal
         from app.models.discord_queue_db import DiscordQueueItem
+        from app.services.discord_service import cleanup_old_queue_rows
         db = SessionLocal()
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-            db.query(DiscordQueueItem).filter(
-                DiscordQueueItem.status == "sent",
-                DiscordQueueItem.sent_at < cutoff,
-            ).delete(synchronize_session=False)
-            db.commit()
+            cleanup_old_queue_rows(db)
         finally:
             db.close()
 

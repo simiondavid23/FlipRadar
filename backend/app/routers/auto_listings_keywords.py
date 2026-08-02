@@ -267,19 +267,22 @@ def bulk_feed_action(
         return {"updated": 0, "action": data.action, "message": "Niciun listing selectat."}
 
     if data.action == "deleted":
+        # SAVED-AUDIT: stergerea FIZICA anula dedup-ul (nu exista seen-ids la Auto) —
+        # anuntul revenea la scanul urmator ca "nou" si RE-NOTIFICA la nesfarsit.
+        # Soft-delete: randul ramane (ascuns din toate taburile), dedup-ul tine.
         updated = (
             db.query(AutoFeedListing)
             .filter(
                 AutoFeedListing.user_id == current_user.id,
                 AutoFeedListing.id.in_(data.listing_ids),
             )
-            .delete(synchronize_session=False)
+            .update({AutoFeedListing.status: "deleted"}, synchronize_session=False)
         )
         db.commit()
         return {
             "updated": int(updated),
             "action": "deleted",
-            "message": f"{updated} listinguri șterse definitiv.",
+            "message": f"{updated} listinguri șterse (ascunse; nu vor re-notifica).",
         }
 
     updated = (
@@ -311,7 +314,12 @@ def update_listing_status(
     ).first()
     if not listing:
         raise HTTPException(404, "Listing negăsit.")
-    listing.status = payload.get("status", listing.status)
+    # SAVED-AUDIT: statusul venea nevalidat ("banana" ascundea anuntul din toate
+    # taburile, fara eroare). Acelasi set ca bulk-action.
+    new_status = payload.get("status")
+    if new_status not in ("active", "saved", "ignored", "deleted"):
+        raise HTTPException(400, "Status invalid. Valide: active, saved, ignored, deleted.")
+    listing.status = new_status
     db.commit()
     return {"ok": True}
 
@@ -487,7 +495,9 @@ def delete_listing(
     ).first()
     if not listing:
         raise HTTPException(404, "Listing negăsit.")
-    db.delete(listing); db.commit()
+    # SAVED-AUDIT: soft-delete (vezi bulk) — dedup-ul tine, fara re-notificari.
+    listing.status = "deleted"
+    db.commit()
     return {"ok": True}
 
 

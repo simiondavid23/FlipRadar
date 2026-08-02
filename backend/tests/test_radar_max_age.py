@@ -56,9 +56,12 @@ def test_vinted_scanare_normala():
 
 
 def test_olx_e_nelimitat():
-    # OLX are plafon intern in scraper -> None (fara plafon in bucla).
+    # OLX are plafon intern in scraper -> None (fara plafon in bucla) la scanari normale.
     assert _page_cap_for("olx", False) is None
-    assert _page_cap_for("olx", True) is None
+    # FEED-AUDIT (A8): contract NOU — plafonul primei scanari (3 pagini) se aplica
+    # TUTUROR platformelor, nu doar celor din _PLATFORM_MAX_PAGES; inainte, prima
+    # scanare OLX tragea 5 pagini si notifica tot istoricul.
+    assert _page_cap_for("olx", True) == 3
 
 
 def test_platforma_goala_e_nelimitata():

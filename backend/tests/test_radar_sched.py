@@ -69,11 +69,14 @@ def test_platformele_sunt_independente():
     assert _platform_scan_due(kw, "olx", now=_NOW) is True
 
 
-def test_alta_platforma_recenta_nu_influenteaza_fallback_ul():
-    # Vinted are timestamp propriu; OLX cade pe legacy, nu pe timestamp-ul Vinted.
+def test_platforma_fara_stampila_cu_alte_stampile_e_due_acum():
+    # FEED-AUDIT (A2): contract NOU. Vechea semantica (fallback pe last_scan_at,
+    # reimprospatat de CELELALTE platforme) infometa la nesfarsit o platforma
+    # adaugata ulterior pe un keyword existent. Fara stampila proprie dar cu alte
+    # stampile prezente = due ACUM (prima scanare a platformei).
     kw = _kw(platform_last_scan=_js(vinted=_NOW - timedelta(seconds=30)),
              last_scan_at=_NOW - timedelta(minutes=1))
-    assert _platform_scan_due(kw, "olx", now=_NOW) is False
+    assert _platform_scan_due(kw, "olx", now=_NOW) is True
 
 
 def test_json_corupt_e_tratat_ca_gol():

@@ -466,6 +466,30 @@ def list_keywords(
     return [_kw_to_dict(k) for k in items]
 
 
+# FEED-AUDIT (A6) + FAST-1: platforme validate contra listei reale (un typo facea
+# keyword-ul mort tacut), ore active 0-23 (25-30 insemna "niciodata scanat"), iar
+# intervalele SUB 5 minute sunt permise DOAR pe platformele rapide — OLX (enrichment
+# per-rezultat), Facebook (Playwright) si mobile.de (Imperva) nu pot tine cadenta.
+FAST_SCAN_PLATFORMS = {"vinted", "okazii", "lajumate", "publi24", "autovit"}
+
+
+def _validate_keyword_fields(platforms, poll_interval, hours_start, hours_end):
+    from app.utils.radar_scanner import RADAR_PLATFORMS
+    bad = [p for p in (platforms or []) if p not in RADAR_PLATFORMS]
+    if bad:
+        raise HTTPException(status_code=400,
+            detail=f"Platforme necunoscute: {', '.join(bad)}. Valide: {', '.join(RADAR_PLATFORMS)}.")
+    for h in (hours_start, hours_end):
+        if h is not None and not (0 <= int(h) <= 23):
+            raise HTTPException(status_code=400, detail="Orele active trebuie să fie între 0 și 23.")
+    if int(poll_interval or 5) < 5:
+        slow = [p for p in (platforms or []) if p not in FAST_SCAN_PLATFORMS]
+        if slow:
+            raise HTTPException(status_code=400,
+                detail=f"Scanarea sub 5 minute e permisă doar pe: {', '.join(sorted(FAST_SCAN_PLATFORMS))}. "
+                       f"Platforme incompatibile pe acest keyword: {', '.join(slow)}.")
+
+
 @router.post("/keywords")
 def create_keyword(
     data: KeywordCreate,
@@ -482,6 +506,9 @@ def create_keyword(
         raise HTTPException(status_code=400, detail="Prețul minim nu poate fi negativ.")
     if data.min_price is not None and data.min_price > data.max_price:
         raise HTTPException(status_code=400, detail="Prețul minim nu poate fi mai mare decât prețul maxim.")
+    _validate_keyword_fields(data.platforms or ["olx"],
+                             data.poll_interval_minutes or 5,
+                             data.active_hours_start, data.active_hours_end)
     kw = RadarKeyword(
         user_id=current_user.id,
         name=data.name.strip(),
@@ -495,7 +522,7 @@ def create_keyword(
         active_hours_start=data.active_hours_start,
         active_hours_end=data.active_hours_end,
         platforms=json.dumps(data.platforms or ["olx"], ensure_ascii=False),
-        poll_interval_minutes=max(1, int(data.poll_interval_minutes or 5)),
+        poll_interval_minutes=max(1, int(data.poll_interval_minutes or 5)),  # FAST-1: 1 permis
         max_age_days=(int(data.max_age_days) if data.max_age_days and int(data.max_age_days) > 0 else None),
         judet=data.judet,
         oras=data.oras,
@@ -516,6 +543,10 @@ def create_keyword(
     db.add(kw)
     db.commit()
     db.refresh(kw)
+    # FEED-AUDIT (A3): SQLite refoloseste id-ul maxim sters; daca id-ul nou era in
+    # _deleted_keyword_ids (stergere fara scan activ), keyword-ul recreat nu mai
+    # era scanat NICIODATA pana la restart.
+    restore_keyword_scan(kw.id)
     return _kw_to_dict(kw)
 
 
@@ -536,10 +567,14 @@ def update_keyword(
     if data.name is not None:
         kw.name = data.name.strip()
     if data.max_price is not None:
+        if data.max_price <= 0:
+            raise HTTPException(status_code=400, detail="Prețul maxim trebuie să fie pozitiv.")
         kw.max_price = data.max_price
     if data.min_price is not None:
         kw.min_price = data.min_price if data.min_price > 0 else None
     if data.resale_price is not None:
+        if data.resale_price <= 0:
+            raise HTTPException(status_code=400, detail="Prețul de revânzare trebuie să fie pozitiv.")
         kw.resale_price = data.resale_price
     if data.category is not None:
         kw.category = data.category or None
@@ -555,9 +590,13 @@ def update_keyword(
     if "active_hours_end" in data.model_fields_set:
         kw.active_hours_end = data.active_hours_end
     if data.platforms is not None:
-        kw.platforms = json.dumps(data.platforms, ensure_ascii=False)
+        # FEED-AUDIT (A6): lista goala insemna keyword tacut nescanat; fallback ca la create.
+        kw.platforms = json.dumps(data.platforms or ["olx"], ensure_ascii=False)
     if data.poll_interval_minutes is not None:
         kw.poll_interval_minutes = max(1, int(data.poll_interval_minutes))
+    _validate_keyword_fields(json.loads(kw.platforms or '["olx"]'),
+                             kw.poll_interval_minutes,
+                             kw.active_hours_start, kw.active_hours_end)
     # RAD-1 — 0 = dezactivare explicita a limitei de vechime -> NULL.
     if data.max_age_days is not None:
         kw.max_age_days = int(data.max_age_days) if int(data.max_age_days) > 0 else None
@@ -1698,7 +1737,7 @@ def bulk_listing_action(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if data.action not in ("saved", "ignored", "sold", "deleted"):
+    if data.action not in ("saved", "ignored", "sold", "deleted", "active"):
         raise HTTPException(status_code=400, detail="Acțiune invalidă.")
     if not data.listing_ids:
         return {"updated": 0, "action": data.action, "message": "Niciun listing selectat."}

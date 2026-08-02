@@ -76,7 +76,9 @@ def test_bulk_deleted_sterge_fizic(auth_client):
 
     db = SessionLocal()
     try:
-        assert db.query(RealEstateListing).filter(RealEstateListing.id.in_([a, b])).count() == 0
+        # SAVED-AUDIT: contract NOU — soft-delete (dedup-ul tine, fara re-notificari).
+        rows = db.query(RealEstateListing).filter(RealEstateListing.id.in_([a, b])).all()
+        assert len(rows) == 2 and all(r.status == "deleted" for r in rows)
     finally:
         db.close()
 

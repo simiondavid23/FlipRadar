@@ -456,6 +456,29 @@ def send_price_alert_notification(embed: dict, settings, listing_id: str) -> boo
     return True
 
 
+def cleanup_old_queue_rows(db) -> dict:
+    """NOTIF-AUDIT (N2): inainte se stergeau doar itemele `sent` >7 zile; randurile
+    `failed` (webhook sters -> esec veșnic) si tabelul de dedup
+    discord_notifications_sent (doar INSERT, zero DELETE) cresteau nelimitat."""
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import text as _text
+    from app.models.discord_queue_db import DiscordQueueItem
+    now = datetime.now(timezone.utc)
+    sent = db.query(DiscordQueueItem).filter(
+        DiscordQueueItem.status == "sent",
+        DiscordQueueItem.sent_at < now - timedelta(days=7),
+    ).delete(synchronize_session=False)
+    failed = db.query(DiscordQueueItem).filter(
+        DiscordQueueItem.status == "failed",
+        DiscordQueueItem.created_at < now - timedelta(days=7),
+    ).delete(synchronize_session=False)
+    dedup = db.execute(_text(
+        "DELETE FROM discord_notifications_sent WHERE sent_at < :cutoff"
+    ), {"cutoff": (now - timedelta(days=30)).isoformat()}).rowcount
+    db.commit()
+    return {"sent": int(sent), "failed": int(failed), "dedup": int(dedup or 0)}
+
+
 def send_radar_notification(listing: dict, grade: str, score: int,
                             keyword_name: str, settings,
                             listing_id: str, db: Session) -> int:
@@ -487,7 +510,9 @@ def send_radar_notification(listing: dict, grade: str, score: int,
 def send_auto_notification(listing: dict, grade: str, score: int,
                            keyword_name: str, settings,
                            listing_id: str, db: Session) -> None:
-    if grade not in ("A", "B"):
+    # NOTIF-AUDIT (N11): early-return-ul pe A/B facea canalul "auto_all" (declarat
+    # A/B/C/D) sa nu primeasca NICIODATA C/D. Rutarea per canal decide singura.
+    if grade not in ("A", "B", "C", "D"):
         return
     embed = build_auto_embed(listing, grade, score, keyword_name)
     mention = getattr(settings, "discord_here_auto", False) and grade == "A"
@@ -508,7 +533,8 @@ def send_imob_notification(listing: dict, grade: str, score: int,
                            keyword_name: str, settings,
                            listing_id: str, db: Session,
                            zone_avg_ppm: float = None) -> None:
-    if grade not in ("A", "B"):
+    # NOTIF-AUDIT (N11): idem auto — canalul "imob_all" primeste acum si C/D.
+    if grade not in ("A", "B", "C", "D"):
         return
     embed = build_imob_embed(listing, grade, score, keyword_name, zone_avg_ppm)
     mention = getattr(settings, "discord_here_imob", False) and grade == "A"

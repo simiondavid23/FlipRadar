@@ -57,7 +57,10 @@ def test_bulk_deleted_removes_rows(auth_client):
 
     db = SessionLocal()
     try:
-        assert db.query(AutoFeedListing).filter(AutoFeedListing.id.in_([id1, id2])).count() == 0
+        # SAVED-AUDIT: contract NOU — soft-delete. Stergerea fizica anula dedup-ul
+        # (nu exista seen-ids la Auto) si anuntul re-notifica la fiecare scan.
+        rows = db.query(AutoFeedListing).filter(AutoFeedListing.id.in_([id1, id2])).all()
+        assert len(rows) == 2 and all(r.status == "deleted" for r in rows)
     finally:
         db.close()
 
