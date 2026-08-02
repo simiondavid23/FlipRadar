@@ -62,7 +62,6 @@ Sale = _model("Sale")
 Product = _model("Product")
 ProductSourceSuggestion = _model("ProductSourceSuggestion")
 TrackedProduct = _model("TrackedProduct")
-MarketplaceKeywordAlert = _model("MarketplaceKeywordAlert")
 MarketplaceSaved = _model("MarketplaceSaved")
 AutoFeedListing = _model("AutoFeedListing")
 AutoKeyword = _model("AutoKeyword")
@@ -189,12 +188,6 @@ def _f_tracked_product(uid):
         return [p.id]
 
 
-def _f_mkt_keyword_alert(uid):
-    with _session() as db:
-        a = MarketplaceKeywordAlert(user_id=uid); db.add(a); db.flush()
-        return [a.id]
-
-
 def _f_mkt_saved(uid):
     with _session() as db:
         s = MarketplaceSaved(user_id=uid); db.add(s); db.flush()
@@ -307,7 +300,6 @@ RESOURCE_FACTORIES = {
     "product": _f_product,
     "product_suggestion": _f_product_suggestion,
     "tracked_product": _f_tracked_product,
-    "mkt_keyword_alert": _f_mkt_keyword_alert,
     "mkt_saved": _f_mkt_saved,
     "auto_feed_listing": _f_auto_feed_listing,
     "auto_keyword": _f_auto_keyword,
@@ -369,8 +361,8 @@ ENDPOINTS = [
     ("DELETE", "/api/inventory/{item_id}", "inventory", None, DENIED),
     ("PUT", "/api/inventory/{item_id}", "inventory", {}, DENIED),
     # ── marketplace ──
-    ("DELETE", "/api/marketplace/keyword-alerts/{alert_id}", "mkt_keyword_alert", None, DENIED),
-    ("PUT", "/api/marketplace/keyword-alerts/{alert_id}", "mkt_keyword_alert", {}, DENIED),
+    # MKT-CLEAN: cazurile keyword-alerts au fost eliminate odata cu endpoint-urile
+    # (cod mort fara UI si fara evaluator; functionalitate acoperita de Radar).
     ("DELETE", "/api/marketplace/saved/{saved_id}", "mkt_saved", None, DENIED),
     # ── products (+ suggestions) ──
     ("DELETE", "/api/products/{product_id}", "product", None, DENIED),

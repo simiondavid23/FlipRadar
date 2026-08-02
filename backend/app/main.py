@@ -44,8 +44,10 @@ from app.models import vinted_catalog  # RP-2 — arbore dinamic de categorii Vi
 from app.models import radar_message_template, push_subscription
 # FlipRadar — tabele noi pentru modulele auto/imobiliare (doar schema, populate ulterior)
 from app.models import real_estate_listing, auto_lot, auto_listing
-# FlipRadar — Modulul 1 Marketplace: anunturi salvate + alerte keyword
-from app.models import marketplace_saved, marketplace_keyword_alert
+# FlipRadar — Modulul 1 Marketplace: anunturi salvate
+# (alertele keyword marketplace au fost eliminate: cod mort fara UI si fara
+#  evaluator; functionalitatea e acoperita de Radar keywords)
+from app.models import marketplace_saved
 # FlipRadar — Grupuri Facebook (config + postari)
 from app.models import facebook_group_config, facebook_group_post
 # MODIFICARE 7 — coada Discord persistenta (tabel discord_queue)

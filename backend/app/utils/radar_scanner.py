@@ -1940,6 +1940,121 @@ def _mark_seen(db: Session, user_id: int, platform: str, external_id: str) -> No
     db.add(RadarSeenId(user_id=user_id, platform=platform, external_id=external_id))
 
 
+# ── SAVED-BRIDGE: puntea salvate -> monitorizare ─────────────────────────────────
+# Un anunt deja vazut care REAPARE in rezultatele cautarii e o re-verificare
+# gratuita: actualizam pretul/scorul randului existent si notificam scaderile
+# de pret (>=5%) pe anunturile SALVATE. Fara acest pas, "salvat" era doar un
+# bookmark static — pretul din feed ramanea cel de la prima vedere si orice
+# reducere ulterioara trecea neobservata.
+
+_PRICE_DROP_MIN = 0.05          # prag identic cu modulul imobiliare
+
+
+def _first_image(images_raw) -> str:
+    try:
+        imgs = json.loads(images_raw or "[]")
+        return (imgs[0] if imgs else "") or ""
+    except Exception:
+        return ""
+
+
+def _refresh_seen_listing(db: Session, user, kw, platform: str,
+                          listing: dict, settings) -> Optional[str]:
+    """Actualizeaza randul existent la reaparitia unui anunt cunoscut.
+
+    Intoarce un marcaj pentru observabilitate/teste:
+    None = fara rand in feed; "bumped" = doar last_checked_at;
+    "updated" = pret+scor actualizate; "notified" = si notificare de scadere.
+    """
+    ext_id = listing.get("external_id")
+    if not ext_id:
+        return None
+    row = (
+        db.query(RadarListing)
+        .filter(
+            RadarListing.user_id == user.id,
+            RadarListing.platform == platform,
+            RadarListing.external_id == ext_id,
+        )
+        .order_by(RadarListing.id.desc())
+        .first()
+    )
+    if row is None:
+        return None                 # vazut, dar niciodata salvat in feed (marja negativa / prea vechi)
+
+    row.last_checked_at = datetime.now(timezone.utc)
+
+    try:
+        new_price = float(listing.get("price")) if listing.get("price") else None
+    except (TypeError, ValueError):
+        new_price = None
+    new_cur = (listing.get("currency") or "RON").upper()
+    old_price = float(row.price or 0)
+    # Monede diferite nu se compara (posibila anomalie de parsare) — doar bump.
+    if (not new_price or new_price <= 0
+            or (row.currency or "RON").upper() != new_cur
+            or new_price == old_price):
+        db.commit()
+        return "bumped"
+
+    drop = (old_price - new_price) / old_price if old_price > 0 else 0.0
+    row.price = new_price
+    sd = calculate_score(
+        listing_price=new_price,
+        resale_price=kw.resale_price,
+        min_margin_pct=kw.min_margin_pct or 10.0,
+        grade_a_min=kw.grade_a_min,
+        grade_b_min=kw.grade_b_min,
+        grade_c_min=kw.grade_c_min,
+    )
+    row.score = sd["score"]
+    row.margin_pct = sd["margin_pct"]
+    # Notificarile de mai jos sunt IREVERSIBILE — intai persistam (paritate N1).
+    db.commit()
+
+    if drop < _PRICE_DROP_MIN or row.status != "saved":
+        return "updated"
+
+    log_manager.emit("radar", "OK",
+        f"Preț scăzut {drop*100:.0f}%: {(row.title or '')[:60]} — "
+        f"{int(old_price)} → {int(new_price)} {row.currency or 'RON'}")
+    if getattr(kw, "notify_discord", False):
+        _resale = float(kw.resale_price or 0)
+        send_radar_notification(
+            listing={
+                "title": f"Pret scazut {int(round(drop * 100))}%: {row.title or ''}",
+                "price": new_price,
+                "currency": row.currency or "RON",
+                "url": row.url or "",
+                "image_url": _first_image(row.images),
+                "location": row.location or "",
+                "platform": platform,
+                "resale_price": int(_resale) if _resale else None,
+                "margin": int(_resale - new_price) if _resale else None,
+            },
+            grade=sd["score"],
+            score=int(round(sd.get("margin_pct") or 0)),
+            keyword_name=kw.name,
+            settings=settings,
+            # lid sintetic: dedup pe (rand, nivel de pret) — aceeasi scadere nu se
+            # re-notifica ciclu de ciclu, dar o NOUA scadere ulterioara da.
+            listing_id=f"pricedrop-{row.id}-{int(new_price)}",
+            db=db,
+        )
+    if is_push_configured():
+        try:
+            notify_user_push(
+                db, user.id,
+                title=f"Preț scăzut: {(row.title or '')[:50]}",
+                body=(f"{int(old_price)} → {int(new_price)} {row.currency or 'RON'} · "
+                      f"{platform}"),
+                url=f"/dashboard/radar?listing={row.id}",
+            )
+        except Exception as exc:
+            print(f"[RadarScanner] Push esuat: {exc}")
+    return "notified"
+
+
 def _fmt_dt(dt) -> str:
     if not dt:
         return "Necunoscut"
@@ -2361,6 +2476,9 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     if not ext_id:
                         continue
                     if _already_seen(db, user.id, platform, ext_id):
+                        # SAVED-BRIDGE: reaparitia unui anunt cunoscut = re-verificare
+                        # gratuita — pret/scor la zi + alerta de scadere pe salvate.
+                        _refresh_seen_listing(db, user, kw, platform, listing, settings)
                         continue
 
                     # RAD-1 — filtru de vechime per keyword: anunturile prea vechi se marcheaza

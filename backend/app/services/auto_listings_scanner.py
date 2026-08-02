@@ -148,6 +148,32 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     ).first()
     if existing:
         existing.last_checked_at = datetime.now(timezone.utc)
+        # SAVED-BRIDGE: reaparitia unui anunt cunoscut aduce pretul curent —
+        # actualizam randul (pret + grad recalculat) in loc sa-l lasam inghetat
+        # la valoarea de la prima vedere. Monede diferite nu se compara.
+        try:
+            _new_price = float(raw.get("price") or raw.get("pret") or 0) or None
+        except (TypeError, ValueError):
+            _new_price = None
+        _new_cur = (raw.get("currency") or raw.get("moneda") or "RON").upper()
+        if (_new_price and _new_price > 0
+                and (existing.currency or "RON").upper() == _new_cur
+                and float(existing.price or 0) != _new_price):
+            existing.price = _new_price
+            if resale_price_ron is not None:
+                _price_ron = _new_price * (get_eur_ron() if _new_cur == "EUR" else 1.0)
+                _sd = calculate_score(
+                    listing_price=_price_ron,
+                    resale_price=resale_price_ron,
+                    min_margin_pct=kw.min_margin_pct if kw.min_margin_pct is not None else 10.0,
+                    grade_a_min=kw.grade_a_min,
+                    grade_b_min=kw.grade_b_min,
+                    grade_c_min=kw.grade_c_min,
+                )
+                existing.grade = _sd["score"]
+                _mp = _sd["margin_pct"]
+                existing.score = int(round(_mp)) if _mp is not None else None
+                existing.margin_value = _sd["margin_value"]
         db.commit()
         return False
 
