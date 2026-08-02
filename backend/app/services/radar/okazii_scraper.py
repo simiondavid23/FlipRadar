@@ -24,7 +24,10 @@ from curl_cffi import requests as curl_requests
 
 from app.services.log_manager import log_manager
 from app.services.network import binding
-from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
+from app.services.radar.base_scraper import (
+    build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
+    classify, report_outcome, Outcome,
+)
 
 
 _IMPERSONATE = "chrome110"
@@ -116,18 +119,37 @@ def _request(url: str, referer: str = _BASE + "/") -> Optional[str]:
     for attempt in range(3):
         try:
             resp = curl_requests.get(url, **req_kwargs)
+            body = resp.text or ""
+            # NET-5.3b — clasificam O SINGURA DATA, inaintea ramurilor pe status, si
+            # tratam BLOCKED uniform indiferent care status l-a produs: 401, 403 SI
+            # 200-cu-marker. Prin _request trece si cautarea, si enrichment-ul.
+            outcome = classify(status=resp.status_code, body=body)
+            if outcome is Outcome.BLOCKED:
+                if report_outcome("okazii", outcome):
+                    # IP nou: reincearca IMEDIAT, fara backoff. `continue` CONSUMA
+                    # incercarea — fara asta bucla ar putea deveni infinita cand
+                    # rotatia reuseste de fiecare data.
+                    log_manager.emit("radar", "WARN", f"Okazii: blocat (HTTP {resp.status_code}) - IP nou, reiau {attempt+1}/3")
+                    continue
+                delay = rate_limit_backoff(attempt)
+                log_manager.emit("radar", "WARN", f"Okazii: blocat (HTTP {resp.status_code}) retry {attempt+1}/3 dupa {delay:.1f}s")
+                time.sleep(delay)
+                continue
+            report_outcome("okazii", outcome)
             if resp.status_code == 200:
-                return resp.text
+                return body
             if resp.status_code == 429:
                 delay = rate_limit_backoff(attempt)
                 log_manager.emit("radar", "WARN", f"Okazii: 429 rate-limit, retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
                 continue
+            # NOT_FOUND si statusurile necunoscute: comportamentul actual, nu-l largi.
             if resp.status_code == 404:
                 return None
             log_manager.emit("radar", "WARN", f"Okazii: HTTP {resp.status_code} pentru {url}")
             return None
         except Exception as exc:
+            report_outcome("okazii", classify(exc=exc))
             log_manager.emit("radar", "WARN", f"Okazii: eroare fetch ({attempt+1}/3): {str(exc)[:100]}")
             time.sleep(rate_limit_backoff(attempt))
     return None

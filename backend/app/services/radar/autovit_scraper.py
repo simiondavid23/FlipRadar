@@ -14,7 +14,10 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
 from app.services.network import binding
-from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
+from app.services.radar.base_scraper import (
+    build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
+    classify, report_outcome, Outcome,
+)
 
 
 _IMPERSONATE = "chrome110"
@@ -125,10 +128,17 @@ def fetch_autovit_listing_details(url: str) -> dict:
     req_kwargs.update(binding.curl_kwargs("autovit"))
     try:
         resp = curl_requests.get(url, **req_kwargs)
-        if resp.status_code != 200:
+        html = resp.text or ""
+        # NET-5.3b — azi orice non-200 intorcea dict gol TACUT. Calea de enrichment
+        # genereaza cele mai multe requesturi, deci si cele mai multe semnale de blocaj.
+        outcome = classify(status=resp.status_code, body=html)
+        report_outcome("autovit", outcome)
+        # Un 200-cu-marker e un interstitial: parsarea lui ar da gunoi.
+        if outcome is Outcome.BLOCKED or resp.status_code != 200:
+            print(f"[AutovitScraper] details HTTP {resp.status_code} ({outcome.value})")
             return {"images": [], "description": None, "specs": {}}
-        html = resp.text
     except Exception as exc:
+        report_outcome("autovit", classify(exc=exc))
         print(f"[AutovitScraper] details eroare: {exc}")
         return {"images": [], "description": None, "specs": {}}
 
@@ -183,17 +193,38 @@ def search_autovit(
     for attempt in range(3):
         try:
             resp = curl_requests.get(url, **req_kwargs)
+            body = resp.text or ""
+            # NET-5.3b — clasificam O SINGURA DATA, inaintea ramurilor pe status, si
+            # tratam BLOCKED uniform indiferent care status l-a produs: 401, 403 SI
+            # 200-cu-marker. Oglinda cu mobilede_scraper.search_mobilede.
+            outcome = classify(status=resp.status_code, body=body)
+            if outcome is Outcome.BLOCKED:
+                if report_outcome("autovit", outcome):
+                    # IP nou: reincearca IMEDIAT, fara backoff. `continue` CONSUMA
+                    # incercarea — fara asta bucla ar putea deveni infinita cand
+                    # rotatia reuseste de fiecare data.
+                    print(f"[AutovitScraper] blocat (HTTP {resp.status_code}) - IP nou, "
+                          f"reiau {attempt+1}/3")
+                    continue
+                delay = rate_limit_backoff(attempt)
+                print(f"[AutovitScraper] blocat (HTTP {resp.status_code}) "
+                      f"retry {attempt+1}/3 dupa {delay:.1f}s")
+                time.sleep(delay)
+                continue
+            report_outcome("autovit", outcome)
             if resp.status_code == 200:
-                html = resp.text
+                html = body
                 break
-            if resp.status_code == 429:
+            if outcome is Outcome.RATE_LIMITED:
                 delay = rate_limit_backoff(attempt)
                 print(f"[AutovitScraper] 429 retry {attempt+1}/3 dupa {delay:.1f}s")
                 time.sleep(delay)
                 continue
+            # NOT_FOUND si statusurile necunoscute: comportamentul actual, nu-l largi.
             print(f"[AutovitScraper] HTTP {resp.status_code}")
             return []
         except Exception as exc:
+            report_outcome("autovit", classify(exc=exc))
             print(f"[AutovitScraper] Eroare ({attempt+1}/3): {exc}")
             time.sleep(rate_limit_backoff(attempt))
 
