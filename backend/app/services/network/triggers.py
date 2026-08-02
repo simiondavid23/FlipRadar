@@ -23,7 +23,7 @@ e nevoie de un al doilea nivel de throttling aici.
 from typing import Optional
 
 from app.services.network import binding
-from app.services.network.rotator import NoopRotator, get_rotator
+from app.services.network.rotator import get_rotator
 
 
 # Politica, nu `if`-uri imprastiate. Gol = implicit pentru orice platforma.
@@ -41,10 +41,22 @@ def _log(level: str, message: str) -> None:
         print(f"[{level}] triggers: {message}")
 
 
+def _note_rotation(platform: str) -> None:
+    """Import lazy — `triggers` nu depinde de `services.radar` la nivel de modul."""
+    from app.services.radar import health_watchdog
+    health_watchdog.note_rotation(platform)
+
+
 def rotate_for(platform: str, outcome) -> bool:
     """Roteste daca politica platformei o cere. Intoarce True DOAR daca s-a rotit si
     WanIPAddress chiar s-a schimbat — adica apelantul poate reincerca imediat pe alt IP.
-    Nu arunca niciodata."""
+
+    Nu arunca niciodata — contractul tine PRIN CONSTRUCTIE: `raise`-ul din `except`-ul
+    interior nu e o iesire din functie, e ruta deliberata catre `except`-ul exterior
+    (dupa ce incercarea a fost contorizata), care logheaza WARN si intoarce False.
+    Apelantul (report_outcome, in bucla de retry a unui scraper) nu are handler — o
+    exceptie scapata de aici ar omori scan-ul fix cand rotatia e stricata.
+    """
     try:
         p = (platform or "").strip().lower()
         if p not in binding.routed_platforms():
@@ -52,19 +64,25 @@ def rotate_for(platform: str, outcome) -> bool:
         key = getattr(outcome, "value", outcome)
         if key not in _ROTATE_ON.get(p, _DEFAULT_ROTATE_ON):
             return False
-        # Rotatie oprita din config: nici macar nu se CONTORIZEAZA. `rotate()` ar intoarce
-        # oricum `ok=False`, dar `note_rotation` ar fi rulat deja si alertele ar spune
-        # „dupa N rotatii de IP" fara sa se fi rotit nimic — iar `.env.example` livreaza
-        # exact combinatia asta (ENABLED=false + ROUTED_PLATFORMS nevid).
-        if isinstance(get_rotator(), NoopRotator):
-            return False
 
-        from app.services.radar import health_watchdog
-        # INAINTE de rotatie: o rotatie esuata trebuie tot numarata, altfel contorul ar
-        # spune „0 rotatii" fix cand rotatia e stricata.
-        health_watchdog.note_rotation(p)
+        try:
+            result = get_rotator().rotate()
+        except Exception:
+            # A aruncat: incercarea a ajuns la modem si a crapat — se numara, ca orice
+            # esec. Prinsa de `except`-ul de mai jos.
+            _note_rotation(p)
+            raise
 
-        result = get_rotator().rotate()
+        # Se numara INCERCARILE, nu cererile. `skipped_reason` marcheaza deja precis
+        # diferenta: None = s-a incercat (reusit sau nu, si esecul TREBUIE numarat,
+        # altfel contorul ar spune „0 rotatii" fix cand rotatia e stricata); nenul =
+        # rotatia nici n-a fost incercata — oprita din config, cooldown activ, buget orar
+        # epuizat, sau rotator dezactivat definitiv. Cu cooldown de 600s si 3 incercari in
+        # bucla scraperului, un singur scrape blocat produce O rotatie plus DOUA refuzuri:
+        # fara conditia asta, alerta ar raporta „dupa 3 rotatii de IP" pentru una singura,
+        # exact in mesajul al carui rost e sa convinga ca problema nu mai e IP-ul.
+        if result.skipped_reason is None:
+            _note_rotation(p)
         # Tri-stare: `changed is None` inseamna „n-am putut compara WAN-ul", NU succes.
         # `if result.changed` ar fi corect azi din intamplare; `is True` e corect prin
         # constructie.
@@ -110,10 +128,9 @@ def recover_data_if_link_up() -> bool:
     link-ul e sus chemam `available()`. Atunci e sub o secunda.
     """
     try:
-        rot = get_rotator()
-        if binding._live_bind_ip(rot) is None:
+        if not binding.modem_link_up():
             return False
-        rot.available()
+        get_rotator().available()
         return True
     except Exception as exc:
         _log("WARN", f"Recuperare date modem esuata ({type(exc).__name__})")
