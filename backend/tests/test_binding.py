@@ -3,9 +3,15 @@
 Rotatorul e FALSIFICAT (stub cu available/bind_ip/bind_device/wait_if_rotating): zero
 atingere de modem, zero retea.
 
-AMBELE ramuri de OS se testeaza, prin monkeypatch pe `os.name`. Suita ruleaza pe
-Windows; fara asta, ramura Linux ar trece verde aici si ar cadea la prima rulare pe Pi.
+AMBELE ramuri de OS se testeaza, prin monkeypatch pe `os.name` — NICIUN test nu are
+voie sa depinda de platforma pe care ruleaza suita (NET-5.3b: prima rulare reala pe
+Linux a picat exact 6 teste de aici, care afirmau kwargs-urile de Windows dar lasau
+ramura de OS pe cea reala). Fixture-ul autouse fixeaza ramura implicita pe `nt`
+(testele generale — fail-open, cache, tranzitii — sunt scrise cu asteptarile
+Windows); sectiunea „ramificarea pe OS" isi seteaza explicit platforma per test,
+peste fixture. Asa suita e verde si pe Windows, si pe Linux/Pi.
 """
+import os
 import sys
 import types
 
@@ -13,6 +19,19 @@ import pytest
 
 from app.services.network import binding
 from app.services.network.rotator import NoopRotator, reset_rotator
+
+
+def _force_os(monkeypatch, name: str) -> None:
+    """Forteaza ramura de OS pe REFERINTA modulului `binding`, NU pe `os` global.
+
+    Cu `os.name` patch-uit global pe alta platforma, orice `pathlib.Path` instantiat
+    cat timp patch-ul e activ arunca NotImplementedError pe Python < 3.13 — inclusiv
+    cele din interiorul pytest la raportarea unui esec (masurat pe Linux/3.11: un test
+    care pica devine un crash de cacheprovider, nu un raport). `binding` foloseste din
+    `os` doar `name` si `environ`, deci un namespace cu ambele e suficient.
+    """
+    monkeypatch.setattr(binding, "os",
+                        types.SimpleNamespace(name=name, environ=os.environ))
 
 
 class _StubRotator:
@@ -69,6 +88,10 @@ def logs(monkeypatch):
     default NU trece prin el (adresa sursa catre internet difera)."""
     binding.reset_state()
     monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "mobilede,vinted")
+    # Ramura de OS e FIXATA, nu mostenita de la masina care ruleaza suita: testele
+    # generale afirma kwargs-urile de Windows ({"interface": ip} gol, fara
+    # socket_options). Testele din „ramificarea pe OS" suprascriu setarea per test.
+    _force_os(monkeypatch, "nt")
     captured = []
     monkeypatch.setattr(binding, "_log", lambda level, msg: captured.append((level, msg)))
     _routes(monkeypatch)
@@ -202,6 +225,16 @@ def test_replug_cu_alta_adresa_invalideaza_cache_ul(monkeypatch):
     assert rot.invalidated == 1
 
 
+def test_modem_link_up_e_fals_cand_ruta_cade_pe_default(monkeypatch):
+    # NET-5.3a — invelisul public peste acelasi semnal. Cazul masurat in 5.2c: cu
+    # adaptorul scos, 192.168.8.1 cade pe ruta default si intoarce adresa WiFi.
+    rot = _use(monkeypatch)
+    monkeypatch.setattr(binding, "local_ip_towards", lambda target: "192.168.1.144")
+    assert binding.modem_link_up(rot) is False
+    _routes(monkeypatch)
+    assert binding.modem_link_up(rot) is True
+
+
 def test_semnalul_de_viata_nu_e_cache_uit(monkeypatch):
     """Doua apeluri consecutive cu rute diferite trebuie sa dea rezultate diferite.
 
@@ -252,34 +285,34 @@ def test_warnul_poarta_cauza_reala_nu_doar_tipul(monkeypatch, logs):
 # ── ramificarea pe OS ────────────────────────────────────────────────────────────
 
 def test_windows_curl_fara_prefix(monkeypatch):
-    monkeypatch.setattr(binding.os, "name", "nt")
+    _force_os(monkeypatch, "nt")
     _use(monkeypatch, device="usb0")
     # libcurl NU accepta nume de interfata pe Windows.
     assert binding.curl_kwargs("mobilede") == {"interface": "192.168.8.123"}
 
 
 def test_linux_curl_cu_prefix_ifhost(monkeypatch):
-    monkeypatch.setattr(binding.os, "name", "posix")
+    _force_os(monkeypatch, "posix")
     _use(monkeypatch, device="usb0")
     assert binding.curl_kwargs("mobilede") == {
         "interface": "ifhost!usb0!192.168.8.123"}
 
 
 def test_linux_curl_fara_device_e_degradat_cu_warn(monkeypatch, logs):
-    monkeypatch.setattr(binding.os, "name", "posix")
+    _force_os(monkeypatch, "posix")
     _use(monkeypatch, device=None)
     assert binding.curl_kwargs("mobilede") == {"interface": "192.168.8.123"}
     assert any("numele interfetei" in m for m in _warns(logs))
 
 
 def test_windows_httpx_fara_socket_options(monkeypatch):
-    monkeypatch.setattr(binding.os, "name", "nt")
+    _force_os(monkeypatch, "nt")
     _use(monkeypatch, device="usb0")
     assert binding.httpx_config("vinted") == {"local_address": "192.168.8.123"}
 
 
 def test_linux_httpx_cu_so_bindtodevice(monkeypatch):
-    monkeypatch.setattr(binding.os, "name", "posix")
+    _force_os(monkeypatch, "posix")
     _use(monkeypatch, device="usb0")
     cfg = binding.httpx_config("vinted")
     assert cfg["local_address"] == "192.168.8.123"
