@@ -28,6 +28,8 @@ def guard(monkeypatch):
     vh._breaker.clear()
     vh._daily.clear()
     vh._daily_cap_warned.clear()
+    vh._daily_global.clear()          # NET-5.3 — altfel contorul global curge intre teste
+    vh._daily_global_warned.clear()
     vh._domain_next_ts.clear()
     return clock
 
@@ -123,3 +125,29 @@ def test_get_html_skips_without_http(guard, monkeypatch):
 
     monkeypatch.setattr(vh, "get_html_session", lambda: _Boom())
     assert vh.get_html("https://www.vinted.ro/catalog") is None
+
+
+# ── NET-5.3a: guard_status oglindeste guard_before_request ─────────────────────
+def test_guard_status_vede_plafonul_global(guard):
+    """Divergenta costa tacut: `_enrich_vinted_background` intreaba `guard_status`
+    inainte de batch. Daca raspunde „allowed" cand plafonul global e atins, fiecare item
+    e refuzat individual si intoarce None — care prin RAD-1 inseamna „esec, reincearca",
+    deci itemele raman in coada si se reincearca ciclu dupa ciclu."""
+    today = vh._today_str()
+    vh._daily_global[_D] = (today, vh._DAILY_GLOBAL_CAP[_D])
+    vh._daily[_D] = (today, 10)          # per-IP e mult sub plafon
+    st = vh.guard_status(_D)
+    assert st["allowed"] is False
+    assert st["reason"] == "daily_global_cap"   # distinct de plafonul per-IP
+
+
+def test_guard_status_ramane_read_only(guard):
+    # Nu rezerva slot si nu porneste proba half-open.
+    today = vh._today_str()
+    vh._daily[_D] = (today, 5)
+    vh._daily_global[_D] = (today, 5)
+    for _ in range(2):
+        assert vh.guard_status(_D)["allowed"] is True
+    assert vh._daily[_D] == (today, 5)
+    assert vh._daily_global[_D] == (today, 5)
+    assert vh._breaker.get(_D, {}).get("half_open") in (None, False)

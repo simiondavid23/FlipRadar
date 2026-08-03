@@ -68,6 +68,15 @@ def _extract_ld_prices(soup) -> list:
     return []
 
 
+def _fold_auto(text: str) -> str:
+    """Minuscule + diacritice pliate (NFD + strip combining) — potrivirea de model
+    nu are voie sa pice pe 'Škoda' vs 'skoda' (lectia auditului retail). NFD, nu
+    harta RO: marcile auto aduc diacritice din mai multe limbi (Š, é, ü)."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", (text or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
 async def search_autovit(make: str = "", model: str = "", filters: dict = {}, page: int = 1) -> list:
     filters = filters or {}
     cat = (filters.get("category") or "").strip()
@@ -82,6 +91,10 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
     params = {}
     if page > 1:
         params["page"] = page
+    # SCRAPE-AUDIT: scanner-ul trimite modelul in filters["model"], dar parametrul
+    # functiei ramanea "" -> filtrul de model era ignorat COMPLET (BMW "Seria 3"
+    # aducea toate BMW-urile) si model=None se salva pe listing.
+    model = model or str((filters or {}).get("model") or "")
     if make:
         params["search[filter_enum_make][0]"] = make
     if filters.get("price_min") is not None:
@@ -91,7 +104,9 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
     if filters.get("year_min") is not None:
         params["search[filter_float_year:from]"] = int(filters["year_min"])
     # Campuri tehnice confirmate (autovit: doar fuel_type). Scanner-ul trimite "fuel".
-    apply_confirmed_filters("autovit", filters, params, aliases={"fuel_type": "fuel"})
+    # SCRAPE-AUDIT: + body_type (confirmat in auto_categories; scanner-ul trimite "body").
+    apply_confirmed_filters("autovit", filters, params,
+                            aliases={"fuel_type": "fuel", "body_type": "body"})
 
     headers = build_headers({"Referer": _BASE + "/"})
     log_manager.emit("auto_listings", "SCAN", f"Autovit: cautare {(make + ' ' + model).strip() or 'auto'}")
@@ -162,6 +177,15 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
         except Exception as exc:
             print(f"[autovit] card parse error: {exc}")
             continue
+
+    # SCRAPE-AUDIT: fara parametru server-side confirmat pentru model, filtram
+    # LOCAL pe titlu (fold de diacritice pe ambele parti) — aceeasi abordare ca
+    # relevanta mobile.de. Fail-open cand modelul e gol.
+    if model:
+        _mtok = _fold_auto(model).strip()
+        if _mtok:
+            results = [r for r in results
+                       if _mtok in _fold_auto(r.get("titlu") or r.get("title") or "")]
 
     print(f"[autovit] {len(results)} anunturi (make='{make}')")
     log_manager.emit("auto_listings", "OK", f"Autovit: {len(results)} anunturi gasite")

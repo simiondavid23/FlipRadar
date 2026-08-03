@@ -28,7 +28,12 @@ def test_parse_diacritice_si_case():
 
 
 def test_parse_necunoscut_none():
-    assert _parse_olx_date("Reactualizat azi", _NOW) is None   # nu incepe cu azi/ieri, fara data plina
+    # SCRAPE-AUDIT: "Reactualizat azi" era pinuit aici ca None, dar anunturile
+    # repromovate OLX chiar asa afiseaza data — pierderea ei era bug-ul, nu
+    # comportamentul. Contractul NOU: prefixul se stripeaza, data se citeste.
+    assert _parse_olx_date("Reactualizat azi", _NOW) == _NOW.replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    assert _parse_olx_date("Promovat", _NOW) is None   # cu adevarat necunoscut
     assert _parse_olx_date("", _NOW) is None
     assert _parse_olx_date(None, _NOW) is None
 

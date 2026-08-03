@@ -128,6 +128,11 @@ def _parse_olx_date(raw: Optional[str]) -> Optional[datetime]:
     # Cazul cu locatie + data — separam dupa "-"
     if "-" in t:
         t = t.split("-")[-1].strip()
+    # SCRAPE-AUDIT: anunturile repromovate au prefixul "Reactualizat"/"Postat";
+    # fara stripare, startswith("azi"/"ieri") nu prindea si data se pierdea tacut.
+    for _pref in ("reactualizat", "postat", "adaugat"):
+        if t.startswith(_pref):
+            t = t[len(_pref):].strip()
     now = datetime.now()
     m_time = re.search(r"(\d{1,2}):(\d{2})", t)
     hour = int(m_time.group(1)) if m_time else 0
@@ -581,7 +586,11 @@ def search_olx(
                         continue
 
                 price_tag = card.find(attrs={"data-testid": "ad-price"}) or card.select_one("p.css-13afqrm") or card.find("p")
-                price = _parse_price(price_tag.get_text(" ", strip=True)) if price_tag else None
+                price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
+                price = _parse_price(price_text) if price_text else None
+                # SCRAPE-AUDIT: moneda era hardcodata "RON" — un anunt in euro intra
+                # in scoring ca RON si umfla marja tacut.
+                olx_currency = "EUR" if ("€" in price_text or "eur" in price_text.lower()) else "RON"
                 if price is None:
                     continue
                 if max_price and price > max_price:
@@ -595,8 +604,11 @@ def search_olx(
                 location = None
                 listed_at = None
                 if location_raw:
-                    if "-" in location_raw:
-                        loc_part, _, date_part = location_raw.partition("-")
+                    # SCRAPE-AUDIT: separatorul OLX e " - " cu spatii; pe "-" simplu,
+                    # "Cluj-Napoca - Azi" devenea location="Cluj".
+                    sep = " - " if " - " in location_raw else "-"
+                    if sep in location_raw:
+                        loc_part, _, date_part = location_raw.partition(sep)
                         location = loc_part.strip()
                         listed_at = _parse_olx_date(date_part.strip())
                     else:
@@ -624,9 +636,13 @@ def search_olx(
 
                 cond_tag = card.find(attrs={"data-testid": "ad-state"})
                 cond = _normalize_condition(cond_tag.get_text(" ", strip=True)) if cond_tag else None
-                if condition == "new" and cond != "nou":
+                # SCRAPE-AUDIT: conditia e deja filtrata SERVER-SIDE (filter_enum_state);
+                # re-verificarea locala e doar o plasa — dar pe cardurile fara
+                # data-testid=ad-state (frecvente), cond=None arunca TOT. Verificam
+                # local doar cand informatia exista.
+                if condition == "new" and cond is not None and cond != "nou":
                     continue
-                if condition == "used" and cond != "second hand":
+                if condition == "used" and cond is not None and cond != "second hand":
                     continue
 
                 ext_id = _extract_external_id(href)
@@ -638,7 +654,7 @@ def search_olx(
                     "platform": "olx",
                     "title": title,
                     "price": price,
-                    "currency": "RON",
+                    "currency": olx_currency,
                     "condition": cond,
                     "location": location,
                     "url": href,

@@ -96,9 +96,12 @@ async def search_autoscout24(make: str = "", model: str = "", filters: dict = {}
         params["priceto"] = int(float(filters["price_max"]))
     if filters.get("year_min") is not None:
         params["fregfrom"] = int(filters["year_min"])
-    # Campuri tehnice confirmate (autoscout24: mileage_max->kmto, power_unit->powertype).
-    # Scanner-ul trimite "km_max" pentru mileage_max. fuel/gearbox raman NECONFIRMATE (nu se adauga).
-    apply_confirmed_filters("autoscout24", filters, params, aliases={"mileage_max": "km_max"})
+    # Campuri tehnice confirmate (autoscout24: fuel->B/D/E..., gear->M/A, kmto, power*).
+    # SCRAPE-AUDIT: comentariul vechi ("fuel neconfirmat") era PERIMAT — auto_categories
+    # il are confirmed:True din 2026-07-05; fara aliasul fuel_type->fuel, combustibilul
+    # keyword-ului se pierdea tacut. Scanner-ul trimite "fuel" si "km_max".
+    apply_confirmed_filters("autoscout24", filters, params,
+                            aliases={"mileage_max": "km_max", "fuel_type": "fuel"})
 
     headers = build_headers({"Referer": _BASE + "/"})
     results = []

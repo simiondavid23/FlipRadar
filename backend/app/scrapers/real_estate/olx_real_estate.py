@@ -217,6 +217,11 @@ def _parse_olx_date(text, now: datetime):
     if not text:
         return None
     t = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode().strip().lower()
+    # SCRAPE-AUDIT: anunturile repromovate au prefixul "Reactualizat"/"Postat" —
+    # fara stripare, startswith("azi"/"ieri") nu mai prindea si data se pierdea.
+    for _pref in ("reactualizat", "postat", "adaugat"):
+        if t.startswith(_pref):
+            t = t[len(_pref):].strip()
     m_time = re.search(r"(\d{1,2}):(\d{2})", t)
     hour = int(m_time.group(1)) if m_time else 0
     minute = int(m_time.group(2)) if m_time else 0

@@ -74,13 +74,26 @@ def extract_rooms(text: Optional[str]) -> Optional[int]:
 
 
 def extract_surface(text: Optional[str]) -> Optional[float]:
-    """Extrage suprafata in mp ('65 mp', '65 m²', '65,5 mp')."""
+    """Extrage suprafata in mp ('65 mp', '65 m²', '65,5 mp', '54.5 mp').
+
+    SCRAPE-AUDIT: delegarea la parse_price trata punctul ca separator de MII —
+    "54.5 mp" devenea 545 (10x), €/mp de 10x mai mic si scor A fals. La suprafete,
+    punctul e mii DOAR in grupuri de 3 ("1.500 mp" teren); altfel e zecimal."""
     if not text:
         return None
     m = re.search(r"([\d.,]+)\s*(?:mp|m²|m2|metri)", text, re.I)
     if not m:
         return None
-    return parse_price(m.group(1))
+    num = m.group(1).strip(".,")
+    if "," in num:
+        num = num.replace(".", "").replace(",", ".")
+    elif "." in num and re.fullmatch(r"\d{1,3}(\.\d{3})+", num):
+        num = num.replace(".", "")
+    try:
+        val = float(num)
+    except ValueError:
+        return None
+    return val if val > 0 else None
 
 
 def detect_currency(text: Optional[str]) -> str:

@@ -252,8 +252,11 @@ def fetch_autoscout24_detail(url: str) -> dict:
 
     description = _html_to_text(_first_str(data, ("description", "vehicleDescription", "sellerDescription")))
     seller_name = _first_str(data, ("companyName", "sellerName", "dealerName"))
+    # SCRAPE-AUDIT: firstRegistration(Date) e DATA PRIMEI INMATRICULARI a masinii
+    # (EZ, ex. 2017), nu data postarii anuntului — enrichment-ul scria in feed o
+    # "data postare" de acum multi ani. Nu mai mapam nimic pe listed_at de aici.
     listed_at = None
-    for k in ("firstRegistrationDate", "firstRegistration"):
+    for k in ():
         v = _first_str(data, (k,))
         if v:
             try:

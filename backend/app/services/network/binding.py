@@ -159,6 +159,16 @@ def _live_bind_ip(rot) -> Optional[str]:
     return ip or None
 
 
+def modem_link_up(rot=None) -> bool:
+    """True daca ruta catre MODEM_HOST iese pe LINK-ul modemului.
+
+    Ieftin: doar cautare de ruta, fara I/O catre modem si fara cache (vezi `_live_bind_ip`).
+    Invelis boolean peste acelasi semnal — folosit de `triggers.recover_data_if_link_up`
+    ca sa nu plateasca 30s de `available()` cand modemul e configurat dar absent.
+    """
+    return _live_bind_ip(rot if rot is not None else get_rotator()) is not None
+
+
 def routed_platforms() -> frozenset[str]:
     """Allowlist-ul din mediu, citit LA APEL (nu la import) ca sa fie reconfigurabil."""
     raw = os.environ.get("MODEM_ROUTED_PLATFORMS", "")

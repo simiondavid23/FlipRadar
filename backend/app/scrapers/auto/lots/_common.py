@@ -59,7 +59,25 @@ def parse_money(raw) -> Optional[float]:
             return float(raw)
         except (TypeError, ValueError):
             return None
-    cleaned = re.sub(r"[^\d.]", "", str(raw))
+    # SCRAPE-AUDIT: vechiul `re.sub(r"[^\d.]")` facea "€ 12.500" -> 12.5 (1000x mai
+    # mic, tacut) si "1.234.567" -> None. Regula: cu ambele separatoare decide
+    # ULTIMUL; doar virgule/puncte in grupuri de 3 = separatoare de mii.
+    cleaned = re.sub(r"[^\d.,]", "", str(raw))
+    if not cleaned:
+        return None
+    if "," in cleaned and "." in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        if re.fullmatch(r"\d{1,3}(,\d{3})+", cleaned):
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace(",", ".")
+    elif "." in cleaned:
+        if re.fullmatch(r"\d{1,3}(\.\d{3})+", cleaned):
+            cleaned = cleaned.replace(".", "")
     try:
         return float(cleaned) if cleaned else None
     except ValueError:

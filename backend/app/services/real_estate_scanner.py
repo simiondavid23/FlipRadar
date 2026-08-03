@@ -309,11 +309,15 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     for _k in ("rooms", "area_sqm", "floor"):
         if seed[_k] is not None:
             extracted[_k] = seed[_k]
-    # Pret: daca regex-ul n-a prins pretul, foloseste-l pe cel din scraper (cu moneda lui).
-    # FIX: inainte se citea raw.get("currency") inexistent la scraperele .ro => RON salvat ca EUR.
-    if extracted.get("price") is None and seed["price"] is not None:
+    # Pret: SCRAPE-AUDIT — pretul STRUCTURAT al scraperului are precedenta peste
+    # regex-ul pe text (comentariul general de mai sus o promitea, codul facea
+    # invers). extract_price are gama 50-50000, deci respingea orice pret de
+    # vanzare real si ACCEPTA numere parazite din descriere: "avans 15.000 euro"
+    # batea pretul de card de 89.500 € fix pe anunturile imbogatite. Regex-ul
+    # ramane doar fallback pentru sursele fara pret structurat (FB groups).
+    if seed["price"] is not None:
         extracted["price"] = seed["price"]
-        extracted["currency"] = seed["currency"] or "EUR"
+        extracted["currency"] = seed["currency"] or extracted.get("currency") or "EUR"
     # Recalculeaza pretul pe mp dupa orice suprascriere.
     _p, _a = extracted.get("price"), extracted.get("area_sqm")
     extracted["price_per_sqm"] = (round(_p / _a, 2) if _p and _a and _a > 0 else None)
@@ -485,10 +489,16 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
             return False
 
     # Zona (substring, lax) — respinge doar cand ambele exista si nu se suprapun deloc.
-    kw_zone = (kw.zone or "").strip().lower()
-    zn = (extracted.get("zone_normalized") or "").strip().lower()
-    if kw_zone and zn and kw_zone not in zn and zn not in kw_zone:
-        return False
+    # SCRAPE-AUDIT: comparatia pe .lower() simplu respingea tacut "dorobanti" vs
+    # "Dorobanți" — acum _norm_ascii pe ambele parti; iar zonele compuse
+    # ("Unirii / Centru") se compara si pe bucati, ca "Piata Unirii" sa nu piarda
+    # toate anunturile zonei.
+    kw_zone = _norm_ascii(kw.zone or "")
+    zn = _norm_ascii(extracted.get("zone_normalized") or "")
+    if kw_zone and zn:
+        _parts = [p.strip() for p in re.split(r"[/,]", zn) if p.strip()] + [zn]
+        if not any(kw_zone in p or p in kw_zone for p in _parts):
+            return False
 
     return True
 
@@ -700,14 +710,27 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                     if not _matches_query_local(text_q, kw.query):
                         rej += 1
                         continue
-                saved, motiv = _save_listing(db, kw, r, ai, custom_aliases, eur_ron)
-                if motiv == "nou":
-                    noi += 1
-                    _notify_re(saved, kw, settings, db)
-                elif motiv == "duplicat":
-                    dup += 1
-                elif motiv == "respins":
+                # SCRAPE-AUDIT: o exceptie neprevazuta pe UN anunt (IntegrityError
+                # la comit concurent etc.) omora run-ul intreg — keyword-urile
+                # ramase nu se mai scanau. Ramura FB groups avea deja plasa asta.
+                try:
+                    saved, motiv = _save_listing(db, kw, r, ai, custom_aliases, eur_ron)
+                    if motiv == "nou":
+                        noi += 1
+                        _notify_re(saved, kw, settings, db)
+                    elif motiv == "duplicat":
+                        dup += 1
+                    elif motiv == "respins":
+                        rej += 1
+                except Exception as exc:
+                    log_manager.emit("real_estate", "ERR",
+                        f"{kw.platform}: anunt sarit ({type(exc).__name__}: {str(exc)[:80]})")
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
                     rej += 1
+                    continue
             log_manager.emit("real_estate", "OK",
                 f"{kw.platform}: {total_brute} brute -> {noi} noi, {dup} duplicate, {rej} respinse")
 

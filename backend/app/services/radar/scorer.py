@@ -44,6 +44,11 @@ def calculate_score(
     if resale_price_f <= 0:
         return {"score": None, "margin_pct": 0.0, "margin_value": 0.0, "filtered": True}
 
+    # SCRAPE-AUDIT: un pret 0/negativ (neparsat undeva in amonte) dadea marja 100%
+    # -> grad A fals + notificari. Un pret care nu exista nu poate primi scor.
+    if listing_price_f <= 0:
+        return {"score": None, "margin_pct": 0.0, "margin_value": 0.0, "filtered": True}
+
     margin_value = resale_price_f - listing_price_f
     margin_pct = (margin_value / resale_price_f) * 100.0
 

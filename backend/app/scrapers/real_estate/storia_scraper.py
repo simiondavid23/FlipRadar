@@ -205,12 +205,15 @@ async def search_storia(filters: dict = {}) -> list:
                     continue
                 price_el = card.find(string=re.compile(r"€|EUR|lei", re.I))
                 pret = parse_price(price_el) if price_el else None
+                # SCRAPE-AUDIT: moneda era hardcodata EUR — o chirie "2.500 lei"
+                # devenea 2500 EUR pe calea de fallback.
+                _cur = "RON" if (price_el and re.search(r"lei|ron", str(price_el), re.I)) else "EUR"
                 img = card.find("img")
                 thumb = (img.get("src") or img.get("data-src")) if img else None
                 results.append(make_re_listing(
                     platform="storia", tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,
                     camere=extract_rooms(titlu), suprafata_mp=extract_surface(titlu),
-                    pret=pret, moneda="EUR", titlu=titlu, source_url=href, thumbnail_url=thumb,
+                    pret=pret, moneda=_cur, titlu=titlu, source_url=href, thumbnail_url=thumb,
                 ))
                 if len(results) >= MAX_RESULTS:
                     break

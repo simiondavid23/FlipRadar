@@ -41,9 +41,22 @@ _FURNISHED_NEGATIVE = ["nemobilat", "gol", "fara mobila", "unfurnished"]
 
 
 def _clean_number(text: str) -> Optional[float]:
+    """SCRAPE-AUDIT: vechiul replace facea "69,500" (mii, format EN — frecvent pe
+    FB) -> 69.5, de 1000x mai mic, TACUT si in gama de acceptare. Regula: virgula
+    in grupuri de 3 = mii; altfel zecimal (formatul RO ramane neschimbat)."""
     try:
-        cleaned = re.sub(r"[\s\.]", "", text).replace(",", ".")
-        return float(cleaned)
+        t = re.sub(r"\s", "", text or "")
+        if "," in t and "." in t:
+            if t.rfind(",") > t.rfind("."):
+                t = t.replace(".", "").replace(",", ".")
+            else:
+                t = t.replace(",", "")
+        elif "," in t:
+            t = t.replace(",", "") if re.fullmatch(r"\d{1,3}(,\d{3})+", t) else t.replace(",", ".")
+        elif "." in t:
+            if re.fullmatch(r"\d{1,3}(\.\d{3})+", t):
+                t = t.replace(".", "")
+        return float(t)
     except Exception:
         return None
 

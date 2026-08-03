@@ -14,8 +14,13 @@ from app.services.radar.base_scraper import Outcome
 
 
 class _FakeRotator:
-    def __init__(self, ok=True, changed=True, boom=False):
+    def __init__(self, ok=True, changed=True, boom=False, skipped="auto"):
         self.ok, self.changed, self.boom = ok, changed, boom
+        # „auto": esecul implicit e un REFUZ (cooldown). `skipped=None` cu `ok=False`
+        # inseamna rotatie chiar incercata si esuata — alt caz, vezi tabelul din 5.3a.
+        if skipped == "auto":
+            skipped = None if ok else "cooldown activ, mai sunt 480s"
+        self.skipped = skipped
         self.rotations = 0
         self.available_calls = 0
 
@@ -24,7 +29,7 @@ class _FakeRotator:
         if self.boom:
             raise RuntimeError("modem plecat")
         return RotationResult(ok=self.ok, changed=self.changed,
-                              skipped_reason=None if self.ok else "cooldown activ")
+                              skipped_reason=self.skipped)
 
     def available(self):
         self.available_calls += 1
@@ -144,11 +149,43 @@ def test_rotatorul_care_arunca_nu_propaga(monkeypatch):
     assert triggers.rotate_for("mobilede", Outcome.BLOCKED) is False
 
 
-def test_note_rotation_si_cand_rotatia_esueaza(monkeypatch):
+def test_note_rotation_si_cand_rotatia_arunca(monkeypatch):
     # Altfel contorul ar spune „0 rotatii" fix cand rotatia e stricata.
     _use(monkeypatch, boom=True)
     triggers.rotate_for("mobilede", Outcome.BLOCKED)
     assert hw._rotations_since_alive.get("mobilede") == 1
+
+
+# ── NET-5.3a — se numara INCERCARILE, nu cererile ────────────────────────────────
+
+def test_rotatie_incercata_si_esuata_se_contorizeaza(monkeypatch):
+    # Proprietatea care trebuie PASTRATA: `ok=False` cu `skipped_reason=None` inseamna
+    # ca s-a incercat si n-a mers — exact cazul in care contorul conteaza.
+    _use(monkeypatch, ok=False, changed=None, skipped=None)
+    assert triggers.rotate_for("mobilede", Outcome.BLOCKED) is False
+    assert hw._rotations_since_alive.get("mobilede") == 1
+
+
+def test_cooldown_nu_contorizeaza(monkeypatch):
+    # Cu cooldown 600s si 3 incercari in bucla scraperului, un singur scrape blocat
+    # produce O rotatie plus DOUA refuzuri. Fara conditia asta, alerta ar raporta 3.
+    _use(monkeypatch, ok=False, skipped="cooldown activ, mai sunt 480s")
+    assert triggers.rotate_for("mobilede", Outcome.BLOCKED) is False
+    assert hw._rotations_since_alive == {}
+
+
+def test_buget_orar_epuizat_nu_contorizeaza(monkeypatch):
+    _use(monkeypatch, ok=False, skipped="buget orar epuizat (5 rotatii/ora)")
+    assert triggers.rotate_for("mobilede", Outcome.BLOCKED) is False
+    assert hw._rotations_since_alive == {}
+
+
+def test_rotator_dezactivat_definitiv_nu_contorizeaza(monkeypatch):
+    # Lockout de modem / credentiale gresite: `rotate()` propaga `_disabled_reason` ca
+    # skipped_reason. Caz pe care verificarea de tip NoopRotator nu-l acoperea.
+    _use(monkeypatch, ok=False, skipped="credentiale gresite pentru modem")
+    assert triggers.rotate_for("mobilede", Outcome.BLOCKED) is False
+    assert hw._rotations_since_alive == {}
 
 
 # ── starea Vinted ────────────────────────────────────────────────────────────────
@@ -302,13 +339,13 @@ def test_bucla_nu_e_infinita_cand_rotatia_reuseste_mereu(monkeypatch):
 def test_link_jos_nu_cheama_available(monkeypatch):
     # available() ar dura ~30s cu modemul absent si ar intarzia pornirea uvicorn.
     rot = _use(monkeypatch)
-    monkeypatch.setattr(triggers.binding, "_live_bind_ip", lambda r: None)
+    monkeypatch.setattr(triggers.binding, "modem_link_up", lambda *a: False)
     assert triggers.recover_data_if_link_up() is False
     assert rot.available_calls == 0
 
 
 def test_link_sus_cheama_available_o_data(monkeypatch):
     rot = _use(monkeypatch)
-    monkeypatch.setattr(triggers.binding, "_live_bind_ip", lambda r: "192.168.8.123")
+    monkeypatch.setattr(triggers.binding, "modem_link_up", lambda *a: True)
     assert triggers.recover_data_if_link_up() is True
     assert rot.available_calls == 1

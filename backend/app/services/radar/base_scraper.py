@@ -81,15 +81,25 @@ def get_proxy_config() -> Optional[dict]:
     }
 
 
+# SCRAPE-AUDIT: fara plierea diacriticelor, "mașină" din lista de excluderi nu
+# prindea "masina" din titlu (si invers) — modul simplu e calea IMPLICITA a
+# tuturor platformelor. Modul advanced (exclusion_engine) normaliza deja.
+_ACCENT_MAP = str.maketrans("ăâîșşțţ", "aaisstt")
+
+
+def _fold(text: str) -> str:
+    return (text or "").lower().translate(_ACCENT_MAP)
+
+
 def is_excluded(title: str, exclude_words: list[str]) -> bool:
-    """True daca titlul contine vreun cuvant din lista (case-insensitive)."""
+    """True daca titlul contine vreun cuvant din lista (case- si diacritice-insensitive)."""
     if not exclude_words:
         return False
     if not title:
         return False
-    title_low = title.lower()
+    title_low = _fold(title)
     for w in exclude_words:
-        w = (w or "").strip().lower()
+        w = _fold((w or "").strip())
         if w and w in title_low:
             return True
     return False

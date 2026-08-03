@@ -332,12 +332,17 @@ async def search_listings(
     f = _parse_filters(filters)
     make = f.get("make", "") or q
     builders = {
+        # SCRAPE-AUDIT: la mobile_de/autoscout24/kleinanzeigen dict-ul de filtre
+        # ateriza pe pozitia `model` -> AttributeError inghitit de gather -> 0
+        # rezultate TACUT cand userul seta orice filtru.
         "olx_auto": lambda: search_olx_auto(q, f),
         "autovit": lambda: search_autovit(make, f.get("model", ""), f),
-        "mobile_de": lambda: search_mobile_de(f.get("make_id", "") or make, f),
-        "autoscout24": lambda: search_autoscout24(make, f),
+        "mobile_de": lambda: search_mobile_de(
+            f.get("make_id", "") or make, f.get("model", ""), q, f),
+        "autoscout24": lambda: search_autoscout24(make, f.get("model", ""), f),
         "facebook_auto": lambda: search_facebook_auto(q, f),
-        "kleinanzeigen_auto": lambda: search_kleinanzeigen_auto(q, make, f),
+        "kleinanzeigen_auto": lambda: search_kleinanzeigen_auto(
+            q, make, f.get("model", ""), f),
     }
     selected = [p.strip().lower() for p in (platforms or "").split(",") if p.strip() in builders]
     if not selected:

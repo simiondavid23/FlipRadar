@@ -890,6 +890,7 @@ def _search_vinted_library(
     subcategory: Optional[str] = None,
     page: int = 1,
     catalog_id: Optional[int] = None,
+    condition: str = "all",
 ) -> list:
     """Cauta pe Vinted prin VintedWrapper (JSON brut, sesiune singleton). Returneaza
     intotdeauna o lista (goala la eroare sau zero rezultate).
@@ -976,6 +977,16 @@ def _search_vinted_library(
             except (TypeError, ValueError, OSError):
                 listed_at = None
 
+        # SCRAPE-AUDIT: `condition` era acceptat de search_vinted dar nefolosit —
+        # keyword-urile "doar nou" primeau si second hand, tacut. Filtram local pe
+        # eticheta de stare din payload; cand statusul lipseste NU aruncam (fail-open,
+        # ca la OLX dupa acelasi audit).
+        cond_label = _condition_label(str(item.get("status") or ""))
+        if condition == "new" and cond_label is not None and cond_label != "nou":
+            continue
+        if condition == "used" and cond_label is not None and cond_label != "second hand":
+            continue
+
         item_id = item.get("id")
         url = item.get("url") or (f"https://www.vinted.ro/items/{item_id}" if item_id else "")
 
@@ -1044,6 +1055,7 @@ def search_vinted(
         keyword_clean, max_price, min_price, category,
         exclude_words or [], exclude_description_words or [],
         subcategory=subcategory, page=page, catalog_id=catalog_id,
+        condition=condition,
     )
     return _apply_subcategory_filter(results, _local_sub)
 

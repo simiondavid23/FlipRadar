@@ -294,6 +294,19 @@ def search_facebook(
     if page and page > 1:
         return []
     if not is_facebook_session_valid(session_path):
+        # SCRAPE-AUDIT: early-return-ul statea INAINTEA blocului de re-auth de la
+        # finalul functiei, deci o sesiune mai veche de 30 de zile nu mai ajungea
+        # NICIODATA la re_authenticate — platforma murea definitiv-tacut. Incercam
+        # re-auth o singura data (no-op fara credentiale configurate).
+        if not _retry:
+            from app.services.facebook_auth import re_authenticate
+            if re_authenticate(session_path):
+                return search_facebook(
+                    keyword=keyword, max_price=max_price, judet=judet, oras=oras,
+                    exclude_words=exclude_words, session_path=session_path,
+                    min_price=min_price, category=category, page=page,
+                    max_scrolls=max_scrolls, _retry=True,
+                )
         log_manager.emit("radar", "WARN",
             "Facebook: sesiune invalida/expirata — reconectare necesara")
         return []
@@ -332,6 +345,11 @@ def search_facebook(
                     continue
 
                 price, currency = _parse_price(o)
+                # SCRAPE-AUDIT: pretul neparsat trecea mai departe si devenea 0 in
+                # scanner -> marja 100% -> grad A fals + notificari. OLX si Vinted
+                # sar deja listingurile fara pret; Facebook era singurul care nu.
+                if price is None or price <= 0:
+                    continue
                 if max_price and max_price > 0 and price is not None and price > max_price:
                     continue
                 if min_price and min_price > 0 and price is not None and price < min_price:

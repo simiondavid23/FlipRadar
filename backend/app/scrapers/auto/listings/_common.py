@@ -212,13 +212,17 @@ def extract_km(text: Optional[str]) -> Optional[int]:
     """
     if not text:
         return None
-    m = re.search(r"(\d{1,3}(?:[.\s]\d{3})+|\d{2,7})\s*km", text, re.I)
-    if not m:
-        return None
-    km = parse_int(m.group(1))
-    if km is not None and km > 1_500_000:
-        return None
-    return km
+    # SCRAPE-AUDIT: PRIMUL "N km" din text castiga inainte ("la 20 km de Bucuresti,
+    # 150.000 km" -> 20; autonomia EV "450 km" batea rulajul). Luam cel mai MARE
+    # candidat plauzibil; virgulele intra in separatoarele de mii.
+    best = None
+    for g in re.findall(r"(\d{1,3}(?:[.,\s]\d{3})+|\d{2,7})\s*km", text, re.I):
+        km = parse_int(g)
+        if km is None or km > 1_500_000:
+            continue
+        if best is None or km > best:
+            best = km
+    return best
 
 
 def normalize_fuel(text: Optional[str]) -> Optional[str]:

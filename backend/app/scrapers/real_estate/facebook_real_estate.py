@@ -21,7 +21,24 @@ def _category_url(tip_anunt: str) -> str:
 
 
 def _parse_price(raw: str) -> Optional[float]:
-    cleaned = re.sub(r"[^\d.,]", "", raw or "").replace(".", "").replace(",", ".")
+    """SCRAPE-AUDIT: replace-ul orb facea "RON 1,500" -> 1.5 (Marketplace foloseste
+    frecvent formatul EN cu virgula de mii). Virgula in grupuri de 3 = mii."""
+    cleaned = re.sub(r"[^\d.,]", "", raw or "")
+    if not cleaned:
+        return None
+    if "," in cleaned and "." in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        if re.fullmatch(r"\d{1,3}(,\d{3})+", cleaned):
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace(",", ".")
+    elif "." in cleaned:
+        if re.fullmatch(r"\d{1,3}(\.\d{3})+", cleaned):
+            cleaned = cleaned.replace(".", "")
     try:
         return float(cleaned) if cleaned else None
     except ValueError:

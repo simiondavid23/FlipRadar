@@ -227,7 +227,12 @@ CITY_ZONES = {
 
 
 def _normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text.lower().strip())
+    """SCRAPE-AUDIT: fara plierea diacriticelor, "Apărătorii Patriei"/"Grivița"/
+    "Piața Unirii" nu se potriveau cu aliasurile ASCII — zona ramanea None."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", (text or "").lower().strip())
+    t = t.encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", t)
 
 
 def _detect_city(text: str) -> str:
@@ -254,6 +259,12 @@ def normalize_zone(raw_zone: str, city: str = None,
     if not raw_zone:
         return None
 
+    def _contains(text: str, alias: str) -> bool:
+        # SCRAPE-AUDIT: substring-ul simplu potrivea "ior" in "interior renovat"
+        # (-> Titan/IOR) si "sosea" in "soseaua colentina" (-> Kiseleff). Granita:
+        # aliasul nu poate fi lipit de litere/cifre.
+        return re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", text) is not None
+
     t = _normalize_text(raw_zone)
     if city:
         city = _normalize_text(city)
@@ -265,25 +276,25 @@ def normalize_zone(raw_zone: str, city: str = None,
     # Check custom aliases first (user-defined)
     if custom_aliases:
         for alias, canonical in custom_aliases.items():
-            if _normalize_text(alias) in t:
+            if _contains(t, _normalize_text(alias)):
                 return canonical
 
     # Check metro stations (București only)
     if city == "bucuresti":
         for station, zone in BUCURESTI_METRO.items():
-            if station in t:
+            if _contains(t, station):
                 return zone
 
         for zone_canonical, aliases in BUCURESTI_ZONES.items():
             for alias in aliases:
-                if alias in t:
+                if _contains(t, alias):
                     return zone_canonical
 
     # Other cities
     city_dict = CITY_ZONES.get(city, {})
     for zone_canonical, aliases in city_dict.items():
         for alias in aliases:
-            if alias in t:
+            if _contains(t, alias):
                 return zone_canonical
 
     return None
