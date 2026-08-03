@@ -125,7 +125,6 @@ function DashboardContent({ children }) {
           z-index: 1;
           margin-left: 274px;
           padding: 18px 26px 34px;
-          max-width: 1460px;
         }
         .sidebar-wrapper { display: block; }
         .mobile-header {
