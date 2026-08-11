@@ -536,14 +536,38 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     # Excluderi per keyword (IM-6) — ORICE termen exclus in text => nu se salveaza.
     if not _matches_exclusions(text, kw.exclude_words):
         return None
-    extracted = extract_all(text)
-    _ai_client, _ai_model = ai if ai else (None, None)
-    extracted = groq_extract(text, extracted, _ai_client, _ai_model)
 
     # Query (cautare libera) local — Grupurile FB nu se cauta la sursa; daca postarea nu
     # contine termenii din kw.query, nu o asociem acestui keyword.
+    # FBG-2 (M6): verificarea e IEFTINA (substring) si sta INAINTEA oricarei extractii —
+    # inainte, o postare care nu se potrivea query-ului ardea totusi un apel LLM la
+    # FIECARE scan (30 min) x FIECARE keyword FBG, timp de 48h (~96 apeluri/keyword
+    # pentru o postare respinsa).
     if kw.query and not _matches_query_local(text, kw.query):
         return None
+
+    extracted = extract_all(text)
+
+    # FBG-2 (M1) — seed din campurile deja extrase la ingest (extract_real_estate_data,
+    # gama 50..5.000.000): extract_all are plafonul 50-50.000 gandit pentru chirii, deci
+    # pe o VANZARE ("89.000 euro") intoarce price=None — filtrul de pret al keyword-ului
+    # nu se mai aplica deloc, iar vechiul fallback lua pretul din post["pret"] dar moneda
+    # din default-ul "EUR" al extract_all ("400.000 lei" ajungea in feed ca 400.000 EUR).
+    if extracted.get("price") is None and post.get("pret"):
+        try:
+            extracted["price"] = float(post["pret"])
+            extracted["currency"] = post.get("moneda") or extracted.get("currency") or "EUR"
+        except (TypeError, ValueError):
+            pass
+    if extracted.get("area_sqm") is None and post.get("suprafata_mp"):
+        extracted["area_sqm"] = post.get("suprafata_mp")
+    if extracted.get("floor") is None and post.get("etaj"):
+        extracted["floor"] = post.get("etaj")
+    _p, _a = extracted.get("price"), extracted.get("area_sqm")
+    extracted["price_per_sqm"] = (round(_p / _a, 2) if _p and _a and _a > 0 else None)
+
+    _ai_client, _ai_model = ai if ai else (None, None)
+    extracted = groq_extract(text, extracted, _ai_client, _ai_model)
 
     zone_raw = extracted.get("zone_raw") or post.get("zona") or ""
     zone_norm = normalize_zone(zone_raw, kw.city, custom_aliases)
@@ -555,8 +579,11 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     if not _matches_re_keyword(extracted, kw, eur_ron):
         return None
 
-    price = extracted.get("price") or (float(post.get("pret") or 0) or None)
-    currency = extracted.get("currency", "EUR")
+    # FBG-2 (M1): post["pret"]/post["moneda"] au intrat deja in `extracted` ca seed
+    # (mai sus), deci pretul si moneda sunt CONSISTENTE aici — vechiul fallback pe
+    # post["pret"] cu currency din default-ul extract_all a disparut.
+    price = extracted.get("price")
+    currency = extracted.get("currency") or "EUR"
     score, grade = 50, "C"
     if price and extracted.get("area_sqm"):
         zone_avg = get_zone_avg_ppm(
@@ -583,11 +610,15 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         zone_normalized = zone_norm,
         city            = kw.city,
         furnished       = extracted.get("furnished"),
-        url             = post.get("group_url") or "",
+        # FBG-2 (M4) — permalink-ul direct al postarii; fallback pe grup doar cand
+        # scraperul n-a gasit permalink (post_id pe amprenta de text).
+        url             = post.get("post_url") or post.get("group_url") or "",
         description     = text[:2000],
         score           = score,
         grade           = grade,
-        listed_at       = post.get("created_at"),   # data postarii FB (deja pe post_dict)
+        # FBG-2 (M3) — data REALA a postarii FB (posted_at); created_at e momentul
+        # INSERT-ului nostru (comentariul vechi pretindea altceva) si ramane fallback.
+        listed_at       = post.get("posted_at") or post.get("created_at"),
         found_at        = datetime.now(timezone.utc),
         last_checked_at = datetime.now(timezone.utc),
     )
@@ -667,7 +698,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
             f"Keyword {kw.name!r} · {kw.platform}")
 
         if kw.platform == "facebook_groups":
-            # Pull unread posts from facebook_group_posts table
+            # Ingest din tabelul facebook_group_posts (postarile ultimelor 48h)
             new_count = 0
             try:
                 from app.models.facebook_group_post import FacebookGroupPost
@@ -807,6 +838,22 @@ def run_cleanup(db: Session) -> int:
     import time
 
     from curl_cffi import requests as curl_requests
+
+    # FBG-2 (m5) — ambele platforme Facebook sunt excluse de la verificarea 404
+    # (login-wall neautentificat = neverificabil), deci listingurile lor nu
+    # expirau NICIODATA din feed. Expirare pe varsta: active si mai vechi de 30
+    # de zile (found_at) -> status "removed" (soft — salvatele raman neatinse,
+    # nimic nu se sterge si nu se re-notifica).
+    cutoff_fb = datetime.now(timezone.utc) - timedelta(days=30)
+    expired_fb = db.query(RealEstateListing).filter(
+        RealEstateListing.status == "active",
+        RealEstateListing.platform.in_(("facebook_groups", "facebook_marketplace")),
+        RealEstateListing.found_at < cutoff_fb,
+    ).update({RealEstateListing.status: "removed"}, synchronize_session=False)
+    db.commit()
+    if expired_fb:
+        log_manager.emit("real_estate", "INFO",
+            f"Cleanup: {expired_fb} anunțuri Facebook expirate pe vârstă (30 zile)")
 
     listings = db.query(RealEstateListing).filter(
         RealEstateListing.status == "active",

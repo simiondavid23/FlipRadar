@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Text, Numeric
 from datetime import datetime
 from app.database import Base
 
@@ -9,9 +9,10 @@ class FacebookGroupPost(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False)
     config_id = Column(Integer, nullable=False)        # FK la facebook_group_configs.id
-    post_id = Column(String(200), nullable=True)       # ID extern Facebook
+    post_id = Column(String(200), nullable=True)       # ID extern Facebook (FBG-2: pid numeric din permalink sau txt_<hash>)
     group_url = Column(Text, nullable=True)
-    text = Column(Text, nullable=True)                 # primele 1000 caractere
+    post_url = Column(Text, nullable=True)             # FBG-2 (M4): permalink-ul direct al postarii (NULL la fallback pe hash)
+    text = Column(Text, nullable=True)                 # primele 1500 caractere (FBG-2 m4: aliniat cu scraperul)
     pret = Column(Numeric(10, 2), nullable=True)
     moneda = Column(String(10), nullable=True)
     tip_anunt = Column(String(20), nullable=True)      # "vanzare" | "inchiriere"
@@ -22,5 +23,5 @@ class FacebookGroupPost(Base):
     termen = Column(String(20), nullable=True)         # "lung" | "scurt"
     facilitati = Column(String(200), nullable=True)    # "parcare, balcon"
     posted_at = Column(DateTime, nullable=True)
-    is_read = Column(Boolean, default=False)
+    # FBG-2 (m1): is_read a fost sters odata cu endpoint-urile de postari brute.
     created_at = Column(DateTime, default=datetime.utcnow)

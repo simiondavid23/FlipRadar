@@ -355,7 +355,9 @@ ENDPOINTS = [
     ("PUT", "/api/facebook-groups/{config_id}", "facebook_config", {}, DENIED),
     ("DELETE", "/api/facebook-groups/{config_id}/cookies", "facebook_config", None, DENIED),
     ("POST", "/api/facebook-groups/{config_id}/cookies", "facebook_config", {"cookies_json": "{}"}, DENIED),
-    ("GET", "/api/facebook-groups/{config_id}/posts", "facebook_config", None, DENIED),
+    # FBG-2 (m1): GET /{config_id}/posts a fost ELIMINAT odata cu endpoint-urile de
+    # postari brute (cod mort fara apelant in frontend; acelasi precedent MKT-CLEAN
+    # ca la keyword-alerts, mai jos) — cazul lui de autorizare dispare cu el.
     ("POST", "/api/facebook-groups/{config_id}/test-run", "facebook_config", None, DENIED),
     # ── inventory ──
     ("DELETE", "/api/inventory/{item_id}", "inventory", None, DENIED),
@@ -479,7 +481,8 @@ OWNER_GET_CHECKS = [
     ("GET", "/api/radar/listings/{listing_id}", "radar_listing"),
     ("GET", "/api/radar/keywords/{keyword_id}/price-trend", "radar_keyword"),
     ("GET", "/api/radar/keywords/{keyword_id}/impact", "radar_keyword"),
-    ("GET", "/api/facebook-groups/{config_id}/posts", "facebook_config"),
+    # FBG-2 (m1): GET /api/facebook-groups/{config_id}/posts sters (cod mort) —
+    # sanity-check-ul de ownership ramane acoperit de celelalte GET-uri pure-DB.
     ("GET", "/api/auto-listings/keywords/{keyword_id}/impact", "auto_keyword"),
     ("GET", "/api/real-estate-monitor/keywords/{keyword_id}/impact", "re_monitor_keyword"),
 ]

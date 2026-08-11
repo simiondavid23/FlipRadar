@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ from app.models.user import User
 from app.models.facebook_group_config import FacebookGroupConfig
 from app.models.facebook_group_post import FacebookGroupPost
 from app.utils.auth import get_current_user
-from app.utils.cookie_crypto import encrypt_cookies
+from app.utils.cookie_crypto import encrypt_cookies, normalize_cookies
 from app.services.facebook_group_service import run_single_config_check
 
 router = APIRouter(prefix="/api/facebook-groups", tags=["Facebook Groups"])
@@ -69,15 +69,8 @@ class CookiesPayload(BaseModel):
 
 
 def _config_to_dict(db: Session, c: FacebookGroupConfig) -> dict:
-    posts_count = db.query(FacebookGroupPost).filter(
-        FacebookGroupPost.config_id == c.id,
-        FacebookGroupPost.user_id == c.user_id,
-    ).count()
-    unread_count = db.query(FacebookGroupPost).filter(
-        FacebookGroupPost.config_id == c.id,
-        FacebookGroupPost.user_id == c.user_id,
-        FacebookGroupPost.is_read == False,  # noqa: E712
-    ).count()
+    # FBG-2 (m1): postarile brute se consuma DOAR prin feed-ul Imobiliare;
+    # numaratorile posts_count/unread_count nu erau citite de frontend.
     return {
         "id": c.id,
         "group_name": c.group_name,
@@ -91,31 +84,6 @@ def _config_to_dict(db: Session, c: FacebookGroupConfig) -> dict:
         "last_run_at": c.last_run_at.isoformat() if c.last_run_at else None,
         "last_run_status": c.last_run_status,
         "created_at": c.created_at.isoformat() if c.created_at else None,
-        "posts_count": posts_count,
-        "unread_count": unread_count,
-    }
-
-
-def _post_to_dict(p: FacebookGroupPost, group_name: Optional[str] = None) -> dict:
-    return {
-        "id": p.id,
-        "config_id": p.config_id,
-        "group_name": group_name,
-        "post_id": p.post_id,
-        "group_url": p.group_url,
-        "text": p.text,
-        "pret": float(p.pret) if p.pret is not None else None,
-        "moneda": p.moneda,
-        "tip_anunt": p.tip_anunt,
-        "tip_proprietate": p.tip_proprietate,
-        "suprafata_mp": p.suprafata_mp,
-        "etaj": p.etaj,
-        "zona": p.zona,
-        "termen": p.termen,
-        "facilitati": p.facilitati,
-        "posted_at": p.posted_at.isoformat() if p.posted_at else None,
-        "is_read": bool(p.is_read),
-        "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
 
@@ -227,6 +195,17 @@ def save_cookies(
     if not isinstance(cookies, list) or not cookies:
         raise HTTPException(status_code=400, detail="Cookies-urile trebuie sa fie un array JSON ne-gol.")
 
+    # FBG-2 (C1) — exporturile din extensii (Cookie-Editor etc.) au sameSite cu
+    # litere mici + campuri extra pe care Playwright le respinge cu exceptie
+    # INAINTE de a incarca pagina. Normalizam LA SALVARE, ca tot ce sta criptat
+    # in DB sa fie deja in formatul acceptat.
+    cookies = normalize_cookies(cookies)
+    if not cookies:
+        raise HTTPException(
+            status_code=400,
+            detail="Niciun cookie valid in export (lipsesc name/value). "
+                   "Exporta cookie-urile facebook.com cu Cookie-Editor (format JSON).")
+
     config.cookies_encrypted = encrypt_cookies(cookies)
     config.cookies_saved_at = datetime.utcnow()
     config.last_run_status = None
@@ -249,83 +228,11 @@ def delete_cookies(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Posts
+# FBG-2 (m1) — endpoint-urile de postari brute (/posts/all, /{id}/posts) si
+# mecanismul is_read/unread_count au fost STERSE: cod mort din perspectiva UI
+# (api.js nu le definea, niciun apelant in frontend; precedentul MKT-CLEAN).
+# Postarile brute se consuma exclusiv prin ingestul feed-ului Imobiliare.
 # ──────────────────────────────────────────────────────────────────────────────
-
-
-@router.get("/posts/all")
-def list_all_posts(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    q = db.query(FacebookGroupPost).filter(FacebookGroupPost.user_id == current_user.id)
-    total = q.count()
-    rows = (
-        q.order_by(FacebookGroupPost.posted_at.desc().nullslast(), FacebookGroupPost.created_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all()
-    )
-    names = dict(
-        db.query(FacebookGroupConfig.id, FacebookGroupConfig.group_name)
-        .filter(FacebookGroupConfig.user_id == current_user.id)
-        .all()
-    )
-    return {
-        "posts": [_post_to_dict(p, names.get(p.config_id)) for p in rows],
-        "page": page,
-        "per_page": per_page,
-        "total": total,
-        "has_more": page * per_page < total,
-    }
-
-
-@router.get("/{config_id}/posts")
-def list_config_posts(
-    config_id: int,
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-    tip_anunt: Optional[str] = Query(None),
-    pret_max: Optional[float] = Query(None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    config = _get_owned_config(db, config_id, current_user)
-
-    q = db.query(FacebookGroupPost).filter(
-        FacebookGroupPost.config_id == config_id,
-        FacebookGroupPost.user_id == current_user.id,
-    )
-    if tip_anunt:
-        q = q.filter(FacebookGroupPost.tip_anunt == tip_anunt)
-    if pret_max is not None:
-        q = q.filter(FacebookGroupPost.pret.isnot(None), FacebookGroupPost.pret <= pret_max)
-
-    total = q.count()
-    rows = (
-        q.order_by(FacebookGroupPost.posted_at.desc().nullslast(), FacebookGroupPost.created_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all()
-    )
-
-    # Marcheaza postarile returnate ca citite.
-    unread_ids = [p.id for p in rows if not p.is_read]
-    if unread_ids:
-        db.query(FacebookGroupPost).filter(FacebookGroupPost.id.in_(unread_ids)).update(
-            {FacebookGroupPost.is_read: True}, synchronize_session=False
-        )
-        db.commit()
-
-    return {
-        "posts": [_post_to_dict(p, config.group_name) for p in rows],
-        "page": page,
-        "per_page": per_page,
-        "total": total,
-        "has_more": page * per_page < total,
-    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────

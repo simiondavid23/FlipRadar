@@ -31,9 +31,10 @@ backend/scripts/snapshot_out/
 **/scripts/diagnostics/
 # migrare one-shot PostgreSQL -> SQLite (SQLITE-2), ramane locala
 scripts/migrate_pg_to_sqlite.py
-# chei per-instanta generate in data dir (PKG-DATA / VAPID-AUTO)
+# chei per-instanta generate in data dir (PKG-DATA / VAPID-AUTO / FBG-2)
 secret_key
 vapid_private_key
+cookie_encryption_key
 
 # KEY-1 — cheia privata Ed25519 de semnare a licentelor (NU se comite niciodata)
 scripts/licensing/keys/

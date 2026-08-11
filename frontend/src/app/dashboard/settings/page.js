@@ -901,6 +901,7 @@ const fgDangerBtn = {
 // Status cookies pentru un grup (portat din vechea pagina standalone Grupuri Facebook).
 function cookieStatus(c) {
   if (c.last_run_status === "cookies_expirate") return { label: "Cookies expirate — reînnoire necesară", color: "#f87171", icon: AlertTriangle };
+  if (c.last_run_status === "cookies_invalide") return { label: "Cookies invalide — re-lipește exportul din Cookie-Editor", color: "#f87171", icon: AlertTriangle };
   if (!c.has_cookies || !c.cookies_saved_at) return { label: "Fără cookies", color: "var(--text-muted)", icon: AlertTriangle };
   const days = (Date.now() - new Date(c.cookies_saved_at).getTime()) / 86400000;
   if (days >= 53) return { label: "Cookies expiră în curând", color: "#fb923c", icon: Clock };

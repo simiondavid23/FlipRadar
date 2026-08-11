@@ -55,7 +55,10 @@ async def _process_config(db, config) -> int:
                 config_id=config.id,
                 post_id=post["post_id"],
                 group_url=config.group_url,
-                text=post["text"][:1000],
+                post_url=post.get("post_url"),      # FBG-2 (M4) — permalink direct
+                # FBG-2 (m4): 1500, aliniat cu scraperul — trunchierea la 1000 pierdea
+                # un pret aflat intre caracterele 1000-1500 pentru extractia de la ingest.
+                text=post["text"][:1500],
                 pret=extracted.get("pret"),
                 moneda=extracted.get("moneda"),
                 tip_anunt=extracted.get("tip_anunt"),
@@ -91,10 +94,15 @@ async def _process_config(db, config) -> int:
         # statusul rularii precedente), ca sa stim daca e o intrare noua in stare.
         was_expired = (config.last_run_status == "cookies_expirate")
         config.last_run_at = now
-        config.last_run_status = (
-            "cookies_expirate" if "COOKIES_EXPIRATE" in error_msg
-            else "eroare"
-        )
+        # FBG-2 (C1) — "cookies_invalide" e distinct de "eroare": inseamna ca
+        # add_cookies a respins formatul (export nenormalizabil), deci userul
+        # trebuie sa re-lipeasca cookie-urile, nu sa astepte urmatoarea rulare.
+        if "COOKIES_EXPIRATE" in error_msg:
+            config.last_run_status = "cookies_expirate"
+        elif "COOKIES_INVALIDE" in error_msg:
+            config.last_run_status = "cookies_invalide"
+        else:
+            config.last_run_status = "eroare"
         db.commit()
 
         # FBG-1 — alerta la INTRAREA in stare (pattern-ul de tranzitie al watchdog-urilor):

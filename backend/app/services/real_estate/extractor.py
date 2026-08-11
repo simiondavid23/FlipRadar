@@ -337,6 +337,15 @@ def extract_real_estate_data(text: str) -> dict:
     return result
 
 
+def _fold_diacritics(s: str) -> str:
+    """FBG-2 (M2) — NFKD -> ascii (fara diacritice), lower. Acelasi model ca
+    _norm_ascii din real_estate_scanner / is_excluded din Radar (SCRAPE-1) —
+    nereplicat aici pana acum."""
+    import unicodedata
+    return (unicodedata.normalize("NFKD", str(s or ""))
+            .encode("ascii", "ignore").decode().lower())
+
+
 def passes_keyword_filter(
     text: str,
     keywords: list,
@@ -345,24 +354,38 @@ def passes_keyword_filter(
     """
     Returneaza True daca postarea trece filtrele de keywords.
     Fara AI — exclusiv string matching case-insensitive.
+
+    FBG-2 (M2): potrivirea pliaza diacriticele pe AMBELE parti — "garsoniera"
+    (tastat fara diacritice in config) prindea inainte doar "garsoniera", nu si
+    "garsonieră" din postare, deci postarea murea la poarta grupului.
     """
-    lower = text.lower()
+    lower = _fold_diacritics(text)
 
     if keywords:
-        if not any(kw.lower() in lower for kw in keywords):
+        if not any(_fold_diacritics(kw) in lower for kw in keywords):
             return False
 
     if negative_keywords:
-        if any(kw.lower() in lower for kw in negative_keywords):
+        if any(_fold_diacritics(kw) in lower for kw in negative_keywords):
             return False
 
     # Verifica daca postarea contine cel putin un pret sau tip proprietate
-    # (filtrare minima pentru a elimina postari irelevante)
+    # (filtrare minima pentru a elimina postari irelevante).
+    # Pretul se cauta pe textul BRUT lowercase: plierea ascii ar arunca simbolul €.
+    # FBG-2 (M2, bonus): \b dupa € nu exista NICIODATA (€ e non-word, iar dupa el
+    # urmeaza spatiu/sfarsit de text — fara tranzitie word/non-word), deci
+    # alternativa € era moarta; \b ramane doar pe alternativele-litera.
     has_price = bool(re.search(
-        r'\d+\s*(€|euro|eur|ron|lei)\b', lower
+        r'\d+\s*(?:€|(?:euro|eur|ron|lei)\b)', text.lower()
     ))
+    # FBG-2 (M2, bonus): alternativele-santinela erau PREFIXE ("garsonier",
+    # "inchir", "vânz"), dar \b-ul FINAL cerea sfarsit de cuvant imediat dupa
+    # prefix — "garsonieră", "închiriez", "vânzare" nu treceau NICIODATA de
+    # santinela (prefix + litera urmatoare = fara word boundary). Prefixele raman
+    # ancorate la inceput de cuvant, fara \b final; cuvintele intregi (casa, vila,
+    # vand) il pastreaza. Diacriticele sunt deja pliate in `lower`.
     has_property = bool(re.search(
-        r'\b(garsonier|camere?|apartament|casa|casă|vila|vilă|inchir|vânz|vand)\b',
+        r'\b(garsonier|camer|apartament|casa\b|vila\b|inchir|vanz|vand\b)',
         lower
     ))
 

@@ -498,14 +498,26 @@ def get_stats(
         RealEstateKeyword.user_id == current_user.id,
         RealEstateKeyword.is_active == True,
     ).count()
-    # Status sesiune Facebook — daca exista keyword FB Marketplace sau FB Groups.
-    has_fb_keyword = db.query(RealEstateKeyword).filter(
+    # FBG-2 (M5) — cele doua integrari Facebook au sesiuni DIFERITE si se
+    # verifica separat. Inainte, has_facebook_keywords includea si facebook_groups,
+    # dar validarea se facea DOAR pe storage_state-ul Marketplace: user doar cu
+    # keywords FBG si fara sesiune Marketplace => banner permanent fals; invers,
+    # cookies de grup expirate cu sesiune Marketplace valida => nicio avertizare.
+    has_fb_marketplace_kw = db.query(RealEstateKeyword).filter(
         RealEstateKeyword.user_id == current_user.id,
         RealEstateKeyword.is_active == True,
-        RealEstateKeyword.platform.in_(("facebook_marketplace", "facebook_groups")),
+        RealEstateKeyword.platform == "facebook_marketplace",
     ).first() is not None
+    has_fb_groups_kw = db.query(RealEstateKeyword).filter(
+        RealEstateKeyword.user_id == current_user.id,
+        RealEstateKeyword.is_active == True,
+        RealEstateKeyword.platform == "facebook_groups",
+    ).first() is not None
+
+    # Sesiunea Marketplace (storage_state) — relevanta DOAR pentru keywords
+    # facebook_marketplace.
     fb_session_valid = None
-    if has_fb_keyword:
+    if has_fb_marketplace_kw:
         try:
             import glob, os
             files = glob.glob("data/facebook_session_*.json")
@@ -518,13 +530,32 @@ def get_stats(
         except Exception:
             fb_session_valid = False
 
+    # Cookie-urile per-grup (FBG) — starea vine din rularile reale ale scraperului
+    # de grupuri (last_run_status), nu din fisierele de sesiune Marketplace.
+    fbg_cookies_invalid = False
+    if has_fb_groups_kw:
+        try:
+            from app.models.facebook_group_config import FacebookGroupConfig
+            fbg_cookies_invalid = db.query(FacebookGroupConfig).filter(
+                FacebookGroupConfig.user_id == current_user.id,
+                FacebookGroupConfig.is_active == True,  # noqa: E712
+                FacebookGroupConfig.last_run_status.in_(
+                    ("cookies_expirate", "cookies_invalide")),
+            ).first() is not None
+        except Exception:
+            fbg_cookies_invalid = False
+
     return {
         "total_listings": total,
         "active_keywords": kw_count,
         "by_grade": {g: c for g, c in by_grade},
         "by_platform": {p: c for p, c in by_platform},
         "facebook_session_valid": fb_session_valid,
-        "has_facebook_keywords": has_fb_keyword,
+        # has_facebook_keywords ramane cheia istorica a bannerului de sesiune
+        # Marketplace din feed — acum inseamna exact ce verifica bannerul.
+        "has_facebook_keywords": has_fb_marketplace_kw,
+        "has_facebook_groups_keywords": has_fb_groups_kw,
+        "fbg_cookies_invalid": fbg_cookies_invalid,
     }
 
 

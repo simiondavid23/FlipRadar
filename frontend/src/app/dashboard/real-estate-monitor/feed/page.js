@@ -220,9 +220,22 @@ export default function REFeedPage() {
         <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 14px", marginTop: "14px", background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: "12px" }}>
           <AlertTriangle style={{ width: "16px", height: "16px", color: "#fb923c", flexShrink: 0 }} strokeWidth={1.8} />
           <div>
-            <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Sesiunea Facebook a expirat</p>
+            <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Sesiunea Facebook Marketplace a expirat</p>
             <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
-              Keyword-urile Facebook nu vor returna rezultate. Reautentifică-te din <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>.
+              Keyword-urile Facebook Marketplace nu vor returna rezultate. Reautentifică-te din <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>.
+            </p>
+          </div>
+        </div>
+      )}
+      {/* FBG-2 (M5): banner separat pentru cookie-urile Grupurilor FB — stare din
+          last_run_status al configurilor, nu din sesiunea Marketplace. */}
+      {stats.has_facebook_groups_keywords && stats.fbg_cookies_invalid && (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 14px", marginTop: "14px", background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: "12px" }}>
+          <AlertTriangle style={{ width: "16px", height: "16px", color: "#fb923c", flexShrink: 0 }} strokeWidth={1.8} />
+          <div>
+            <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Cookie-urile Grupurilor Facebook au expirat</p>
+            <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
+              Grupurile configurate nu mai sunt scanate. Re-lipește cookie-urile din <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Grupuri Facebook</a>.
             </p>
           </div>
         </div>

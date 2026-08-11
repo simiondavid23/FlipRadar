@@ -210,6 +210,28 @@ def _portable_migrations(conn, inspector):
         _migrate(conn, "add_price_history_variant",
                  "ALTER TABLE price_history ADD COLUMN variant VARCHAR NOT NULL DEFAULT ''")
 
+    # FBG-2 (M4) — permalink-ul direct al postarii de grup (cardul din feed ducea
+    # doar la grup, iar utilizatorul cauta postarea manual).
+    if (_table_exists(inspector, "facebook_group_posts")
+            and not _column_exists(inspector, "facebook_group_posts", "post_url")):
+        _migrate(conn, "add_fbg_post_url",
+                 "ALTER TABLE facebook_group_posts ADD COLUMN post_url TEXT")
+
+    # FBG-2 (m3) — dedup-ul din _process_config filtreaza pe (user_id, post_id)
+    # la fiecare postare scrapata; fara index era table scan.
+    if _table_exists(inspector, "facebook_group_posts"):
+        _migrate(conn, "idx_fbg_posts_user_post",
+                 "CREATE INDEX IF NOT EXISTS idx_fbg_posts_user_post "
+                 "ON facebook_group_posts(user_id, post_id)")
+
+    # FBG-2 (m1) — is_read moare odata cu endpoint-urile de postari brute (cod
+    # mort, precedentul MKT-CLEAN). DROP COLUMN e suportat de PostgreSQL si de
+    # SQLite >= 3.35 (Python 3.11+ vine cu 3.37+).
+    if (_table_exists(inspector, "facebook_group_posts")
+            and _column_exists(inspector, "facebook_group_posts", "is_read")):
+        _migrate(conn, "drop_fbg_posts_is_read",
+                 "ALTER TABLE facebook_group_posts DROP COLUMN is_read")
+
 
 def run_migrations():
     """Apply any pending column additions."""
