@@ -115,6 +115,37 @@ def _parse_card_lines(lines: list) -> tuple:
     return price, currency, title, location
 
 
+# FBM-1c: browserul pornea fara nicio masca — user-agent "HeadlessChrome/141.0" si
+# navigator.webdriver=true. Scanul ruleaza periodic din scheduler pe storage_state-ul
+# contului REAL, deci fiecare rulare anunta "sunt bot" cu sesiunea utilizatorului
+# (profil clasic de checkpoint pe cont). Masca e copiata de la facebook_group_scraper,
+# care o are deja — tinem cele trei constante la nivel de modul ca sa fie verificabile
+# fara browser.
+_LAUNCH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+]
+
+_CONTEXT_KWARGS = {
+    "user_agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "viewport": {"width": 1366, "height": 768},
+    "locale": "ro-RO",
+}
+
+_STEALTH_INIT_JS = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
+            window.chrome = {runtime: {}};
+        """
+
+
 def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
     from app.services.log_manager import log_manager
     from app.scrapers.auto.listings.facebook_auto_scraper import (
@@ -158,13 +189,15 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
     results = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=_LAUNCH_ARGS)
             try:
                 with open(session_path, "r", encoding="utf-8") as f:
                     storage = json.load(f)
-                context = browser.new_context(storage_state=storage)
+                context = browser.new_context(storage_state=storage, **_CONTEXT_KWARGS)
             except Exception:
-                context = browser.new_context()
+                context = browser.new_context(**_CONTEXT_KWARGS)
+            # Ascunde indicatorii de automatizare (ambele ramuri de context).
+            context.add_init_script(_STEALTH_INIT_JS)
             page = context.new_page()
             page.set_default_timeout(20000)
             try:

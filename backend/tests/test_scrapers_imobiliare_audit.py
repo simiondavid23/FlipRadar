@@ -132,6 +132,31 @@ def test_fb_card_fallback_pe_titlu_nu_consuma_linia():
     assert loc == "Cluj-Napoca"
 
 
+def test_fb_masca_user_agent_nu_mai_e_headless():
+    # browserul emitea "HeadlessChrome/141.0" pe sesiunea REALA a utilizatorului.
+    from app.scrapers.real_estate.facebook_real_estate import _CONTEXT_KWARGS
+    ua = _CONTEXT_KWARGS["user_agent"]
+    assert "Headless" not in ua
+    assert "Chrome/" in ua
+
+
+def test_fb_masca_init_script_ascunde_webdriver():
+    from app.scrapers.real_estate.facebook_real_estate import _STEALTH_INIT_JS
+    assert "webdriver" in _STEALTH_INIT_JS
+
+
+def test_fb_masca_aplicata_pe_ambele_ramuri_de_context():
+    # pin pe sursa: o refactorizare viitoare sa nu piarda masca pe una din ramuri
+    # (cea cu storage_state sau fallback-ul fara).
+    import inspect
+    from app.scrapers.real_estate import facebook_real_estate as fb
+    src = inspect.getsource(fb.search_facebook_real_estate)
+    assert src.count("new_context(") == 2
+    assert src.count("**_CONTEXT_KWARGS") == 2
+    assert "add_init_script" in src
+    assert "args=_LAUNCH_ARGS" in src
+
+
 def test_fb_card_fallback_cu_simbolul_inaintea_numarului():
     # "€350" — ordinea inversa a adiacentei; _parse_price pe toata linia ar da 2350.
     price, cur, title, loc = fb_card(["Apartament 2 camere €350/lună", "Brașov"])
