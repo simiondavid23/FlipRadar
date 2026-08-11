@@ -62,7 +62,7 @@ def _resale_price_ron(kw: AutoKeyword) -> Optional[float]:
 AUTO_PLATFORMS = ["autovit", "olx_auto", "mobile_de", "autoscout24", "facebook_auto", "kleinanzeigen_auto"]
 
 
-def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
+def _call_scraper(kw: AutoKeyword, page: int = 1, db=None) -> list:
     """Dispatch to the correct platform scraper for a given page."""
     import asyncio
 
@@ -112,8 +112,13 @@ def _call_scraper(kw: AutoKeyword, page: int = 1) -> list:
             # Scraper SINCRON (curl_cffi + JSON structurat, ca la Radar Piata — fara
             # Playwright/asyncio). Apelat direct, nu prin asyncio.run.
             from app.scrapers.auto.listings.facebook_auto_scraper import search_facebook_auto
+            # FB-AUDIT A2: sesiunea se rezolva PER USER (kw.user_id), nu "cea mai recenta
+            # de pe disc" — altfel scanul acestui user rula pe contul altuia.
+            from app.services.facebook_session import resolve_facebook_session_path
             query = " ".join(x for x in [kw.make, kw.model, kw.query] if x)
-            return search_facebook_auto(query=query, filters=filters, page=page)
+            return search_facebook_auto(
+                query=query, filters=filters, page=page,
+                session_path=resolve_facebook_session_path(db, kw.user_id))
 
         elif platform == "kleinanzeigen_auto":
             from app.scrapers.auto.listings.kleinanzeigen_auto import search_kleinanzeigen_auto
@@ -340,7 +345,7 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None,
             total_new = 0
             total_seen = 0
             while True:
-                results = _call_scraper(kw, page=page)
+                results = _call_scraper(kw, page=page, db=db)
                 if not results:
                     break
                 total_seen += len(results)

@@ -23,8 +23,6 @@ Ambarcatiuni") — confirmat live (== id-ul din PLATFORM_CATEGORIES['facebook'] 
 category_id de pe anunturile reale de masini). Filtram client-side pe ea ca sa scapam de
 jante/piese/necorelate pe care le intoarce cautarea fuzzy FB.
 """
-import glob
-import os
 from datetime import datetime
 from typing import Optional
 
@@ -36,15 +34,6 @@ from app.services.radar.facebook_scraper import (
     is_facebook_session_valid, _load_cookies, _build_search_url, _fetch,
     _iter_listing_objects, _parse_price, _parse_location, _is_active, _deep_first, _BASE,
 )
-
-_SESSION_GLOB = "data/facebook_session_*.json"
-
-
-def _find_session_file() -> Optional[str]:
-    """Cel mai recent fisier de sesiune Facebook (storage_state salvat la login)."""
-    files = glob.glob(_SESSION_GLOB)
-    return max(files, key=os.path.getmtime) if files else None
-
 
 def _is_session_valid(session_path: str) -> bool:
     """Delegat la validatorul Radar (fisier existent + cookie c_user + varsta < 30 zile).
@@ -67,12 +56,16 @@ def _vehicles_category_id() -> str:
 
 
 def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
-                         max_scrolls: int = 10) -> list:
+                         max_scrolls: int = 10, session_path: Optional[str] = None) -> list:
     """Cauta vehicule pe Facebook Marketplace prin curl_cffi + JSON structurat.
 
     Semnatura pastrata compatibila cu apelul din auto_listings_scanner
     (query/filters/page). `page`/`max_scrolls` sunt NO-OP (un singur fetch aduce tot
     feed-ul server-rendered); page>1 -> [] (semnal „gata", ca la Radar).
+
+    FB-AUDIT A2: `session_path` vine de la apelant, rezolvat PER USER cu
+    resolve_facebook_session_path. Nu mai exista descoperire pe disc aici — fara cale,
+    scanul nu ruleaza (mai bine 0 rezultate decat scan pe contul altui user).
     """
     filters = filters or {}
     query = (query or "").strip()
@@ -81,7 +74,6 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
     if page and page > 1:
         return []
 
-    session_path = _find_session_file()
     if not session_path or not is_facebook_session_valid(session_path):
         log_manager.emit("auto_listings", "WARN",
             "Facebook Auto: sesiune expirata/inexistenta. Reautentifica din Setari Radar -> Facebook.")

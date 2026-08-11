@@ -326,11 +326,16 @@ async def search_listings(
     q: str = Query("", description="Cuvant cheie / marca"),
     platforms: str = Query("autovit,olx_auto", description="Lista platforme separate prin virgula"),
     filters: Optional[str] = Query(None, description="JSON encodat cu filtre"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Cauta anunturi auto pe platformele selectate, in paralel (asyncio.gather)."""
     f = _parse_filters(filters)
     make = f.get("make", "") or q
+    # FB-AUDIT A2: sesiunea Facebook a userului CURENT (inainte: cel mai recent fisier
+    # de pe disc, deci potential contul altui user).
+    from app.services.facebook_session import resolve_facebook_session_path
+    fb_session = resolve_facebook_session_path(db, current_user.id)
     builders = {
         # SCRAPE-AUDIT: la mobile_de/autoscout24/kleinanzeigen dict-ul de filtre
         # ateriza pe pozitia `model` -> AttributeError inghitit de gather -> 0
@@ -340,7 +345,7 @@ async def search_listings(
         "mobile_de": lambda: search_mobile_de(
             f.get("make_id", "") or make, f.get("model", ""), q, f),
         "autoscout24": lambda: search_autoscout24(make, f.get("model", ""), f),
-        "facebook_auto": lambda: search_facebook_auto(q, f),
+        "facebook_auto": lambda: search_facebook_auto(q, f, session_path=fb_session),
         "kleinanzeigen_auto": lambda: search_kleinanzeigen_auto(
             q, make, f.get("model", ""), f),
     }

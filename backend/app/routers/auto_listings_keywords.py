@@ -324,12 +324,14 @@ def update_listing_status(
     return {"ok": True}
 
 
-def _latest_facebook_session():
-    """Cea mai recenta sesiune Facebook salvata (acelasi pattern ca /stats)."""
+def _facebook_session_for(db, user_id):
+    """Sesiunea Facebook a userului dat (acelasi resolver ca /stats si ca scanerele).
+
+    FB-AUDIT A2: se numea _latest_facebook_session si intorcea cel mai recent fisier de
+    pe disc — imbogatirea unui anunt al userului B putea folosi contul userului A."""
     try:
-        import glob, os
-        files = glob.glob("data/facebook_session_*.json")
-        return max(files, key=os.path.getmtime) if files else None
+        from app.services.facebook_session import resolve_facebook_session_path
+        return resolve_facebook_session_path(db, user_id)
     except Exception:
         return None
 
@@ -355,7 +357,7 @@ def get_listing_detail(
         detail = None
         if fn and listing.url:
             try:
-                detail = (fn(listing.url, _latest_facebook_session())
+                detail = (fn(listing.url, _facebook_session_for(db, current_user.id))
                           if listing.platform == "facebook_auto" else fn(listing.url))
             except Exception as exc:
                 print(f"[auto detail] {listing.platform} eroare: {exc}")
@@ -575,9 +577,11 @@ def get_stats(
     fb_session_valid = None
     if has_fb_keyword:
         try:
-            import glob, os
-            files = glob.glob("data/facebook_session_*.json")
-            session_path = max(files, key=os.path.getmtime) if files else None
+            # FB-AUDIT A2/A3: sesiunea userului CURENT, pe calea din DATA_DIR — inainte
+            # se lua cel mai recent fisier din CWD, deci bannerul putea raporta "valida"
+            # pe baza sesiunii altui user (sau "lipsa" desi Radar o vedea).
+            from app.services.facebook_session import resolve_facebook_session_path
+            session_path = resolve_facebook_session_path(db, current_user.id)
             if session_path:
                 from app.scrapers.auto.listings.facebook_auto_scraper import _is_session_valid
                 fb_session_valid = _is_session_valid(session_path)

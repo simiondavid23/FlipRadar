@@ -236,7 +236,12 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None, db=Non
             # Scraper SINCRON (sync_playwright, sesiune storage_state) — apelat
             # direct, NU prin asyncio.run (sync_playwright nu merge in event loop).
             from app.scrapers.real_estate.facebook_real_estate import search_facebook_real_estate
-            return search_facebook_real_estate(query=kw.query or "", filters=filters)
+            # FB-AUDIT A2: sesiunea se rezolva PER USER (kw.user_id), nu "cea mai recenta
+            # de pe disc" — altfel scanul acestui user rula pe contul altuia.
+            from app.services.facebook_session import resolve_facebook_session_path
+            return search_facebook_real_estate(
+                query=kw.query or "", filters=filters,
+                session_path=resolve_facebook_session_path(db, kw.user_id))
     except Exception as exc:
         log_manager.emit("real_estate", "ERR",
             f"{platform} eroare: {str(exc)[:100]}")

@@ -175,10 +175,12 @@ _STEALTH_INIT_JS = """
         """
 
 
-def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
+def search_facebook_real_estate(query: str = "", filters: dict = {},
+                                session_path: Optional[str] = None) -> list:
+    """FB-AUDIT A2: `session_path` vine de la apelant (real_estate_scanner._call_scraper),
+    rezolvat PER USER cu resolve_facebook_session_path. Fara descoperire pe disc aici."""
     from app.services.log_manager import log_manager
-    from app.scrapers.auto.listings.facebook_auto_scraper import (
-        _find_session_file, _is_session_valid)
+    from app.scrapers.auto.listings.facebook_auto_scraper import _is_session_valid
     filters = filters or {}
 
     # GUARD: nu porni scan pe o categorie NECONFIRMATA (ex. propertyforsale/vanzare —
@@ -192,7 +194,6 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
             f"(vezi re_categories.RE_PROPERTY_TYPES) — scan omis, 0 rezultate.")
         return []
 
-    session_path = _find_session_file()
     if not session_path or not _is_session_valid(session_path):
         log_manager.emit("real_estate", "WARN",
             "Facebook RE: sesiune expirata sau inexistenta. "

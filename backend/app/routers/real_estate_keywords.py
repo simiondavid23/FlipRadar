@@ -519,9 +519,11 @@ def get_stats(
     fb_session_valid = None
     if has_fb_marketplace_kw:
         try:
-            import glob, os
-            files = glob.glob("data/facebook_session_*.json")
-            session_path = max(files, key=os.path.getmtime) if files else None
+            # FB-AUDIT A2/A3: sesiunea userului CURENT, pe calea din DATA_DIR — inainte
+            # se lua cel mai recent fisier din CWD, deci bannerul putea raporta "valida"
+            # pe baza sesiunii altui user (sau "lipsa" desi Radar o vedea).
+            from app.services.facebook_session import resolve_facebook_session_path
+            session_path = resolve_facebook_session_path(db, current_user.id)
             if session_path:
                 from app.scrapers.auto.listings.facebook_auto_scraper import _is_session_valid
                 fb_session_valid = _is_session_valid(session_path)
