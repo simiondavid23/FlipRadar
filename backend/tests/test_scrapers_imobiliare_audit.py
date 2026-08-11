@@ -101,10 +101,44 @@ def test_fb_card_euro_in_titlu_nu_schimba_moneda_pretului():
 
 
 def test_fb_card_pret_cu_perioada_pe_aceeasi_linie():
+    # linie PUR pret chiar cu perioada lipita — se consuma, nu ajunge titlu.
     price, cur, title, _ = fb_card(
         ["1.500 lei / lună", "Garsonieră ultracentral", "Cluj-Napoca"])
     assert (price, cur) == (1500.0, "RON")
     assert title == "Garsonieră ultracentral"
+
+
+# ── FBM-1b: titlul care contine el insusi pretul ─────────────────────────────────
+
+def test_fb_card_titlu_cu_pret_inclus_nu_bate_linia_pur_pret():
+    # RESTUL semnalat de FBM-1a: titlul are SI cifre SI valuta, iar _parse_price pe
+    # toata linia lipea cifrele in "2,350" -> price=2350. Pretul trebuie luat de pe
+    # linia PUR pret, iar titlul sa ramana intreg.
+    price, cur, title, loc = fb_card(
+        ["2 camere, 350 €/lună", "350 €", "Cluj-Napoca"])
+    assert price == 350.0
+    assert cur == "EUR"
+    assert title == "2 camere, 350 €/lună"
+    assert loc == "Cluj-Napoca"
+
+
+def test_fb_card_fallback_pe_titlu_nu_consuma_linia():
+    # fara linie pur-pret: pretul vine din substringul lipit de valuta, dar linia
+    # ramane titlu (altfel titlul ar fi fost "Cluj-Napoca").
+    price, cur, title, loc = fb_card(["2 camere, 350 €/lună", "Cluj-Napoca"])
+    assert price == 350.0
+    assert cur == "EUR"
+    assert title == "2 camere, 350 €/lună"
+    assert loc == "Cluj-Napoca"
+
+
+def test_fb_card_fallback_cu_simbolul_inaintea_numarului():
+    # "€350" — ordinea inversa a adiacentei; _parse_price pe toata linia ar da 2350.
+    price, cur, title, loc = fb_card(["Apartament 2 camere €350/lună", "Brașov"])
+    assert price == 350.0
+    assert cur == "EUR"
+    assert title == "Apartament 2 camere €350/lună"
+    assert loc == "Brașov"
 
 
 # ── zone: diacritice + granita de cuvant + criteriul keyword-ului ────────────────

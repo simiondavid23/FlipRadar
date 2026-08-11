@@ -50,29 +50,63 @@ def _parse_price(raw: str) -> Optional[float]:
 # titlul "2 camere de inchiriat, mobilat" iesea ca price=2.0 si impingea pretul real
 # in pozitia de titlu. Lookaround-ul (?<![^\W\d_]) = "nu e lipit de o litera" (unicode,
 # deci si diacriticele romanesti): prinde "1500lei" dar nu "Aleile" sau "leilor".
-_PRICE_CURRENCY_RE = re.compile(r"€|(?<![^\W\d_])(?:euro|eur|ron|lei)(?![^\W\d_])",
-                                re.IGNORECASE)
+_CUR_TOKEN = r"(?:€|(?<![^\W\d_])(?:euro|eur|ron|lei)(?![^\W\d_]))"
 _EUR_CURRENCY_RE = re.compile(r"€|(?<![^\W\d_])(?:euro|eur)(?![^\W\d_])", re.IGNORECASE)
+
+# FBM-1b, pasul 1: linie PUR pret — toata linia e numar + valuta (+ perioada
+# optionala): "350 €", "€350", "RON 1,500", "1.500 lei / luna".
+_PURE_PRICE_RE = re.compile(
+    rf"^\s*(?P<pre>{_CUR_TOKEN})?\s*(?P<num>\d[\d.,\s]*?)\s*(?P<post>{_CUR_TOKEN})?"
+    rf"\s*(?:[/·]|\bpe\b)?\s*(?:lun[aă]|luna|month|mo)?\s*$", re.IGNORECASE)
+
+# FBM-1b, pasul 2: numarul LIPIT de valuta, in ambele ordini. Pe "2 camere, 350 €/luna"
+# da 350, spre deosebire de _parse_price pe toata linia care lipea cifrele in "2,350".
+_ADJACENT_PRICE_RE = re.compile(
+    rf"(?P<pre_cur>{_CUR_TOKEN})\s*(?P<num_after>\d[\d.,]*)"
+    rf"|(?P<num_before>\d[\d.,]*)\s*(?P<post_cur>{_CUR_TOKEN})", re.IGNORECASE)
 
 
 def _parse_card_lines(lines: list) -> tuple:
     """Imparte liniile unui card Marketplace in (price, currency, title, location).
 
-    Pretul se ia DOAR de pe o linie cu valuta explicita si valoare > 0, iar moneda
-    se decide pe ACEA linie — nu pe tot textul cardului (un € din titlu facea un
-    pret in lei sa fie salvat ca EUR).
+    Pas 1: prima linie PUR pret da pretul si se CONSUMA (nu mai poate ajunge titlu).
+    Pas 2 (fallback, doar daca nu exista linie pur-pret): pretul se citeste din
+    substringul lipit de valuta intr-o linie oarecare — e aproape sigur titlul cu
+    pretul inclus, deci linia NU se consuma si ramane candidata la titlu.
+    Moneda se decide pe pretul gasit, nu pe tot textul cardului.
     """
     price = None
     currency = None
-    title = ""
-    location = None
-    for line in lines:
-        if price is None and _PRICE_CURRENCY_RE.search(line):
-            pv = _parse_price(line)
+    consumed = None
+
+    for i, line in enumerate(lines):
+        m = _PURE_PRICE_RE.match(line)
+        if not m or not (m.group("pre") or m.group("post")):
+            continue                      # fara valuta explicita nu e pret
+        pv = _parse_price(m.group("num"))
+        if pv is not None and pv > 0:
+            price = pv
+            currency = "EUR" if _EUR_CURRENCY_RE.search(line) else "RON"
+            consumed = i
+            break
+
+    if price is None:
+        for line in lines:
+            m = _ADJACENT_PRICE_RE.search(line)
+            if not m:
+                continue
+            pv = _parse_price(m.group("num_after") or m.group("num_before"))
             if pv is not None and pv > 0:
                 price = pv
-                currency = "EUR" if _EUR_CURRENCY_RE.search(line) else "RON"
-                continue
+                tok = m.group("pre_cur") or m.group("post_cur")
+                currency = "EUR" if _EUR_CURRENCY_RE.search(tok) else "RON"
+                break
+
+    title = ""
+    location = None
+    for i, line in enumerate(lines):
+        if i == consumed:
+            continue
         if not title and not re.match(r"^[\d.,]+$", line):
             title = line
             continue
