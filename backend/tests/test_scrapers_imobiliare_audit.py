@@ -6,6 +6,11 @@ scraperului ("avans 15.000 euro" > pretul real de card); "54.5 mp" devenea 545
 fara granita ("interior renovat" -> IOR); criteriul de zona respingea "dorobanti"
 vs "Dorobanți"; "Reactualizat azi" pierdea data; "69,500" (mii EN) devenea 69.5;
 fallback-ul Storia salva "lei" ca EUR; o exceptie pe un anunt omora tot run-ul.
+
+SCRAPE-1d: cardul Facebook Marketplace decidea "linia e pret" pe criteriul "incepe
+cu o cifra" -> un titlu ca "2 camere de inchiriat" devenea price=2.0 (trecea de
+pret_max) si impingea pretul real in pozitia de titlu; moneda se lua de pe tot
+textul cardului, deci un € din titlu facea un pret in lei sa fie salvat ca EUR.
 """
 import re
 
@@ -14,7 +19,8 @@ import pytest
 from app.scrapers.real_estate._common import extract_surface
 from app.services.real_estate.extractor import _clean_number, extract_price
 from app.services.real_estate.zones import normalize_zone
-from app.scrapers.real_estate.facebook_real_estate import _parse_price as fb_price
+from app.scrapers.real_estate.facebook_real_estate import (
+    _parse_card_lines as fb_card, _parse_price as fb_price)
 
 
 # ── suprafata: punctul zecimal nu mai inzeceste ──────────────────────────────────
@@ -44,6 +50,61 @@ def test_clean_number_formate_ro_neschimbate():
 def test_fb_price_mii_englezesti():
     assert fb_price("RON 1,500") == 1500.0
     assert fb_price("€1.500") == 1500.0
+
+
+# ── Facebook RE: cardul se imparte in pret / titlu / locatie ────────────────────
+
+def test_fb_card_tipic_cu_pretul_pe_prima_linie():
+    price, cur, title, loc = fb_card(
+        ["1.500 lei", "Apartament 2 camere Titan", "București"])
+    assert (price, cur) == (1500.0, "RON")
+    assert title == "Apartament 2 camere Titan"
+    assert loc == "București"
+
+
+def test_fb_card_titlu_cu_cifra_initiala_nu_mai_e_luat_drept_pret():
+    # BUG REPRODUS: criteriul re.match(r"^\d", line) dadea price=2.0 (2 RON trecea
+    # de filtrul de pret maxim) si title="350 €".
+    price, cur, title, loc = fb_card(
+        ["2 camere de închiriat, mobilat", "350 €", "Cluj-Napoca"])
+    assert price == 350.0
+    assert cur == "EUR"
+    assert title == "2 camere de închiriat, mobilat"
+    assert loc == "Cluj-Napoca"
+
+
+def test_fb_card_fara_pret_da_none():
+    price, cur, title, loc = fb_card(["Garsonieră de închiriat", "Iași"])
+    assert price is None
+    assert cur is None
+    assert title == "Garsonieră de închiriat"
+    assert loc == "Iași"
+
+
+def test_fb_bucla_sare_cardul_fara_pret():
+    # bucla reala cere Playwright + sesiune FB, deci pinuim garda pe sursa:
+    # fara pret cardul e sarit inainte de a intra in rezultate (precedent SCRAPE-1a).
+    import inspect
+    from app.scrapers.real_estate import facebook_real_estate as fb
+    src = inspect.getsource(fb.search_facebook_real_estate)
+    assert "_parse_card_lines(lines)" in src
+    assert "if price is None or price <= 0:" in src
+
+
+def test_fb_card_euro_in_titlu_nu_schimba_moneda_pretului():
+    # moneda se decide pe LINIA de pret, nu pe tot textul cardului.
+    price, cur, title, _ = fb_card(
+        ["Apartament de închiriat, se accepta plata si in €", "1.500 lei", "Sibiu"])
+    assert price == 1500.0
+    assert cur == "RON"
+    assert title == "Apartament de închiriat, se accepta plata si in €"
+
+
+def test_fb_card_pret_cu_perioada_pe_aceeasi_linie():
+    price, cur, title, _ = fb_card(
+        ["1.500 lei / lună", "Garsonieră ultracentral", "Cluj-Napoca"])
+    assert (price, cur) == (1500.0, "RON")
+    assert title == "Garsonieră ultracentral"
 
 
 # ── zone: diacritice + granita de cuvant + criteriul keyword-ului ────────────────

@@ -45,6 +45,42 @@ def _parse_price(raw: str) -> Optional[float]:
         return None
 
 
+# SCRAPE-1d: o linie de card e candidat de PRET doar daca poarta valuta explicit.
+# Vechiul criteriu re.match(r"^\d", line) lua orice linie care incepe cu o cifra —
+# titlul "2 camere de inchiriat, mobilat" iesea ca price=2.0 si impingea pretul real
+# in pozitia de titlu. Lookaround-ul (?<![^\W\d_]) = "nu e lipit de o litera" (unicode,
+# deci si diacriticele romanesti): prinde "1500lei" dar nu "Aleile" sau "leilor".
+_PRICE_CURRENCY_RE = re.compile(r"€|(?<![^\W\d_])(?:euro|eur|ron|lei)(?![^\W\d_])",
+                                re.IGNORECASE)
+_EUR_CURRENCY_RE = re.compile(r"€|(?<![^\W\d_])(?:euro|eur)(?![^\W\d_])", re.IGNORECASE)
+
+
+def _parse_card_lines(lines: list) -> tuple:
+    """Imparte liniile unui card Marketplace in (price, currency, title, location).
+
+    Pretul se ia DOAR de pe o linie cu valuta explicita si valoare > 0, iar moneda
+    se decide pe ACEA linie — nu pe tot textul cardului (un € din titlu facea un
+    pret in lei sa fie salvat ca EUR).
+    """
+    price = None
+    currency = None
+    title = ""
+    location = None
+    for line in lines:
+        if price is None and _PRICE_CURRENCY_RE.search(line):
+            pv = _parse_price(line)
+            if pv is not None and pv > 0:
+                price = pv
+                currency = "EUR" if _EUR_CURRENCY_RE.search(line) else "RON"
+                continue
+        if not title and not re.match(r"^[\d.,]+$", line):
+            title = line
+            continue
+        if not location:
+            location = line
+    return price, currency, title, location
+
+
 def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
     from app.services.log_manager import log_manager
     from app.scrapers.auto.listings.facebook_auto_scraper import (
@@ -128,21 +164,14 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
 
                         text = (it.inner_text() or "").strip()
                         lines = [l.strip() for l in text.split("\n") if l.strip()]
-                        price = None
-                        title = ""
-                        location = None
-                        for line in lines:
-                            if price is None and ("RON" in line.upper() or "lei" in line.lower() or "€" in line or re.match(r"^\d", line)):
-                                pv = _parse_price(line)
-                                if pv is not None:
-                                    price = pv
-                                    continue
-                            if not title and not re.match(r"^[\d.,]+$", line):
-                                title = line
-                                continue
-                            if not location:
-                                location = line
+                        price, currency, title, location = _parse_card_lines(lines)
                         if not title:
+                            continue
+                        # Fara pret pe card nu putem aplica price_min/max ale keyword-ului
+                        # (toleranta din _matches_re_keyword lasa sa treaca orice) —
+                        # precedentul Radar/SCRAPE-1a: fara pret => skip. Chiriile au
+                        # aproape intotdeauna pretul pe card.
+                        if price is None or price <= 0:
                             continue
                         # Scannerul trimite cheia "pret_max" (nu "price_max"); acceptam ambele.
                         pmax = filters.get("pret_max") or filters.get("price_max")
@@ -156,7 +185,7 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
                             "external_id":   ext_id,
                             "title":         title,
                             "price":         price,
-                            "currency":      "EUR" if "€" in text else "RON",
+                            "currency":      currency,
                             "location":      location,
                             "url":           full,
                             "source_url":    full,
