@@ -733,9 +733,18 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
             total_brute = len(results)
             noi = dup = rej = 0
             for r in results:
-                # Query (cautare libera) local DOAR pentru platformele care nu cauta la sursa
-                # (Storia, Imobiliare.ro). Pe OLX/Facebook Marketplace query-ul merge la sursa.
-                if kw.platform in ("storia", "imobiliare_ro") and kw.query:
+                # Query (cautare libera) local pentru platformele care NU cauta (dovedit) la
+                # sursa: Storia si Imobiliare.ro nu accepta cautare libera deloc, iar la
+                # Facebook Marketplace query-ul chiar pleaca server-side, dar suportul lui pe
+                # pagina de CATEGORIE e neconfirmat (dovedit ignorat pe propertyforsale,
+                # neverificat pe propertyrentals) — deci verificam si local. Pe OLX cautarea
+                # la sursa e confirmata, acolo nu dublam.
+                # Trade-off asumat la FBM: cardul Marketplace nu are descriere, deci potrivirea
+                # se face practic pe titlu — un anunt relevant al carui titlu nu contine
+                # termenii query-ului va fi respins. Preferam sa pierdem cazuri marginale
+                # decat sa umplem feed-ul cu chirii fara legatura cu keyword-ul, cat timp
+                # suportul server-side ramane nedovedit.
+                if kw.platform in ("storia", "imobiliare_ro", "facebook_marketplace") and kw.query:
                     seed = _seed_from_raw(r)
                     text_q = f"{seed['title'] or ''} {seed['description'] or ''}"
                     if not _matches_query_local(text_q, kw.query):

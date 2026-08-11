@@ -115,6 +115,35 @@ def _parse_card_lines(lines: list) -> tuple:
     return price, currency, title, location
 
 
+def _price_in_bounds(price, filters: dict) -> bool:
+    """FBM-1d: post-filtru local pe AMBELE margini de pret.
+
+    minPrice/maxPrice pleaca si server-side, dar nimeni n-a confirmat ca Marketplace
+    chiar le aplica pe pagina de categorie — verificam si local. Scannerul trimite
+    cheile romanesti (pret_min/pret_max), API-ul mai vechi pe cele engleze: acceptam
+    ambele, prima gasita. Margine absenta (sau neparsabila) = nelimitat. `price` e
+    deja non-None aici — cardurile fara pret sunt sarite in bucla (FBM-1a).
+    """
+    filters = filters or {}
+
+    def _bound(*keys):
+        for k in keys:
+            if filters.get(k):        # 0/""/None = margine nesetata
+                try:
+                    return float(filters[k])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    pmin = _bound("pret_min", "price_min")
+    pmax = _bound("pret_max", "price_max")
+    if pmin is not None and float(price) < pmin:
+        return False
+    if pmax is not None and float(price) > pmax:
+        return False
+    return True
+
+
 # FBM-1c: browserul pornea fara nicio masca — user-agent "HeadlessChrome/141.0" si
 # navigator.webdriver=true. Scanul ruleaza periodic din scheduler pe storage_state-ul
 # contului REAL, deci fiecare rulare anunta "sunt bot" cu sesiunea utilizatorului
@@ -240,9 +269,7 @@ def search_facebook_real_estate(query: str = "", filters: dict = {}) -> list:
                         # aproape intotdeauna pretul pe card.
                         if price is None or price <= 0:
                             continue
-                        # Scannerul trimite cheia "pret_max" (nu "price_max"); acceptam ambele.
-                        pmax = filters.get("pret_max") or filters.get("price_max")
-                        if pmax and price and price > float(pmax):
+                        if not _price_in_bounds(price, filters):
                             continue
 
                         img_el = it.query_selector("img")

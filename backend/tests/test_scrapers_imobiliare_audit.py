@@ -132,6 +132,50 @@ def test_fb_card_fallback_pe_titlu_nu_consuma_linia():
     assert loc == "Cluj-Napoca"
 
 
+# ── FBM-1d: post-filtrul local de pret (ambele margini) ─────────────────────────
+
+def test_fb_pret_sub_minim_respins():
+    from app.scrapers.real_estate.facebook_real_estate import _price_in_bounds
+    assert _price_in_bounds(200.0, {"pret_min": 300}) is False
+
+
+def test_fb_pret_peste_maxim_respins():
+    from app.scrapers.real_estate.facebook_real_estate import _price_in_bounds
+    assert _price_in_bounds(900.0, {"pret_max": 500}) is False
+
+
+def test_fb_pret_in_interval_acceptat():
+    from app.scrapers.real_estate.facebook_real_estate import _price_in_bounds
+    assert _price_in_bounds(400.0, {"pret_min": 300, "pret_max": 500}) is True
+    # marginile sunt inclusive
+    assert _price_in_bounds(300.0, {"pret_min": 300, "pret_max": 500}) is True
+    assert _price_in_bounds(500.0, {"pret_min": 300, "pret_max": 500}) is True
+
+
+def test_fb_fara_margini_accepta_orice():
+    from app.scrapers.real_estate.facebook_real_estate import _price_in_bounds
+    assert _price_in_bounds(1.0, {}) is True
+    assert _price_in_bounds(999999.0, {}) is True
+    # o singura margine ramane nelimitata pe cealalta parte
+    assert _price_in_bounds(999999.0, {"pret_min": 300}) is True
+    assert _price_in_bounds(1.0, {"pret_max": 500}) is True
+
+
+def test_fb_cheile_alias_engleze_functioneaza():
+    from app.scrapers.real_estate.facebook_real_estate import _price_in_bounds
+    assert _price_in_bounds(200.0, {"price_min": 300}) is False
+    assert _price_in_bounds(900.0, {"price_max": 500}) is False
+    assert _price_in_bounds(400.0, {"price_min": 300, "price_max": 500}) is True
+
+
+def test_fb_bucla_foloseste_post_filtrul_de_pret():
+    # pin pe sursa: o refactorizare sa nu piarda plasa locala de pret.
+    import inspect
+    from app.scrapers.real_estate import facebook_real_estate as fb
+    src = inspect.getsource(fb.search_facebook_real_estate)
+    assert "_price_in_bounds(price, filters)" in src
+
+
 def test_fb_masca_user_agent_nu_mai_e_headless():
     # browserul emitea "HeadlessChrome/141.0" pe sesiunea REALA a utilizatorului.
     from app.scrapers.real_estate.facebook_real_estate import _CONTEXT_KWARGS
