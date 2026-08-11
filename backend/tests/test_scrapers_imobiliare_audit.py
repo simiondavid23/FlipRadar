@@ -210,6 +210,63 @@ def test_fb_card_fallback_cu_simbolul_inaintea_numarului():
     assert loc == "Brașov"
 
 
+# ── FBM-1e (F5): login wall servit IN pagina, pe 200, fara redirect ─────────────
+
+_HTML_MARKETPLACE = """
+<html><body><div role="main">
+  <a href="/marketplace/item/111/">Garsonieră mobilată</a>
+  <a href="/marketplace/item/222/">Apartament 3 camere</a>
+  <form action="/search/" method="get"><input name="q"></form>
+</div></body></html>
+"""
+
+
+def test_login_wall_prinde_royal_login_form():
+    from app.scrapers.real_estate.facebook_real_estate import _looks_like_login_wall
+    assert _looks_like_login_wall(
+        '<html><body><form id="royal_login_form">...</form></body></html>') is True
+
+
+def test_login_wall_prinde_perechea_email_si_pass():
+    from app.scrapers.real_estate.facebook_real_estate import _looks_like_login_wall
+    assert _looks_like_login_wall(
+        '<form><input name="email"><input type="password" name="pass"></form>') is True
+    # ghilimele simple + majuscule
+    assert _looks_like_login_wall(
+        "<FORM><INPUT NAME='EMAIL'><INPUT NAME='PASS'></FORM>") is True
+
+
+def test_login_wall_prinde_form_action_login():
+    from app.scrapers.real_estate.facebook_real_estate import _looks_like_login_wall
+    assert _looks_like_login_wall(
+        '<form method="post" action="/login/?next=https%3A%2F%2Ffb.com%2Fmarketplace">'
+        '</form>') is True
+
+
+def test_login_wall_fals_pe_pagina_de_marketplace():
+    # 0 rezultate legitime nu trebuie sa alarmeze.
+    from app.scrapers.real_estate.facebook_real_estate import _looks_like_login_wall
+    assert _looks_like_login_wall(_HTML_MARKETPLACE) is False
+
+
+def test_login_wall_fals_pe_pagina_goala():
+    from app.scrapers.real_estate.facebook_real_estate import _looks_like_login_wall
+    assert _looks_like_login_wall("") is False
+    assert _looks_like_login_wall(None) is False
+    assert _looks_like_login_wall("<html><body></body></html>") is False
+
+
+def test_fb_bucla_verifica_login_wall_doar_pe_ramura_goala():
+    # pin pe sursa: plasa sa nu dispara la refactor, iar page.content() sa nu ajunga
+    # pe calea cu iteme (cost inutil).
+    import inspect
+    from app.scrapers.real_estate import facebook_real_estate as fb
+    src = inspect.getsource(fb.search_facebook_real_estate)
+    assert "_looks_like_login_wall" in src
+    assert "page.content()" in src
+    assert src.count("page.content()") == 1
+
+
 # ── zone: diacritice + granita de cuvant + criteriul keyword-ului ────────────────
 
 def test_zone_cu_diacritice_se_potrivesc():

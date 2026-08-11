@@ -144,6 +144,32 @@ def _price_in_bounds(price, filters: dict) -> bool:
     return True
 
 
+# FBM-1e (F5, echivalentul R3 de la Radar): markerii formularului de login servit
+# IN pagina. Facebook raspunde frecvent 200 pe URL-ul ORIGINAL, cu formularul de
+# login in corpul paginii si fara redirect — verificarea pe page.url nu-l prinde.
+_LOGIN_EMAIL_RE = re.compile(r"""name\s*=\s*(?:"email"|'email'|email\b)""", re.IGNORECASE)
+_LOGIN_PASS_RE = re.compile(r"""name\s*=\s*(?:"pass"|'pass'|pass\b)""", re.IGNORECASE)
+_LOGIN_ACTION_RE = re.compile(r"""<form[^>]*\baction\s*=\s*['"]?[^'">\s]*/login""",
+                              re.IGNORECASE)
+
+
+def _looks_like_login_wall(html) -> bool:
+    """True daca html-ul poarta markerii formularului de login Facebook.
+
+    Cel putin unul: id-ul `royal_login_form`, perechea name="email" + name="pass" pe
+    acelasi document, sau un <form> al carui action contine "/login". Tolerant la
+    ghilimele simple/duble si la majuscule. Pe o pagina normala de marketplace: False.
+    """
+    if not html:
+        return False
+    low = str(html).lower()
+    if "royal_login_form" in low:
+        return True
+    if _LOGIN_EMAIL_RE.search(low) and _LOGIN_PASS_RE.search(low):
+        return True
+    return bool(_LOGIN_ACTION_RE.search(low))
+
+
 # FBM-1c: browserul pornea fara nicio masca — user-agent "HeadlessChrome/141.0" si
 # navigator.webdriver=true. Scanul ruleaza periodic din scheduler pe storage_state-ul
 # contului REAL, deci fiecare rulare anunta "sunt bot" cu sesiunea utilizatorului
@@ -244,6 +270,24 @@ def search_facebook_real_estate(query: str = "", filters: dict = {},
                 items = page.query_selector_all('a[href*="/marketplace/item/"]')
                 log_manager.emit("real_estate", "INFO",
                     f"Facebook RE: {len(items)} carduri gasite")
+
+                # F5: zero carduri poate insemna "chiar n-are ce afisa" SAU sesiune
+                # moarta cu formularul de login servit in pagina, pe 200, fara redirect
+                # (deci verificarea pe page.url de mai sus tace). Inainte, al doilea caz
+                # raporta "0 rezultate" cu status OK — zile intregi, fara avertisment,
+                # iar bannerul din feed se uita doar la varsta fisierului de sesiune.
+                # Citim HTML-ul DOAR pe ramura goala — pe calea cu iteme ar fi cost inutil.
+                if not items:
+                    try:
+                        html = page.content()
+                    except Exception:
+                        html = ""
+                    if _looks_like_login_wall(html):
+                        log_manager.emit("real_estate", "WARN",
+                            "Facebook RE: pagina de login servita fara redirect — sesiune "
+                            "posibil invalida. Reconecteaza-te din Setari Radar, "
+                            "sectiunea Facebook.")
+                        return []
 
                 seen = set()
                 for it in items[:40]:
