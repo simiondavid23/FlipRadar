@@ -328,10 +328,11 @@ def _fb_obj(oid: str, title: str, cat=None, amount="10000.00") -> dict:
     }
 
 
-def _fb_auto(monkeypatch, obiecte: list, filters=None) -> list:
-    """Ruleaza search_facebook_auto REAL (deci si post-filtrul), cu sesiunea, fetch-ul
+def _fb_auto(monkeypatch, obiecte: list, filters=None, logs=None) -> list:
+    """Ruleaza search_facebook_auto REAL (deci si post-filtrele), cu sesiunea, fetch-ul
     si iterarea JSON stubuite — piesele importate din radar/facebook_scraper se
-    monkeypatch-uiesc pe modulul care le-a importat."""
+    monkeypatch-uiesc pe modulul care le-a importat. `logs` (lista) colecteaza
+    (nivel, mesaj) din log_manager.emit."""
     from app.scrapers.auto.listings import facebook_auto_scraper as fa
 
     monkeypatch.setattr(fa, "is_facebook_session_valid", lambda p: True)
@@ -339,7 +340,8 @@ def _fb_auto(monkeypatch, obiecte: list, filters=None) -> list:
     monkeypatch.setattr(fa, "_fetch",
                         lambda url, cookies: ("<html></html>", "https://www.facebook.com/marketplace/search/"))
     monkeypatch.setattr(fa, "_iter_listing_objects", lambda html: list(obiecte))
-    monkeypatch.setattr(fa.log_manager, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(fa.log_manager, "emit",
+                        lambda module, level, msg: logs.append((level, msg)) if logs is not None else None)
     return fa.search_facebook_auto(query="bmw seria 3", filters=filters or {},
                                    session_path="sesiune.json")
 
@@ -366,6 +368,85 @@ def test_fb_auto_fara_model_nu_filtreaza_nimic(monkeypatch):
     obiecte = [_fb_obj("1", "BMW Seria 3 320d"), _fb_obj("2", "Dacia Logan")]
     assert len(_fb_auto(monkeypatch, obiecte)) == 2
     assert len(_fb_auto(monkeypatch, obiecte, filters={"model": "   "})) == 2
+
+
+# ── facebook_auto: filtru de marca (dur) + supapa pe model (A5.1) ───────────────
+
+def test_fb_auto_marca_exclude_alte_marci(monkeypatch):
+    # Zgomotul documentat in scraper (Opel Mokka, camioane MAN) pica pe marca.
+    out = _fb_auto(monkeypatch,
+                   [_fb_obj("1", "BMW 320d Touring 2016"), _fb_obj("2", "Opel Mokka 1.4")],
+                   filters={"make": "BMW"})
+    assert [r["title"] for r in out] == ["BMW 320d Touring 2016"]
+
+
+def test_fb_auto_fara_marca_nu_filtreaza_nimic(monkeypatch):
+    obiecte = [_fb_obj("1", "BMW 320d"), _fb_obj("2", "Opel Mokka")]
+    assert len(_fb_auto(monkeypatch, obiecte)) == 2
+    assert len(_fb_auto(monkeypatch, obiecte, filters={"make": "  "})) == 2
+
+
+def test_fb_auto_marca_cu_diacritice_in_ambele_sensuri(monkeypatch):
+    out = _fb_auto(monkeypatch, [_fb_obj("1", "Skoda Octavia 2.0 TDI")],
+                   filters={"make": "Škoda"})
+    assert len(out) == 1
+    out = _fb_auto(monkeypatch, [_fb_obj("2", "Škoda Octavia 2.0 TDI")],
+                   filters={"make": "Skoda"})
+    assert len(out) == 1
+
+
+def test_supapa_modelul_fara_potrivire_pastreaza_anunturile_marcii(monkeypatch):
+    """TINTA A5.1: pe Facebook un "Seria 3" real se numeste "BMW 320d Touring".
+
+    Filtrul strict de model ar fi golit feed-ul, TACUT. Supapa pastreaza anunturile
+    marcii (Opel-ul tot cade, pe marca) si semnaleaza cu WARN.
+    """
+    logs = []
+    out = _fb_auto(monkeypatch,
+                   [_fb_obj("1", "BMW 320d Touring 2016"), _fb_obj("2", "BMW 318i 2014"),
+                    _fb_obj("3", "Opel Astra 1.6")],
+                   filters={"make": "BMW", "model": "Seria 3"}, logs=logs)
+    assert [r["title"] for r in out] == ["BMW 320d Touring 2016", "BMW 318i 2014"]
+    warns = [m for lvl, m in logs if lvl == "WARN"]
+    assert len(warns) == 1 and "Seria 3" in warns[0] and "BMW" in warns[0]
+
+
+def test_supapa_nu_se_declanseaza_cand_modelul_potriveste(monkeypatch):
+    # Cand modelul chiar apare intr-un titlu, filtrul se aplica normal.
+    logs = []
+    out = _fb_auto(monkeypatch,
+                   [_fb_obj("1", "BMW Seria 3 320d"), _fb_obj("2", "BMW X5 xDrive")],
+                   filters={"make": "BMW", "model": "Seria 3"}, logs=logs)
+    assert [r["title"] for r in out] == ["BMW Seria 3 320d"]
+    assert [m for lvl, m in logs if lvl == "WARN"] == []
+
+
+def test_supapa_nu_inventeaza_rezultate_pe_lista_goala(monkeypatch):
+    # Lista era deja goala dupa filtrul de marca -> nu e nimic de salvat.
+    logs = []
+    out = _fb_auto(monkeypatch, [_fb_obj("1", "Opel Astra 1.6")],
+                   filters={"make": "BMW", "model": "Seria 3"}, logs=logs)
+    assert out == []
+    assert [m for lvl, m in logs if lvl == "WARN"] == []
+
+
+def test_scanner_trimite_marca_in_filters_la_facebook_auto(monkeypatch):
+    # Cablarea marcii, ca la model (A5): fara ea, filtrul de marca ar fi inert.
+    from types import SimpleNamespace
+
+    from app.services import auto_listings_scanner as als
+
+    primite = {}
+    monkeypatch.setattr("app.scrapers.auto.listings.facebook_auto_scraper.search_facebook_auto",
+                        lambda **k: (primite.update(k), [])[1])
+    monkeypatch.setattr("app.services.facebook_session.resolve_facebook_session_path",
+                        lambda db, uid: "sesiune.json")
+    kw = SimpleNamespace(platform="facebook_auto", user_id=1, make="BMW", model="Seria 3",
+                         query=None, year_from=None, year_to=None, km_max=None,
+                         price_max=None, fuel_type=None, transmission=None,
+                         body_type=None, category=None, tech_filters=None)
+    als._call_scraper(kw, page=1, db=None)
+    assert primite["filters"]["make"] == "BMW"
 
 
 def test_scanner_trimite_modelul_in_filters_la_facebook_auto(monkeypatch):

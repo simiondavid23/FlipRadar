@@ -100,12 +100,20 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
         return []
 
     veh_cat = _vehicles_category_id()
-    # A5 (audit FB): cautarea Marketplace e fuzzy — "BMW Seria 3" aduce si alte modele
-    # sau marci, iar singurul filtru de pana acum era categoria de vehicule. Post-filtru
-    # de model pe TITLU, paritate cu autovit (SCRAPE-1b): fold de diacritice pe ambele
-    # parti + substring. Modelul vine din filters["model"] — scanner-ul il concateneaza
-    # in `query`, dar il pastreaza si separat in filters (asa il citeste si autovit).
-    # Fail-open cand lipseste/e gol: nu filtram nimic.
+    # A5 (audit FB): cautarea Marketplace e fuzzy — "BMW Seria 3" aduce si alte marci
+    # si modele, iar singurul filtru de pana acum era categoria de vehicule. Marca si
+    # modelul vin din filters — scanner-ul le concateneaza in `query`, dar le pastreaza
+    # si separat (asa citeste si autovit modelul). Fail-open cand lipsesc/sunt goale.
+    #
+    # A5.1 — cele doua filtre NU sunt simetrice, deliberat:
+    #   MARCA  = filtru dur. Apare aproape mereu in titlu si prinde exact zgomotul
+    #            documentat sus (Opel Mokka, camioane MAN, jante de alta marca).
+    #   MODEL  = filtru cu SUPAPA (vezi mai jos, dupa bucla). Pe autovit modelul e in
+    #            path-ul URL, deci site-ul filtreaza si titlurile il contin; pe Facebook
+    #            nu exista filtru server-side, iar un anunt legitim de "Seria 3" se
+    #            numeste de regula "BMW 320d Touring" — fara tokenul cerut.
+    make_raw = str(filters.get("make") or "").strip()
+    make_tok = fold_auto(make_raw).strip()
     model_raw = str(filters.get("model") or "").strip()
     model_tok = fold_auto(model_raw).strip()
     by_id: dict[str, dict] = {}
@@ -116,7 +124,7 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
 
     results = []
     skipped_cat = 0
-    skipped_model = 0
+    skipped_make = 0
     for oid, o in by_id.items():
         if not _is_active(o):
             continue
@@ -128,9 +136,10 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
         if cat_id is not None and str(cat_id) != veh_cat:
             skipped_cat += 1
             continue
-        # Post-filtru de model (A5) — dupa categorie, inainte sa construim rezultatul.
-        if model_tok and model_tok not in fold_auto(title):
-            skipped_model += 1
+        # Post-filtru de MARCA (A5.1) — dupa categorie, inainte sa construim rezultatul.
+        # Modelul se aplica dupa bucla, ca sa poata avea supapa pe lista intreaga.
+        if make_tok and make_tok not in fold_auto(title):
+            skipped_make += 1
             continue
 
         price, currency = _parse_price(o)
@@ -169,9 +178,28 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
             "description":   None,
         })
 
+    # Post-filtru de MODEL cu SUPAPA (A5.1): daca modelul ar goli o lista care CHIAR
+    # avea anunturi ale marcii, nu se aplica — mai bine anunturile marcii decat un feed
+    # gol si tacut, fiindca titlurile FB scriu "320d", nu "Seria 3". O lista deja goala
+    # nu are ce salva: supapa nu inventeaza rezultate.
+    skipped_model = 0
+    if model_tok and results:
+        kept = [r for r in results if model_tok in fold_auto(r["title"])]
+        if kept:
+            skipped_model = len(results) - len(kept)
+            results = kept
+        else:
+            log_manager.emit("auto_listings", "WARN",
+                f"Facebook Auto: modelul '{model_raw}' nu apare in niciun titlu — se pastreaza "
+                f"cele {len(results)} anunturi ale marcii {make_raw or '(oricare)'}; "
+                f"verifica scrierea modelului")
+
     if skipped_cat:
         log_manager.emit("auto_listings", "INFO",
             f"Facebook Auto: {skipped_cat} anunturi excluse (nu sunt categoria vehicule)")
+    if skipped_make:
+        log_manager.emit("auto_listings", "INFO",
+            f"Facebook Auto: {skipped_make} anunturi excluse (titlul nu contine marca '{make_raw}')")
     if skipped_model:
         log_manager.emit("auto_listings", "INFO",
             f"Facebook Auto: {skipped_model} anunturi excluse (titlul nu contine modelul '{model_raw}')")
