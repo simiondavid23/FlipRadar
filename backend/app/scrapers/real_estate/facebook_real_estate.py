@@ -22,7 +22,12 @@ def _category_url(tip_anunt: str) -> str:
 
 def _parse_price(raw: str) -> Optional[float]:
     """SCRAPE-AUDIT: replace-ul orb facea "RON 1,500" -> 1.5 (Marketplace foloseste
-    frecvent formatul EN cu virgula de mii). Virgula in grupuri de 3 = mii."""
+    frecvent formatul EN cu virgula de mii). Virgula in grupuri de 3 = mii.
+
+    Aceeasi regula, forma canonica pentru cod NOU: app/utils/number_format.parse_number
+    (vezi si services/real_estate/extractor._clean_number). Copia asta ramane fiindca
+    are preprocesare proprie si teste proprii — unificarea e o curatenie separata.
+    """
     cleaned = re.sub(r"[^\d.,]", "", raw or "")
     if not cleaned:
         return None

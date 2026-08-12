@@ -43,7 +43,13 @@ _FURNISHED_NEGATIVE = ["nemobilat", "gol", "fara mobila", "unfurnished"]
 def _clean_number(text: str) -> Optional[float]:
     """SCRAPE-AUDIT: vechiul replace facea "69,500" (mii, format EN — frecvent pe
     FB) -> 69.5, de 1000x mai mic, TACUT si in gama de acceptare. Regula: virgula
-    in grupuri de 3 = mii; altfel zecimal (formatul RO ramane neschimbat)."""
+    in grupuri de 3 = mii; altfel zecimal (formatul RO ramane neschimbat).
+
+    Aceeasi regula, forma canonica pentru cod NOU: app/utils/number_format.parse_number
+    (vezi si scrapers/real_estate/facebook_real_estate._parse_price). Copia asta ramane
+    fiindca strip-ul ei e doar pe spatii (litere ramase => None, comportament pe care
+    extract_price se bazeaza) — unificarea e o curatenie separata.
+    """
     try:
         t = re.sub(r"\s", "", text or "")
         if "," in t and "." in t:

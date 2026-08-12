@@ -40,6 +40,8 @@ from app.services.log_manager import log_manager
 from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
 )
+# Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
+from app.utils.number_format import parse_number
 
 _IMPERSONATE = "chrome110"
 _BASE = "https://www.facebook.com"
@@ -191,7 +193,15 @@ def _deep_first(obj, key: str, _depth: int = 0):
 
 def _parse_price(obj: dict) -> tuple[Optional[float], str]:
     """Prioritate listing_price.amount (float); fallback regex pe formatted_amount
-    ('RON800' -> 800.0/RON, '€800' -> 800.0/EUR)."""
+    ('RON800' -> 800.0/RON, '€800' -> 800.0/EUR).
+
+    R1 (audit FB): fallback-ul facea un replace orb `.replace(".","").replace(",",".")`,
+    deci "RON1,500" -> 1.5 si "€1,234.56" -> 1.23 — de 1000x mai mic, TACUT si in gama
+    care trece de filtrele de pret. Formatul EN cu virgula de mii e frecvent pe
+    Marketplace. Regula corecta e in app/utils/number_format.parse_number (aceeasi
+    deja dovedita pe Imobiliare). Modulul Auto primeste fixul automat: facebook_auto_scraper
+    importa _parse_price de aici.
+    """
     lp = obj.get("listing_price") or {}
     fmt = lp.get("formatted_amount") or ""
     currency = "RON"
@@ -212,11 +222,7 @@ def _parse_price(obj: dict) -> tuple[Optional[float], str]:
     if price is None and fmt:
         m = re.search(r"[\d.,]+", fmt)
         if m:
-            cleaned = m.group(0).replace(".", "").replace(",", ".")
-            try:
-                price = float(cleaned)
-            except ValueError:
-                price = None
+            price = parse_number(m.group(0))
     return price, currency
 
 
