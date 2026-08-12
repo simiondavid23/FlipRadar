@@ -16,6 +16,7 @@ _CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
 # Rate de rezervă folosite dacă BNR este inaccesibil (aproape de mediile recente)
 _FALLBACK_EUR_RON = 4.97
 _FALLBACK_USD_RON = 4.60
+_FALLBACK_SEK_RON = 0.44
 
 
 def _fetch_bnr_rates() -> Optional[Dict[str, float]]:
@@ -66,10 +67,23 @@ def _get_rate(currency: str) -> float:
         if currency in rates:
             return rates[currency]
 
+    # Lantul de rezerva, de la cea mai buna informatie la cea mai slaba:
+    #   cache proaspat > fetch BNR > cache EXPIRAT > fallback static > 1.0
+    # Cache-ul expirat e apararea reala: ratele valutare se misca lent, deci o rata
+    # de acum cateva ore (sau de ieri) bate orice constanta compilata in cod. Pana
+    # aici se sarea direct la fallback-uri, desi valoarea buna era in memorie.
+    # Fallback-ul static acopera doar pornirea LA RECE cu BNR picat.
+    if cached is not None:
+        return cached
+
     if currency == "EUR":
         return _FALLBACK_EUR_RON
     if currency == "USD":
         return _FALLBACK_USD_RON
+    if currency == "SEK":
+        return _FALLBACK_SEK_RON
+    # Ultimul resort pentru monede complet necunoscute. Semantica ramane
+    # neschimbata pentru restul aplicatiei: 1:1, adica suma trece nealterata.
     return 1.0
 
 
