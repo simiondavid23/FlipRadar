@@ -9,6 +9,9 @@ from app.scrapers.auto.listings._common import (
     IMPERSONATE, MAX_LISTINGS, build_headers, parse_price,
     extract_year, extract_km, normalize_fuel, normalize_gearbox, make_listing,
     safe_soup, thumb_from_img,
+    # SCRAPE-1b: plierea de diacritice s-a mutat in _common cand a ajuns sa fie
+    # folosita si de facebook_auto_scraper (A5). Alias-ul pastreaza numele local.
+    fold_auto as _fold_auto,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
@@ -66,15 +69,6 @@ def _extract_ld_prices(soup) -> list:
             })
         return offers
     return []
-
-
-def _fold_auto(text: str) -> str:
-    """Minuscule + diacritice pliate (NFD + strip combining) — potrivirea de model
-    nu are voie sa pice pe 'Škoda' vs 'skoda' (lectia auditului retail). NFD, nu
-    harta RO: marcile auto aduc diacritice din mai multe limbi (Š, é, ü)."""
-    import unicodedata
-    t = unicodedata.normalize("NFD", (text or "").lower())
-    return "".join(c for c in t if not unicodedata.combining(c))
 
 
 async def search_autovit(make: str = "", model: str = "", filters: dict = {}, page: int = 1) -> list:

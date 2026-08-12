@@ -116,8 +116,11 @@ def _call_scraper(kw: AutoKeyword, page: int = 1, db=None) -> list:
             # de pe disc" — altfel scanul acestui user rula pe contul altuia.
             from app.services.facebook_session import resolve_facebook_session_path
             query = " ".join(x for x in [kw.make, kw.model, kw.query] if x)
+            # A5: modelul pleaca SI separat in filters (ca la autovit, linia de mai sus),
+            # nu doar concatenat in `query` — post-filtrul de titlu din scraper il citeste
+            # de acolo. Fara asta, filtrul de model ar fi ramas inert.
             return search_facebook_auto(
-                query=query, filters=filters, page=page,
+                query=query, filters={**filters, "model": kw.model or ""}, page=page,
                 session_path=resolve_facebook_session_path(db, kw.user_id))
 
         elif platform == "kleinanzeigen_auto":

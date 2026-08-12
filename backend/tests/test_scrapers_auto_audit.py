@@ -315,6 +315,91 @@ def test_pret_zero_sau_neparsabil_e_sarit(monkeypatch):
         db.close()
 
 
+# ── facebook_auto: post-filtru de model pe titlu (A5) ───────────────────────────
+
+def _fb_obj(oid: str, title: str, cat=None, amount="10000.00") -> dict:
+    """Obiect de listare Marketplace, forma minima citita de search_facebook_auto."""
+    from app.scrapers.auto.listings import facebook_auto_scraper as fa
+    return {
+        "id": oid,
+        "marketplace_listing_title": title,
+        "marketplace_listing_category_id": cat if cat is not None else fa._vehicles_category_id(),
+        "listing_price": {"amount": amount, "formatted_amount": f"RON{amount}"},
+    }
+
+
+def _fb_auto(monkeypatch, obiecte: list, filters=None) -> list:
+    """Ruleaza search_facebook_auto REAL (deci si post-filtrul), cu sesiunea, fetch-ul
+    si iterarea JSON stubuite — piesele importate din radar/facebook_scraper se
+    monkeypatch-uiesc pe modulul care le-a importat."""
+    from app.scrapers.auto.listings import facebook_auto_scraper as fa
+
+    monkeypatch.setattr(fa, "is_facebook_session_valid", lambda p: True)
+    monkeypatch.setattr(fa, "_load_cookies", lambda p: {})
+    monkeypatch.setattr(fa, "_fetch",
+                        lambda url, cookies: ("<html></html>", "https://www.facebook.com/marketplace/search/"))
+    monkeypatch.setattr(fa, "_iter_listing_objects", lambda html: list(obiecte))
+    monkeypatch.setattr(fa.log_manager, "emit", lambda *a, **k: None)
+    return fa.search_facebook_auto(query="bmw seria 3", filters=filters or {},
+                                   session_path="sesiune.json")
+
+
+def test_fb_auto_modelul_din_titlu_trece_si_restul_e_exclus(monkeypatch):
+    # TINTA A5: cautarea FB e fuzzy — fara post-filtru, X5-ul intra in feed.
+    out = _fb_auto(monkeypatch,
+                   [_fb_obj("1", "BMW Seria 3 320d 2016"), _fb_obj("2", "BMW X5 xDrive 2015")],
+                   filters={"model": "Seria 3"})
+    assert [r["title"] for r in out] == ["BMW Seria 3 320d 2016"]
+
+
+def test_fb_auto_diacritice_in_ambele_sensuri(monkeypatch):
+    out = _fb_auto(monkeypatch, [_fb_obj("1", "Skoda Octavia 2.0 TDI")],
+                   filters={"model": "Škoda Octavia"})
+    assert len(out) == 1
+    out = _fb_auto(monkeypatch, [_fb_obj("2", "Škoda Octavia 2.0 TDI")],
+                   filters={"model": "Skoda Octavia"})
+    assert len(out) == 1
+
+
+def test_fb_auto_fara_model_nu_filtreaza_nimic(monkeypatch):
+    # Fail-open: fara model in filters (sau cu model gol) trec toate anunturile.
+    obiecte = [_fb_obj("1", "BMW Seria 3 320d"), _fb_obj("2", "Dacia Logan")]
+    assert len(_fb_auto(monkeypatch, obiecte)) == 2
+    assert len(_fb_auto(monkeypatch, obiecte, filters={"model": "   "})) == 2
+
+
+def test_scanner_trimite_modelul_in_filters_la_facebook_auto(monkeypatch):
+    # Cablarea: post-filtrul citeste filters["model"], dar _call_scraper construia
+    # filters FARA model (doar autovit primea `{**filters, "model": ...}`), deci
+    # filtrul ar fi ramas inert in productie. Aici verificam ca ajunge.
+    from types import SimpleNamespace
+
+    from app.services import auto_listings_scanner as als
+
+    primite = {}
+    monkeypatch.setattr("app.scrapers.auto.listings.facebook_auto_scraper.search_facebook_auto",
+                        lambda **k: (primite.update(k), [])[1])
+    monkeypatch.setattr("app.services.facebook_session.resolve_facebook_session_path",
+                        lambda db, uid: "sesiune.json")
+    kw = SimpleNamespace(platform="facebook_auto", user_id=1, make="BMW", model="Seria 3",
+                         query=None, year_from=None, year_to=None, km_max=None,
+                         price_max=None, fuel_type=None, transmission=None,
+                         body_type=None, category=None, tech_filters=None)
+    als._call_scraper(kw, page=1, db=None)
+    assert primite["filters"]["model"] == "Seria 3"
+    assert primite["query"] == "BMW Seria 3"     # modelul ramane SI in query
+
+
+def test_fb_auto_filtrul_de_categorie_ramane(monkeypatch):
+    # Control de regresie: jantele/piesele (alta categorie) raman excluse, iar
+    # post-filtrul de model nu le "salveaza" chiar daca titlul contine modelul.
+    out = _fb_auto(monkeypatch,
+                   [_fb_obj("1", "BMW Seria 3 320d"),
+                    _fb_obj("2", "Jante BMW Seria 3", cat="999999")],
+                   filters={"model": "Seria 3"})
+    assert [r["external_id"] for r in out] == ["fb_1"]
+
+
 def test_reaparitia_fara_pret_nu_pierde_pretul_vechi(monkeypatch):
     # Calea de UPDATE ramane neatinsa: randul existent isi pastreaza pretul bun si
     # primeste doar bump de last_checked_at (dovada de viata), nu un pret zero-at.

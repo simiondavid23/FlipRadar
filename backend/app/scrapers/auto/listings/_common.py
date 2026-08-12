@@ -4,6 +4,7 @@ AutoScout24, Facebook, Kleinanzeigen). curl_cffi (impersonate="chrome131") + BS4
 import json
 import random
 import re
+import unicodedata
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -251,6 +252,18 @@ def normalize_gearbox(text: Optional[str]) -> Optional[str]:
     if "manual" in t:
         return "manuala"
     return None
+
+
+def fold_auto(text: Optional[str]) -> str:
+    """Minuscule + diacritice pliate (NFD + strip combining) — potrivirea de model
+    nu are voie sa pice pe 'Škoda' vs 'skoda' (lectia auditului retail). NFD, nu
+    harta RO: marcile auto aduc diacritice din mai multe limbi (Š, é, ü).
+
+    Mutata aici din autovit_scraper (SCRAPE-1b) cand post-filtrul de model a ajuns
+    si pe Facebook Auto (A5): aceeasi functie, doi apelanti, acelasi pachet.
+    """
+    t = unicodedata.normalize("NFD", (text or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
 
 
 def make_listing(

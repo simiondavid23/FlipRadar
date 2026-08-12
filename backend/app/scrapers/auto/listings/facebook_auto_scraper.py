@@ -26,7 +26,7 @@ jante/piese/necorelate pe care le intoarce cautarea fuzzy FB.
 from datetime import datetime
 from typing import Optional
 
-from app.scrapers.auto.listings._common import extract_year, extract_km
+from app.scrapers.auto.listings._common import extract_year, extract_km, fold_auto
 from app.services.log_manager import log_manager
 # Piese DOVEDITE din Radar Piata (curl_cffi, fara Playwright). Import sigur — radar/
 # facebook_scraper nu importa nimic din scrapers/auto.
@@ -100,6 +100,14 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
         return []
 
     veh_cat = _vehicles_category_id()
+    # A5 (audit FB): cautarea Marketplace e fuzzy — "BMW Seria 3" aduce si alte modele
+    # sau marci, iar singurul filtru de pana acum era categoria de vehicule. Post-filtru
+    # de model pe TITLU, paritate cu autovit (SCRAPE-1b): fold de diacritice pe ambele
+    # parti + substring. Modelul vine din filters["model"] — scanner-ul il concateneaza
+    # in `query`, dar il pastreaza si separat in filters (asa il citeste si autovit).
+    # Fail-open cand lipseste/e gol: nu filtram nimic.
+    model_raw = str(filters.get("model") or "").strip()
+    model_tok = fold_auto(model_raw).strip()
     by_id: dict[str, dict] = {}
     for o in _iter_listing_objects(html):
         oid = str(o.get("id"))
@@ -108,6 +116,7 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
 
     results = []
     skipped_cat = 0
+    skipped_model = 0
     for oid, o in by_id.items():
         if not _is_active(o):
             continue
@@ -118,6 +127,10 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
         cat_id = o.get("marketplace_listing_category_id")
         if cat_id is not None and str(cat_id) != veh_cat:
             skipped_cat += 1
+            continue
+        # Post-filtru de model (A5) — dupa categorie, inainte sa construim rezultatul.
+        if model_tok and model_tok not in fold_auto(title):
+            skipped_model += 1
             continue
 
         price, currency = _parse_price(o)
@@ -159,6 +172,9 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
     if skipped_cat:
         log_manager.emit("auto_listings", "INFO",
             f"Facebook Auto: {skipped_cat} anunturi excluse (nu sunt categoria vehicule)")
+    if skipped_model:
+        log_manager.emit("auto_listings", "INFO",
+            f"Facebook Auto: {skipped_model} anunturi excluse (titlul nu contine modelul '{model_raw}')")
     log_manager.emit("auto_listings", "OK",
         f'Facebook Auto: {len(results)} rezultate pentru "{query}"')
     return results
