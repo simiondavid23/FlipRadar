@@ -153,7 +153,7 @@ def test_detail_nu_mai_mapeaza_prima_inmatriculare_pe_listed_at():
     assert 'for k in ("firstRegistrationDate", "firstRegistration"):' not in src
 
 
-# ── scanner: plasa locala km_max / year_to ───────────────────────────────────────
+# ── scanner: plasa locala km_max / year_from / year_to ───────────────────────────
 
 def test_scanner_plasa_km_si_an(monkeypatch):
     # Verificam direct predicatul inline: un listing cu km peste kw.km_max sau an
@@ -162,3 +162,86 @@ def test_scanner_plasa_km_si_an(monkeypatch):
     src = inspect.getsource(als)
     assert 'if kw.km_max and r.get("km") and int(r["km"]) > int(kw.km_max):' in src
     assert 'if kw.year_to and r.get("year") and int(r["year"]) > int(kw.year_to):' in src
+    # FB-AUDIT A4 — year_from pleaca server-side ca "year_min", dar facebook_auto
+    # nu trimite la sursa decat pretul; fara plasa locala keyword-ul "2015+" primea
+    # masini din 2003.
+    assert 'if kw.year_from and r.get("year") and int(r["year"]) < int(kw.year_from):' in src
+
+
+def _seed_auto_kw(db, **campuri):
+    """User + un keyword facebook_auto (platforma FARA filtre server-side de an).
+    resale_price ramane None ca _resale_price_ron sa nu ceara cursul BNR (retea)."""
+    import uuid
+
+    from app.models.auto_keyword import AutoKeyword
+    from app.models.user import User
+
+    email = f"a4_{uuid.uuid4().hex[:10]}@example.com"
+    u = User(email=email, username=email.split("@")[0], hashed_password="x", is_active=True)
+    db.add(u)
+    db.flush()
+    kw = AutoKeyword(user_id=u.id, name="kw a4", platform="facebook_auto", is_active=True,
+                     active_hours_start=None, active_hours_end=None, **campuri)
+    db.add(kw)
+    db.commit()
+    return u, kw
+
+
+def _prin_plasa(monkeypatch, carduri: list[dict], **campuri) -> list[str]:
+    """Ruleaza scanul pe carduri false si intoarce external_id-urile care au TRECUT
+    de plasa locala (adica au ajuns la _save_listing). Fara retea, fara notificari:
+    _call_scraper e stubuit, iar _save_listing doar inregistreaza (False = nu e nou)."""
+    from app.database import SessionLocal
+    from app.services import auto_listings_scanner as als
+
+    ajunse: list[str] = []
+    monkeypatch.setattr(als, "_call_scraper",
+                        lambda kw, *a, **k: [dict(c) for c in carduri] if k.get("page", 1) == 1 else [])
+    monkeypatch.setattr(als, "_save_listing",
+                        lambda db, kw, raw, resale: (ajunse.append(raw["external_id"]), False)[1])
+    monkeypatch.setattr(als.log_manager, "emit", lambda *a, **k: None)
+
+    db = SessionLocal()
+    try:
+        _seed_auto_kw(db, **campuri)
+        als.run_auto_scan(db, platform="facebook_auto")
+    finally:
+        db.close()
+    return ajunse
+
+
+def _card(ext: str, year=None, km=None) -> dict:
+    c = {"external_id": ext, "titlu": f"masina {ext}", "pret": 5000}
+    if year is not None:
+        c["year"] = year
+    if km is not None:
+        c["km"] = km
+    return c
+
+
+def test_plasa_respinge_masina_sub_year_from(monkeypatch):
+    # FB-AUDIT A4: keyword "2015+", card din 2003 -> respins LOCAL (facebook_auto
+    # nu are parametru server-side de an minim).
+    ajunse = _prin_plasa(monkeypatch, [_card("vechi", year=2003)], year_from=2015)
+    assert ajunse == []
+
+
+def test_plasa_lasa_masina_de_la_year_from_in_sus(monkeypatch):
+    ajunse = _prin_plasa(monkeypatch,
+                         [_card("exact", year=2015), _card("nou", year=2018)],
+                         year_from=2015)
+    assert ajunse == ["exact", "nou"]
+
+
+def test_plasa_fail_open_pe_an_lipsa(monkeypatch):
+    # Anul lipseste de pe card -> nu putem verifica, deci NU respingem (ca la year_to/km).
+    ajunse = _prin_plasa(monkeypatch, [_card("fara_an")], year_from=2015)
+    assert ajunse == ["fara_an"]
+
+
+def test_plasa_year_to_ramane_neatins(monkeypatch):
+    # Control de regresie: capatul superior filtreaza in continuare.
+    ajunse = _prin_plasa(monkeypatch,
+                         [_card("prea_nou", year=2020), _card("bun", year=2016)],
+                         year_from=2015, year_to=2018)
+    assert ajunse == ["bun"]

@@ -354,8 +354,14 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None,
                     # SCRAPE-AUDIT: km_max si year_to nu au parametri server-side pe
                     # toate platformele (ex. autovit) — pierderea era TACUTA. Plasa
                     # locala: fail-open cand valoarea lipseste de pe card.
+                    # FB-AUDIT A4: year_from pleaca server-side ca "year_min", dar
+                    # facebook_auto nu trimite la sursa decat pretul — fara plasa
+                    # locala, un keyword "2015+" primea masini din 2003, cu grad si
+                    # notificare. Simetric cu year_to, acelasi fail-open.
                     try:
                         if kw.km_max and r.get("km") and int(r["km"]) > int(kw.km_max):
+                            continue
+                        if kw.year_from and r.get("year") and int(r["year"]) < int(kw.year_from):
                             continue
                         if kw.year_to and r.get("year") and int(r["year"]) > int(kw.year_to):
                             continue
