@@ -1,0 +1,290 @@
+"""REG-1 — registrul declarativ de magazine: sursa UNICA de metadata per domeniu.
+
+Pana aici, metadatele unui magazin erau imprastiate in trei structuri din doua
+fisiere: VALIDATED_DOMAINS si DOMAIN_OVERRIDES (product_page_extractor) plus
+_IMPERSONATE_OVERRIDES (scraper_service). Cu ~80 de magazine in plan, fiecare val
+nou ar fi trebuit sa scrie in mai multe locuri, iar divergentele dintre ele ar fi
+devenit bug-uri TACUTE (un domeniu validat dar fara treapta de impersonate e
+validat si necitibil — vezi flanco.ro la CONTENT-2). De aici incolo structura
+canonica e SHOP_REGISTRY, iar cele trei structuri istorice se DERIVA din ea.
+
+Modulul e FRUNZA prin constructie: nu importa nimic din `app.*`, doar stdlib.
+Asta tine directia importurilor sigura — `product_page_extractor -> shop_registry`
+nu poate inchide ciclul documentat in antetul lui scraper_service.
+
+Registrul poarta DATE, nu cod. CUSTOM_EXTRACTORS (care mapeaza domenii la functii)
+ramane in product_page_extractor; aici traieste doar metadata `method: "custom"`.
+Scraperele de cautare (_SCRAPERS_BY_SOURCE) nu sunt inca reprezentate.
+
+Jurnalul sondelor per domeniu — de ce a intrat fiecare magazin, ce forma de date
+publica, ce s-a masurat — sta in `docs/catalog_domain_log.md`. Aici e STAREA
+CURENTA; acolo e ISTORICUL. Un val nou adauga intrari aici si o sectiune acolo.
+
+Campurile unei intrari:
+  label       — numele magazinului, pentru UI
+  category    — electronice | fashion | sneakers
+  country     — cod de tara ISO, sau "EU" cand tara exacta nu e confirmata
+  delivery    — ro_confirmed   (livreaza in RO, confirmat la sonda)
+                ro_storefront  (magazin cu vitrina .ro)
+                b2b_only | unconfirmed
+  method      — jsonld | og | microdata | custom | shopify | browser
+  status      — validated (sonda live trecuta) | probed | planned | watchlist
+  impersonate — OPTIONAL, treapta TLS/HTTP2 cand default-ul nu deschide site-ul
+  overrides   — OPTIONAL, payload-ul DOMAIN_OVERRIDES (contractul campurilor e
+                documentat la structura din product_page_extractor)
+  notes       — valul/sonda de origine
+"""
+import copy
+
+SHOP_REGISTRY: dict[str, dict] = {
+    # ── RETAIL-3a ─────────────────────────────────────────────────────────────
+    "altex.ro": {
+        "label": "Altex",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "RETAIL-3a",
+    },
+    "emag.ro": {
+        "label": "eMAG",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "overrides": {"price_selector": ".product-new-price"},
+        "notes": "RETAIL-3a",
+    },
+
+    # ── RETAIL-5c ─────────────────────────────────────────────────────────────
+    "cel.ro": {
+        "label": "CEL.ro",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "RETAIL-5c",
+    },
+    "vexio.ro": {
+        "label": "Vexio",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "RETAIL-5c",
+    },
+    "mediagalaxy.ro": {
+        "label": "Media Galaxy",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "RETAIL-5c",
+    },
+
+    # ── FASHION-1b ────────────────────────────────────────────────────────────
+    "answear.ro": {
+        "label": "Answear",
+        "category": "fashion",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-1b",
+    },
+    "fashiondays.ro": {
+        "label": "Fashion Days",
+        "category": "fashion",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-1b",
+    },
+    "epantofi.ro": {
+        "label": "ePantofi",
+        "category": "fashion",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-1b",
+    },
+    "modivo.ro": {
+        "label": "Modivo",
+        "category": "fashion",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-1b",
+    },
+
+    # ── FASHION-2 ─────────────────────────────────────────────────────────────
+    "bstn.com": {
+        "label": "BSTN",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-2",
+    },
+    # Cheia e CU subdomeniu: _domain_of taie doar "www.", iar refresh-ul compara
+    # pe egalitate exacta.
+    "en.afew-store.com": {
+        "label": "Afew Store",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-2",
+    },
+
+    # ── FASHION-2b ────────────────────────────────────────────────────────────
+    "prm.com": {
+        "label": "PRM",
+        "category": "fashion",
+        # Tara exacta NU e confirmata de sonda; se corecteaza la un val viitor,
+        # nu se ghiceste.
+        "country": "EU",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-2b",
+    },
+    "sneakersnstuff.com": {
+        "label": "Sneakersnstuff",
+        "category": "sneakers",
+        "country": "SE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-2b",
+    },
+
+    # ── FASHION-4 ─────────────────────────────────────────────────────────────
+    "aboutyou.ro": {
+        "label": "About You",
+        "category": "fashion",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-4",
+    },
+    "trendyol.com": {
+        "label": "Trendyol",
+        "category": "fashion",
+        "country": "TR",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "FASHION-4",
+    },
+
+    # ── ACCESS-2 ──────────────────────────────────────────────────────────────
+    "endclothing.com": {
+        "label": "END.",
+        "category": "sneakers",
+        "country": "GB",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "ACCESS-2",
+    },
+    "zalando.ro": {
+        "label": "Zalando",
+        "category": "fashion",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "ACCESS-2",
+    },
+    "43einhalb.com": {
+        "label": "43einhalb",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "impersonate": "firefox135",
+        "notes": "ACCESS-2",
+    },
+
+    # ── CONTENT-2 ─────────────────────────────────────────────────────────────
+    "flanco.ro": {
+        "label": "Flanco",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "og",
+        "status": "validated",
+        "impersonate": "firefox135",
+        "notes": "CONTENT-2",
+    },
+    "evomag.ro": {
+        "label": "evoMAG",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "microdata",
+        "status": "validated",
+        "notes": "CONTENT-2",
+    },
+
+    # ── DISCOVERY-2 ───────────────────────────────────────────────────────────
+    "footshop.ro": {
+        "label": "Footshop",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "microdata",
+        "status": "validated",
+        "notes": "DISCOVERY-2",
+    },
+    "asos.com": {
+        "label": "ASOS",
+        "category": "fashion",
+        "country": "GB",
+        "delivery": "ro_confirmed",
+        "method": "custom",
+        "status": "validated",
+        "notes": "DISCOVERY-2",
+    },
+}
+
+
+# Derivarile intorc de fiecare data un OBIECT PROASPAT, niciodata o referinta in
+# registru. Consumatorii isi tin copia proprie la nivel de modul, iar suita
+# existenta o monkeypatcheaza (ex. adaugarea unui domeniu de test in
+# VALIDATED_DOMAINS); fara copie, mutatia s-ar propaga in registru si de acolo in
+# toti ceilalti consumatori, intre teste.
+
+def validated_domains() -> set[str]:
+    """Domeniile cu status == "validated"."""
+    return {domain for domain, meta in SHOP_REGISTRY.items()
+            if meta.get("status") == "validated"}
+
+
+def domain_overrides() -> dict[str, dict]:
+    """Domeniu -> payload overrides, doar intrarile care au cheia.
+
+    Copia e adanca: payload-ul e el insusi un dict mutabil, deci o copie doar a
+    dict-ului exterior ar lasa consumatorii sa scrie inapoi in registru.
+    """
+    return {domain: copy.deepcopy(meta["overrides"])
+            for domain, meta in SHOP_REGISTRY.items() if "overrides" in meta}
+
+
+def impersonate_overrides() -> dict[str, str]:
+    """Domeniu -> treapta impersonate, doar intrarile care au cheia."""
+    return {domain: meta["impersonate"]
+            for domain, meta in SHOP_REGISTRY.items() if "impersonate" in meta}
