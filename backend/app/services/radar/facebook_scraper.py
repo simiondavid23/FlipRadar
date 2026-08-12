@@ -39,6 +39,7 @@ from curl_cffi import requests as curl_requests
 from app.services.log_manager import log_manager
 from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
+    report_outcome, Outcome,
 )
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
 from app.utils.number_format import parse_number
@@ -169,6 +170,37 @@ def _iter_listing_objects(html: str) -> list[dict]:
             continue
         walk(data)
     return found
+
+
+# R3 / FBM-1e — markerii formularului de login servit IN pagina. Facebook raspunde
+# frecvent 200 pe URL-ul ORIGINAL, cu formularul de login in corp si FARA redirect,
+# deci verificarea pe final_url nu-l prinde: iese "0 rezultate OK", iar plasa
+# needs_reauth cere fisier de sesiune mai vechi de 23h — o sesiune invalidata la
+# 2h dupa login producea zile de zero-uri tacute.
+# Detectorul a fost scris intai in scrapers/real_estate/facebook_real_estate (FBM-1f,
+# cu teste); aici e casa lui canonica — modulul FB din care importa deja
+# facebook_auto_scraper si, de la R3, si facebook_real_estate.
+_LOGIN_EMAIL_RE = re.compile(r"""name\s*=\s*(?:"email"|'email'|email\b)""", re.IGNORECASE)
+_LOGIN_PASS_RE = re.compile(r"""name\s*=\s*(?:"pass"|'pass'|pass\b)""", re.IGNORECASE)
+_LOGIN_ACTION_RE = re.compile(r"""<form[^>]*\baction\s*=\s*['"]?[^'">\s]*/login""",
+                              re.IGNORECASE)
+
+
+def _looks_like_login_wall(html) -> bool:
+    """True daca html-ul poarta markerii formularului de login Facebook.
+
+    Cel putin unul: id-ul `royal_login_form`, perechea name="email" + name="pass" pe
+    acelasi document, sau un <form> al carui action contine "/login". Tolerant la
+    ghilimele simple/duble si la majuscule. Pe o pagina normala de marketplace: False.
+    """
+    if not html:
+        return False
+    low = str(html).lower()
+    if "royal_login_form" in low:
+        return True
+    if _LOGIN_EMAIL_RE.search(low) and _LOGIN_PASS_RE.search(low):
+        return True
+    return bool(_LOGIN_ACTION_RE.search(low))
 
 
 def _deep_first(obj, key: str, _depth: int = 0):
@@ -337,6 +369,18 @@ def search_facebook(
                 oid = str(o.get("id"))
                 if oid and oid not in by_id:
                     by_id[oid] = o
+
+            # R3 — login-wall servit pe 200, fara redirect: SINGURUL semn e HTML-ul.
+            # Verificam doar cand nu exista NICIUN obiect de listare (cand exista,
+            # pagina e clar cea buna si scanarea HTML-ului ar fi cost inutil).
+            # Comportamentul e identic cu ramura de redirect de mai sus: WARN si
+            # `results` gol, deci needs_reauth/re_authenticate de la final decid la
+            # fel — nu exista cale noua. In plus raportam BLOCKED la watchdog, ca sa
+            # existe si o alerta de platforma, nu doar badge-ul de sesiune din UI.
+            if not by_id and _looks_like_login_wall(html):
+                log_manager.emit("radar", "WARN",
+                    "Facebook: pagina de login servita fara redirect — sesiune posibil invalida")
+                report_outcome("facebook", Outcome.BLOCKED)
 
             known_ids = _known_facebook_category_ids() if category else None
             excluded_sold = 0
