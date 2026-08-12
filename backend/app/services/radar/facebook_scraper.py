@@ -384,6 +384,7 @@ def search_facebook(
 
             known_ids = _known_facebook_category_ids() if category else None
             excluded_sold = 0
+            fara_categorie = 0      # A6/A7 — pastrate desi cardul nu poarta categorie
             for oid, o in by_id.items():
                 if not _is_active(o):
                     excluded_sold += 1
@@ -412,8 +413,19 @@ def search_facebook(
                     if cat_id and known_ids is not None and cat_id not in known_ids:
                         log_manager.emit("radar", "INFO",
                             f"Facebook: category_id necunoscut {cat_id} ('{title[:40]}')")
-                    # excluderea de categorie se aplica DOAR cand userul a ales o categorie
-                    if cat_id != str(category):
+                    # A6/A7 — excluderea se aplica DOAR cand userul a ales o categorie SI
+                    # cardul chiar poarta una care difera. Facebook nu pune
+                    # marketplace_listing_category_id pe toate cardurile, iar comparatia
+                    # stricta de dinainte (`cat_id != str(category)`, adevarata si pentru
+                    # None) stergea TACUT anunturi reale de indata ce userul alegea o
+                    # categorie. Conventia proiectului e fail-open: un criteriu care nu se
+                    # poate verifica NU respinge — vezi _matches_re_keyword (Imobiliare),
+                    # plasa year/km din Auto, _is_active de mai sus si filtrul identic din
+                    # facebook_auto_scraper, cu care ne aliniem aici. NU transforma inapoi
+                    # in comparatie stricta.
+                    if cat_id is None:
+                        fara_categorie += 1
+                    elif cat_id != str(category):
                         continue
 
                 ct = _deep_first(o, "creation_time")
@@ -448,6 +460,11 @@ def search_facebook(
             if excluded_sold:
                 log_manager.emit("radar", "INFO",
                     f"Facebook: {excluded_sold} anunturi excluse (sold/not-live/pending/hidden)")
+            if fara_categorie:
+                # Vizibilitate pentru user: de ce vede si anunturi in afara categoriei alese.
+                log_manager.emit("radar", "INFO",
+                    f"Facebook: {fara_categorie} anunturi pastrate fara categorie pe card "
+                    f"(nu se poate verifica filtrul de categorie)")
 
     log_manager.emit("radar", "OK",
         f'Facebook: {len(results)} rezultate pentru "{keyword_clean}"')
