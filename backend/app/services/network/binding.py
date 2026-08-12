@@ -169,10 +169,40 @@ def modem_link_up(rot=None) -> bool:
     return _live_bind_ip(rot if rot is not None else get_rotator()) is not None
 
 
+# NET-6 — platforme care nu au voie sa iasa prin modem, indiferent de .env:
+# merg pe cookie de sesiune, iar acelasi cookie de pe IP-uri diferite =
+# semnatura de sesiune furata -> checkpoint pe cont (NET-5, sectiunea 3.2).
+# DE REEVALUAT daca Facebook trece pe scraping logat-out: atunci nu mai
+# exista sesiune de protejat si rotatia devine dezirabila.
+_NEVER_ROUTED = frozenset({"facebook", "olx"})
+
+
 def routed_platforms() -> frozenset[str]:
-    """Allowlist-ul din mediu, citit LA APEL (nu la import) ca sa fie reconfigurabil."""
+    """Allowlist-ul din mediu, citit LA APEL (nu la import) ca sa fie reconfigurabil.
+
+    NET-6: `_NEVER_ROUTED` se scade DUR din allowlist. Pana acum politica traia doar in
+    valoarea din .env; de cand R3 a cablat `report_outcome("facebook", BLOCKED)`, o
+    configurare gresita chiar ar declansa rotatie pe un cont logat. Filtrarea e pe
+    valorile deja normalizate (strip + lower), deci si "Facebook " e prinsa.
+
+    Aceasta functie e SINGURUL cititor al variabilei de mediu, iar ambii apelanti
+    (`_bind_target` de aici si `triggers.rotate_for`) trec prin ea — deci filtrul
+    acopera si legarea la interfata, si rotatia.
+    """
     raw = os.environ.get("MODEM_ROUTED_PLATFORMS", "")
-    return frozenset(p.strip().lower() for p in raw.split(",") if p.strip())
+    cerute = frozenset(p.strip().lower() for p in raw.split(",") if p.strip())
+    interzise = cerute & _NEVER_ROUTED
+    # Acelasi mecanism de tranzitie ca restul modulului: WARN o singura data la
+    # intrarea in configurarea gresita, INFO cand e reparata (fara zgomot pe calea
+    # normala — prima observatie „curat" e tacuta).
+    _note_flag(
+        "never_routed", bool(interzise),
+        f"MODEM_ROUTED_PLATFORMS contine platforme INTERZISE ({', '.join(sorted(interzise))}) "
+        "- ignorate: merg pe cookie de sesiune, iar rotatia de IP le-ar duce in checkpoint "
+        "pe cont (NET-6). Scoate-le din .env.",
+        "MODEM_ROUTED_PLATFORMS nu mai contine platforme interzise",
+    )
+    return cerute - _NEVER_ROUTED
 
 
 def _bind_target(platform: str) -> tuple[Optional[str], Optional[str]]:

@@ -436,3 +436,83 @@ def test_wrapper_fara_binding_nu_primeste_config(monkeypatch):
     _use(monkeypatch)
     vs._get_wrapper()
     assert built == [None]       # `config` nu se trimite deloc
+
+
+# ── NET-6: platforme pe cookie de sesiune, interzise la modem indiferent de .env ──
+#
+# Politica NET-5 (§3.2) traia doar in valoarea din .env. De cand R3 a cablat
+# report_outcome("facebook", BLOCKED), o configurare gresita chiar ar declansa rotatie
+# pe un cont logat -> checkpoint. Filtrul din routed_platforms() e garantia in cod.
+
+def test_facebook_e_scos_din_allowlist_chiar_daca_e_in_env(monkeypatch):
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "vinted,facebook")
+    p = binding.routed_platforms()
+    assert "facebook" not in p
+    assert "vinted" in p                     # restul allowlist-ului ramane intact
+
+
+@pytest.mark.parametrize("scriere", ["Facebook", " facebook ", "FACEBOOK", "  FaceBook"])
+def test_facebook_exclus_indiferent_de_scriere(monkeypatch, scriere):
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", f"vinted,{scriere}")
+    assert binding.routed_platforms() == frozenset({"vinted"})
+
+
+@pytest.mark.parametrize("scriere", ["olx", "OLX", " Olx "])
+def test_olx_exclus_indiferent_de_scriere(monkeypatch, scriere):
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", f"mobilede,{scriere}")
+    assert binding.routed_platforms() == frozenset({"mobilede"})
+
+
+def test_allowlist_curat_ramane_neschimbat(monkeypatch, logs):
+    # Control negativ: nu filtram altceva din greseala si nu zgomotam.
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS",
+                       "mobilede,vinted,autovit,okazii,publi24,lajumate")
+    assert binding.routed_platforms() == frozenset(
+        {"mobilede", "vinted", "autovit", "okazii", "publi24", "lajumate"})
+    assert [m for lvl, m in logs if lvl == "WARN"] == []
+
+
+def test_kill_switch_ramane_intact(monkeypatch):
+    # MODEM_ROUTED_PLATFORMS gol = nimic legat (comportamentul de dinainte de NET-5).
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "")
+    assert binding.routed_platforms() == frozenset()
+
+
+def test_avertizarea_se_emite_o_singura_data(monkeypatch, logs):
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "vinted,facebook,olx")
+    for _ in range(5):
+        binding.routed_platforms()
+    warns = [m for lvl, m in logs if lvl == "WARN" and "INTERZISE" in m]
+    assert len(warns) == 1
+    assert "facebook" in warns[0] and "olx" in warns[0]     # numeste ce a ignorat
+
+
+def test_avertizarea_reapare_dupa_ce_configurarea_e_reparata_si_stricata_iar(monkeypatch, logs):
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "facebook")
+    binding.routed_platforms()
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "vinted")   # reparat -> INFO
+    binding.routed_platforms()
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "facebook")  # stricat iar -> WARN nou
+    binding.routed_platforms()
+    assert len([m for lvl, m in logs if lvl == "WARN" and "INTERZISE" in m]) == 2
+
+
+def test_integrare_rotatia_nu_se_declanseaza_pentru_facebook(monkeypatch):
+    """INVARIANTA care conteaza: chiar cu facebook in .env, rotate_for intoarce False
+    si nici macar nu instantiaza rotatorul."""
+    from app.services.network import triggers
+    from app.services.radar.base_scraper import Outcome
+
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "vinted,facebook,olx")
+    atins = []
+    monkeypatch.setattr(triggers, "get_rotator", lambda: atins.append("rotator"))
+
+    assert triggers.rotate_for("facebook", Outcome.BLOCKED) is False
+    assert triggers.rotate_for("olx", Outcome.BLOCKED) is False
+    assert atins == []
+
+
+def test_integrare_binding_nu_leaga_facebook(monkeypatch):
+    # Cealalta cale prin routed_platforms(): legarea la interfata.
+    monkeypatch.setenv("MODEM_ROUTED_PLATFORMS", "vinted,facebook")
+    assert binding._bind_target("facebook") == (None, None)
