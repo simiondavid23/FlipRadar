@@ -1,14 +1,12 @@
-"""REG-1 — registrul declarativ de magazine.
+"""REG-1/REG-2 — registrul declarativ de magazine.
 
-Doua feluri de teste: unul pe FORMA registrului (fiecare intrare isi respecta
-contractul de campuri) si trei de EGALITATE cu structurile istorice. Cele de
-egalitate sunt plasa de siguranta a introducerii in paralel: registrul e sursa
-noua, dar pana la comutare cele trei structuri raman literalele de dinainte, deci
-derivarile trebuie sa dea exact acelasi lucru. La REG-2, dupa comutare, ele
-compara derivarea cu ea insasi si se sterg.
+Un test pe FORMA registrului (fiecare intrare isi respecta contractul de campuri)
+si unul pe IZOLAREA derivarilor. Testele de egalitate cu structurile istorice au
+existat doar cat timp registrul a mers in paralel cu literalele (REG-1); dupa
+comutarea de la REG-2 ele ar compara derivarea cu ea insasi, deci s-au sters.
 """
-from app.services.product_page_extractor import DOMAIN_OVERRIDES, VALIDATED_DOMAINS
-from app.services.scraper_service import _IMPERSONATE_OVERRIDES
+from app.services import product_page_extractor as ppe
+from app.services import scraper_service as ss
 from app.services.shop_registry import (
     SHOP_REGISTRY,
     domain_overrides,
@@ -49,13 +47,33 @@ def test_registru_intrari_valide():
                 f"{domain}: overrides trebuie sa fie dict nevid"
 
 
-def test_derivare_validated_egala_cu_istoric():
-    assert validated_domains() == VALIDATED_DOMAINS
+def test_derivarile_intorc_obiecte_proaspete():
+    """Fiecare apel da un obiect NOU, iar mutarea lui nu atinge consumatorii.
 
+    Suita existenta monkeypatcheaza copiile de la nivel de modul (ex. adauga un
+    domeniu de test in VALIDATED_DOMAINS). Daca derivarea ar intoarce o referinta
+    in registru, mutatia s-ar propaga in registru si de acolo in ceilalti
+    consumatori, scurgandu-se intre teste.
+    """
+    for derivare in (validated_domains, domain_overrides, impersonate_overrides):
+        intai, apoi = derivare(), derivare()
+        assert intai == apoi, f"{derivare.__name__}: apeluri succesive dau valori diferite"
+        assert intai is not apoi, f"{derivare.__name__}: a intors aceeasi referinta"
 
-def test_derivare_overrides_egala_cu_istoric():
-    assert domain_overrides() == DOMAIN_OVERRIDES
+    domenii = validated_domains()
+    domenii.add("magazin-de-test.example")
+    assert "magazin-de-test.example" not in ppe.VALIDATED_DOMAINS
+    assert "magazin-de-test.example" not in validated_domains()
 
+    overrides = domain_overrides()
+    overrides["magazin-de-test.example"] = {"price_selector": ".fals"}
+    for payload in overrides.values():
+        payload["currency"] = "XXX"  # si payload-ul interior trebuie sa fie o copie
+    assert "magazin-de-test.example" not in ppe.DOMAIN_OVERRIDES
+    assert all("currency" not in p for p in ppe.DOMAIN_OVERRIDES.values())
+    assert all("currency" not in p for p in domain_overrides().values())
 
-def test_derivare_impersonate_egala_cu_istoric():
-    assert impersonate_overrides() == _IMPERSONATE_OVERRIDES
+    trepte = impersonate_overrides()
+    trepte["magazin-de-test.example"] = "firefox135"
+    assert "magazin-de-test.example" not in ss._IMPERSONATE_OVERRIDES
+    assert "magazin-de-test.example" not in impersonate_overrides()

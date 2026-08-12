@@ -11,6 +11,7 @@ from curl_cffi import requests as curl_requests
 
 from app.utils.category_mapper import infer_category_from_name
 from app.services.log_manager import log_manager
+from app.services.shop_registry import impersonate_overrides
 # Directia importurilor e sigura in acest sens: extractorul importa scraper_service
 # DOAR lenes (in corpul lui extract_product, pentru allow-list-ul SSRF), tocmai ca
 # importul asta top-level sa nu inchida un ciclu.
@@ -63,16 +64,7 @@ _IMPERSONATE = "chrome131"
 # Amprenta TLS/HTTP2 per domeniu, pentru magazinele pe care default-ul nu le
 # deschide. Cheia e domeniul de baza; rezolvarea trece prin _impersonate_for,
 # cu matching suffix-safe identic cu allow-list-ul C-14.
-_IMPERSONATE_OVERRIDES: dict[str, str] = {
-    # ACCESS-1/1b (2026-07-28): 403 challenge pe toate treptele chrome
-    # (131/136/146/latest); trece curat pe firefox135, 3/3 match de pret.
-    "43einhalb.com": "firefox135",
-    # ACCESS-1/1b (2026-07-28): aceeasi situatie de acces — chrome pica pe paginile
-    # de produs, firefox135 trece. ACTIV de la CONTENT-2: flanco.ro a intrat in
-    # VALIDATED_DOMAINS, deci e in allow-list-ul C-14 si chiar se cere prin poarta
-    # guarded. Fara treapta de aici, domeniul ar fi validat dar necitibil (403).
-    "flanco.ro": "firefox135",
-}
+_IMPERSONATE_OVERRIDES: dict[str, str] = impersonate_overrides()
 
 # Pagination safety caps (per-site) so a runaway query can't hammer a shop.
 _MAX_PAGES_EMAG = 10         # eMAG serves ~72-78 cards per page
