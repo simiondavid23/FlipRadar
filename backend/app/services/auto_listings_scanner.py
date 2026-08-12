@@ -182,7 +182,18 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         db.commit()
         return False
 
-    price  = float(raw.get("price") or raw.get("pret") or 0) or None
+    # Paritate SCRAPE-1a / FBM-1a (Radar + Imobiliare sar anunturile fara pret la
+    # sursa): fara pret parsabil si pozitiv NU se intra in feed. Randul ar fi ramas
+    # gunoi vizual (pret gol, grad None, scor 0) — notificari false nu existau,
+    # fiindca garda din scorer (listing_price <= 0 -> filtered) e a doua plasa si
+    # ramane neatinsa. In plus, un pret ne-numeric ("N/A") arunca ValueError din
+    # float() si oprea procesarea keyword-ului, nu doar a cardului.
+    try:
+        price = float(raw.get("price") or raw.get("pret") or 0) or None
+    except (TypeError, ValueError):
+        price = None
+    if not price or price <= 0:
+        return False
     cur    = (raw.get("currency") or raw.get("moneda") or "RON").upper()
     year   = raw.get("year")
     km     = raw.get("km")

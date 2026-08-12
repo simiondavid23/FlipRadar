@@ -245,3 +245,90 @@ def test_plasa_year_to_ramane_neatins(monkeypatch):
                          [_card("prea_nou", year=2020), _card("bun", year=2016)],
                          year_from=2015, year_to=2018)
     assert ajunse == ["bun"]
+
+
+# ── scanner: fara pret nu se intra in feed (paritate SCRAPE-1a / FBM-1a) ─────────
+
+def _scan_real(monkeypatch, db, carduri: list[dict]) -> None:
+    """Scan cu _save_listing REAL (spre deosebire de _prin_plasa): doar scraperul
+    e stubuit, deci se vede exact ce ajunge rand in AutoFeedListing."""
+    from app.services import auto_listings_scanner as als
+
+    monkeypatch.setattr(als, "_call_scraper",
+                        lambda kw, *a, **k: [dict(c) for c in carduri] if k.get("page", 1) == 1 else [])
+    monkeypatch.setattr(als.log_manager, "emit", lambda *a, **k: None)
+    als.run_auto_scan(db, platform="facebook_auto")
+
+
+def _randuri(db, user_id: int) -> list:
+    from app.models.auto_feed_listing import AutoFeedListing
+    return (db.query(AutoFeedListing)
+            .filter(AutoFeedListing.user_id == user_id)
+            .order_by(AutoFeedListing.id).all())
+
+
+def test_anunt_fara_pret_nu_intra_in_feed(monkeypatch):
+    # Card fara pret parsat -> niciun rand (ar fi ramas gunoi vizual: pret gol,
+    # grad None, scor 0). Notificari false nu existau oricum (garda din scorer).
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        u, _ = _seed_auto_kw(db)
+        _scan_real(monkeypatch, db, [{"external_id": "fara_pret", "titlu": "masina"}])
+        assert _randuri(db, u.id) == []
+    finally:
+        db.close()
+
+
+def test_anunt_cu_pret_valid_intra_in_feed(monkeypatch):
+    # Control pozitiv: garda nu inchide calea normala.
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        u, _ = _seed_auto_kw(db)
+        _scan_real(monkeypatch, db,
+                   [{"external_id": "cu_pret", "titlu": "masina", "price": 12500}])
+        randuri = _randuri(db, u.id)
+        assert len(randuri) == 1
+        assert randuri[0].external_id == "cu_pret" and float(randuri[0].price) == 12500.0
+    finally:
+        db.close()
+
+
+def test_pret_zero_sau_neparsabil_e_sarit(monkeypatch):
+    # 0 si "N/A" nu sunt preturi. Bonus: "N/A" arunca ValueError din float() daca
+    # parsarea nu e aparata -> keyword-ul intreg se oprea, nu doar cardul.
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        u, _ = _seed_auto_kw(db)
+        _scan_real(monkeypatch, db, [
+            {"external_id": "zero", "titlu": "masina", "price": 0},
+            {"external_id": "text", "titlu": "masina", "price": "N/A"},
+            {"external_id": "bun", "titlu": "masina", "price": 7000},
+        ])
+        assert [r.external_id for r in _randuri(db, u.id)] == ["bun"]
+    finally:
+        db.close()
+
+
+def test_reaparitia_fara_pret_nu_pierde_pretul_vechi(monkeypatch):
+    # Calea de UPDATE ramane neatinsa: randul existent isi pastreaza pretul bun si
+    # primeste doar bump de last_checked_at (dovada de viata), nu un pret zero-at.
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        u, _ = _seed_auto_kw(db)
+        _scan_real(monkeypatch, db,
+                   [{"external_id": "acelasi", "titlu": "masina", "price": 9000}])
+        _scan_real(monkeypatch, db, [{"external_id": "acelasi", "titlu": "masina"}])
+        randuri = _randuri(db, u.id)
+        assert len(randuri) == 1
+        assert float(randuri[0].price) == 9000.0
+        assert randuri[0].last_checked_at is not None
+    finally:
+        db.close()
