@@ -161,7 +161,8 @@ def test_call_site_ul_din_bucla_apeleaza_puntea():
     import inspect
     src = inspect.getsource(rs)
     i_seen = src.index("if _already_seen(db, user.id, platform, ext_id):")
-    i_call = src.index("_refresh_seen_listing(db, user, kw, platform, listing, settings)")
+    # fara paranteza de inchidere: apelul primeste si cursul scanului (eur_ron)
+    i_call = src.index("_refresh_seen_listing(db, user, kw, platform, listing, settings")
     i_cont = src.index("continue", i_seen)
     assert i_seen < i_call < i_cont + len(src)    # puntea ruleaza inainte de continue
 

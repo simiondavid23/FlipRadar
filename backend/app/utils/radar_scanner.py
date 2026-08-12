@@ -1792,6 +1792,50 @@ def _too_old(listed_at, max_age_days, now=None) -> bool:
         return False
 
 
+# ── Scorare in RON: normalizarea monedei anuntului ───────────────────────────────
+# `kw.resale_price` e MEREU in RON (RadarKeyword nu are coloana de moneda, iar UI-ul
+# scrie "X RON revanzare"), dar anuntul poate fi cotat in EUR (Facebook, uneori
+# Vinted). Fara conversie, cifra bruta in EUR intra in calculate_score ca si cum ar
+# fi RON => marja complet gresita (un anunt de 500 EUR "pare" de 500 RON, deci un
+# chilipir inexistent, iar unul scump primeste grad fals). Modelul e cel din
+# app/services/auto_listings_scanner.py (price_ron = price * get_eur_ron()).
+# WARN-ul de moneda necunoscuta se emite o singura data pe scan, per moneda
+# (setul se goleste la inceputul fiecarui _scan_user).
+_unknown_currency_warned: set[str] = set()
+
+
+def _price_to_ron(price, currency, eur_ron) -> Optional[float]:
+    """Pretul anuntului adus in RON pentru scorare. Functie PURA (fara DB/retea):
+    pentru aceleasi argumente intoarce mereu aceeasi valoare, cursul se paseaza.
+
+    - moneda absenta sau "RON" (case-insensitive) -> valoarea neschimbata
+    - "EUR" -> valoarea * eur_ron (cursul BNR luat o data pe scan)
+    - orice alta moneda (ex. "USD") -> NECONVERTITA + un WARN cu moneda intalnita.
+      Fail-open deliberat: un scor aproximativ e mai bun decat un anunt aruncat.
+      Idem daca `eur_ron` lipseste/e invalid (BNR indisponibil).
+    - pret absent sau neparsabil -> None (apelantul decide; calculate_score
+      filtreaza oricum un pret <= 0)
+    """
+    try:
+        price_f = float(price)
+    except (TypeError, ValueError):
+        return None
+    cur = (currency or "RON").strip().upper()
+    if cur in ("", "RON"):
+        return price_f
+    if cur == "EUR":
+        try:
+            rate = float(eur_ron or 0)
+        except (TypeError, ValueError):
+            rate = 0.0
+        return price_f * rate if rate > 0 else price_f
+    if cur not in _unknown_currency_warned:
+        _unknown_currency_warned.add(cur)
+        log_manager.emit("radar", "WARN",
+            f"Monedă necunoscută la scorare: {cur} — preț lăsat neconvertit")
+    return price_f
+
+
 def _run_scraper(
     platform: str,
     keyword: RadarKeyword,
@@ -1959,12 +2003,15 @@ def _first_image(images_raw) -> str:
 
 
 def _refresh_seen_listing(db: Session, user, kw, platform: str,
-                          listing: dict, settings) -> Optional[str]:
+                          listing: dict, settings, eur_ron=None) -> Optional[str]:
     """Actualizeaza randul existent la reaparitia unui anunt cunoscut.
 
     Intoarce un marcaj pentru observabilitate/teste:
     None = fara rand in feed; "bumped" = doar last_checked_at;
     "updated" = pret+scor actualizate; "notified" = si notificare de scadere.
+
+    `eur_ron` e cursul scanului (vezi _scan_user) — se foloseste DOAR ca sa aducem
+    pretul in RON pentru calculate_score; preturile persistate/comparate raman brute.
     """
     ext_id = listing.get("external_id")
     if not ext_id:
@@ -1997,10 +2044,14 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
         db.commit()
         return "bumped"
 
+    # Scaderea de pret se judeca intre valorile BRUTE, in aceeasi moneda (garantat de
+    # garda de mai sus) — nu o atingem. Doar intrarea in scorare se aduce in RON,
+    # fiindca kw.resale_price e in RON.
     drop = (old_price - new_price) / old_price if old_price > 0 else 0.0
     row.price = new_price
+    _new_price_ron = _price_to_ron(new_price, new_cur, eur_ron)
     sd = calculate_score(
-        listing_price=new_price,
+        listing_price=_new_price_ron or 0,
         resale_price=kw.resale_price,
         min_margin_pct=kw.min_margin_pct or 10.0,
         grade_a_min=kw.grade_a_min,
@@ -2316,6 +2367,16 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
     """
     stats = {"new_listings": 0, "alerts_sent": 0}
     settings = _get_or_create_settings(db, user.id)
+    # Curs BNR EUR/RON, O SINGURA DATA pe scan (nu per anunt) — normalizeaza pretul
+    # inainte de scorare, fiindca kw.resale_price e in RON. get_eur_ron are cache pe
+    # zi + fallback 5.0; daca pica de tot ramane None => fail-open, fara conversie.
+    # Mirror pe real_estate_scanner.run_real_estate_scan.
+    try:
+        from app.services.bnr_exchange import get_eur_ron
+        eur_ron = get_eur_ron()
+    except Exception:
+        eur_ron = None
+    _unknown_currency_warned.clear()   # WARN de moneda necunoscuta: o data pe scan
     keywords = (
         db.query(RadarKeyword)
         .filter(RadarKeyword.user_id == user.id, RadarKeyword.is_active == True)
@@ -2478,7 +2539,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     if _already_seen(db, user.id, platform, ext_id):
                         # SAVED-BRIDGE: reaparitia unui anunt cunoscut = re-verificare
                         # gratuita — pret/scor la zi + alerta de scadere pe salvate.
-                        _refresh_seen_listing(db, user, kw, platform, listing, settings)
+                        _refresh_seen_listing(db, user, kw, platform, listing, settings, eur_ron)
                         continue
 
                     # RAD-1 — filtru de vechime per keyword: anunturile prea vechi se marcheaza
@@ -2487,8 +2548,12 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                         _mark_seen(db, user.id, platform, ext_id)
                         continue
 
+                    # Scorul se calculeaza in RON (kw.resale_price e in RON), deci un
+                    # anunt cotat in EUR se converteste cu cursul scanului. Pretul
+                    # persistat mai jos ramane cel BRUT, cu moneda lui.
+                    _price_ron = _price_to_ron(listing.get("price"), listing.get("currency"), eur_ron)
                     score_data = calculate_score(
-                        listing_price=listing.get("price") or 0,
+                        listing_price=_price_ron or 0,
                         resale_price=kw.resale_price,
                         min_margin_pct=kw.min_margin_pct or 10.0,
                         grade_a_min=kw.grade_a_min,
