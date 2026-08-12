@@ -232,6 +232,20 @@ def _portable_migrations(conn, inspector):
         _migrate(conn, "drop_fbg_posts_is_read",
                  "ALTER TABLE facebook_group_posts DROP COLUMN is_read")
 
+    # SHOP-2a — setarile scannerului de deal-uri Shopify, pe radar_settings.
+    # Tabelele noi (deals, shop_price_memory, shop_scan_state) au modele ORM, deci
+    # le creeaza create_all(); aici intra doar coloanele adaugate pe o tabela
+    # EXISTENTA. Portabil: garda _column_exists, fara IF NOT EXISTS, o singura
+    # actiune per ALTER, inregistrare prin _migrate.
+    for _col, _type in (("discord_webhook_deals", "TEXT"),
+                        ("deal_discount_threshold", "FLOAT"),
+                        ("deal_scan_enabled", "BOOLEAN NOT NULL DEFAULT 1"),
+                        ("deal_shops_disabled", "TEXT")):
+        if (_table_exists(inspector, "radar_settings")
+                and not _column_exists(inspector, "radar_settings", _col)):
+            _migrate(conn, f"add_radar_settings_{_col}",
+                     f"ALTER TABLE radar_settings ADD COLUMN {_col} {_type}")
+
 
 def run_migrations():
     """Apply any pending column additions."""

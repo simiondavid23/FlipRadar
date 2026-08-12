@@ -444,6 +444,58 @@ def build_flash_deal_embed(product_name: str, old_price: float, new_price: float
     return embed
 
 
+def _build_deal_embed(deal) -> dict:
+    """SHOP-2a — cardul unui chilipir descoperit de scannerul Shopify."""
+    moneda = deal.currency or ""
+    fields = [
+        {"name": "💰 Pret", "value": f"{deal.price} {moneda}".strip(), "inline": True},
+        {"name": "📉 Discount", "value": f"-{deal.discount_pct:.1f}%", "inline": True},
+    ]
+    # Referinta fata de care pretul e "bun": cea a magazinului (compare_at) sau
+    # minimul nostru istoric. `reason` spune care dintre ele a calificat deal-ul.
+    if deal.compare_at_price:
+        fields.append({"name": "🏷️ Pret de referinta",
+                       "value": f"{deal.compare_at_price} {moneda}".strip(), "inline": True})
+    if deal.min_price_seen:
+        fields.append({"name": "📊 Minim vazut",
+                       "value": f"{deal.min_price_seen} {moneda}".strip(), "inline": True})
+    fields.append({"name": "🏪 Magazin", "value": deal.shop_domain, "inline": True})
+    fields.append({"name": "🎯 Referinta", "value": deal.reason, "inline": True})
+    if deal.sizes_available:
+        marimi = ", ".join(str(m) for m in deal.sizes_available[:10])
+        fields.append({"name": "📏 Marimi in stoc", "value": marimi[:1024], "inline": False})
+
+    embed = {
+        "title": f"🔥 Deal: {deal.title}"[:200],
+        "color": FLASH_DEAL_COLOR,
+        "fields": fields,
+        "footer": {"text": "FlipRadar Deal-uri"},
+    }
+    if deal.url:
+        embed["url"] = deal.url
+    if deal.image_url:
+        embed["thumbnail"] = {"url": deal.image_url}
+    return embed
+
+
+def send_deal_notification(deal, settings) -> bool:
+    """Enqueue pe webhook-ul dedicat de deal-uri. True daca a fost pus in coada.
+
+    Pe modelul lui send_price_alert_notification: lipsa webhook-ului nu e eroare,
+    doar absenta canalului. Deduplicarea pe 24h vine gratis din coada, prin
+    listing_id + module.
+    """
+    wh = getattr(settings, "discord_webhook_deals", None)
+    if not wh:
+        return False
+    # Coloana discord_queue.grade e VARCHAR(2) -> "DL" (deal), nu "deal".
+    discord_service.enqueue(
+        webhook_url=wh, embed=_build_deal_embed(deal),
+        listing_id=f"deal-{deal.shop_domain}-{deal.external_id}",
+        module="deals", grade="DL", mention_here=False)
+    return True
+
+
 def send_price_alert_notification(embed: dict, settings, listing_id: str) -> bool:
     """Enqueue pe webhook-ul dedicat de alerte. Returneaza True daca a fost pus in coada."""
     wh = getattr(settings, "discord_webhook_alerts", None)

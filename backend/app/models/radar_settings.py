@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, JSON
 from datetime import datetime, timezone
 from app.database import Base
 
@@ -33,4 +33,11 @@ class RadarSettings(Base):
     platform_autovit_enabled = Column(Boolean, default=True, nullable=False)
     platform_mobilede_enabled = Column(Boolean, default=True, nullable=False)
     facebook_session_path = Column(String, nullable=True)
+    # SHOP-2a — scannerul de deal-uri Shopify. Deal-urile sunt globale pe instanta,
+    # dar setarile care le guverneaza raman per-user, ca tot restul.
+    discord_webhook_deals = Column(Text, nullable=True)
+    # None -> DEFAULT_DISCOUNT_THRESHOLD (20.0) din deal_scanner.
+    deal_discount_threshold = Column(Float, nullable=True)
+    deal_scan_enabled = Column(Boolean, default=True, nullable=False)
+    deal_shops_disabled = Column(JSON, default=list)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

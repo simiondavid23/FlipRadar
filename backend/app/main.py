@@ -29,6 +29,7 @@ from app.routers.logs import router as logs_router  # FlipRadar — Jurnale Live
 from app.routers.auto_listings_keywords import router as auto_listings_router  # FlipRadar — Auto Anunturi (keyword-uri + feed)
 from app.routers.auto_lot_keywords import router as auto_lot_router  # FlipRadar — Loturi Auto (keyword-uri + feed monitorizat)
 from app.routers.real_estate_keywords import router as re_monitor_router  # FlipRadar — Imobiliare Monitor (keyword-uri + feed)
+from app.routers.deals import router as deals_router  # SHOP-2a — deal-uri Shopify
 
 # Import all models
 from app.models import user, product, price_history, product_source
@@ -56,6 +57,9 @@ from app.models import discord_queue_db
 from app.models import log_entry
 # FASHION-3a — referinta de revanzare + profilul de taxe (fara migrare: tabele noi)
 from app.models import resale_fee_profile, resale_reference
+# SHOP-2a — scannerul de deal-uri Shopify: observatii globale + memoria de pret
+# care alimenteaza referinta R2 + starea de sanatate per magazin.
+from app.models import deal, shop_price_memory, shop_scan_state
 
 # Create all database tables
 Base.metadata.create_all(bind=engine)
@@ -230,6 +234,34 @@ async def lifespan(app: FastAPI):
         print("[Scheduler] Auto lots scan (15m) inregistrat.")
     except Exception as exc:
         print(f"[Scheduler] Auto lots scan setup failed: {exc}")
+
+    # SHOP-2a — scannerul de deal-uri Shopify: enumerare completa a catalogelor,
+    # deci interval larg (6h). Prima rulare e amanata cu 5 minute ca sa nu se
+    # suprapuna peste rafala de scanari de la boot.
+    try:
+        from app.services.deal_scanner import run_deal_scan
+
+        def _run_deal_scan():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_deal_scan(_db)
+            except Exception as exc:
+                print(f"[DealScan] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(
+            _run_deal_scan,
+            "interval",
+            hours=6,
+            id="deal_scan",
+            replace_existing=True,
+            next_run_time=datetime.now() + timedelta(minutes=5),
+        )
+        print("[Scheduler] Deal scan Shopify (6h) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] Deal scan setup failed: {exc}")
 
     # FlipRadar — Imobiliare Monitor: scan (tick 5m, polling per keyword) + cleanup (12:30).
     try:
@@ -514,6 +546,7 @@ app.include_router(logs_router)
 app.include_router(auto_listings_router)
 app.include_router(auto_lot_router)
 app.include_router(re_monitor_router)
+app.include_router(deals_router, prefix="/api/deals")  # SHOP-2a
 
 
 # ────────────────────────────────────────────────────────────────────────────

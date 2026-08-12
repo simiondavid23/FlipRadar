@@ -77,6 +77,7 @@ RealEstateMonitorListing = _model("RealEstateMonitorListing")
 RealEstateListing = _model("RealEstateListing")  # tabelul vechi (deprecat), /real-estate/saved
 ResaleFeeProfile = _model("ResaleFeeProfile")
 ResaleReference = _model("ResaleReference")
+Deal = _model("Deal")  # SHOP-2a — resursa GLOBALA pe instanta (fara user_id)
 
 _NAME = "AN1-authz"
 
@@ -93,6 +94,25 @@ def _session():
         raise
     finally:
         db.close()
+
+
+# ── Fixture: suita nu atinge reteaua ─────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _fara_retea(monkeypatch):
+    """Singurul endpoint din tabel care ajunge la o extractie LIVE e
+    POST /deals/{id}/promote: fiind SAFE_200, requestul chiar se executa pana la
+    capat, in loc sa fie oprit de o verificare de ownership. Il alimentam cu un
+    rezultat sintetic, ca testul sa masoare AUTORIZAREA, nu disponibilitatea
+    magazinului — altfel suita ar deveni rosie cand un site e jos.
+    """
+    monkeypatch.setattr("app.routers.products.extract_product", lambda url, **kw: {
+        "name": _NAME, "price": 100.0, "currency": "EUR", "in_stock": True,
+        "is_aggregate": False, "variants": None, "image_url": None,
+        "canonical_url": "https://asphaltgold.com/products/x",
+        "domain": "asphaltgold.com", "method": "shopify", "override_applied": False,
+    })
+    monkeypatch.setattr("app.routers.products._backfill_ean", lambda *a, **k: None)
+    monkeypatch.setattr("app.routers.products._cross_shop_match", lambda *a, **k: None)
 
 
 # ── Fixture: doi useri autentificati independent ─────────────────────────────────
@@ -293,8 +313,27 @@ def _f_resale_reference(uid):
         return [ref.id]
 
 
+def _f_deal(uid):
+    """SHOP-2a — un deal. EXCEPTIE fata de toate celelalte factory-uri: Deal NU are
+    `user_id`, deci randul nu e "detinut" de uid.
+
+    Nu e o scapare, ci decizia D6: un deal e o OBSERVATIE a scannerului despre un
+    magazin, nu o resursa a userului, iar aplicatia se distribuie ca instanta locala
+    single-user. `uid` se ignora deliberat, iar asteptarea cross-user din ENDPOINTS
+    e SAFE_200, nu DENIED — cu dovada de non-scurgere in testul dedicat de mai jos.
+    """
+    with _session() as db:
+        d = Deal(shop_domain="asphaltgold.com", external_id=uuid.uuid4().hex[:16],
+                 title=_NAME, url="https://asphaltgold.com/products/x",
+                 currency="EUR", price=100.0, discount_pct=50.0, reason="compare_at")
+        db.add(d)
+        db.flush()
+        return [d.id]
+
+
 RESOURCE_FACTORIES = {
     "alert": _f_alert,
+    "deal": _f_deal,
     "inventory": _f_inventory,
     "sale": _f_sale,
     "product": _f_product,
@@ -324,15 +363,23 @@ RESOURCE_FACTORIES = {
 # Pydantic si sa AJUNGA la verificarea de ownership (None = fara body). `expected` =
 # statusuri acceptabile pentru un request cross-user.
 DENIED = frozenset({403, 404})            # cazul normal: resursa lui A e invizibila lui B
-# 4 endpointuri raspund legitim 200 la un ID strain FARA a scurge date: cele 3
-# `.../impact` nu incarca niciodata keyword-ul (numara doar randurile
-# APELANTULUI), iar DELETE /tracked-products/{id} e un bulk-delete scoped pe user
-# (no-op cand nu detii). Dovada ca nu scurg nimic e in testele dedicate mai jos.
+# 6 endpointuri raspund legitim 200 la un ID strain FARA a scurge date:
+#   - cele 3 `.../impact` nu incarca niciodata keyword-ul (numara doar randurile
+#     APELANTULUI);
+#   - DELETE /tracked-products/{id} e un bulk-delete scoped pe user (no-op cand
+#     nu detii);
+#   - cele 2 `/api/deals/{deal_id}` (SHOP-2a): deal-urile sunt GLOBALE pe instanta,
+#     fara `user_id` (decizia D6), deci nu exista "deal-ul lui A" pe care B sa-l
+#     vada. Promovarea creeaza produsul pe contul APELANTULUI, nu al altcuiva.
+# Dovada ca niciunul nu scurge nimic e in testele dedicate mai jos.
 SAFE_200 = frozenset({200})
 
 ENDPOINTS = [
     # ── alerts ──
     ("DELETE", "/api/alerts/{alert_id}", "alert", None, DENIED),
+    # ── deals (SHOP-2a) — resursa globala pe instanta, vezi nota de la SAFE_200 ──
+    ("PATCH", "/api/deals/{deal_id}", "deal", {"state": "vazut"}, SAFE_200),
+    ("POST", "/api/deals/{deal_id}/promote", "deal", None, SAFE_200),
     ("PUT", "/api/alerts/{alert_id}/toggle", "alert", None, DENIED),
     # ── auto-listings (feed + keywords) ──
     ("DELETE", "/api/auto-listings/feed/{listing_id}", "auto_feed_listing", None, DENIED),
@@ -565,6 +612,32 @@ def test_tracked_delete_is_user_scoped_noop(two_users):
             TrackedProduct.user_id == id_a, TrackedProduct.product_id == pid
         ).count()
     assert survived == 1, "IDOR tracked-products: B a sters produsul urmarit al lui A"
+
+
+def test_deal_promote_creates_product_for_caller(two_users):
+    """SHOP-2a — dovada pozitiva pentru cele doua endpointuri SAFE_200 de la /deals.
+
+    Deal-urile n-au proprietar (D6), deci un 200 cross-user e asteptat. Intrebarea
+    care ramane e alta si e cea care conteaza: PE CONTUL CUI aterizeaza produsul?
+    B promoveaza -> produsul si randul de urmarire trebuie sa fie ale lui B, iar A
+    sa nu primeasca nimic. Altfel promovarea ar scrie in contul altui user.
+    """
+    client_a, client_b, id_a, id_b = two_users
+    (deal_id,) = _f_deal(id_a)
+
+    resp = client_b.post(f"/api/deals/{deal_id}/promote")
+    assert resp.status_code == 200, resp.text[:300]
+    product_id = resp.json()["product_id"]
+
+    with _session() as db:
+        produs = db.query(Product).filter(Product.id == product_id).one()
+        assert produs.user_id == id_b, "promovarea a creat produsul pe contul altui user"
+        assert db.query(TrackedProduct).filter(
+            TrackedProduct.user_id == id_b, TrackedProduct.product_id == product_id
+        ).count() == 1
+        assert db.query(TrackedProduct).filter(
+            TrackedProduct.user_id == id_a
+        ).count() == 0, "A a primit un produs urmarit pe care nu l-a cerut"
 
 
 # ── GARDIANUL de acoperire ───────────────────────────────────────────────────────

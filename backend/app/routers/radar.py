@@ -153,12 +153,14 @@ class SettingsUpdate(BaseModel):
     discord_webhook_imob_a: Optional[str] = None
     discord_webhook_imob_b: Optional[str] = None
     discord_webhook_alerts: Optional[str] = None
+    # SHOP-2a — webhook dedicat pentru deal-urile Shopify.
+    discord_webhook_deals: Optional[str] = None
 
     @field_validator(
         "discord_webhook_all", "discord_webhook_buy_now", "discord_webhook_maybe",
         "discord_webhook_auto", "discord_webhook_auto_all", "discord_webhook_auto_b",
         "discord_webhook_imob_all", "discord_webhook_imob_a", "discord_webhook_imob_b",
-        "discord_webhook_alerts",
+        "discord_webhook_alerts", "discord_webhook_deals",
     )
     @classmethod
     def _check_webhooks(cls, v):
@@ -176,6 +178,21 @@ class SettingsUpdate(BaseModel):
     platform_publi24_enabled: Optional[bool] = None
     platform_autovit_enabled: Optional[bool] = None
     platform_mobilede_enabled: Optional[bool] = None
+    # SHOP-2a — scannerul de deal-uri Shopify.
+    deal_discount_threshold: Optional[float] = None
+    deal_scan_enabled: Optional[bool] = None
+    deal_shops_disabled: Optional[list[str]] = None
+
+    @field_validator("deal_discount_threshold")
+    @classmethod
+    def _check_deal_threshold(cls, v):
+        # None = "revino la implicit"; 0 sau negativ n-ar avea sens ca prag de
+        # discount, deci se respinge explicit in loc sa fie normalizat tacut.
+        if v is None:
+            return None
+        if v <= 0:
+            raise ValueError("Pragul de discount trebuie să fie pozitiv.")
+        return float(v)
 
 
 class ManualSearchRequest(BaseModel):
@@ -1250,6 +1267,14 @@ def update_settings(
         s.discord_webhook_imob_b = data.discord_webhook_imob_b or None
     if data.discord_webhook_alerts is not None:
         s.discord_webhook_alerts = data.discord_webhook_alerts or None
+    if data.discord_webhook_deals is not None:
+        s.discord_webhook_deals = data.discord_webhook_deals or None
+    if data.deal_discount_threshold is not None:
+        s.deal_discount_threshold = float(data.deal_discount_threshold)
+    if data.deal_scan_enabled is not None:
+        s.deal_scan_enabled = bool(data.deal_scan_enabled)
+    if data.deal_shops_disabled is not None:
+        s.deal_shops_disabled = [str(x) for x in data.deal_shops_disabled]
     if data.discord_here_radar is not None:
         s.discord_here_radar = bool(data.discord_here_radar)
     if data.discord_here_auto is not None:
