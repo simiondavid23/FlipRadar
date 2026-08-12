@@ -237,6 +237,76 @@ stockprice cu codurile RO (ROE/EUR/RO), fara cookie-uri. Preturi EUR.
 
 ---
 
+## SHOP-1a
+
+Sondele Grup 1 (2026-08-12) si SHOP-1a (2026-08-13). Primul val intrat pe baza
+PLATFORMEI, nu a formei de date din pagina: 13 magazine Shopify cu endpoint de
+enumerare deschis, validate apoi pe extractie per-produs.
+
+Rezultatul sondei de validare: **38/39 produse MATCH** (3 handle-uri per domeniu,
+candidatul comparat cu pretul afirmat de pagina in ld+json/OpenGraph). Zero domenii
+fara referinta — toate cele 13 publica ld+json cu pret. Monede masurate prin
+`/cart.js`, incrucisate cu `priceCurrency` din pagini, consistente peste tot:
+EUR x7, RON x5, SEK x1 (caliroots).
+
+### Descoperirea care a dictat implementarea: `.js`, nu `.json`
+
+Endpoint-ul per-produs `/products/<handle>.json` **nu poarta deloc campul
+`available`** — 0 din 39 de produse, pe toate cele 13 domenii. Variantele lui au
+`inventory_management`, dar nimic despre disponibilitate, deci regula FASHION-2
+(pretul minim al marimilor DISPONIBILE) e imposibil de aplicat pe el. Endpoint-ul
+Ajax `/products/<handle>.js` il poarta 13/13. In schimb formatul pretului difera:
+
+| | `/products/<h>.json` | `/products/<h>.js` |
+|---|---|---|
+| `available` per varianta | absent (0/39) | prezent (13/13) |
+| format pret | string zecimal `'248.61'` | int in unitati minore `24861` |
+
+Conversia ÷100 s-a validat singura: 38/39 potriviri cu pretul afirmat de pagina,
+zero anomalii de format pe candidat (321/321 variante cu `price` int).
+
+### nakedcph.com — singurul mismatch, si nu al magazinului
+
+Produsul `nike-nike-shox-tl-se-black-black-black-ir2097-001`, cu 8/8 variante
+disponibile: candidatul din Ajax e 182.95, iar ld+json-ul paginii declara
+`{"price": "183", "priceCurrency": "EUR"}`. Pagina AFISEAZA 182,95 (22 aparitii in
+HTML), deci candidatul e cel corect — tema publica pretul rotunjit la intreg in
+ld+json. Celelalte doua produse nakedcph au preturi rotunde (80, 50), unde
+rotunjirea e invizibila; de aici 2/3. Verdict: VALIDAT, cu nota in registru ca
+ld+json-ul acestui domeniu e nesigur ca sursa de tracking.
+
+### Doua erori de MASURARE ale sondei, gasite si corectate
+
+Amandoua au produs verdicte false inainte de a fi prinse; se noteaza fiindca sunt
+capcane care se pot repeta la valurile urmatoare.
+
+1. **Virgula zecimala in referinte.** Parserul de referinta cerea `\d+(\.\d+)?`,
+   deci arunca ofertele ld+json scrise `'248,61'`. rocashoes.ro iesea 0/3, cu
+   "referinte" de 24861 — aceleasi cifre fara virgula, de pe variantele epuizate.
+   Dupa corectie: 3/3 MATCH. Formatul cu virgula apare la 18 din 39 de produse, deci
+   nu e o ciudatenie a unui singur magazin.
+2. **Endpoint-ul gresit pentru candidat.** Prima rulare deriva candidatul din
+   `.json` si raporta 39/39 produse epuizate — implauzibil pentru 13 magazine vii,
+   de unde s-a prins lipsa campului `available`.
+
+### Limitare asumata
+
+La niciunul dintre cele 39 de produse `min(disponibile)` n-a diferit de
+`min(toate)`: cea mai ieftina marime era mereu in stoc. Regula FASHION-2 e deci
+implementata si exercitata (35 de produse aveau date de disponibilitate), dar
+ramura in care regula chiar DISCRIMINEAZA n-a aparut live. E acoperita offline, pe
+payload sintetic, de `test_pret_minim_al_marimilor_disponibile` din
+`test_shopify_extractor.py`.
+
+### Nota despre afew
+
+Domeniul gol `afew-store.com` redirecteaza spre storefront-ul `de.*`, iar
+`en.afew-store.com` (deja in catalog de la FASHION-2) enumereaza identic: acelasi
+handle, acelasi pret, aceeasi disponibilitate. Ramane o singura intrare, cea cu
+subdomeniu; domeniul gol nu se adauga.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

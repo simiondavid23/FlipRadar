@@ -22,13 +22,18 @@ CURENTA; acolo e ISTORICUL. Un val nou adauga intrari aici si o sectiune acolo.
 
 Campurile unei intrari:
   label       — numele magazinului, pentru UI
-  category    — electronice | fashion | sneakers
+  category    — electronice | fashion | sneakers | incaltaminte | tcg
   country     — cod de tara ISO, sau "EU" cand tara exacta nu e confirmata
   delivery    — ro_confirmed   (livreaza in RO, confirmat la sonda)
                 ro_storefront  (magazin cu vitrina .ro)
                 b2b_only | unconfirmed
   method      — jsonld | og | microdata | custom | shopify | browser
   status      — validated (sonda live trecuta) | probed | planned | watchlist
+  currency    — moneda magazinului, masurata la sonda (/cart.js incrucisat cu
+                priceCurrency din pagina). OBLIGATORIE cand method == "shopify":
+                payload-ul Ajax al Shopify NU poarta moneda, deci registrul e
+                singura ei sursa. Optionala altfel (celelalte metode o citesc din
+                pagina). Pinuita de test_shopify_cere_moneda.
   impersonate — OPTIONAL, treapta TLS/HTTP2 cand default-ul nu deschide site-ul
   overrides   — OPTIONAL, payload-ul DOMAIN_OVERRIDES (contractul campurilor e
                 documentat la structura din product_page_extractor)
@@ -136,15 +141,19 @@ SHOP_REGISTRY: dict[str, dict] = {
         "notes": "FASHION-2",
     },
     # Cheia e CU subdomeniu: _domain_of taie doar "www.", iar refresh-ul compara
-    # pe egalitate exacta.
+    # pe egalitate exacta. Domeniul GOL (afew-store.com) nu se adauga: redirecteaza
+    # spre storefront-ul de.*, iar catalogul e acelasi (acelasi handle, acelasi pret
+    # masurate pe ambele la SHOP-1a) — o a doua intrare ar fi acelasi magazin de
+    # doua ori.
     "en.afew-store.com": {
         "label": "Afew Store",
         "category": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
-        "method": "jsonld",
+        "method": "shopify",
         "status": "validated",
-        "notes": "FASHION-2",
+        "currency": "EUR",
+        "notes": "FASHION-2, SHOP-1a",
     },
 
     # ── FASHION-2b ────────────────────────────────────────────────────────────
@@ -259,6 +268,131 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "DISCOVERY-2",
     },
+
+    # ── SHOP-1a ───────────────────────────────────────────────────────────────
+    # Primul val de magazine Shopify: extractia nu mai trece prin HTML, ci prin
+    # endpoint-ul Ajax /products/<handle>.js (singurul per-produs care poarta
+    # `available`). Moneda vine de aici, din registru — payload-ul nu o contine.
+    "asphaltgold.com": {
+        "label": "Asphaltgold",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "EUR",
+        "notes": "SHOP-1a",
+    },
+    "footdistrict.com": {
+        "label": "Footdistrict",
+        "category": "sneakers",
+        "country": "ES",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "EUR",
+        "notes": "SHOP-1a",
+    },
+    "overkillshop.com": {
+        "label": "Overkill",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "EUR",
+        "notes": "SHOP-1a; livrare de reverificat periodic (nota lista master)",
+    },
+    "nakedcph.com": {
+        "label": "NAKED Copenhagen",
+        "category": "sneakers",
+        "country": "DK",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "EUR",
+        "notes": "SHOP-1a; ld+json rotunjeste pretul la intreg, nesigur ca sursa",
+    },
+    "caliroots.com": {
+        "label": "Caliroots",
+        "category": "sneakers",
+        "country": "SE",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "SEK",
+        "notes": "SHOP-1a",
+    },
+    "patta.nl": {
+        "label": "Patta",
+        "category": "sneakers",
+        "country": "NL",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "EUR",
+        "notes": "SHOP-1a",
+    },
+    "slamjam.com": {
+        "label": "Slam Jam",
+        "category": "sneakers",
+        "country": "IT",
+        "delivery": "ro_confirmed",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "EUR",
+        "notes": "SHOP-1a",
+    },
+    "redgoblin.ro": {
+        "label": "Red Goblin",
+        "category": "tcg",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "RON",
+        "notes": "SHOP-1a",
+    },
+    "ada-shoes.ro": {
+        "label": "Ada Shoes",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "RON",
+        "notes": "SHOP-1a",
+    },
+    "rocashoes.ro": {
+        "label": "Roca Shoes",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "RON",
+        "notes": "SHOP-1a",
+    },
+    "shopium.ro": {
+        "label": "Shopium",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "RON",
+        "notes": "SHOP-1a",
+    },
+    "sosukicks.ro": {
+        "label": "Sosu Kicks",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "shopify",
+        "status": "validated",
+        "currency": "RON",
+        "notes": "SHOP-1a",
+    },
 }
 
 
@@ -288,3 +422,13 @@ def impersonate_overrides() -> dict[str, str]:
     """Domeniu -> treapta impersonate, doar intrarile care au cheia."""
     return {domain: meta["impersonate"]
             for domain, meta in SHOP_REGISTRY.items() if "impersonate" in meta}
+
+
+def shopify_domains() -> set[str]:
+    """Domeniile servite de extractorul generic Shopify (method == "shopify").
+
+    Apartenenta se decide din `method`, nu dintr-o lista paralela: un magazin nu
+    poate fi marcat shopify aici si uitat dincolo.
+    """
+    return {domain for domain, meta in SHOP_REGISTRY.items()
+            if meta.get("method") == "shopify"}

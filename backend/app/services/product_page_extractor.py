@@ -39,7 +39,12 @@ import urllib.parse
 
 from bs4 import BeautifulSoup
 
-from app.services.shop_registry import domain_overrides, validated_domains
+from app.services.shop_registry import (
+    SHOP_REGISTRY,
+    domain_overrides,
+    shopify_domains,
+    validated_domains,
+)
 
 
 class ProductExtractionError(Exception):
@@ -904,6 +909,158 @@ def _extract_asos(url: str) -> dict:
     }
 
 
+# ── Shopify (SHOP-1) ──────────────────────────────────────────────────────────
+
+_SHOPIFY_HANDLE_RE = re.compile(r"/products/([^/?#]+)")
+
+# Titlul pe care Shopify il da variantei unice a unui produs FARA optiuni.
+_SHOPIFY_FARA_VARIANTE = "Default Title"
+
+# Domeniile servite de extractorul generic, derivate din `method` in registru.
+_SHOPIFY_DOMAINS: set[str] = shopify_domains()
+
+
+def _shopify_variant_price(brut):
+    """Pretul unei variante Shopify: int in unitati MINORE (24861 -> 248.61).
+
+    Endpoint-ul Ajax da intotdeauna int (masurat 321/321 variante la sonda
+    SHOP-1a); acceptam si string-ul numai-cifre, fiindca e aceeasi valoare doar
+    serializata altfel. Orice alta forma (zecimale, virgule, float) intoarce None
+    si varianta se SARE — aceeasi filozofie ca marimile necotate din
+    _variants_from_offer_list: un element neinteligibil nu invalideaza restul.
+    """
+    if isinstance(brut, bool) or brut is None:
+        return None
+    if isinstance(brut, int):
+        return brut / 100.0
+    if isinstance(brut, str) and brut.isdigit():
+        return int(brut) / 100.0
+    return None
+
+
+def _extract_shopify(url: str) -> dict:
+    """Magazinele Shopify — extractie din endpoint-ul Ajax /products/<handle>.js.
+
+    De ce `.js` si nu `.json`: sonda SHOP-1a a masurat ca varianta din
+    /products/<handle>.json NU poarta deloc campul `available` (0 din 39 de
+    produse, pe toate cele 13 domenii), deci regula FASHION-2 — pretul minim al
+    marimilor DISPONIBILE — e imposibil de aplicat pe el. `.js` il poarta 13/13.
+    In schimb formatul pretului difera: int in unitati minore, nu string zecimal.
+
+    Moneda NU e in payload; vine din registru (campul `currency`, obligatoriu
+    pentru intrarile shopify). Un singur fetch, prin poarta guarded C-14 —
+    domeniile ajung in allow-list automat, fiind in VALIDATED_DOMAINS.
+    """
+    parsed = urllib.parse.urlparse(url or "")
+    match = _SHOPIFY_HANDLE_RE.search(parsed.path or "")
+    if match is None:
+        raise ProductExtractionError(
+            "no_product_data", f"URL Shopify fara /products/<handle>: {(url or '')[:120]}")
+
+    # Handle-ul poate veni cu sufix de API lipit, daca userul a copiat chiar URL-ul
+    # endpointului. Prefixele de locale din cale (/en/products/...) nu deranjeaza:
+    # regexul ia ce urmeaza dupa /products/, iar fetch-ul refoloseste host-ul
+    # ORIGINAL — subdomeniul conteaza (en.afew-store.com).
+    handle = match.group(1)
+    for sufix in (".js", ".json"):
+        if handle.endswith(sufix):
+            handle = handle[: -len(sufix)]
+            break
+    if not handle:
+        raise ProductExtractionError(
+            "no_product_data", f"Handle Shopify gol: {(url or '')[:120]}")
+
+    baza = f"{parsed.scheme or 'https'}://{parsed.netloc}"
+    corp = _fetch_text_guarded(f"{baza}/products/{handle}.js")
+    try:
+        payload = json.loads(corp)
+    except Exception:
+        raise ProductExtractionError(
+            "no_product_data", f"Payload Ajax neparsabil pentru handle '{handle[:60]}'")
+    if not isinstance(payload, dict):
+        raise ProductExtractionError(
+            "no_product_data", f"Payload Ajax neasteptat pentru handle '{handle[:60]}'")
+
+    name = _clean_text(payload.get("title"))
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Produs Shopify fara titlu: {(url or '')[:120]}")
+
+    # --- variantele: pret + disponibilitate ---
+    variante_brute = payload.get("variants") or []
+    variante, disponibile, toate = [], [], []
+    pret_vazut = False
+    for v in variante_brute:
+        if not isinstance(v, dict):
+            continue
+        if v.get("price") is not None:
+            pret_vazut = True
+        price = _shopify_variant_price(v.get("price"))
+        if price is None or price <= 0:
+            continue
+        in_stock = v.get("available") if isinstance(v.get("available"), bool) else None
+        toate.append(price)
+        if in_stock:
+            disponibile.append(price)
+        # Titlul variantei concateneaza optiunile ("42 / Black / Piele"), deci e mai
+        # informativ decat option1 singur.
+        variante.append({
+            "variant": _clean_text(v.get("title")) or _clean_text(v.get("option1")),
+            "price": price,
+            "in_stock": in_stock,
+        })
+
+    # --- FASHION-2: minimul marimilor DISPONIBILE ---
+    if disponibile:
+        price, in_stock = min(disponibile), True
+    elif toate:
+        price, in_stock = min(toate), False
+    else:
+        # Aceeasi distinctie ca in parse_product_html: daca pagina CHIAR poarta
+        # preturi dar niciunul nu e citibil, e invalid_price (specific); daca nu
+        # poarta niciunul, n-avem date de produs.
+        raise ProductExtractionError(
+            "invalid_price" if pret_vazut else "no_product_data",
+            f"Niciun pret valid pentru '{name[:60]}' ({len(variante_brute)} variante)")
+
+    # Un singur variant "Default Title" = produs FARA optiuni, deci simplu.
+    if len(variante) == 1 and variante[0]["variant"] == _SHOPIFY_FARA_VARIANTE:
+        variante = None
+
+    image_url = payload.get("featured_image")
+    if isinstance(image_url, str) and image_url.startswith("//"):
+        image_url = "https:" + image_url
+
+    cale = payload.get("url") if isinstance(payload.get("url"), str) else None
+    canonical_url = baza + (cale or f"/products/{handle}")
+
+    return {
+        "name": name,
+        "price": price,
+        "currency": (SHOP_REGISTRY.get(match_shop_domain(_domain_of(url), _SHOPIFY_DOMAINS))
+                     or {}).get("currency"),
+        "in_stock": in_stock,
+        "is_aggregate": False,
+        "variants": variante or None,
+        "image_url": image_url or None,
+        "canonical_url": canonical_url,
+        "domain": match_shop_domain(_domain_of(url), _SHOPIFY_DOMAINS),
+        "method": "shopify",
+        "override_applied": False,
+    }
+
+
+def _shopify_extractor_for(url: str):
+    """True daca domeniul e servit de extractorul generic Shopify.
+
+    De ce NU prin CUSTOM_EXTRACTORS: acela mapeaza domenii la cod BESPOKE, cate o
+    functie per magazin (asos). Aici 13 domenii impart UN singur extractor condus
+    de registru, iar apartenenta se decide din campul `method`, nu dintr-o lista
+    paralela care ar putea diverge de el.
+    """
+    return match_shop_domain(_domain_of(url), _SHOPIFY_DOMAINS) is not None
+
+
 # Domenii unde datele NU stau in HTML-ul paginii, deci fluxul generic n-are ce citi.
 # Cheia e domeniul de baza; potrivirea e suffix-safe, ca la allow-list-ul C-14.
 CUSTOM_EXTRACTORS: dict[str, callable] = {
@@ -941,6 +1098,12 @@ def extract_product(url: str, max_retries: int = 3) -> dict:
     custom = _custom_extractor_for(url)
     if custom is not None:
         return custom(url)
+
+    # SHOP-1, simetric cu blocul de mai sus: magazinele Shopify au datele in
+    # endpoint-ul Ajax, nu in HTML. Acelasi contract de rezultat si aceleasi
+    # ProductExtractionError, deci apelantii nu vad nicio diferenta.
+    if _shopify_extractor_for(url):
+        return _extract_shopify(url)
 
     # Import lenes, in corpul functiei: evita ciclul de import de cand, in
     # RETAIL-3, scraper_service va importa acest modul. Allow-list-ul SSRF C-14

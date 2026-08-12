@@ -5,18 +5,21 @@ si unul pe IZOLAREA derivarilor. Testele de egalitate cu structurile istorice au
 existat doar cat timp registrul a mers in paralel cu literalele (REG-1); dupa
 comutarea de la REG-2 ele ar compara derivarea cu ea insasi, deci s-au sters.
 """
+import re
+
 from app.services import product_page_extractor as ppe
 from app.services import scraper_service as ss
 from app.services.shop_registry import (
     SHOP_REGISTRY,
     domain_overrides,
     impersonate_overrides,
+    shopify_domains,
     validated_domains,
 )
 
 _CAMPURI_OBLIGATORII = ("label", "category", "country", "delivery", "method", "status", "notes")
 
-_CATEGORII = {"electronice", "fashion", "sneakers"}
+_CATEGORII = {"electronice", "fashion", "sneakers", "incaltaminte", "tcg"}
 _LIVRARI = {"ro_confirmed", "ro_storefront", "b2b_only", "unconfirmed"}
 _METODE = {"jsonld", "og", "microdata", "custom", "shopify", "browser"}
 _STARI = {"validated", "probed", "planned", "watchlist"}
@@ -45,6 +48,9 @@ def test_registru_intrari_valide():
         if "overrides" in meta:
             assert isinstance(meta["overrides"], dict) and meta["overrides"], \
                 f"{domain}: overrides trebuie sa fie dict nevid"
+        if "currency" in meta:
+            assert isinstance(meta["currency"], str) and re.fullmatch(r"[A-Z]{3}", meta["currency"]), \
+                f"{domain}: currency trebuie sa fie cod ISO din 3 litere mari"
 
 
 def test_derivarile_intorc_obiecte_proaspete():
@@ -77,3 +83,22 @@ def test_derivarile_intorc_obiecte_proaspete():
     trepte["magazin-de-test.example"] = "firefox135"
     assert "magazin-de-test.example" not in ss._IMPERSONATE_OVERRIDES
     assert "magazin-de-test.example" not in impersonate_overrides()
+
+
+def test_shopify_cere_moneda():
+    """Moneda e OBLIGATORIE pe intrarile shopify: payload-ul Ajax nu o poarta, deci
+    registrul e singura ei sursa. O intrare shopify fara `currency` ar produce un
+    rezultat cu currency=None, adica un pret fara unitate — exact bugul tacut pe
+    care campul il previne."""
+    shopify = shopify_domains()
+    assert shopify, "registrul trebuie sa aiba cel putin un magazin shopify"
+
+    for domain in shopify:
+        meta = SHOP_REGISTRY[domain]
+        moneda = meta.get("currency")
+        assert isinstance(moneda, str) and re.fullmatch(r"[A-Z]{3}", moneda), \
+            f"{domain}: intrare shopify fara currency valid (are {moneda!r})"
+
+    intai, apoi = shopify_domains(), shopify_domains()
+    assert intai == apoi
+    assert intai is not apoi
