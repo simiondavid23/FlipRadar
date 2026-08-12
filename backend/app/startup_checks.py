@@ -26,9 +26,10 @@ except Exception:
 # autogenerare), GROQ_API_KEY e optional; lista ramane pentru variabile viitoare
 # cu adevarat obligatorii.
 REQUIRED_VARS = []
+# R5 — FACEBOOK_EMAIL / FACEBOOK_PASSWORD au fost scoase: login-ul automat headless
+# nu mai exista (risc de checkpoint pe cont), deci nimic nu le mai citeste.
 OPTIONAL_VARS = ["GROQ_API_KEY", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD",
-                 "DISCORD_WEBHOOK_URL", "FACEBOOK_EMAIL", "FACEBOOK_PASSWORD",
-                 "LOG_DB_PERSISTENCE"]
+                 "DISCORD_WEBHOOK_URL", "LOG_DB_PERSISTENCE"]
 
 
 def validate_env() -> None:

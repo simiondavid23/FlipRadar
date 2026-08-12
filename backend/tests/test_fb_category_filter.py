@@ -43,7 +43,7 @@ def _radar(monkeypatch, obiecte: list, category=None, logs=None) -> list:
     monkeypatch.setattr(fb, "_iter_listing_objects", lambda h: list(obiecte))
     monkeypatch.setattr(fb.log_manager, "emit",
                         lambda module, level, msg: logs.append((level, msg)) if logs is not None else None)
-    monkeypatch.setattr(fauth, "needs_reauth", lambda results, path: False)
+    monkeypatch.setattr(fauth, "session_probably_expired", lambda results, path: False)
     return fb.search_facebook(keyword="geaca", max_price=5000, category=category,
                               session_path="sesiune.json")
 

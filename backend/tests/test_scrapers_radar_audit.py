@@ -148,15 +148,23 @@ def test_vinted_filtrul_de_pret_maxim(monkeypatch):
     assert [r["external_id"] for r in out] == ["vinted_1"]
 
 
-# ── Facebook: sesiunea invalida incearca re-auth INAINTE de a renunta ────────────
+# ── Facebook: sesiunea invalida SEMNALIZEAZA (nu mai incearca re-auth) ───────────
 
-def test_facebook_sesiune_invalida_incearca_reauth(monkeypatch):
+def test_facebook_sesiune_invalida_semnalizeaza_fara_login_automat(monkeypatch):
+    """REscris la R5. Testul de dinainte (`test_facebook_sesiune_invalida_incearca_reauth`)
+    pinuia exact comportamentul ELIMINAT deliberat: un login headless automat cu
+    FACEBOOK_EMAIL/FACEBOOK_PASSWORD, care atragea checkpoint pe cont si putea bloca
+    si sesiunile MANUALE ulterioare. Invarianta utila ramane „sesiunea invalida nu
+    trece tacut", asa ca o verificam pe noul semnal: WARN + BLOCKED, zero login-uri.
+    """
     from app.services.radar import facebook_scraper as fb
-    from app.services import facebook_auth
-    calls = []
+    from app.services.radar.base_scraper import Outcome
+    logs, blocked = [], []
     monkeypatch.setattr(fb, "is_facebook_session_valid", lambda p: False)
-    monkeypatch.setattr(facebook_auth, "re_authenticate",
-                        lambda p: calls.append(p) or False)
-    monkeypatch.setattr(fb.log_manager, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(fb.log_manager, "emit",
+                        lambda module, level, msg: logs.append((level, msg)))
+    monkeypatch.setattr(fb, "report_outcome",
+                        lambda platform, outcome: (blocked.append((platform, outcome)), False)[1])
     assert fb.search_facebook("test", max_price=None) == []
-    assert len(calls) == 1                            # re-auth chiar s-a incercat
+    assert [lvl for lvl, _ in logs] == ["WARN"]
+    assert blocked == [("facebook", Outcome.BLOCKED)]

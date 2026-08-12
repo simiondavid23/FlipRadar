@@ -4,8 +4,9 @@ Rescris Faza 1 (2026-07-04). Diagnosticul live a arătat că un GET cu curl_cffi
 cookie-urile din storage_state-ul salvat (sesiunea Playwright de la login-ul manual)
 trece de anti-bot fără login-wall și primește pagina server-rendered cu tot feed-ul
 în blocuri <script type="application/json">. Playwright NU se mai importă aici —
-rămâne doar la login-ul manual (services/radar/facebook_auth.py) și la
-re-autentificarea automată headless (services/facebook_auth.py).
+rămâne doar la login-ul manual (services/radar/facebook_auth.py). Re-autentificarea
+automată headless a fost ELIMINATĂ la R5 (risc de checkpoint pe cont) — când sesiunea
+moare doar semnalizăm; vezi services/facebook_auth.py.
 
 Cardurile de listare sunt obiecte JSON care au SIMULTAN cheile
 "marketplace_listing_title" și "id" (typename observat GroupCommerceProductItem, dar
@@ -175,8 +176,8 @@ def _iter_listing_objects(html: str) -> list[dict]:
 # R3 / FBM-1e — markerii formularului de login servit IN pagina. Facebook raspunde
 # frecvent 200 pe URL-ul ORIGINAL, cu formularul de login in corp si FARA redirect,
 # deci verificarea pe final_url nu-l prinde: iese "0 rezultate OK", iar plasa
-# needs_reauth cere fisier de sesiune mai vechi de 23h — o sesiune invalidata la
-# 2h dupa login producea zile de zero-uri tacute.
+# session_probably_expired cere fisier de sesiune mai vechi de 23h — o sesiune
+# invalidata la 2h dupa login producea zile de zero-uri tacute.
 # Detectorul a fost scris intai in scrapers/real_estate/facebook_real_estate (FBM-1f,
 # cu teste); aici e casa lui canonica — modulul FB din care importa deja
 # facebook_auto_scraper si, de la R3, si facebook_real_estate.
@@ -309,7 +310,6 @@ def search_facebook(
     category: Optional[str] = None,
     page: int = 1,
     max_scrolls: int = 10,
-    _retry: bool = False,
 ) -> list[dict]:
     """Caută pe Facebook Marketplace cu o sesiune pre-logată, prin curl_cffi.
 
@@ -332,21 +332,13 @@ def search_facebook(
     if page and page > 1:
         return []
     if not is_facebook_session_valid(session_path):
-        # SCRAPE-AUDIT: early-return-ul statea INAINTEA blocului de re-auth de la
-        # finalul functiei, deci o sesiune mai veche de 30 de zile nu mai ajungea
-        # NICIODATA la re_authenticate — platforma murea definitiv-tacut. Incercam
-        # re-auth o singura data (no-op fara credentiale configurate).
-        if not _retry:
-            from app.services.facebook_auth import re_authenticate
-            if re_authenticate(session_path):
-                return search_facebook(
-                    keyword=keyword, max_price=max_price, judet=judet, oras=oras,
-                    exclude_words=exclude_words, session_path=session_path,
-                    min_price=min_price, category=category, page=page,
-                    max_scrolls=max_scrolls, _retry=True,
-                )
+        # R5 — aici se incerca un login automat headless. A fost ELIMINAT: chromium
+        # fara masca + parola din .env = profil de checkpoint, iar un checkpoint
+        # declansat automat poate bloca si sesiunile MANUALE ale contului. Acum doar
+        # semnalizam: WARN pentru user + BLOCKED la watchdog (alerta dupa prag).
         log_manager.emit("radar", "WARN",
-            "Facebook: sesiune invalida/expirata — reconectare necesara")
+            "Facebook: sesiune invalida/expirata — reconecteaza din Setari Radar → Facebook")
+        report_outcome("facebook", Outcome.BLOCKED)
         return []
 
     cookies = _load_cookies(session_path)
@@ -374,7 +366,7 @@ def search_facebook(
             # Verificam doar cand nu exista NICIUN obiect de listare (cand exista,
             # pagina e clar cea buna si scanarea HTML-ului ar fi cost inutil).
             # Comportamentul e identic cu ramura de redirect de mai sus: WARN si
-            # `results` gol, deci needs_reauth/re_authenticate de la final decid la
+            # `results` gol, deci semnalul de sesiune moarta de la final se judeca la
             # fel — nu exista cale noua. In plus raportam BLOCKED la watchdog, ca sa
             # existe si o alerta de platforma, nu doar badge-ul de sesiune din UI.
             if not by_id and _looks_like_login_wall(html):
@@ -469,18 +461,16 @@ def search_facebook(
     log_manager.emit("radar", "OK",
         f'Facebook: {len(results)} rezultate pentru "{keyword_clean}"')
 
-    # 4.6 + PAS 3 — re-autentificare automata (o singura data). needs_reauth e conservator
-    # (doar 0 rezultate + storage_state real mai vechi de 23h). session_path e pasat EXPLICIT
-    # (fix-ul de cale din facebook_auth) atat la citire cat si la scriere.
-    if not _retry:
-        from app.services.facebook_auth import needs_reauth, re_authenticate
-        if needs_reauth(results, session_path) and re_authenticate(session_path):
-            return search_facebook(
-                keyword=keyword, max_price=max_price, judet=judet, oras=oras,
-                exclude_words=exclude_words, session_path=session_path,
-                min_price=min_price, category=category, page=page,
-                max_scrolls=max_scrolls, _retry=True,
-            )
+    # R5 — semnalizare in loc de re-autentificare automata. Detectia ramane aceeasi
+    # (0 rezultate + storage_state real mai vechi de 23h, deci conservatoare), dar
+    # actiunea nu mai e un login headless, ci un semnal: WARN pentru user si BLOCKED
+    # la health_watchdog, care alerteaza dupa pragul lui. Vezi facebook_auth.py.
+    from app.services.facebook_auth import session_probably_expired
+    if session_probably_expired(results, session_path):
+        log_manager.emit("radar", "WARN",
+            "Facebook: 0 rezultate si sesiune veche (>23h) — pare expirata, "
+            "reconecteaza din Setari Radar → Facebook")
+        report_outcome("facebook", Outcome.BLOCKED)
     return results
 
 
