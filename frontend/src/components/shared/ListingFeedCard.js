@@ -15,6 +15,13 @@ const CARD_BORDER = "rgba(94,140,255,.13)";
 export default function ListingFeedCard({
   listing, scoreCfg, scoreBadge, platformCfg, platformBadge, image, openLabel,
   showMarginLine = true, imageOverlaySlot = null, priceNode = null, specsNode = null,
+  // SHOP-2b — doua props ADITIVE, folosite deocamdata doar de feed-ul de deal-uri:
+  //   hideActions   — randeaza DOAR butonul de deschidere (deal-urile incheiate nu
+  //                   mai pot fi promovate sau ignorate, deci butoanele ar minti).
+  //   onOpenExternal— hook pe butonul de deschidere, care isi face singur
+  //                   window.open si opreste propagarea, deci nu ajunge la onOpen.
+  // Ambele sunt optionale: paginile care nu le paseaza raman identice.
+  hideActions = false, onOpenExternal = null,
   onOpen, onSave, onIgnore, compareSelected, bulkSelected, isSelected,
   onToggleSelect, onToggleCompare, onToggleBulk, onDelete,
   confirmingDelete, onConfirmDelete, onCancelDelete,
@@ -272,6 +279,8 @@ export default function ListingFeedCard({
           </div>
         ) : (
         <div style={{ display: "flex", gap: "6px", marginTop: "auto", paddingTop: "8px", alignItems: "center" }}>
+          {!hideActions && (
+          <>
           <button
             onClick={(e) => { e.stopPropagation(); onSave(); }}
             style={{
@@ -302,8 +311,14 @@ export default function ListingFeedCard({
             <EyeOff style={{ width: "11px", height: "11px" }} strokeWidth={2} />
             {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
           </button>
+          </>
+          )}
           <button
-            onClick={(e) => { e.stopPropagation(); window.open(listing.url, "_blank", "noopener,noreferrer"); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenExternal) onOpenExternal();
+              window.open(listing.url, "_blank", "noopener,noreferrer");
+            }}
             title={openLabel}
             className="listing-open"
             style={{

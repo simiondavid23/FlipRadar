@@ -8,12 +8,17 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.deal import Deal
+from app.models.radar_settings import RadarSettings
+from app.models.shop_scan_state import ShopScanState
 from app.models.tracked_product import TrackedProduct
 from app.models.user import User
+from app.services.currency_service import convert
+from app.services.shop_registry import SHOP_REGISTRY, shopify_domains
 from app.utils.auth import get_current_user
 
 # Prefixul /api/deals e aplicat la include_router in main.py.
@@ -27,6 +32,16 @@ _STARI_MANUALE = {"vazut", "ignorat"}
 
 class DealStateUpdate(BaseModel):
     state: str
+
+
+def _in_ron(valoare, moneda):
+    """Valoarea in RON, DOAR pentru afisare. Sortarea ramane pe discount_pct, care
+    e agnostic de moneda — o sortare pe pret convertit ar depinde de cursul zilei."""
+    if valoare is None:
+        return None
+    if (moneda or "RON").upper() == "RON":
+        return valoare          # trecere directa: fara apel de conversie
+    return convert(valoare, moneda, "RON")
 
 
 def _serialize(deal: Deal) -> dict:
@@ -74,7 +89,74 @@ def list_deals(
         q = q.filter(Deal.ended_at.is_(None) if active else Deal.ended_at.isnot(None))
     if min_discount is not None:
         q = q.filter(Deal.discount_pct >= min_discount)
-    return [_serialize(d) for d in q.order_by(Deal.discount_pct.desc()).all()]
+
+    iesire = []
+    for d in q.order_by(Deal.discount_pct.desc()).all():
+        item = _serialize(d)
+        item["price_ron"] = _in_ron(d.price, d.currency)
+        if d.compare_at_price is not None:
+            item["compare_at_price_ron"] = _in_ron(d.compare_at_price, d.currency)
+        iesire.append(item)
+    return iesire
+
+
+@router.get("/stats")
+def deals_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cifrele din capul paginii. „Active" = deal-uri pe care scannerul le-a
+    revazut la ultima trecere (`ended_at IS NULL`)."""
+    active = db.query(Deal).filter(Deal.ended_at.is_(None)).all()
+    discounturi = [d.discount_pct for d in active if d.discount_pct is not None]
+    ultimul = db.query(func.max(ShopScanState.last_scan_at)).scalar()
+    return {
+        "active": len(active),
+        "noi": sum(1 for d in active if d.state == "nou"),
+        "avg_discount_active": (round(sum(discounturi) / len(discounturi), 1)
+                                if discounturi else None),
+        "last_scan_at": ultimul,
+    }
+
+
+@router.get("/shops")
+def deals_shops(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Universul de deal-uri: intrarile de registru cu `method == "shopify"`, cu
+    starea ultimului scan atasata acolo unde exista.
+
+    Alimenteaza filtrele, banda de sanatate si checklist-ul din setari. E si
+    samanta viitorului endpoint general /shops.
+    """
+    setari = (db.query(RadarSettings)
+              .filter(RadarSettings.user_id == current_user.id).first())
+    dezactivate = set(getattr(setari, "deal_shops_disabled", None) or [])
+    stari = {s.shop_domain: s for s in db.query(ShopScanState).all()}
+
+    iesire = []
+    for domain in sorted(shopify_domains()):
+        meta = SHOP_REGISTRY.get(domain) or {}
+        rand = {
+            "domain": domain,
+            "label": meta.get("label") or domain,
+            "category": meta.get("category"),
+            "currency": meta.get("currency"),
+            "disabled": domain in dezactivate,
+            "last_scan_at": None, "last_status": None,
+            "products_seen": None, "deals_active": None,
+        }
+        stare = stari.get(domain)
+        if stare is not None:
+            rand.update({
+                "last_scan_at": stare.last_scan_at,
+                "last_status": stare.last_status,
+                "products_seen": stare.products_seen,
+                "deals_active": stare.deals_active,
+            })
+        iesire.append(rand)
+    return iesire
 
 
 @router.patch("/{deal_id}")

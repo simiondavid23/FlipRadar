@@ -364,6 +364,16 @@ export const salesAPI = {
   exportPDF: () => api.get("/api/sales/export-pdf", { responseType: "blob" }),
 };
 
+// SHOP-2b — deal-uri descoperite de scannerul Shopify (observatii ale aplicatiei,
+// globale pe instanta; promovarea le trece in produse urmarite).
+export const dealsAPI = {
+  list: (params) => api.get("/api/deals/", { params }),
+  stats: () => api.get("/api/deals/stats"),
+  shops: () => api.get("/api/deals/shops"),
+  setState: (id, state) => api.patch(`/api/deals/${id}`, { state }),
+  promote: (id) => api.post(`/api/deals/${id}/promote`),
+};
+
 // PKG-UPD — versiune aplicatie + verificare de actualizare (GitHub Releases).
 export const systemAPI = {
   getVersion: () => api.get("/api/version"),

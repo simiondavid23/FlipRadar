@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Search, Bell, LogOut,
   Heart, Globe, Boxes, Receipt,
   BarChart2, Radar, Target, Bookmark, Settings,
-  Calculator, Rss, Tag, Activity
+  Calculator, Rss, Tag, Activity, Percent
 } from "lucide-react";
 
 // Sidebar-ul "Prism Obsidian": panou flotant din sticla, nav plat cu etichete de
@@ -22,6 +22,7 @@ const categories = [
     label: "Catalog",
     items: [
       { name: "Descoperă Oportunități", href: "/dashboard/products", icon: Search },
+      { name: "Deal-uri", href: "/dashboard/deals", icon: Percent },
       { name: "Scanare Magazine", href: "/dashboard/scraping", icon: Globe, flag: "can_use_scraping" },
       { name: "Produse Urmărite", href: "/dashboard/tracked-products", icon: Heart },
     ],

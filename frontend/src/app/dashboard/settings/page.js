@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { radarAPI, usersAPI, facebookGroupsAPI, resaleAPI } from "@/lib/api";
+import { radarAPI, usersAPI, facebookGroupsAPI, resaleAPI, dealsAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Save, Send, ToggleLeft, ToggleRight,
   CheckCircle2, AlertCircle,
@@ -39,16 +39,25 @@ export default function SettingsPage() {
   const [aiTestResult, setAiTestResult] = useState(null);  // {ok, model} | {ok:false, error}
   const [newAlias, setNewAlias] = useState("");
   const [newZone, setNewZone] = useState("");
+  // SHOP-2b — scannerul de deal-uri: prag + lista de magazine scanate.
+  const [dealThreshold, setDealThreshold] = useState("");
+  const [savingDealThreshold, setSavingDealThreshold] = useState(false);
+  const [dealShops, setDealShops] = useState([]);
 
   const load = useCallback(async () => {
-    const [s, fb, px, ps, us] = await Promise.all([
+    const [s, fb, px, ps, us, ds] = await Promise.all([
       radarAPI.getSettings().catch(() => null),
       radarAPI.getFacebookStatus().catch(() => null),
       radarAPI.getProxy().catch(() => null),
       radarAPI.getPushStatus().catch(() => null),
       usersAPI.getSettings().catch(() => null),
+      dealsAPI.shops().catch(() => null),
     ]);
     if (s?.data) setSettings(s.data);
+    if (s?.data?.deal_discount_threshold != null) {
+      setDealThreshold(String(s.data.deal_discount_threshold));
+    }
+    if (ds?.data) setDealShops(ds.data);
     if (fb?.data) setFbStatus(fb.data);
     if (px?.data) setProxy({ ...EMPTY_PROXY, ...px.data, password: "" });
     if (ps?.data) setPushStatus(ps.data);
@@ -94,6 +103,7 @@ export default function SettingsPage() {
         discord_webhook_imob_a: settings.discord_webhook_imob_a || "",
         discord_webhook_imob_b: settings.discord_webhook_imob_b || "",
         discord_webhook_alerts: settings.discord_webhook_alerts || "",
+        discord_webhook_deals: settings.discord_webhook_deals || "",
       });
       alert("Webhook-uri Discord salvate.");
     } catch (e) {
@@ -117,6 +127,46 @@ export default function SettingsPage() {
       alert(e.response?.data?.detail || "Eroare la salvare.");
     } finally {
       setSavingThreshold(false);
+    }
+  };
+
+  // SHOP-2b — pragul de discount. Gol = revenire la implicitul din backend (20%),
+  // trimis ca null, nu ca 0 (backendul respinge valorile nepozitive).
+  const saveDealThreshold = async () => {
+    const brut = String(dealThreshold).trim();
+    const pct = brut === "" ? null : Number(brut);
+    if (pct !== null && (!Number.isFinite(pct) || pct <= 0 || pct > 95)) {
+      alert("Pragul trebuie să fie între 1 și 95%, sau gol pentru implicit.");
+      return;
+    }
+    setSavingDealThreshold(true);
+    try {
+      await radarAPI.updateSettings({ deal_discount_threshold: pct });
+      update({ deal_discount_threshold: pct });
+      alert(pct === null ? "Pragul revine la implicit (20%)." : "Pragul de discount a fost salvat.");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la salvare.");
+    } finally {
+      setSavingDealThreshold(false);
+    }
+  };
+
+  const toggleDealShop = async (domain) => {
+    const dezactivate = new Set(settings.deal_shops_disabled || []);
+    if (dezactivate.has(domain)) dezactivate.delete(domain);
+    else dezactivate.add(domain);
+    const lista = [...dezactivate];
+
+    // Optimist pe ambele surse: checkbox-ul citeste `dealShops`, iar calculul
+    // urmator citeste `settings`.
+    setDealShops((prev) => prev.map((s) => (s.domain === domain ? { ...s, disabled: !s.disabled } : s)));
+    update({ deal_shops_disabled: lista });
+    try {
+      await radarAPI.updateSettings({ deal_shops_disabled: lista });
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la actualizare.");
+      setDealShops((prev) => prev.map((s) => (s.domain === domain ? { ...s, disabled: !s.disabled } : s)));
+      update({ deal_shops_disabled: settings.deal_shops_disabled || [] });
     }
   };
 
@@ -438,6 +488,86 @@ export default function SettingsPage() {
                 <Save style={{ width: "14px", height: "14px" }} />
                 Salvează webhooks
               </button>
+            </div>
+          </Section>
+
+          {/* SHOP-2b — scannerul de deal-uri Shopify */}
+          <Section title="Deal-uri Catalog">
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0 0 0.5rem" }}>
+              Scanarea rulează la fiecare 6 ore pe magazinele Shopify din catalog și
+              raportează produsele reduse sub pragul de mai jos.
+            </p>
+
+            <WebhookInput
+              label="Discord — Deal-uri"
+              value={settings.discord_webhook_deals || ""}
+              onChange={(v) => update({ discord_webhook_deals: v })}
+              onTest={() => testWebhook(settings.discord_webhook_deals)}
+            />
+
+            <PlatformToggle
+              label="Scanare deal-uri activă"
+              enabled={settings.deal_scan_enabled !== false}
+              onToggle={() => togglePlatform("deal_scan_enabled")}
+            />
+
+            <div style={{ padding: "0.625rem 0.75rem", background: "rgba(4,9,18,.45)", borderRadius: "10px", border: "1px solid var(--border-color)" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>Prag discount</label>
+              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
+                Un produs devine deal când scade cu cel puțin acest procent — față de
+                prețul de referință al magazinului sau față de minimul văzut de noi.
+                Lasă gol pentru implicit (20%).
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <input
+                  type="number" min={1} max={95} placeholder="20"
+                  value={dealThreshold}
+                  onChange={(e) => setDealThreshold(e.target.value)}
+                  style={{ width: "5rem", padding: "0.375rem 0.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "8px", fontSize: "0.8125rem" }}
+                />
+                <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>%</span>
+                <button onClick={saveDealThreshold} disabled={savingDealThreshold} style={smallBtn("#4ade80")}>
+                  {savingDealThreshold ? "Se salvează..." : "Salvează pragul"}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".15em", textTransform: "uppercase", color: "var(--text-mono)", marginBottom: "6px" }}>
+                Magazine scanate
+              </div>
+              {dealShops.length === 0 ? (
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>
+                  Nu am putut încărca lista de magazine.
+                </p>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: "6px" }}>
+                  {dealShops.map((shop) => (
+                    <label
+                      key={shop.domain}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "8px",
+                        padding: "7px 10px", background: "rgba(4,9,18,.45)",
+                        border: "1px solid rgba(94,140,255,.11)", borderRadius: "10px",
+                        fontSize: "12px", color: "var(--text-secondary)", cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!shop.disabled}
+                        onChange={() => toggleDealShop(shop.domain)}
+                        style={{ accentColor: "#22d3ee", cursor: "pointer" }}
+                      />
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {shop.label}
+                      </span>
+                      {shop.last_status && shop.last_status !== "ok" && (
+                        <span title={shop.last_status} style={{ color: "#f87171", fontSize: "11px" }}>⚠</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </Section>
 

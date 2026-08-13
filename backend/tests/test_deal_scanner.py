@@ -15,6 +15,7 @@ from app.models.radar_settings import RadarSettings
 from app.models.shop_price_memory import ShopPriceMemory
 from app.models.user import User
 from app.services import deal_scanner
+from app.services.shop_registry import shopify_domains
 
 DOM = "asphaltgold.com"          # intrare reala in registru, currency EUR
 
@@ -303,3 +304,83 @@ def test_promovare(auth_client, scan, monkeypatch):
     # `promovat` nu poate fi setat direct din UI — vine doar din promovare.
     r = auth_client.patch(f"/api/deals/{deal_id}", json={"state": "promovat"})
     assert r.status_code == 422
+
+
+# ── SHOP-2b: campuri de afisare + endpointuri de suport ──────────────────────
+
+def test_price_ron_in_listare(auth_client, monkeypatch):
+    # Conversia e determinista in test: masuram MAPAREA, nu cursul BNR.
+    monkeypatch.setattr("app.routers.deals.convert",
+                        lambda valoare, din, catre: valoare * 5.0)
+    db = SessionLocal()
+    try:
+        db.add(Deal(shop_domain=DOM, external_id="eur", title="EUR", url="https://x",
+                    currency="EUR", price=100.0, compare_at_price=200.0,
+                    discount_pct=50.0, reason="compare_at"))
+        db.add(Deal(shop_domain="rocashoes.ro", external_id="ron", title="RON",
+                    url="https://y", currency="RON", price=300.0,
+                    discount_pct=25.0, reason="istoric"))
+        db.commit()
+    finally:
+        db.close()
+
+    items = {d["external_id"]: d for d in auth_client.get("/api/deals/").json()}
+
+    assert items["eur"]["price_ron"] == 500.0
+    assert items["eur"]["compare_at_price_ron"] == 1000.0
+    # RON trece direct, fara apel de conversie (altfel ar fi devenit 1500).
+    assert items["ron"]["price_ron"] == 300.0
+    # compare_at_price_ron apare DOAR cand exista compare_at.
+    assert "compare_at_price_ron" not in items["ron"]
+
+
+def test_stats_si_shops(auth_client):
+    from datetime import datetime, timezone
+
+    from app.models.shop_scan_state import ShopScanState
+
+    acum = datetime.now(timezone.utc)
+    db = SessionLocal()
+    try:
+        db.add(Deal(shop_domain=DOM, external_id="a", title="A", url="https://a",
+                    currency="EUR", price=10.0, discount_pct=40.0, reason="compare_at",
+                    state="nou"))
+        db.add(Deal(shop_domain=DOM, external_id="b", title="B", url="https://b",
+                    currency="EUR", price=10.0, discount_pct=20.0, reason="istoric",
+                    state="vazut"))
+        # Incheiat -> nu intra nici in `active`, nici in medie.
+        db.add(Deal(shop_domain=DOM, external_id="c", title="C", url="https://c",
+                    currency="EUR", price=10.0, discount_pct=90.0, reason="istoric",
+                    state="nou", ended_at=acum))
+        db.add(ShopScanState(shop_domain=DOM, last_scan_at=acum, last_status="ok",
+                             products_seen=42, deals_active=2))
+        # Un magazin dezactivat, ca sa verificam reflectarea in /shops. Setarile
+        # TREBUIE sa fie ale userului lui auth_client — /shops le citeste pe ale
+        # apelantului. clean_db goleste inaintea fiecarui test, deci userul
+        # inregistrat de fixture e singurul din baza.
+        user = db.query(User).first()
+        setari = (db.query(RadarSettings)
+                  .filter(RadarSettings.user_id == user.id).first())
+        if setari is None:
+            setari = RadarSettings(user_id=user.id)
+            db.add(setari)
+        setari.deal_shops_disabled = ["patta.nl"]
+        db.commit()
+    finally:
+        db.close()
+
+    stats = auth_client.get("/api/deals/stats").json()
+    assert stats["active"] == 2
+    assert stats["noi"] == 1
+    assert stats["avg_discount_active"] == 30.0
+    assert stats["last_scan_at"] is not None
+
+    shops = {s["domain"]: s for s in auth_client.get("/api/deals/shops").json()}
+    assert shops.keys() == shopify_domains(), "universul vine din registru"
+    assert shops["patta.nl"]["disabled"] is True
+    assert shops[DOM]["disabled"] is False
+    assert shops[DOM]["label"] and shops[DOM]["currency"] == "EUR"
+    # Starea de scan e atasata unde exista, si absenta unde nu.
+    assert shops[DOM]["last_status"] == "ok"
+    assert shops[DOM]["products_seen"] == 42
+    assert shops["patta.nl"]["last_status"] is None
