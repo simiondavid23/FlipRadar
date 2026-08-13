@@ -177,6 +177,9 @@ def test_validated_domains_santinela():
         "parfumdreams.de", "douglas.ro",              # LOT4 / LOT4b
         "orange.ro", "makeup.ro",                     # BR-1 (G4/G4b)
         "hhv.de", "sephora.ro",                       # BR-1 (G4/G4b)
+        "noriel.ro", "regatuljocurilor.ro",           # LOT5
+        "jucarii-vorbarete.ro",                       # LOT5
+        "nichiduta.ro", "brickdepot.ro",              # LOT5b
     }
 
 

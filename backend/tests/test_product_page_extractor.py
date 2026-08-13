@@ -111,6 +111,58 @@ def test_jsonld_bloc_corupt_tolerat():
     assert res["price"] == 3499.0
 
 
+def test_jsonld_lax_recupereaza_caractere_de_control():
+    """LOT5b: SINGURUL bloc are newline LITERAL intr-o valoare de string.
+
+    Forma brickdepot/nichiduta, redusa la esential: descriere multi-linie scrisa
+    direct in ld+json. `json.loads` strict o refuza (caracter de control neescapat),
+    deci pana la treapta laxa pagina parea fara date.
+    """
+    payload = (
+        '{"@context": "https://schema.org", "@type": "Product",\n'
+        ' "name": "Set constructie 1234",\n'
+        ' "description": "Setul contine:\n- 379 piese\n- instructiuni",\n'
+        ' "offers": {"@type": "Offer", "price": "158.99", "priceCurrency": "RON",\n'
+        '            "availability": "https://schema.org/InStock"}}'
+    )
+    # Premisa testului: strictul chiar pica, iar laxul chiar recupereaza.
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(payload)
+    assert json.loads(payload, strict=False)["offers"]["price"] == "158.99"
+
+    res = parse_product_html(_page(head=_ld(payload)), URL)
+
+    assert res["name"] == "Set constructie 1234"
+    assert res["price"] == 158.99
+    assert res["currency"] == "RON"
+    assert res["in_stock"] is True
+    assert res["method"] == "jsonld"
+
+
+def test_jsonld_lax_nu_salveaza_sintaxa_stricata():
+    """LOT5b: laxul acopera DOAR caractere de control, nu si sintaxa stricata.
+
+    Forma paginii 5 brickdepot — ghilimea dublata care inchide descrierea de doua
+    ori. Nici strictul, nici laxul nu o pot citi, deci blocul ramane aruncat si
+    comportamentul e cel de azi.
+    """
+    payload = (
+        '{"@context": "https://schema.org", "@type": "Product",\n'
+        ' "name": "Set constructie 5678",\n'
+        ' "description": "Proiectele realizate sunt salvate local"",\n'
+        ' "offers": {"@type": "Offer", "price": "3021.99", "priceCurrency": "RON"}}'
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(payload)
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(payload, strict=False)
+
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_page(head=_ld(payload)), URL)
+
+    assert exc.value.reason == "no_product_data"
+
+
 # ── JSON-LD: forme de pret ────────────────────────────────────────────────────
 
 def test_aggregate_offer_lowprice():

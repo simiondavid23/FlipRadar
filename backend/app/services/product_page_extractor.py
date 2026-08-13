@@ -241,7 +241,9 @@ def _iter_jsonld_objects(soup):
     """Obiectele din toate blocurile application/ld+json ale paginii.
 
     json.loads e tolerant per bloc: un singur bloc corupt (destul de frecvent —
-    template-uri cu variabile neinlocuite) nu trebuie sa arunce restul paginii.
+    template-uri cu variabile neinlocuite) nu trebuie sa arunce restul paginii —
+    dar cand blocul corupt e SINGURUL (LOT5b: control-characters in descrieri
+    multi-linie), treapta laxa il recupereaza inainte de a renunta.
     """
     for script in soup.find_all("script", type="application/ld+json"):
         raw = script.string or script.get_text() or ""
@@ -250,7 +252,17 @@ def _iter_jsonld_objects(soup):
         try:
             data = json.loads(raw)
         except Exception:
-            continue
+            # Ordinea conteaza: strictul ramane calea normala, deci semantica
+            # tuturor paginilor care parsau pana azi e neschimbata. Laxul e o
+            # SINGURA reincercare pe ACELASI bloc si accepta exclusiv ce permite
+            # `strict=False` — caractere de control brute (newline/tab literal) in
+            # valorile de string. Nimic altceva: sintaxa stricata, ghilimelele
+            # dublate si virgulele finale pica in continuare (masurat la LOT5b pe
+            # pagina brickdepot cu `"...salvate local""`).
+            try:
+                data = json.loads(raw, strict=False)
+            except Exception:
+                continue
         yield from _flatten_jsonld(data)
 
 

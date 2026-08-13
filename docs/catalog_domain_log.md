@@ -913,6 +913,151 @@ a trebuit facuta din log, nu din pagini.
 
 ---
 
+## LOT5 / LOT5b — jucarii/hobby RO
+
+Sondele: `scripts/diagnostics/dumps/lot5_jucarii/` (descoperire pe 5 domenii) si
+`scripts/diagnostics/dumps/lot5b_completare/` (completare pe link-uri manuale).
+
+| domeniu | sonda | metoda | verdict |
+|---|---|---|---|
+| noriel.ro | LOT5, samanta `/promotii` | jsonld | VALIDAT (3/3 pagini) |
+| regatuljocurilor.ro | LOT5, homepage | jsonld | VALIDAT (3/3) |
+| jucarii-vorbarete.ro | LOT5, homepage | jsonld | VALIDAT (3/3) |
+| nichiduta.ro | LOT5 esuat la ordonare -> LOT5b | jsonld | VALIDAT (3/3, cu treapta laxa) |
+| brickdepot.ro | LOT5 respins la confirmare -> LOT5b | jsonld | VALIDAT (1/2 pagini; vezi limita) |
+
+Toate cinci au raspuns pe treapta de baza; nicio escaladare in tot lotul.
+
+### Decizia valului: treapta laxa la parsarea blocurilor ld+json
+
+brickdepot si nichiduta publica ld+json cu **caractere de control BRUTE** (newline
+literal in valorile de string, din descrieri multi-linie). `json.loads` strict le
+refuza, iar `except: continue` din iterarea blocurilor le arunca TACUT. Docstring-ul
+justifica toleranta prin "un bloc corupt nu trebuie sa arunce restul paginii" — dar pe
+paginile astea blocul corupt e SINGURUL bloc, deci pagina intreaga ramanea fara date.
+
+Masurat la LOT5b pe extractorul real (shim doar in memorie, inainte de orice
+modificare): **0/5 -> 4/5 pagini extrase**, cu preturile 158.99 / 875 / 71 / 749 RON,
+toate prin `jsonld`. Fix-ul e GENERAL, nu specific lotului: orice magazin cu descrieri
+multi-linie in ld+json e afectat identic.
+
+**Limita treptei laxe, masurata, nu presupusa.** A cincea pagina (brickdepot
+`computer-science-ai-kit-68-4-elevi-p-31250.html`) pica si in lax, din alt motiv: o
+eroare de SINTAXA in sursa site-ului — ghilimea dublata care inchide descrierea de
+doua ori, `"...salvate local"",`. `strict=False` accepta exclusiv caractere de control
+in stringuri; sintaxa stricata, ghilimelele dublate si virgulele finale pica in
+continuare. Laxul nu e o bagheta, si asta e testat explicit
+(`test_jsonld_lax_nu_salveaza_sintaxa_stricata`).
+
+Consecinta operationala acceptata: pagina cu ghilimea dublata ramane neparsabila, iar
+refresh-ul ei pastreaza pretul anterior. brickdepot intra FARA override de selector —
+cu treapta laxa, pragul de >=2 pagini e atins prin jsonld.
+
+### Corectia de verdict din LOT5b, si de ce a fost posibila
+
+Prima rulare LOT5b a dat `FARA_DATE` pe ambele domenii. Era GRESIT, si din vina
+instrumentului: sonda folosea aceeasi parsare stricta ca productia, deci a raportat
+"zero purtatori structurati" pe pagini care poarta pretul in ld+json standard.
+Traseul real a fost `FARA_DATE` -> `MISMATCH_DE_ANALIZAT` -> validat.
+
+Corectia n-a costat niciun fetch in plus, fiindca dump-urile complete existau deja.
+**Regula v2.3 devine PERMANENTA: orice pagina fetch-uita se dumpuieste COMPLET,
+indiferent de verdict.** Motivul e povestea brickdepot din LOT5: acolo sonda iesea
+inainte de scriere cand pagina nu trecea de confirmare, asa ca exact cele 11 pagini
+care cereau analiza au ramas fara dump — si domeniul cel mai relevant pentru arbitraj
+din tot lotul a plecat cu verdict de "descoperire esuata" in loc de "limita a
+detectorului".
+
+### Omnibus: forma se repeta, si e favorabila
+
+Pe toate domeniile validate, ld+json poarta DOAR pretul PLATIT; referinta taiata sta
+in afara datelor structurate. Verificat verbatim: noriel `special-price` / `old-price`
+(49,99 vs 99,99 lei), regatuljocurilor `has-discount` + `raw_price` (255,20 din 319),
+jucarii-vorbarete Shopify `compare_at_price` in bani (3599 vs 3999), nichiduta
+`div.priceNEW` / `div.priceOLD`. Zero declansari ale capcanei pe 9+4 pagini.
+
+Atentie: convergenta raportata de sonda ("toti purtatorii converg") e convergenta unei
+SINGURE valori, nu dovada ca produsul n-ar fi redus.
+
+**Nuanta PRP la nichiduta.** Referinta taiata NU e minimul pe 30 de zile, ci pretul
+recomandat de producator. Verbatim din tooltip-ul aceluiasi element:
+`"Acesta este Pretul Recomandat de Producator. Pretul de vanzare al produsului este
+afisat mai jos."` Procentele afisate (-31%, -25%, -38%) sunt fata de PRP, deci marja
+reala de arbitraj e mai mica decat sugereaza eticheta. Marjele pe nichiduta se citesc
+fata de PRP, nu fata de minim istoric.
+
+### Regula de analiza: element de pret identic pe pagini diferite = componenta partajata
+
+A doua aparitie a capcanei, deci se ridica la regula. La regatuljocurilor,
+`<span class="regular-price">319,00 RON</span>` apare identic pe toate cele trei
+pagini, inclusiv pe cele nereduse de 59 si 269 RON — e un produs promovat dintr-un
+carusel comun. Raportul 255.2/319 = 0.8 exact il facea sa para confirmarea pretului
+taiat al paginii; nu era. Semnalul de incredere acolo e `has-discount` + `raw_price`.
+La brickdepot, aceeasi capcana in alta forma: `div.swipper-bg > div.product-item >
+div.price`.
+
+Marcajul automat prinde capcana doar cand aceeasi valoare apare pe pagini diferite —
+la brickdepot NU a prins-o, fiindca cele doua pagini au carusele cu valori diferite.
+Cu esantion mic, capcana se cauta manual.
+
+### Avertisment de instrument
+
+Valorile numerice din `dom_pret.json` sunt materie prima, nu preturi. `_numar`
+concateneaza cifrele dintr-un text cu mai multe numere: `div.priceOLD` apare cu
+**125931** pentru un ATV de 875 lei — sunt `1259` si `31` lipite din
+`Pret vechi: 1259 Lei (-31 %)`. La fel `99925` (999 + 25) si `11538` (115 + 38).
+Textul VERBATIM e sursa de adevar, nu valoarea derivata.
+
+### Ce NU s-a verificat in lotul asta
+
+**Ipoteza codurilor LEGO ramane netestata efectiv.** Premisa era ca sluguri de tip
+`42131` / `75192` sunt cifre STRUCTURATE si anti-UUID-ul nu trebuie sa le penalizeze.
+Regula noua (`cifra+silabe`) a lucrat pe 8 din 9 pagini confirmate, dar pe niciun cod
+de set real: `2017` era coada unui nume de produs, `2026` anul unei editii, `-p-6906`
+un id de magazin. Singurul domeniu cu seturi reale era brickdepot, si acolo codul nici
+nu apare in slug — URL-ul poarta id-ul de magazin (`-p-31177`), nu setul.
+
+**Cele doua semnale noi de blocaj n-au fost exercitate.** `202 Accepted` ca blocaj
+moale si `<title>` GOL (pe langa `<title>` lipsa) sunt in detector si trec testul
+offline, dar niciun domeniu din lot nu le-a declansat. Raman verificate doar sintetic.
+
+### Material de rezerva: specificatia de selector brickdepot (NEIMPLEMENTATA)
+
+Masurata la LOT5b, pastrata aici pentru cazul in care ghilimea dublata se dovedeste
+sistemica si un override devine necesar. Blocul de pret, verbatim, pagina REDUSA:
+
+```html
+<h2 class="productGeneral" id="productPrices">
+ <span class="normalprice 3">264.99Lei</span>
+ <span class="productSpecialPrice">158.99Lei</span>
+ <span class="discountLabel">40%</span>
+```
+
+Pagina NEREDUSA — fara span-uri, pretul e textul PROPRIU al lui `h2`:
+
+```html
+<h2 class="productGeneral" id="productPrices"> 3,021.99Lei</h2>
+```
+
+Specificatia are deci trei ramuri:
+- pret platit pe pagini reduse: `h2#productPrices > span.productSpecialPrice`
+- pret pe pagini nereduse: textul propriu al lui `h2#productPrices`
+- pret taiat: `h2#productPrices > span.normalprice` — clasa reala e `"normalprice 3"`,
+  a doua componenta variaza, deci potrivirea se face pe clasa STABILA `normalprice`
+- format ENGLEZESC: `1,599.99Lei` (mii cu `,`, zecimal cu `.`), moneda lipita
+- **EXCLUDERE OBLIGATORIE**: `div.swipper-bg > div.product-item > div.price` —
+  caruselul de produse conexe (vezi regula componentei partajate, mai sus)
+
+### Nota de limitare frozen (din BR-2)
+
+Sub PyInstaller, instalarea patchright e sarita (PKG-3b), deci exe-ul depinde de
+Chrome-ul real al userului pentru domeniile pe `method: browser`. Extensia lui
+`--selfcheck` care sa verifice asta explicit ramane parcata pentru o runda PKG
+viitoare; nu tine de valul de fata, dar tine de ce vede userul cand un domeniu
+browser nu porneste.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

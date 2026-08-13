@@ -699,6 +699,63 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "marimile absente din date — se urmareste produsul; pquid taiat "
                  "de canonical",
     },
+    "noriel.ro": {
+        "label": "Noriel",
+        "category": "jucarii",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT5; ld+json poarta DOAR pretul platit — referinta taiata sta "
+                 "in afara datelor structurate (special-price/old-price in DOM)",
+    },
+    "regatuljocurilor.ro": {
+        "label": "Regatul Jocurilor",
+        "category": "jucarii",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT5; aceeasi forma Omnibus: platitul in date, taiatul in DOM "
+                 "(has-discount + raw_price); capcana caruselului comun — "
+                 "regular-price identic pe pagini diferite e componenta "
+                 "partajata, nu pretul paginii",
+    },
+    "jucarii-vorbarete.ro": {
+        "label": "Jucarii Vorbarete",
+        "category": "jucarii",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT5; platforma Shopify (compare_at_price in bani, masurat) "
+                 "validata aici prin jsonld — candidat de migrare la method "
+                 "shopify dupa o sonda de enumerare (ar intra si in scannerul de "
+                 "deal-uri)",
+    },
+    "nichiduta.ro": {
+        "label": "Nichiduta",
+        "category": "jucarii",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT5b; pret dublu-sursat (ld+json + div.priceNEW), platitul in "
+                 "date; ATENTIE la citirea marjelor: referinta taiata e PRP "
+                 "(Pretul Recomandat de Producator, verbatim din tooltip), NU "
+                 "minimul pe 30 de zile — procentele de reducere sunt fata de PRP",
+    },
+    "brickdepot.ro": {
+        "label": "BrickDepot",
+        "category": "jucarii",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT5b; ld+json cu caractere de control — clientul treptei laxe; "
+                 "pagina cu ghilimea dublata in sursa site-ului ramane neparsabila "
+                 "(refresh pastreaza pretul); spec de selector de rezerva in jurnal",
+    },
 }
 
 
