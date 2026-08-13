@@ -680,11 +680,12 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "browser",
         "status": "validated",
-        "overrides": {"price_selector": '[class*="ProductBuySection__container"] [itemprop="price"]'},
+        "overrides": {"price_selector": '[class*="ProductBuySection__container"] > [itemprop="price"]'},
         "notes": "G4/G4b: interstitiu JS pe 202 trecut de browser; paginile cu "
                  "variante de culoare au N itemprop=price — selectorul tinteste "
                  "containerul principal (clasele au sufixe generate, ancorare pe "
-                 "partea stabila); meta content",
+                 "partea stabila); meta content; BR-1b: selector copil-direct — "
+                 "unic pe pagina (masurat 3/3 la BR-1), imun la reordonari",
     },
     "hhv.de": {
         "label": "HHV",

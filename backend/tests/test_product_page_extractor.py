@@ -516,9 +516,18 @@ def test_makeup_pe_fragment_real():
     varianta de culoare are al ei — de aici cele 11 elemente itemprop=price din
     pagina reala. Clasele au sufixe generate la build (shop_1hy48pa_l3p3ge), deci
     selectorul se ancoreaza pe partea stabila a numelui.
+
+    BR-1b: selectorul e pe COPIL DIRECT. Variantele fiind nested in container, forma
+    cu descendenti se potrivea cu toate (11 pe pagina asta) si se baza pe faptul ca
+    prima din document e cea principala — corect azi, fragil la orice reordonare de
+    template. Copilul direct e unic prin constructie, iar asertia de mai jos o
+    verifica pe fragmentul real, cu selectorul CITIT DIN REGISTRU.
     """
+    from bs4 import BeautifulSoup
+
+    selector = ppe.DOMAIN_OVERRIDES["makeup.ro"]["price_selector"]
     assert ppe.DOMAIN_OVERRIDES["makeup.ro"] == {
-        "price_selector": '[class*="ProductBuySection__container"] [itemprop="price"]'}
+        "price_selector": '[class*="ProductBuySection__container"] > [itemprop="price"]'}
 
     corp = (
         '<div itemscope itemtype="https://schema.org/Product">'
@@ -543,6 +552,11 @@ def test_makeup_pe_fragment_real():
         '</div>'
         '</div></div>'
     )
+
+    # Determinist, nu "primul din document": o singura potrivire pe tot fragmentul.
+    potriviri = BeautifulSoup(_page(body=corp), "html.parser").select(selector)
+    assert len(potriviri) == 1, f"selectorul da {len(potriviri)} potriviri, nu una"
+    assert potriviri[0].get("content") == "49.29"
 
     res = parse_product_html(_page(body=corp), "https://makeup.ro/product/181283/")
 
