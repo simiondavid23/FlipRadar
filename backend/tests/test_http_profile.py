@@ -32,8 +32,6 @@ _COMMON_MODULES = [
 _PROFIL_PROPRIU_PERMIS = {
     # Vorbeste cu MODEMUL, nu cu un site anti-bot — amprenta nu conteaza acolo.
     "services/network/rotator.py",
-    # API-uri publice, fara WAF; uniformizarea n-ar schimba nimic si ar largi raza.
-    "services/currency_service.py",
     # Vinted (cookie de sesiune + DataDome) si extractorul retail: profil propriu,
     # neschimbat, fiindca nu pot fi validate live aici (Vinted cere cookie, iar
     # scraper_service are override-uri deliberate per magazin, vezi comentariul lui).

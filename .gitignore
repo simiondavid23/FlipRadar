@@ -35,6 +35,8 @@ scripts/migrate_pg_to_sqlite.py
 secret_key
 vapid_private_key
 cookie_encryption_key
+# BNR-1: cache-ul de curs valutar persistat pe disc (in dev DATA_DIR e backend/)
+backend/curs_bnr.json
 
 # KEY-1 — cheia privata Ed25519 de semnare a licentelor (NU se comite niciodata)
 scripts/licensing/keys/

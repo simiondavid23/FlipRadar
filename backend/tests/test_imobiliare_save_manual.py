@@ -4,11 +4,34 @@ cu status="saved"; + endpointul vechi /api/real-estate/search cu facebook nu mai
 Aceleași fixtures/stil ca testele IM-2/IM-3 (auth_client din conftest, inserare/citire directă
 în DB pentru verificare).
 """
+import pytest
+
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.real_estate_monitor_listing import RealEstateMonitorListing as RealEstateListing
 
 _SAVE = "/api/real-estate-monitor/listings/save-manual"
+
+
+@pytest.fixture(autouse=True)
+def _fara_bnr_live(monkeypatch):
+    """BNR-1b — izolare de retea.
+
+    `test_save_manual_creeaza_monitor_saved` trimite `tip_anunt: "inchiriere"` cu pret si
+    suprafata, deci save-manual ajunge la `compute_re_score`, care cheama `get_eur_ron()`:
+    un fetch REAL la BNR in mijlocul suitei (si un `curs_bnr.json` scris in arbore).
+
+    Patch-ul e pe MODULUL `bnr_exchange`, nu pe scorer: `scorer.py` importa functia LOCAL,
+    in corpul lui `compute_re_score`, deci numele se rezolva abia la apel.
+    """
+    monkeypatch.setattr("app.services.bnr_exchange.get_eur_ron", lambda: 5.0)
+
+    # Otrava de siguranta: daca vreun drum ocolit ajunge totusi la stratul de retea,
+    # testul pica ZGOMOTOS in loc sa faca cereri reale si sa mascheze regresia.
+    def _otrava():
+        raise RuntimeError("testul a atins reteaua")
+
+    monkeypatch.setattr("app.services.currency_service._fetch_bnr_rates", _otrava)
 
 
 def _me_id(auth_client) -> int:
