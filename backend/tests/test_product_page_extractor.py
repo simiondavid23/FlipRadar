@@ -1609,3 +1609,52 @@ def test_forma_otter_ramane_pe_calea_grupului():
     # Agregatul e minimul marimilor IN STOC: 389.00 e epuizat, deci nu castiga.
     assert res["price"] == 409.0
     assert res["is_aggregate"] is True
+
+
+# ── LOT4: moneda din priceSpecification ──────────────────────────────────────
+
+def _parfumdreams(*, moneda_oferta=None, moneda_spec="EUR", pret=59.9) -> str:
+    """Forma parfumdreams: oferta poarta pretul si moneda DOAR in priceSpecification.
+
+    `moneda_oferta` seteaza si un `priceCurrency` la nivelul ofertei, pentru garda
+    de neutralitate; None = exact forma masurata la LOT4.
+    """
+    oferta = {"@type": "Offer", "size": "50 ml",
+              "availability": "https://schema.org/InStock",
+              "priceSpecification": {"@type": "UnitPriceSpecification",
+                                     "price": pret}}
+    if moneda_spec is not None:
+        oferta["priceSpecification"]["priceCurrency"] = moneda_spec
+    if moneda_oferta is not None:
+        oferta["priceCurrency"] = moneda_oferta
+    return _page(head=_ld(json.dumps({
+        "@context": "https://schema.org", "@type": "ProductGroup",
+        "name": "Issey Miyake L'Eau d'Issey Eau Essentielle",
+        "variesBy": ["https://schema.org/size"],
+        "hasVariant": [{"@type": "Product", "sku": "1284803", "size": "50 ml",
+                        "name": "L'Eau d'Issey Eau Essentielle 50 ml",
+                        "offers": oferta}],
+    })))
+
+
+def test_moneda_din_price_specification():
+    """Fara fix, moneda cadea pe implicitul romanesc si 59.90 EUR devenea 59.90 RON
+    — produsul parea de ~5 ori mai ieftin decat e."""
+    res = parse_product_html(_parfumdreams(), "https://www.parfumdreams.de/x")
+
+    assert res["currency"] == "EUR"
+    assert res["price"] == 59.9          # pretul NU se schimba prin fix
+    assert [v["variant"] for v in res["variants"]] == ["50 ml"]
+
+
+def test_moneda_price_specification_garda():
+    # Nivelul ofertei CASTIGA cand isi declara propria moneda — neutralitate pe
+    # domeniile deja validate, care o publica acolo.
+    res = parse_product_html(_parfumdreams(moneda_oferta="USD", moneda_spec="EUR"),
+                             "https://www.parfumdreams.de/x")
+    assert res["currency"] == "USD"
+
+    # Fara moneda nicaieri -> implicitul de azi, neschimbat.
+    res = parse_product_html(_parfumdreams(moneda_spec=None), URL)
+    assert res["currency"] == "RON"
+    assert res["price"] == 59.9

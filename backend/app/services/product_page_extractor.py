@@ -314,6 +314,36 @@ def _price_from_offers(offers):
     return None, False, first_offer, saw_candidate
 
 
+def _offer_currency(offer):
+    """Moneda unei oferte: nivelul ofertei intai, apoi `priceSpecification`.
+
+    LOT4 — parfumdreams.de publica AMBELE in spec, iar oferta n-are nici `price`,
+    nici `priceCurrency`:
+
+        "offers": {"@type": "Offer",
+                   "priceSpecification": {"@type": "UnitPriceSpecification",
+                                          "price": 59.9, "priceCurrency": "EUR"}}
+
+    Pretul se citea deja de acolo (vezi _price_from_offers), moneda nu — deci
+    cadea pe implicitul romanesc din parse_product_html si 59.90 EUR ajungea
+    59.90 RON, adica produsul parea de ~5 ori mai ieftin. E o forma generala,
+    nu o ciudatenie a unui magazin.
+
+    Neutralitate: oferta care isi declara propria `priceCurrency` se comporta
+    exact ca inainte — spec-ul conteaza doar unde nivelul de oferta lipsea.
+    Normalizarea ramane la apelanti, ca peste tot.
+    """
+    if not isinstance(offer, dict):
+        return None
+    if offer.get("priceCurrency"):
+        return offer["priceCurrency"]
+    spec = offer.get("priceSpecification")
+    for node in (spec if isinstance(spec, list) else [spec]):
+        if isinstance(node, dict) and node.get("priceCurrency"):
+            return node["priceCurrency"]
+    return None
+
+
 def _variant_label(variant: dict, *, fallback_name: bool = True) -> str:
     """Eticheta unei variante: campul `size`, cu numele ca plasa de siguranta.
 
@@ -490,7 +520,7 @@ def _candidate_from_group(group: dict):
             continue
         offer = offer or {}
         if currency is None:
-            currency = _normalize_currency(offer.get("priceCurrency"))
+            currency = _normalize_currency(_offer_currency(offer))
         # Toate partile lipsa => cadem pe plasa existenta, ca variantele fara
         # dimensiunile declarate sa nu ramana cu eticheta goala.
         compusa = _compound_label(variant, dims) if compune else ""
@@ -567,7 +597,7 @@ def _collect_jsonld(soup):
         candidate = {
             "name": _clean_text(obj.get("name")),
             "price": price,
-            "currency": _normalize_currency(offer.get("priceCurrency") or obj.get("priceCurrency")),
+            "currency": _normalize_currency(_offer_currency(offer) or obj.get("priceCurrency")),
             "in_stock": in_stock,
             "is_aggregate": is_aggregate,
             "image_url": _first_image(obj.get("image")),

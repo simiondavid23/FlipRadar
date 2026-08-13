@@ -23,7 +23,7 @@ CURENTA; acolo e ISTORICUL. Un val nou adauga intrari aici si o sectiune acolo.
 Campurile unei intrari:
   label       — numele magazinului, pentru UI
   category    — electronice | fashion | sneakers | incaltaminte | tcg | outdoor
-                | jucarii | foto
+                | jucarii | foto | beauty
   country     — cod de tara ISO, sau "EU" cand tara exacta nu e confirmata
   delivery    — ro_confirmed   (livreaza in RO, confirmat la sonda)
                 ro_storefront  (magazin cu vitrina .ro)
@@ -606,6 +606,66 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "LOT3b; outlet integral, sora boozt; aceleasi variante doar pe "
                  "colorway; EUR",
+    },
+    # ── LOT4 / LOT4b — beauty/parfumuri (sonde 2026-08-13) ────────────────────
+    "marionnaud.ro": {
+        "label": "Marionnaud",
+        "category": "beauty",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT4",
+    },
+    "notino.ro": {
+        "label": "Notino",
+        "category": "beauty",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "impersonate": "firefox135",
+        "notes": "LOT4; deschis pe treapta din campul impersonate",
+    },
+    "parfumdreams.de": {
+        "label": "Parfumdreams",
+        "category": "beauty",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT4; pret in priceSpecification — clientul fix-ului de moneda; "
+                 "Grundpreis inchis manual: pretul e al flaconului",
+    },
+    "douglas.ro": {
+        "label": "Douglas",
+        "category": "beauty",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT4b; o pagina per volum, fara variante — fiecare volum e sursa "
+                 "proprie; incadrarea Grup 3 din descoperire corectata: esec de "
+                 "ordonare, nu de site",
+    },
+    "sephora.ro": {
+        "label": "Sephora",
+        "category": "beauty",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "browser",
+        "status": "probed",
+        "notes": "LOT4: 403 cu corp 519B pe toate treptele; candidat Grup 4",
+    },
+    "makeup.ro": {
+        "label": "Makeup",
+        "category": "beauty",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "browser",
+        "status": "probed",
+        "notes": "LOT4b: interstitiu JS servit cu 202, corp identic la octet pe "
+                 "toate treptele — nu e amprenta TLS; candidat Grup 4",
     },
     "hhv.de": {
         "label": "HHV",

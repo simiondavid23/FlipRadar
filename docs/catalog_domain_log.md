@@ -628,6 +628,152 @@ si fragmentul raman neatinse.
   pe marime pe aceste domenii.
 - **hhv.de** ramane `probed` (challenge servit pe 200, consemnat la LOT2).
 
+## LOT4 / LOT4b
+
+Doua sonde, 2026-08-13, pentru lotul 2d — beauty/parfumuri. Specificul categoriei:
+variatia tipica e pe VOLUM (30/50/100 ml), echivalentul marimilor din fashion.
+
+### Verdicte
+
+| domeniu | sonda | confirmate | metoda | moneda | verdict |
+|---|---|---|---|---|---|
+| marionnaud.ro | LOT4 | 3/3 | jsonld | RON | validat |
+| notino.ro | LOT4 | 3/3 | jsonld | RON | validat, pe alta treapta |
+| parfumdreams.de | LOT4 | 3/3 | jsonld | EUR | validat DUPA fixul de moneda |
+| douglas.ro | LOT4b | 3/3 | jsonld | RON | validat |
+| sephora.ro | LOT4 | 0 | — | — | probed (Grup 4) |
+| makeup.ro | LOT4b | 0 | — | — | probed (Grup 4) |
+| bipa.ro | LOT4 | 0 | — | — | NU e magazin — inchis |
+
+### parfumdreams.de — pretul si moneda in `priceSpecification`
+
+FRAGMENT VERBATIM (`index_145673.aspx`, prima varianta din `hasVariant`):
+
+```json
+{
+  "@type": "Product",
+  "sku": "1284803",
+  "name": "Issey Miyake L'Eau d'Issey Eau Essentielle Eau de Parfum Spray 50 ml",
+  "size": "50 ml",
+  "offers": {
+    "@type": "Offer",
+    "size": "50 ml",
+    "availability": "https://schema.org/InStock",
+    "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": 59.9,
+      "priceCurrency": "EUR",
+      "referenceQuantity": {
+        "@type": "QuantitativeValue",
+        "value": 50, "unitCode": "MLT",
+        "valueReference": {"@type": "QuantitativeValue", "value": 100, "unitCode": "MLT"}
+      }
+    }
+  },
+  "gtin13": "3423222134761"
+}
+```
+
+Oferta n-are nici `price`, nici `priceCurrency` la nivelul ei. Extractorul citea deja
+PRETUL de acolo (ramura din `_price_from_offers`), dar MONEDA o cauta doar in
+`offer.priceCurrency` si mai sus — deci cadea pe implicitul romanesc din
+`parse_product_html`. Masurat: toate cele 11 pagini ieseau **RON**, desi datele spun
+**EUR**; 59.90 EUR salvat ca 59.90 RON face produsul sa para de ~5 ori mai ieftin.
+
+E un bug GENERAL de extractor — orice magazin cu forma asta il lovea — nu o
+ciudatenie parfumdreams. Reparat cu `_offer_currency`, care prefera nivelul ofertei
+si cade pe spec doar cand acolo nu exista nimic. Dupa fix, toate cele 11 pagini ies
+EUR.
+
+Nuanta `Grundpreis`: `UnitPriceSpecification` cu `referenceQuantity` (50 ml) si
+`valueReference` (100 ml) lasa deschis daca 59.90 e pretul flaconului sau pretul pe
+100 ml. INCHIS MANUAL de David: e pretul FLACONULUI, deci ramura e sanatoasa dincolo
+de moneda.
+
+### douglas.ro — corectie fata de incadrarea din descoperire
+
+La LOT4, descoperirea a nimerit doar pagini de BRAND (`/ro/b/dior/b0690`), iar
+homepage-ul de 2 MB cu `window.__INITIAL_STATE__` a dus la incadrarea provizorie
+Grup 3. Pe paginile de PRODUS (LOT4b, link-uri manuale) realitatea e alta: **un
+bloc ld+json cu un Product, `priceCurrency` RON**, extractie curata (135.00 /
+305.25 / 273.00 RON), zero microdata, `og:type` absent.
+
+Starea `window.__INITIAL_STATE__` chiar exista si se parseaza, dar cautarea de chei
+de pret (`price`, `value`, `formattedValue`, `amount`, `priceValue`, pana la
+adancimea 14) a intors ZERO rezultate — deci nu ea poarta pretul. Rezerva: cautarea
+a mers pe o lista FIXA de chei.
+
+Deci esecul de la LOT4 a fost al ORDONARII candidatilor, nu al site-ului.
+
+**Forma variantelor: o pagina per volum.** Cele trei pagini publica un singur Product
+fara `hasVariant`, desi doua sunt parfumuri. Douglas foloseste cate un cod de produs
+si o pagina per volum — pentru implementare, cazul cel mai simplu: fiecare volum e o
+sursa proprie, fara selectie de varianta.
+
+### makeup.ro — interstitiu servit cu 202
+
+`202 Accepted` pe toate cele patru trepte, pe ambele URL-uri, cu corp IDENTIC LA
+OCTET (2020 octeti):
+
+```html
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title></title> <style> body { font-family: "Arial"; } </style> <script type...
+```
+
+Zero ancore, zero ld+json, titlu GOL. Raspunsul fiind identic pe toate treptele,
+blocajul NU e pe amprenta TLS/HTTP2 — escaladarea n-are ce rezolva.
+
+LECTIE DE COMPLEMENTARITATE: regula veche de shell gol (corp <10KB + zero ancore +
+FARA titlu) NU l-ar fi prins, fiindca pagina ARE un `<title>`, doar ca gol. Regula
+noua "202 = provocare" l-a prins. Cele doua sunt complementare, nu redundante; ambele
+intra in detectorul v2.2.
+
+Nota: makeup serveste 202 SELECTIV — homepage-ul raspunde 200, doar paginile de
+produs sunt blocate. De aceea sonda de descoperire l-a vazut ca domeniu accesibil.
+
+### sephora.ro
+
+`/promotii` da 404 real; homepage-ul da **403 cu corp de 519 octeti** pe toate
+treptele, si pe `www`, si pe apex. Blocaj autentic.
+
+### bipa.ro — NU e magazin, inchis
+
+Dintr-un homepage de 408 987 octeti au iesit **4 candidati**, toti non-produs:
+`/pliant`, `/campanie`, `/magazinul-meu`, `/compliance`. Filtrele au taiat putin
+(46 cuvinte-neprodus, 40 alt host, 8 duplicate), deci lista nu e goala din cauza lor
+— pur si simplu nu exista link-uri de produs in HTML. Combinatia (pliant, campanie,
+localizator de magazine) descrie un catalog de prezentare. Rezerva: fiind SPA Nuxt,
+un magazin ar putea fi randat client-side, dar nimic din HTML-ul initial nu-l
+sugereaza. NU intra in registru; se inchide aici.
+
+### notino.ro — NU e Grup 4
+
+Lista master il anticipa ca dificil (Cloudflare + F5). Treapta implicita a fost
+provocata, a doua a dat 403, iar a treia a deschis curat (200, 768 018 octeti).
+3/3 pagini validate, JSON-LD, RON. Treapta traieste in campul `impersonate` din
+registru, nu in proza — locul sanctionat, precedentul 43einhalb.
+
+### Maturitatea descoperirii v2.1
+
+Din 7 domenii, clasificand onest cauzele, mecanismul a esuat propriu-zis pe UNUL
+SINGUR (douglas — ordonare), fata de 4 la LOT3:
+
+| esec | cauza reala |
+|---|---|
+| makeup.ro | acces (202 selectiv) — ordonarea functionase, top-ul era produs real |
+| sephora.ro | acces (403 pe toate treptele) |
+| bipa.ro | site-ul nu e magazin |
+| douglas.ro | ordonare — singurul esec real al mecanismului |
+
+marionnaud a atins 3 confirmari in 4 fetch-uri. Bonusul miniaturii si departajarea
+pe sku au lucrat, fara nicio respingere gresita observata.
+
+### Bilantul Grupului 4 dupa val
+
+hhv.de, orange.ro, sephora.ro, makeup.ro — **patru candidati**. Pragul de la care un
+harness de browser incepe sa se justifice e atins.
+
 ---
 
 ## Domenii neintrate

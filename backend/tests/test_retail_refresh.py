@@ -173,6 +173,8 @@ def test_validated_domains_santinela():
         "buzzsneakers.ro", "officeshoes.ro",          # LOT3
         "otter.ro", "spartoo.ro",                     # LOT3b
         "boozt.com", "booztlet.com",                  # LOT3b
+        "marionnaud.ro", "notino.ro",                 # LOT4
+        "parfumdreams.de", "douglas.ro",              # LOT4 / LOT4b
     }
 
 
