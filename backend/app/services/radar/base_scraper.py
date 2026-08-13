@@ -10,29 +10,30 @@ from enum import Enum
 from typing import Optional
 
 
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-]
-
-
 def build_headers(extra: dict | None = None) -> dict:
-    """Construieste headers realiste cu User-Agent rotit aleator."""
+    """Headers proprii — DOAR ce nu poate pune curl_cffi din profilul impersonat.
+
+    Masurat pe httpbin (2026-08-13): cu `impersonate=<profil>`, curl_cffi trimite
+    singur setul complet si COERENT al browserului — User-Agent, Sec-Ch-Ua* (cu
+    versiunea si platforma potrivite), Accept cu avif/webp/apng, Accept-Encoding cu
+    zstd, Sec-Fetch-*, Upgrade-Insecure-Requests, Priority. Header-ele date de noi
+    doar SUPRASCRIU cheile lor, restul raman.
+
+    Vechea implementare rotea un User-Agent dintr-o lista care continea si Firefox si
+    Edge, peste o amprenta TLS/HTTP2 de Chrome. Rezultatul masurat era o contradictie
+    pe care niciun browser real n-o poate produce si pe care serverul o vede direct:
+        User-Agent: ... Firefox/130.0
+        Sec-Ch-Ua:  "Chromium";v="146", "Google Chrome";v="146"
+    Plus Accept/Accept-Encoding de Chrome vechi (fara zstd/avif) si `Connection:
+    keep-alive`, ilegal pe HTTP/2. Adica exact semnalele pe care impersonarea le
+    elimina. Acum nu mai suprascriem nimic din ele.
+
+    Ramane doar `Accept-Language`: nu contrazice amprenta (e o preferinta de
+    utilizator) si conteaza pe site-urile RO, care servesc continut dupa ea.
+    `extra` (Referer, X-Requested-With etc.) ramane suveran, ca inainte.
+    """
     headers = {
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
     }
     if extra:
         headers.update(extra)

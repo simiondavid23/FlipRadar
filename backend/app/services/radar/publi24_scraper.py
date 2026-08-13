@@ -1,7 +1,7 @@
 """Scraper Publi24.ro — anunturi clasificate.
 
 Rescris complet de la zero (Faza 0 — diagnostic live, fara Playwright/cookie).
-Foloseste curl_cffi cu impersonate=chrome110 ca OLX. Structura confirmata prin
+Foloseste curl_cffi (profil din app/utils/http_profile.py) ca OLX. Structura confirmata prin
 fetch-uri reale:
 
 - Cautare:   https://www.publi24.ro/anunturi/?q={kw}          (root)
@@ -29,9 +29,10 @@ from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
     classify, report_outcome, Outcome,
 )
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 
-_IMPERSONATE = "chrome110"
+_IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 _BASE = "https://www.publi24.ro"
 
 # Plasa de siguranta la paginare — scanner-ul se opreste oricum cand o pagina nu

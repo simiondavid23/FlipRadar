@@ -1,6 +1,6 @@
 """Scraper pentru OLX.ro.
 
-Foloseste curl_cffi cu impersonate=chrome110 ca sa treaca peste WAF-ul Cloudflare
+Foloseste curl_cffi (profil din app/utils/http_profile.py) ca sa treaca peste WAF-ul Cloudflare
 care blocheaza requests-ul standard. Daca primim 429, aplicam backoff exponential
 si reincercam de maxim 3 ori inainte sa renuntam.
 """
@@ -16,9 +16,10 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 
-_IMPERSONATE = "chrome110"
+_IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 
 # OLX nu afiseaza mai mult de ~5 pagini utile per query; peste asta apar 404-uri
 # (paginare depasita). Cap hard ca sa nu paginam la nesfarsit / sa nu crape scanul.

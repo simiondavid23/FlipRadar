@@ -17,9 +17,10 @@ from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
     classify, report_outcome, Outcome,
 )
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 
-_IMPERSONATE = "chrome110"
+_IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 
 _MAKE_IDS = {
     "BMW": 3500, "Mercedes-Benz": 17200, "Audi": 1900, "Volkswagen": 25200,

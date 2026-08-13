@@ -844,6 +844,8 @@ def run_cleanup(db: Session) -> int:
     Doar 404/410 sterge; orice altceva sau exceptie inseamna doar ca randul a fost
     atins (last_checked_at=now), ca rotatia sa treaca mai departe.
 
+    Profilul de impersonare vine din app/utils/http_profile.py (sursa unica).
+
     CLEAN-2: HEAD-ul nu mai e crezut singur — sonda a dovedit ca Publi24 raspunde 404
     la HEAD pe anunturi VII (GET 200), iar aici 404-ul STERGE definitiv. Singura
     decizie luata direct din HEAD e "e viu" (200); orice altceva se confirma cu GET.
@@ -852,6 +854,8 @@ def run_cleanup(db: Session) -> int:
     import time
 
     from curl_cffi import requests as curl_requests
+
+    from app.utils.http_profile import DEFAULT_IMPERSONATE
 
     # FBG-2 (m5) — ambele platforme Facebook sunt excluse de la verificarea 404
     # (login-wall neautentificat = neverificabil), deci listingurile lor nu
@@ -879,7 +883,7 @@ def run_cleanup(db: Session) -> int:
     for listing in listings:
         gone = False
         try:
-            head = curl_requests.head(listing.url, impersonate="chrome110",
+            head = curl_requests.head(listing.url, impersonate=DEFAULT_IMPERSONATE,
                                       timeout=10, allow_redirects=True)
             head_ok = head.status_code == 200
         except Exception:
@@ -888,7 +892,7 @@ def run_cleanup(db: Session) -> int:
             # CLEAN-2 — orice non-200 la HEAD (inclusiv 404/410, care pe Publi24 apar
             # si pe anunturi vii) se confirma cu GET; doar GET-ul poate declansa stergerea.
             try:
-                resp = curl_requests.get(listing.url, impersonate="chrome110",
+                resp = curl_requests.get(listing.url, impersonate=DEFAULT_IMPERSONATE,
                                          timeout=10, allow_redirects=True)
                 gone = resp.status_code in (404, 410)
             except Exception:

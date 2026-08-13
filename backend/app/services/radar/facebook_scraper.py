@@ -1,4 +1,5 @@
-"""Scraper Facebook Marketplace — curl_cffi (impersonate=chrome110), FĂRĂ Playwright.
+"""Scraper Facebook Marketplace — curl_cffi (profil de impersonare centralizat in
+app/utils/http_profile.py), FĂRĂ Playwright.
 
 Rescris Faza 1 (2026-07-04). Diagnosticul live a arătat că un GET cu curl_cffi +
 cookie-urile din storage_state-ul salvat (sesiunea Playwright de la login-ul manual)
@@ -44,8 +45,9 @@ from app.services.radar.base_scraper import (
 )
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
 from app.utils.number_format import parse_number
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
-_IMPERSONATE = "chrome110"
+_IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 _BASE = "https://www.facebook.com"
 _SCRIPT_JSON_RE = re.compile(
     r'<script[^>]*type="application/json"[^>]*>(.*?)</script>', re.DOTALL

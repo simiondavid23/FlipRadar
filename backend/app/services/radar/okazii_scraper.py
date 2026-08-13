@@ -1,7 +1,8 @@
 """Scraper Okazii.ro — marketplace produse noi + second hand.
 
 Rescris complet de la zero (Faza 0 — diagnostic live, fara Playwright/cookie).
-curl_cffi impersonate=chrome110. Structura confirmata prin fetch-uri reale:
+curl_cffi, profil de impersonare din app/utils/http_profile.py. Structura confirmata
+prin fetch-uri reale:
 
 - Cautare:   https://www.okazii.ro/cautare/{kw}.html   (spatii -> '+' literal)
              https://www.okazii.ro/cautare/{kw}/{categorie-slug}.html   (cu categorie)
@@ -28,9 +29,10 @@ from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
     classify, report_outcome, Outcome,
 )
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 
-_IMPERSONATE = "chrome110"
+_IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 _BASE = "https://www.okazii.ro"
 
 # Plasa de siguranta la paginare (scanner-ul se opreste cand nu mai apar anunturi noi).

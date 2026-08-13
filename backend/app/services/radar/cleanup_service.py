@@ -15,9 +15,10 @@ from sqlalchemy.orm import Session
 
 from app.models.radar_listing import RadarListing
 from app.services.log_manager import log_manager
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 
-_IMPERSONATE = "chrome110"   # conventia proiectului pentru site-uri HTML
+_IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 _HTTP_TIMEOUT = 10
 _DELAY_RANGE = (0.4, 1.0)    # delay politicos intre verificari consecutive
 
