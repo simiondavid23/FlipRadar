@@ -4,6 +4,7 @@ Deal-urile sunt globale pe instanta (fara user_id, vezi models/deal.py), dar
 endpoint-urile raman autentificate ca tot restul aplicatiei: promovarea creeaza
 produse PE USERUL curent, deci are nevoie de el oricum.
 """
+import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -157,6 +158,39 @@ def deals_shops(
             })
         iesire.append(rand)
     return iesire
+
+
+@router.post("/scan")
+def scan_now(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Porneste o scanare imediata, fara sa astepte jobul de la 6h.
+
+    Thread daemon cu sesiune proprie, exact ca /radar/scan-now: sesiunea
+    request-ului se inchide la return, deci scanul nu poate imprumuta pe-a lui.
+    Garda de concurenta e in scanner (lock la nivel de modul); aici o consultam
+    doar ca sa raspundem 409 in loc sa pornim un thread care ar iesi imediat.
+    """
+    from app.services.deal_scanner import is_scan_running, run_deal_scan
+
+    if is_scan_running():
+        raise HTTPException(
+            status_code=409,
+            detail="O scanare de deal-uri este deja în curs. Așteaptă să se termine.")
+
+    def _background_scan():
+        from app.database import SessionLocal
+        _db = SessionLocal()
+        try:
+            run_deal_scan(_db)
+        except Exception as exc:                        # noqa: BLE001
+            print(f"[DealScan manual] eroare: {exc}")
+        finally:
+            _db.close()
+
+    threading.Thread(target=_background_scan, daemon=True).start()
+    return {"started": True}
 
 
 @router.patch("/{deal_id}")

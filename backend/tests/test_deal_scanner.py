@@ -384,3 +384,47 @@ def test_stats_si_shops(auth_client):
     assert shops[DOM]["last_status"] == "ok"
     assert shops[DOM]["products_seen"] == 42
     assert shops["patta.nl"]["last_status"] is None
+
+
+# ── SHOP-2c: declansare manuala + garda de concurenta ────────────────────────
+
+def test_scan_manual_porneste(auth_client, monkeypatch):
+    import threading as _th
+
+    pornit = _th.Event()
+    monkeypatch.setattr(deal_scanner, "run_deal_scan",
+                        lambda db: (pornit.set(), {"magazine": 0})[1])
+
+    raspuns = auth_client.post("/api/deals/scan")
+
+    assert raspuns.status_code == 200, raspuns.text
+    assert raspuns.json() == {"started": True}
+    # Scanul ruleaza pe thread daemon, deci il asteptam explicit — fara asta,
+    # testul ar putea trece si daca thread-ul nu porneste niciodata.
+    assert pornit.wait(timeout=5), "runnerul nu a fost invocat pe thread-ul de fundal"
+
+
+def test_scan_concurent_409(auth_client, monkeypatch):
+    cereri = []
+    monkeypatch.setattr("app.services.scraper_service._fetch_shop_url_guarded",
+                        lambda url, **kw: cereri.append(url))
+
+    # Lock-ul tinut simuleaza o scanare in curs (jobul de la 6h sau un dublu-click).
+    deal_scanner._SCAN_LOCK.acquire()
+    try:
+        assert deal_scanner.is_scan_running() is True
+        assert auth_client.post("/api/deals/scan").status_code == 409
+
+        # Chiar apelat direct, runnerul iese imediat: nu atinge reteaua.
+        db = SessionLocal()
+        try:
+            rezultat = deal_scanner.run_deal_scan(db)
+        finally:
+            db.close()
+        assert rezultat.get("skipped") == "scan deja in curs"
+        assert cereri == [], "scanul a pornit desi lock-ul era tinut"
+    finally:
+        deal_scanner._SCAN_LOCK.release()
+
+    # Dupa eliberare, garda nu mai blocheaza.
+    assert deal_scanner.is_scan_running() is False

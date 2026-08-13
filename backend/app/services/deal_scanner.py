@@ -16,6 +16,7 @@ de extractorul SHOP-1) da int in unitati minore (24861). Sunt doua parsari
 DIFERITE; conversia ÷100 NU are ce cauta aici.
 """
 import random
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -42,6 +43,18 @@ _HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+# SHOP-2c — o singura scanare la un moment dat. Acopera DOUA suprapuneri reale:
+# jobul de la 6h care porneste peste o scanare manuala inca in curs, si dublu-click-ul
+# pe butonul din UI. Doua scanari simultane ar citi aceeasi memorie de pret si si-ar
+# suprascrie reciproc minimele, deci ar produce deal-uri fantoma.
+_SCAN_LOCK = threading.Lock()
+
+
+def is_scan_running() -> bool:
+    """True cat timp o scanare tine lock-ul. Consultat de endpointul manual ca sa
+    raspunda 409 in loc sa porneasca un thread care oricum ar iesi imediat."""
+    return _SCAN_LOCK.locked()
 
 
 def _pret_strict(brut):
@@ -276,28 +289,37 @@ def run_deal_scan(db) -> dict:
     # user_id ramas de la o rulare anterioara ar eticheta gresit log-urile.
     set_log_user(None)
 
-    settings = _settings(db)
-    if settings is not None and not getattr(settings, "deal_scan_enabled", True):
-        return {"skipped": "deal_scan_enabled=False", "magazine": 0}
+    # Non-blocant DELIBERAT: o scanare care asteapta la coada ar porni imediat dupa
+    # cea curenta si ar reface aceeasi munca. Mai bine iese si o reia jobul urmator.
+    if not _SCAN_LOCK.acquire(blocking=False):
+        print("[DealScan] scanare deja in curs — cererea a fost ignorata")
+        return {"skipped": "scan deja in curs", "magazine": 0}
 
-    dezactivate = set(getattr(settings, "deal_shops_disabled", None) or []) if settings else set()
-    domenii = sorted(shopify_domains() - dezactivate)
-    prag = _prag(settings)
+    try:
+        settings = _settings(db)
+        if settings is not None and not getattr(settings, "deal_scan_enabled", True):
+            return {"skipped": "deal_scan_enabled=False", "magazine": 0}
 
-    rezumat = {"magazine": 0, "produse": 0, "alerte": 0, "erori": 0}
-    for domain in domenii:
-        try:
-            rezultat = _scaneaza_magazin(db, domain, settings, prag)
-        except Exception as exc:                        # noqa: BLE001
-            # Un magazin picat (tema schimbata, blocaj, retea) NU opreste restul:
-            # starea lui se vede in panoul de sanatate, ceilalti isi vad de treaba.
-            db.rollback()
-            _scrie_stare(db, domain, "error", eroare=f"{type(exc).__name__}: {exc}"[:500])
-            rezumat["erori"] += 1
-            continue
-        _scrie_stare(db, domain, "ok", produse=rezultat["produse"],
-                     deals_active=rezultat["deals_active"])
-        rezumat["magazine"] += 1
-        rezumat["produse"] += rezultat["produse"]
-        rezumat["alerte"] += rezultat["alerte"]
-    return rezumat
+        dezactivate = set(getattr(settings, "deal_shops_disabled", None) or []) if settings else set()
+        domenii = sorted(shopify_domains() - dezactivate)
+        prag = _prag(settings)
+
+        rezumat = {"magazine": 0, "produse": 0, "alerte": 0, "erori": 0}
+        for domain in domenii:
+            try:
+                rezultat = _scaneaza_magazin(db, domain, settings, prag)
+            except Exception as exc:                    # noqa: BLE001
+                # Un magazin picat (tema schimbata, blocaj, retea) NU opreste restul:
+                # starea lui se vede in panoul de sanatate, ceilalti isi vad de treaba.
+                db.rollback()
+                _scrie_stare(db, domain, "error", eroare=f"{type(exc).__name__}: {exc}"[:500])
+                rezumat["erori"] += 1
+                continue
+            _scrie_stare(db, domain, "ok", produse=rezultat["produse"],
+                         deals_active=rezultat["deals_active"])
+            rezumat["magazine"] += 1
+            rezumat["produse"] += rezultat["produse"]
+            rezumat["alerte"] += rezultat["alerte"]
+        return rezumat
+    finally:
+        _SCAN_LOCK.release()

@@ -7,6 +7,7 @@ import { selectStyle, tabPillStyle } from "@/lib/uiStyles";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import PageHeading, { Hl } from "@/components/shared/PageHeading";
+import ScanNowButton from "@/components/shared/ScanNowButton";
 import StatCardsRow from "@/components/shared/StatCardsRow";
 import TopBar from "@/components/shared/TopBar";
 import { timeAgo } from "@/components/shared/listingHelpers";
@@ -72,6 +73,7 @@ export default function DealsPage() {
   const [feedError, setFeedError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [promoting, setPromoting] = useState(null);
+  const [scanning, setScanning] = useState(false);
 
   const [tab, setTab] = useState("active");
   const [shopFilter, setShopFilter] = useState("");
@@ -159,6 +161,23 @@ export default function DealsPage() {
   const patch = (id, changes) =>
     setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, ...changes } : d)));
 
+  // Scanul complet dureaza minute, dar `last_scan_at` si starea per magazin incep
+  // sa se miste devreme, deci o singura reimprospatare dupa 15s e suficienta —
+  // aceeasi conventie ca butonul din feed-ul Radar.
+  const handleScanNow = async () => {
+    setScanning(true);
+    setActionMessage("");
+    try {
+      await dealsAPI.scanNow();
+      setActionMessage("Scanare pornită în fundal.");
+      setTimeout(() => { loadDeals(); loadSide(); setScanning(false); }, 15000);
+    } catch (err) {
+      // 409 = o scanare e deja in curs; mesajul vine din backend.
+      setActionMessage(err.response?.data?.detail || "Nu am putut porni scanarea.");
+      setScanning(false);
+    }
+  };
+
   const handleOpen = (deal) => {
     if (deal.state === "nou") {
       patch(deal.id, { state: "vazut" });
@@ -197,7 +216,9 @@ export default function DealsPage() {
 
   return (
     <div>
-      <TopBar path={["CATALOG", "DEAL-URI"]} />
+      <TopBar path={["CATALOG", "DEAL-URI"]}>
+        <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+      </TopBar>
 
       <PageHeading
         icon={Percent}

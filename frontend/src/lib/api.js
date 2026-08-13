@@ -372,6 +372,7 @@ export const dealsAPI = {
   shops: () => api.get("/api/deals/shops"),
   setState: (id, state) => api.patch(`/api/deals/${id}`, { state }),
   promote: (id) => api.post(`/api/deals/${id}/promote`),
+  scanNow: () => api.post("/api/deals/scan"),
 };
 
 // PKG-UPD — versiune aplicatie + verificare de actualizare (GitHub Releases).
