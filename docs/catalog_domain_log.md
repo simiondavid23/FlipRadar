@@ -776,6 +776,143 @@ harness de browser incepe sa se justifice e atins.
 
 ---
 
+## G4 / G4b / BR-1 — Grupul 4 si harness-ul de browser
+
+Doua sonde in browser (patchright, 2026-08-13) plus runda de implementare BR-1, care
+a facut din browser A TREIA cale de fetch, alaturi de curl si de endpoint-ul Shopify.
+Grupul 4 nu e o categorie de magazine, ci o categorie de ACCES: patru domenii unde
+datele exista in pagina, dar nu in raspunsul pe care-l primeste un client fara motor
+de randare.
+
+### Verdicte
+
+| domeniu | mod | metoda pe DOM randat | moneda | verdict |
+|---|---|---|---|---|
+| orange.ro | headless | jsonld | RON | validat (2/2 la G4) |
+| hhv.de | **headed** | jsonld | EUR | validat (3/3 la G4b) |
+| sephora.ro | **headed** | microdata | RON | validat (reverificare G4b) |
+| makeup.ro | headless | microdata + override | RON | validat cu `price_selector` |
+
+### makeup: 202-ul e interstitiu JS, nu refuz
+
+LOT4b incadrase `202 Accepted` drept "blocaj moale". In browser, aceleasi pagini se
+randeaza complet: `og:type=product`, 119–183 markeri `itemprop`, titlu real. Deci 202
+nu era un refuz, ci un interstitiu care asteapta executie de JS — ceea ce explica
+RETROACTIV observatia care nu se lega la LOT4b: corpul era identic la octet pe toate
+treptele de impersonare. Nu era amprenta TLS fiindca nu era nicio decizie despre
+client; era acelasi document de asteptare servit tuturor.
+
+Ce blocheaza extractia e altceva: pagina poarta **3 / 11 / 3** elemente
+`itemprop="price"` intr-un singur scope Product, iar regula de siguranta din
+`_collect_microdata` refuza corect ambiguitatea. Structura, verbatim din
+`makeup.ro/product/181283/`:
+
+```html
+<div class="ProductBuySection__container shop_1hy48pa_l3p3ge"
+     itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+  <meta itemprop="price" content="49.29">
+  <meta itemprop="priceCurrency" content="RON">
+```
+
+```html
+<div class="ProductBuySection__title shop_1v5nkdl_l3p3ge">02 - Natural</div>
+<meta itemprop="name" content="Fond de ten - Paese Long Cover Fluid  02 - Natural">
+<meta itemprop="price" content="55.29">
+```
+
+Un pret principal in container, plus cate unul per varianta de culoare. Doua capcane
+masurate la implementare, ambele pe dump:
+
+1. **variantele sunt NESTED in container**, deci selectorul de descendenti se
+   potriveste cu 11 elemente, nu cu unul; `select_one` ia primul, care e chiar meta-ul
+   propriu al ofertei — masurat 159 / 49.29 / 44.45 pe cele trei pagini, adica pretul
+   principal de fiecare data.
+2. **clasele poarta sufixe generate la build** (`shop_1hy48pa_l3p3ge`), deci selectorul
+   se ancoreaza pe partea stabila a numelui, nu pe clasa intreaga.
+
+Purtatorul fiind un `<meta>`, n-are text — de aici extensia din `_apply_override`:
+cand `price_selector` gaseste un element din al carui text nu iese pret, se citeste
+atributul `content`. Textul ramane prioritar, deci niciun override existent nu-si
+schimba sursa.
+
+### sephora: masuratoarea sondei a fost invalidata de sonda insasi
+
+Faza automata a raportat 0/3 si "prag nedeterminat" dupa 27,4 minute. Verdictul e
+GRESIT, si vina e a sondei. Criteriul de succes era `parse_ok AND not blocata`, deci
+o pagina servita normal dar din care parserul nu scotea nimic era numarata drept
+blocaj. Cronologia arata limpede ce s-a intamplat:
+
+| ts | spatiere | status | blocata | tratat ca |
+|---|---|---|---|---|
+| 16:23:49 | 0 min | 200 | **False** | BLOCAT |
+| 16:27:29 | 3 min | 200 | **False** | BLOCAT |
+| 16:35:10 | 7 min | 200 | **False** | BLOCAT |
+| 16:50:50 | 15 min | 200 | True (`access denied`) | BLOCAT |
+
+Primele trei nu erau blocate deloc. Escaladarea a insistat pe acelasi URL, iar
+`Access Denied`-ul de la +15 min e cel mai probabil CONSECINTA insistentei, nu cauza
+initiala. O singura vizita de reverificare, sesiune scurta:
+
+```
+status: 200   blocata: False   lungime: 820782
+titlu:  Centella Cleansing Balm - Balsam demachiant | Erborian ≡ SEPHORA
+parse:  OK -> 173.0 RON prin microdata, poll 0.39s la PRIMA incercare
+```
+
+**Pragul de spatiere ramane NEMASURAT** — premisa n-a fost niciodata exercitata
+corect, deci cifrele din cronologie nu se folosesc la nimic. De aceea
+`min_fetch_interval_s: 180` e o estimare prudenta, nu o masuratoare: productia e
+masuratoarea, iar valoarea se urca din registru daca apar blocaje.
+
+### hhv: headed obligatoriu, `pquid` taiat de canonical, marimi absente
+
+Headless raspunde `ERR_CONNECTION_RESET` la navigare (deci nici macar un challenge —
+conexiunea moare), iar headed trece curat: 3/3, jsonld, EUR, un singur purtator de
+pret per pagina (17.95 / 149.95 / 219.95). Pe server asta inseamna xvfb, ca la
+mobile.de.
+
+Parametrul `pquid` din link-urile de campanie **nu supravietuieste**: pe ambele URL-uri
+care-l purtau, `<link rel=canonical>` il taie. Comportamentul implicit (canonical
+preferat) e deci corect si hhv NU are nevoie de `url_identity: "exact"`.
+
+Marimile lipsesc din datele structurate pe toate trei paginile, desi sunt articole de
+imbracaminte — ca la boozt: se urmareste produsul, nu marimea.
+
+### Parse-poll in loc de asteptare fixa
+
+Prototipul mobile.de asteapta FIX 6s dupa navigare. G4b a masurat timpul real pana la
+continut:
+
+| pagina | secunde | incercari |
+|---|---|---|
+| hhv 1 | 2,53 | 2 |
+| hhv 2 | 0,47 | 1 |
+| hhv 3 | 0,57 | 1 |
+| sephora (reverificare) | 0,39 | 1 |
+
+In 3 din 4 cazuri continutul e gata la PRIMA incercare. Harness-ul incearca deci sa
+parseze imediat si apoi la ~1,5s, cu plafon 20s — plafonul n-a fost atins niciodata pe
+o pagina care se extrage.
+
+### D12 inchis pe masuratoare: fara storage_state
+
+Reutilizarea starii de sesiune intre pagini nu aduce castig: pe orange.ro, prima
+vizita a durat **7,16s** si a doua, cu `storage_state` incarcat, **7,22s**. Sesiune-per-
+pagina e deci si mai simpla, si mai politicoasa. Se redeschide doar daca apare un
+challenge scump DOVEDIT, unde costul rezolvarii se amortizeaza pe mai multe pagini.
+
+### Doua reguli permanente de protocol, din defectele sondei G4b
+
+**Escaladarea se face DOAR pe `blocata == True`.** "Neparsata" si "blocata" sunt stari
+diferite; confundarea lor a produs 27 de minute de asteptari inutile, un verdict fals
+si, foarte probabil, chiar blocajul pe care pretindea ca-l masoara.
+
+**Fiecare incercare isi scrie dump-ul cu eticheta UNICA.** Reincercarile pe sephora au
+scris toate in acelasi loc, deci artefactele incercarilor 1–3 s-au pierdut si diagnoza
+a trebuit facuta din log, nu din pagini.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

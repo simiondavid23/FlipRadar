@@ -175,6 +175,8 @@ def test_validated_domains_santinela():
         "boozt.com", "booztlet.com",                  # LOT3b
         "marionnaud.ro", "notino.ro",                 # LOT4
         "parfumdreams.de", "douglas.ro",              # LOT4 / LOT4b
+        "orange.ro", "makeup.ro",                     # BR-1 (G4/G4b)
+        "hhv.de", "sephora.ro",                       # BR-1 (G4/G4b)
     }
 
 

@@ -59,6 +59,22 @@ def test_registru_intrari_valide():
         if "vat_prices" in (meta.get("overrides") or {}):
             assert isinstance(meta["overrides"]["vat_prices"], bool), \
                 f"{domain}: overrides.vat_prices trebuie sa fie boolean"
+        # BR-1 — profilul de rulare al harness-ului are sens DOAR pe method
+        # "browser". Pe orice alta metoda campurile ar fi moarte: nimeni nu le
+        # citeste, iar prezenta lor ar sugera fals ca domeniul se deschide in
+        # browser (exact genul de divergenta tacuta pentru care exista registrul).
+        if "headed" in meta:
+            assert meta["method"] == "browser", \
+                f"{domain}: headed e permis doar pe method=browser"
+            assert isinstance(meta["headed"], bool), \
+                f"{domain}: headed trebuie sa fie boolean"
+        if "min_fetch_interval_s" in meta:
+            assert meta["method"] == "browser", \
+                f"{domain}: min_fetch_interval_s e permis doar pe method=browser"
+            assert isinstance(meta["min_fetch_interval_s"], int) \
+                and not isinstance(meta["min_fetch_interval_s"], bool) \
+                and meta["min_fetch_interval_s"] > 0, \
+                f"{domain}: min_fetch_interval_s trebuie sa fie int pozitiv"
 
 
 def test_derivarile_intorc_obiecte_proaspete():

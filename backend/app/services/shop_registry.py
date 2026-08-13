@@ -45,6 +45,19 @@ Campurile unei intrari:
   impersonate — OPTIONAL, treapta TLS/HTTP2 cand default-ul nu deschide site-ul
   overrides   — OPTIONAL, payload-ul DOMAIN_OVERRIDES (contractul campurilor e
                 documentat la structura din product_page_extractor)
+  headed      — OPTIONAL, DOAR pe method == "browser": True cere fereastra reala
+                (headless=False). Nu e preferinta, ci masuratoare: hhv.de raspunde
+                headless cu ERR_CONNECTION_RESET si sephora.ro cu 403, iar headed
+                trec amandoua (G4/G4b). Costa mai mult — pe server cere xvfb — deci
+                se pune doar unde s-a dovedit necesar. Implicit: headless.
+  min_fetch_interval_s
+              — OPTIONAL, DOAR pe method == "browser": secunde minime intre doua
+                vizite ale harness-ului pe domeniu. Sub prag, fetch-ul e refuzat
+                FARA a lansa browser, iar refresh-ul pastreaza pretul anterior.
+                Aparut pentru sephora.ro, care limiteaza progresiv; pragul real nu
+                e masurat (sonda G4b si-a invalidat propria masuratoare), deci
+                valoarea e o estimare prudenta care se urca din registru daca apar
+                blocaje. Absent = fara limitare.
   notes       — valul/sonda de origine
 """
 import copy
@@ -470,9 +483,8 @@ SHOP_REGISTRY: dict[str, dict] = {
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
-        "status": "probed",
-        "notes": "LOT1: CSR real — 339KB, titlu generic, zero purtatori de pret in "
-                 "HTML-ul initial; Grup 4",
+        "status": "validated",
+        "notes": "G4: CSR — jsonld apare in DOM-ul randat; headless",
     },
     "powerup.ro": {
         "label": "PowerUp",
@@ -654,8 +666,12 @@ SHOP_REGISTRY: dict[str, dict] = {
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
-        "status": "probed",
-        "notes": "LOT4: 403 cu corp 519B pe toate treptele; candidat Grup 4",
+        "status": "validated",
+        "headed": True,
+        "min_fetch_interval_s": 180,
+        "notes": "G4/G4b: limitare progresiva variabila — sesiune-per-pagina, "
+                 "interval minim configurabil (productia e masuratoarea; se urca "
+                 "din registru daca apar blocaje); microdata pe DOM-ul randat",
     },
     "makeup.ro": {
         "label": "Makeup",
@@ -663,9 +679,12 @@ SHOP_REGISTRY: dict[str, dict] = {
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
-        "status": "probed",
-        "notes": "LOT4b: interstitiu JS servit cu 202, corp identic la octet pe "
-                 "toate treptele — nu e amprenta TLS; candidat Grup 4",
+        "status": "validated",
+        "overrides": {"price_selector": '[class*="ProductBuySection__container"] [itemprop="price"]'},
+        "notes": "G4/G4b: interstitiu JS pe 202 trecut de browser; paginile cu "
+                 "variante de culoare au N itemprop=price — selectorul tinteste "
+                 "containerul principal (clasele au sufixe generate, ancorare pe "
+                 "partea stabila); meta content",
     },
     "hhv.de": {
         "label": "HHV",
@@ -673,9 +692,11 @@ SHOP_REGISTRY: dict[str, dict] = {
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "browser",
-        "status": "probed",
-        "notes": "LOT2: challenge servit pe 200 — corp ~2KB JS obfuscat, zero "
-                 "ancore, fara titlu; candidat Grup 4 (browser)",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4/G4b: reset de conexiune pe headless; jsonld curat headed; "
+                 "marimile absente din date — se urmareste produsul; pquid taiat "
+                 "de canonical",
     },
 }
 
@@ -725,3 +746,28 @@ def shopify_domains() -> set[str]:
     """
     return {domain for domain, meta in SHOP_REGISTRY.items()
             if meta.get("method") == "shopify"}
+
+
+def browser_domains() -> set[str]:
+    """Domeniile servite de harness-ul de browser (method == "browser").
+
+    Dubla folosinta, ca la shopify_domains: alege calea de fetch in extractor SI e
+    lista de destinatii pe care harness-ul are voie sa navigheze. Un domeniu nu
+    poate fi deci deschis in browser fara sa fie declarat aici.
+    """
+    return {domain for domain, meta in SHOP_REGISTRY.items()
+            if meta.get("method") == "browser"}
+
+
+def browser_profile_of(domain: str) -> dict:
+    """Profilul de rulare al harness-ului pentru un domeniu.
+
+    Mereu aceleasi chei, cu implicitele aplicate (headless, fara limitare), ca
+    apelantul sa nu duplice absenta campurilor. Dict-ul e construit la fiecare
+    apel, deci nu poate fi mutat inapoi in registru.
+    """
+    meta = SHOP_REGISTRY.get(domain) or {}
+    return {
+        "headed": bool(meta.get("headed")),
+        "min_fetch_interval_s": meta.get("min_fetch_interval_s"),
+    }

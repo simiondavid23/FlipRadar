@@ -459,6 +459,102 @@ def test_emag_fara_elementul_de_pret_cade_curat_pe_jsonld():
     assert res["override_applied"] is False
 
 
+# ── BR-1: price_selector pe purtator fara text (meta content=) ────────────────
+
+def test_price_selector_din_meta_content(monkeypatch):
+    """Cand elementul selectat n-are text, pretul se citeste din `content`.
+
+    Cazul makeup.ro: purtatorul e un <meta itemprop="price">, iar pagina are mai
+    multe (unul principal + unul per varianta de culoare), deci regula de siguranta
+    din microdata refuza pe ambiguitate si baza ramane FARA pret. Selectorul
+    dezambiguizeaza, dar are ce citi doar din atribut.
+    """
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-meta.ro",
+                        {"price_selector": ".principal [itemprop='price']"})
+    corp = (
+        '<div itemscope itemtype="https://schema.org/Product">'
+        '<h1 itemprop="name">Fond de ten Test</h1>'
+        '<div class="principal" itemprop="offers" itemscope '
+        'itemtype="https://schema.org/Offer">'
+        '<meta itemprop="price" content="49.29">'
+        '<meta itemprop="priceCurrency" content="RON">'
+        '</div>'
+        '<div class="varianta"><meta itemprop="price" content="55.29"></div>'
+        '<div class="varianta"><meta itemprop="price" content="54.48"></div>'
+        '</div>'
+    )
+
+    # Fara override, ambiguitatea de pret face pagina neextractibila.
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_page(body=corp), "https://alt-magazin.ro/p/1")
+    assert exc.value.reason == "no_product_data"
+
+    res = parse_product_html(_page(body=corp), "https://magazin-meta.ro/p/1")
+
+    assert res["price"] == 49.29           # cel principal, nu al vreunei variante
+    assert res["currency"] == "RON"
+    assert res["override_applied"] is True
+
+    # Garda: cand elementul ARE text de pret, textul castiga si `content` se
+    # ignora — extensia nu poate schimba sursa niciunui override existent.
+    monkeypatch.setitem(ppe.DOMAIN_OVERRIDES, "magazin-meta.ro",
+                        {"price_selector": "span.pret"})
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Produs cu pret afisat",
+         "offers": {"@type": "Offer", "price": "10.00", "priceCurrency": "RON"}}
+    """), body='<span class="pret" content="999.00">1.234,00 lei</span>')
+
+    res = parse_product_html(html, "https://magazin-meta.ro/p/2")
+
+    assert res["price"] == 1234.0
+
+
+def test_makeup_pe_fragment_real():
+    """Fragmentul din dump-ul G4b (makeup.ro/product/181283/, redus la esential),
+    trecut prin override-ul de PRODUCTIE. Structura pastrata verbatim: containerul
+    principal e el insusi scope-ul Offer si isi poarta pretul ca meta, iar fiecare
+    varianta de culoare are al ei — de aici cele 11 elemente itemprop=price din
+    pagina reala. Clasele au sufixe generate la build (shop_1hy48pa_l3p3ge), deci
+    selectorul se ancoreaza pe partea stabila a numelui.
+    """
+    assert ppe.DOMAIN_OVERRIDES["makeup.ro"] == {
+        "price_selector": '[class*="ProductBuySection__container"] [itemprop="price"]'}
+
+    corp = (
+        '<div itemscope itemtype="https://schema.org/Product">'
+        '<h1 class="ProductInformation__title shop_ewhpz6_1wdcs99" itemprop="name">'
+        'Paese Long Cover Fluid</h1>'
+        '<div class="ProductBuySection__container shop_1hy48pa_l3p3ge" '
+        'itemprop="offers" itemscope itemtype="https://schema.org/Offer">'
+        '<meta itemprop="price" content="49.29">'
+        '<meta itemprop="priceCurrency" content="RON">'
+        '<link itemprop="availability" href="https://schema.org/InStock">'
+        '<div class="ProductBuySection__variant shop_16hrxvi_l3p3ge">'
+        '<div class="ProductBuySection__title shop_1v5nkdl_l3p3ge">02 - Natural</div>'
+        '<meta itemprop="name" content="Fond de ten - Paese Long Cover Fluid  02 - Natural">'
+        '<meta itemprop="price" content="55.29">'
+        '<meta itemprop="priceCurrency" content="RON">'
+        '</div>'
+        '<div class="ProductBuySection__variant shop_16hrxvi_l3p3ge">'
+        '<div class="ProductBuySection__title shop_1v5nkdl_l3p3ge">4.5 - Toffee</div>'
+        '<meta itemprop="name" content="Fond de ten - Paese Long Cover Fluid  4.5 - Toffee">'
+        '<meta itemprop="price" content="54.48">'
+        '<meta itemprop="priceCurrency" content="RON">'
+        '</div>'
+        '</div></div>'
+    )
+
+    res = parse_product_html(_page(body=corp), "https://makeup.ro/product/181283/")
+
+    assert res["price"] == 49.29
+    assert res["currency"] == "RON"
+    # Numele vine din microdata: singurul itemprop="name" al Product-ului INSUSI
+    # (cele ale variantelor apartin scope-urilor lor, filtrate de _in_scope).
+    assert res["name"] == "Paese Long Cover Fluid"
+    assert res["override_applied"] is True
+    assert res["domain"] == "makeup.ro"
+
+
 # ── FASHION-1b: ProductGroup / hasVariant ─────────────────────────────────────
 #
 # Fixture-urile de mai jos reproduc FORMELE REALE masurate de sonda fashion

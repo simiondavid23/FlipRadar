@@ -41,6 +41,7 @@ from bs4 import BeautifulSoup
 
 from app.services.shop_registry import (
     SHOP_REGISTRY,
+    browser_domains,
     domain_overrides,
     shopify_domains,
     validated_domains,
@@ -67,7 +68,10 @@ class ProductExtractionError(Exception):
 #                 parseaza STRICT ca float in format masina (JSON/JS embedded).
 #                 Are precedenta peste price_selector; match lipsa sau valoare
 #                 invalida => ignorat, se cade pe price_selector, apoi jsonld/og.
-#   price_selector / name_selector / image_selector — selectori CSS
+#   price_selector / name_selector / image_selector — selectori CSS. Pentru pret,
+#                 sursa e textul elementului; daca acesta nu produce un pret valid
+#                 se citeste atributul `content` (BR-1: pe makeup.ro purtatorul e
+#                 un <meta itemprop="price" content="49.29">, fara text).
 #   out_of_stock_text — substring case-insensitive in pagina => in_stock False
 #   currency — moneda fixa a magazinului
 #   vat_prices — True pe magazinele care publica DOUA preturi: net in JSON-LD si
@@ -900,6 +904,18 @@ def _apply_override(soup, html: str, result: dict, override: dict) -> bool:
         if el is not None:
             result["price_seen"] = True
             price = _parse_price_any(el.get_text(" ", strip=True))
+            if price is None:
+                # BR-1: purtatorul poate fi un <meta itemprop="price" content="49.29">,
+                # care n-are text deloc. `content` e prin conventie format masina,
+                # deci float() STRICT — aceeasi regula ca in _collect_microdata,
+                # unde _parse_price_any ar citi "1234.567" ca mii.
+                # TEXTUL ramane prioritar: extensia porneste doar cand el n-a dat
+                # un pret valid, deci niciun override existent nu-si schimba sursa.
+                try:
+                    valoare = float(_clean_text(el.get("content")) or "")
+                except (TypeError, ValueError):
+                    valoare = None
+                price = valoare if (valoare is not None and valoare > 0) else None
             if price is not None:
                 result["price"] = price
                 result["is_aggregate"] = False  # selectorul da pretul concret, nu un interval
@@ -1214,6 +1230,43 @@ def _extract_shopify(url: str) -> dict:
     }
 
 
+def _browser_domain_for(url: str):
+    """Domeniul din registru daca URL-ul se serveste prin harness-ul de browser."""
+    return match_shop_domain(_domain_of(url), browser_domains())
+
+
+def _extract_via_browser(url: str) -> dict:
+    """A TREIA cale de fetch (BR-1): pagina se cere printr-un browser real, apoi se
+    parseaza cu ACELASI parse_product_html ca oricare alta.
+
+    Grupul 4 nu e o problema de parsare, ci de acces: pe orange.ro datele apar abia
+    dupa randare, iar makeup/hhv/sephora resping cererea fara browser. Restul
+    catalogului ramane pe curl — harness-ul e scump (un Chromium per pagina) si se
+    foloseste doar unde sonda a dovedit ca nu exista alta cale.
+
+    Import LENES, deliberat: browser_fetch importa patchright, care n-are ce cauta
+    in graful de import al extractorului — modulul asta se incarca la fiecare
+    pornire, harness-ul doar pe cele cateva domenii care-l cer.
+    """
+    from app.services import browser_fetch as bf
+
+    domain = _browser_domain_for(url)
+    try:
+        # Validarea continutului e chiar parsarea: harness-ul iese din poll la
+        # prima varianta de HTML din care iese un produs, deci nu asteapta degeaba.
+        html = bf.fetch_browser_html(url, domain, lambda h: parse_product_html(h, url))
+    except bf.BrowserFetchBlocked as exc:
+        raise ProductExtractionError("challenge", str(exc)[:200]) from exc
+    except bf.BrowserFetchTooSoon as exc:
+        # fetch_failed, ca orice "n-am ajuns la continut": refresh_source pastreaza
+        # pretul anterior, iar sanatatea catalogului vede incercarea nereusita.
+        raise ProductExtractionError("fetch_failed", str(exc)[:200]) from exc
+    except bf.BrowserFetchUnavailable as exc:
+        raise ProductExtractionError("fetch_failed", str(exc)[:200]) from exc
+
+    return parse_product_html(html, url)
+
+
 def _shopify_extractor_for(url: str):
     """True daca domeniul e servit de extractorul generic Shopify.
 
@@ -1268,6 +1321,12 @@ def extract_product(url: str, max_retries: int = 3) -> dict:
     # ProductExtractionError, deci apelantii nu vad nicio diferenta.
     if _shopify_extractor_for(url):
         return _extract_shopify(url)
+
+    # BR-1, al treilea bloc simetric: Grupul 4 — magazine unde datele EXISTA in
+    # pagina, dar numai dupa randare, sau unde cererea fara browser real e respinsa.
+    # Acolo fetch-ul se face cu un browser; parsarea de dupa e identica.
+    if _browser_domain_for(url):
+        return _extract_via_browser(url)
 
     # Import lenes, in corpul functiei: evita ciclul de import de cand, in
     # RETAIL-3, scraper_service va importa acest modul. Allow-list-ul SSRF C-14
