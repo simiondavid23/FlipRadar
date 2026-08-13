@@ -116,10 +116,19 @@ async def lifespan(app: FastAPI):
     # PKG-3b: sub PyInstaller, sys.executable = FlipRadar.exe, deci acest subprocess
     # ar re-lansa RECURSIV launcher-ul (fork bomb, uvicorn nu mai devine ready) — il
     # sarim sub frozen. In exe browserul vine din Chrome real / bundle (vezi --selfcheck).
+    #
+    # BR-3: lifespan descarca DOAR binarul browserului — neprivilegiat, idempotent, in
+    # cache-ul userului. Asta e auto-vindecarea REALA, care merge pe orice masina,
+    # inclusiv sub systemd ca user normal. Dependentele de sistem (`--with-deps`) cer
+    # root si apartin pasului de instalare din ghid, unde ruleaza interactiv cu sudo.
+    # Motivul eliminarii, masurat in driver: `installDeps` ruleaza INAINTEA descarcarii
+    # browserului, deci sub systemd fara TTY sudo pica cu "no tty present" si opreste
+    # TOT apelul — inclusiv descarcarea care ar fi mers neprivilegiat. Cu `--with-deps`,
+    # pe un Pi rulat ca user normal, lifespan-ul n-a instalat NICIODATA vreun browser.
     if not getattr(sys, "frozen", False):
         try:
             subprocess.run(
-                [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
+                [sys.executable, "-m", "playwright", "install", "chromium"],
                 check=False, capture_output=True,
             )
         except Exception as exc:
@@ -134,7 +143,7 @@ async def lifespan(app: FastAPI):
         # Idempotent ca fratele lui: sare peste daca e deja instalat.
         try:
             subprocess.run(
-                [sys.executable, "-m", "patchright", "install", "chromium", "--with-deps"],
+                [sys.executable, "-m", "patchright", "install", "chromium"],
                 check=False, capture_output=True,
             )
         except Exception as exc:
