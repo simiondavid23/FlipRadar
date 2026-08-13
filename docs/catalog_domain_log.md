@@ -422,6 +422,117 @@ NEMASURAT.
 Site mort, confirmat manual de David in 2026-08. Scos din lot inainte de sonda,
 deci nu apare in masuratori. Reverificare optionala la un val viitor.
 
+## LOT2 / LOT2b
+
+Doua sonde, 2026-08-13, pentru lotul tintelor usoare straine. LOT2 si-a DESCOPERIT
+singura produsele; LOT2b a completat pe link-uri manuale ce descoperirea n-a scos.
+Toate domeniile care au raspuns au facut-o pe treapta implicita de impersonare.
+
+### Verdicte
+
+| domeniu | sonda | confirmate | metoda | moneda | verdict |
+|---|---|---|---|---|---|
+| computeruniverse.net | LOT2 | 3/3 | jsonld | EUR | validat |
+| jb-spielwaren.de | LOT2 | 3/3 | jsonld | EUR | validat |
+| caseking.de | LOT2b | 3/3 | jsonld | EUR | validat |
+| bergfreunde.eu | LOT2b | 3/3 | jsonld | EUR | validat |
+| alternate.de | LOT2b | 3/3 | jsonld | EUR | validat |
+| foto-erhardt.com | LOT2b | 3/3 | jsonld | EUR | validat |
+| hhv.de | LOT2 | 0/3 | — | — | probed (Grup 4) |
+
+Cele patru domenii completate manual la LOT2b esuasera la LOT2 din cauza
+MECANISMULUI de descoperire, nu a magazinelor — paginile lor de produs se extrag
+curat din prima.
+
+### Descoperirea — doua defecte reparate in runda de sonda
+
+Prima rulare LOT2 a dat 6/7 esecuri. Sapte magazine sparte simultan fiind
+implauzibil, ipoteza a fost defectul propriu — confirmata de doua ori:
+
+1. **Ordinea candidatilor.** Ancorele erau luate in ordinea din document; pe o
+   pagina de outlet primele zeci sunt header/nav, iar grila de produse vine mult
+   mai jos. Masurat: bergfreunde a dat 1232 de candidati, iar cei 11 incaputi in
+   buget erau toti nav. Reparat cu un scor GENERIC de probabil-produs (adancimea
+   caii, cifra in ultimul segment, slug lung, text de ancora lung), minus o
+   penalizare structurala pentru URL-urile care sunt prefix pentru >=3 alti
+   candidati (hub de categorie).
+2. **Detectorul de pagina de produs, prea larg.** Regula era "exista cel putin un
+   Product in ld+json". Paginile de LISTA emit cate un Product per card: caseking
+   /pc-systeme si /neuheiten poarta 40 fiecare si treceau drept produse. Strans la
+   EXACT un Product — aceeasi disciplina de ambiguitate ca a extractorului.
+
+Efect: 0 domenii validate -> 2 validate + 1 partial, si bugetul consumat a scazut.
+
+### Lectii pentru loturile viitoare (~40 de domenii ramase)
+
+- **Challenge servit pe 200.** hhv.de raspunde 200 cu ~2KB de JavaScript obfuscat,
+  zero ancore, fara titlu. Detectorul clasic (403 / cf-mitigated / fraze cunoscute)
+  il rateaza si domeniul apare ca "descoperire esuata" in loc de "blocat". Regula
+  adaugata: corp mic + zero ancore + fara titlu = challenge.
+- **Fatete in CALE, nu in query.** bergfreunde publica filtrele ca
+  `/outlet/properties--2-way-front-zip/` si `/outlet/brands/7mesh/`. Un filtru care
+  se uita doar la query string nu le vede. Semnale: `--` intr-un segment, hub-uri
+  de tip `/brands/`.
+- **Segmente fara structura silabica.** Candidatul de top la alternate era
+  `/adc/baacb452-28ae-4b64-bb5a-55d02c9e0c07`, un UUID de tracking premiat gresit
+  de euristica "are cifre". De penalizat, nu de premiat.
+- **`sku`/`mpn` ca semnal INTARITOR.** Paginile de produs reale de la caseking
+  poarta ambele (`HPIT-805`), pe cand categoriile care se declara Product cu pret
+  "de la" (cele care au pacalit detectorul) nu le au. De adaugat in detector.
+
+### bergfreunde.eu — variatie BIDIMENSIONALA, si bug-ul pe care il inchide
+
+Masurat: `variesBy: ["https://schema.org/size", "https://schema.org/color"]`, cu
+24 de variante (8 marimi x 3 culori), 15 si 52 pe celelalte doua produse. Fiecare
+varianta poarta `size`, `color` si `sku` propriu, iar preturile DIFERA pe culoare
+la aceeasi marime:
+
+| marime | culoare | pret | in stoc |
+|---|---|---|---|
+| S | Olive Green | 67.96 | da |
+| S | Summer Blue | 67.96 | nu |
+| S | Timber Red | **63.96** | nu |
+
+Etichetate doar cu `size` — cum facea extractorul — cele trei "S" erau NEunice, iar
+selectia per-varianta din `create_product_from_url` ia PRIMA potrivire. Userul care
+alegea "S" primea tacut pretul si stocul altei culori. Bug preexistent, vizibil
+abia acum, fiindca toate grupurile de pana acum variau pe o singura dimensiune.
+
+Decizia: **eticheta compusa** din dimensiunile declarate in `variesBy`, in ordinea
+lor ("S / Olive Green"). Refoloseste integral masinaria variantă-ca-string
+(FASHION-1c: etichete string liber, fara normalizare), e unica SI lizibila, si nu
+schimba schema. Compunerea se activeaza DOAR la mai mult de o dimensiune, deci
+grupurile masurate anterior (eobuwie, About You) raman byte-identice.
+
+LIMITA CONSTIENTA: pe un grup care produce etichete duplicate FARA sa declare
+`variesBy` multi, coliziunea ramane — n-avem din ce compune. Cazul n-a fost
+intalnit; daca apare, se rezolva cu `sku`-ul variantei (care E unic), nu prin
+ghicirea dimensiunilor.
+
+Testul `?sel=color`: 159.95 cu query, 159.95 fara — IDENTICE. Spre deosebire de
+flip.ro, aici query-ul e stare de UI pentru preselectia culorii, nu semantica, deci
+bergfreunde NU are nevoie de `url_identity: "exact"`.
+
+### foto-erhardt.com — starea traieste doar in cale
+
+Nici macar bucata Second Hand nu poarta `itemCondition`; toate trei paginile au
+`availability: InStock`. Singurul semnal ca produsul e folosit sta in CALE
+(`/second-hand/`) si in nume. Daca vrem starea la implementare, se ia din URL, nu
+din date. Hostul a ramas `.com` — niciun redirect spre `.de`, contrar ipotezei.
+Bucatile fiind unice, un "vandut" ar fi permanent, dar sonda n-a intalnit niciunul,
+deci comportamentul in acel caz ramane NEMASURAT (aceeasi limita ca la
+usedproducts.ro).
+
+### caseking.de
+
+Storefront-ul `/en/` e localizat LINGVISTIC, moneda ramane EUR (nu GBP). `canonical`
+taie query-ul de tracking `_gl`, deci comportamentul implicit (preferinta pentru
+canonical) e corect si domeniul nu are nevoie de `url_identity`.
+
+### Nota
+
+badabum.ro a fost deja consemnat ca ELIMINAT la LOT1 (site mort, confirmat manual).
+
 ---
 
 ## Domenii neintrate

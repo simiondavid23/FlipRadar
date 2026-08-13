@@ -167,6 +167,9 @@ def test_validated_domains_santinela():
         "rocashoes.ro", "shopium.ro", "sosukicks.ro", # SHOP-1a
         "itgalaxy.ro", "carrefour.ro", "flip.ro",     # LOT1
         "usedproducts.ro", "senetic.ro", "pcgarage.ro",  # LOT1
+        "computeruniverse.net", "jb-spielwaren.de",   # LOT2
+        "caseking.de", "bergfreunde.eu",              # LOT2b
+        "alternate.de", "foto-erhardt.com",           # LOT2b
     }
 
 

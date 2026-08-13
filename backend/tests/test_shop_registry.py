@@ -19,7 +19,8 @@ from app.services.shop_registry import (
 
 _CAMPURI_OBLIGATORII = ("label", "category", "country", "delivery", "method", "status", "notes")
 
-_CATEGORII = {"electronice", "fashion", "sneakers", "incaltaminte", "tcg"}
+_CATEGORII = {"electronice", "fashion", "sneakers", "incaltaminte", "tcg",
+              "outdoor", "jucarii", "foto"}
 _LIVRARI = {"ro_confirmed", "ro_storefront", "b2b_only", "unconfirmed"}
 _METODE = {"jsonld", "og", "microdata", "custom", "shopify", "browser"}
 _STARI = {"validated", "probed", "planned", "watchlist"}

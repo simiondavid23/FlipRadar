@@ -1451,3 +1451,89 @@ def test_vat_prices_garda(monkeypatch):
     assert res["price"] == 100.0
     assert res["variants"] is None
     assert res["override_applied"] is False
+
+
+# ── LOT2: eticheta compusa pentru variatia multi-dimensionala ─────────────────
+
+def _grup(*, varies=None, variante=()) -> str:
+    """ProductGroup in forma bergfreunde: hasVariant + variesBy optional."""
+    grup = {"@context": "https://schema.org", "@type": "ProductGroup",
+            "name": "Tricou Merino", "hasVariant": list(variante)}
+    if varies is not None:
+        grup["variesBy"] = varies
+    return _page(head=_ld(json.dumps(grup)))
+
+
+def _var(pret, *, disponibil=True, **dimensiuni) -> dict:
+    return {"@type": "Product", "name": f"Tricou {dimensiuni}", **dimensiuni,
+            "offers": {"@type": "Offer", "price": pret, "priceCurrency": "EUR",
+                       "availability": ("https://schema.org/InStock" if disponibil
+                                        else "https://schema.org/OutOfStock")}}
+
+
+def test_eticheta_compusa_bidimensionala():
+    """Forma bergfreunde: variesBy [size, color], preturi diferite pe culoare.
+
+    Etichetate doar cu `size`, cele trei "S" ar fi fost NEunice, iar selectia
+    per-varianta din add-by-link (care ia prima potrivire) ar fi dat tacut pretul
+    si stocul altei culori.
+    """
+    html = _grup(
+        varies=["https://schema.org/size", "https://schema.org/color"],
+        variante=[
+            _var("67.96", size="S", color="Olive Green", disponibil=True),
+            _var("67.96", size="S", color="Summer Blue", disponibil=False),
+            _var("63.96", size="S", color="Timber Red", disponibil=False),
+            _var("71.96", size="M", color="Olive Green", disponibil=True),
+        ])
+
+    res = parse_product_html(html, "https://www.bergfreunde.eu/tricou/")
+
+    etichete = [v["variant"] for v in res["variants"]]
+    # Ordinea partilor o da `variesBy`, nu alfabetul.
+    assert etichete == ["S / Olive Green", "S / Summer Blue", "S / Timber Red",
+                        "M / Olive Green"]
+    assert len(set(etichete)) == len(etichete), "etichetele trebuie sa fie UNICE"
+    # Agregatul ramane regula existenta: minimul marimilor IN STOC (63.96 e epuizat).
+    assert res["price"] == 67.96
+    assert res["is_aggregate"] is True
+
+
+def test_eticheta_compusa_garda_monodimensionala():
+    """Cu o singura dimensiune sau fara `variesBy`, eticheta ramane cea de azi."""
+    variante = [_var("67.96", size="S", color="Olive Green"),
+                _var("71.96", size="M", color="Summer Blue")]
+
+    o_dimensiune = parse_product_html(
+        _grup(varies=["https://schema.org/size"], variante=variante), URL)
+    assert [v["variant"] for v in o_dimensiune["variants"]] == ["S", "M"]
+
+    # `variesBy` absent — forma eobuwie/About You, pinuita de testele existente.
+    fara = parse_product_html(_grup(variante=variante), URL)
+    assert [v["variant"] for v in fara["variants"]] == ["S", "M"]
+
+    # `variesBy` neparsabil (nu e string) — tot pe comportamentul de azi.
+    neparsabil = parse_product_html(_grup(varies=[{"x": 1}, 42], variante=variante), URL)
+    assert [v["variant"] for v in neparsabil["variants"]] == ["S", "M"]
+
+
+def test_eticheta_compusa_parti_lipsa():
+    html = _grup(
+        varies=["https://schema.org/size", "https://schema.org/color"],
+        variante=[
+            _var("10.0", size="S", color="Olive Green"),
+            _var("11.0", size="M"),                       # fara culoare -> doar marimea
+            _var("12.0", color="Timber Red"),             # fara marime -> doar culoarea
+            _var("13.0"),                                 # niciuna -> plasa _variant_label
+            _var("14.0", size=42, color="Black"),         # numeric, ca la `size`
+        ])
+
+    res = parse_product_html(html, URL)
+    etichete = [v["variant"] for v in res["variants"]]
+
+    assert etichete[0] == "S / Olive Green"
+    assert etichete[1] == "M"
+    assert etichete[2] == "Timber Red"
+    # Fara nicio dimensiune, cade pe _variant_label -> `size` lipsa, deci numele.
+    assert etichete[3] == "Tricou {}"
+    assert etichete[4] == "42 / Black"

@@ -337,6 +337,46 @@ def _variant_label(variant: dict, *, fallback_name: bool = True) -> str:
     return _clean_text(variant.get("name")) or ""
 
 
+def _variesby_dims(group: dict) -> list[str]:
+    """Dimensiunile de variatie declarate de un ProductGroup, IN ORDINEA lor.
+
+    `variesBy` poarta URL-uri schema.org ("https://schema.org/size"); dimensiunea e
+    ultimul segment, lowercase. Acceptam si valoarea scalara (un singur URL, nu
+    lista) — schema.org o permite.
+    """
+    raw = group.get("variesBy")
+    if raw is None:
+        return []
+    valori = raw if isinstance(raw, list) else [raw]
+    dims = []
+    for valoare in valori:
+        if not isinstance(valoare, str):
+            continue
+        dim = valoare.rstrip("/").rsplit("/", 1)[-1].strip().lower()
+        if dim and dim not in dims:
+            dims.append(dim)
+    return dims
+
+
+def _compound_label(variant: dict, dims: list[str]) -> str:
+    """Eticheta compusa din dimensiunile declarate, unite cu " / ".
+
+    Partile lipsa se SAR (o varianta fara `color` da doar "S"). Ramane STRING
+    LIBER, ca `_variant_label` — aceleasi motive: valorile publicate sunt deja
+    etichete de magazin ('40_5', '36 2/3 EU'), iar orice normalizare ar pierde
+    informatie sau ar confunda intervale.
+    """
+    parti = []
+    for dim in dims:
+        valoare = variant.get(dim)
+        if isinstance(valoare, (int, float)) and not isinstance(valoare, bool):
+            valoare = str(valoare)
+        parte = _clean_text(valoare) if isinstance(valoare, str) else None
+        if parte:
+            parti.append(parte)
+    return " / ".join(parti)
+
+
 def _aggregate_variants(variants: list) -> tuple:
     """(pret, in_stock) product-level dintr-o lista NEVIDA de variante cotate.
 
@@ -399,12 +439,33 @@ def _candidate_from_group(group: dict):
     (_price_from_offers / _normalize_availability), ca variantele sa se comporte
     exact ca ofertele obisnuite.
 
+    VARIATIE MULTI-DIMENSIONALA (LOT2b): bergfreunde.eu publica grupuri cu
+    `variesBy: [size, color]` — 24 de variante = 8 marimi x 3 culori, cu preturi
+    care DIFERA pe culoare la aceeasi marime (S/Olive 67.96 vs S/Timber 63.96).
+    Etichetate doar cu `size`, variantele devin NEunice, iar selectia per-varianta
+    din create_product_from_url ia prima potrivire — userul care alege "S" putea
+    primi tacut pretul si stocul altei culori. De aceea, cand grupul declara MAI
+    MULT de o dimensiune, eticheta se COMPUNE din toate, in ordinea din `variesBy`
+    ("S / Olive Green").
+
+    Garda de activare e deliberata: cu o singura dimensiune, cu `variesBy` absent
+    sau neparsabil, eticheta ramane exact `_variant_label` — deci grupurile
+    masurate pana acum (eobuwie, About You) se comporta byte-identic.
+
+    LIMITA CONSTIENTA: pe un grup care produce etichete duplicate FARA sa declare
+    `variesBy` multi, coliziunea ramane — n-avem din ce compune. Cazul n-a fost
+    intalnit inca; daca apare, se rezolva cu identitatea variantei (`sku`), nu prin
+    ghicirea dimensiunilor.
+
     Intoarce None daca obiectul nu poarta deloc `hasVariant`.
     """
     raw = group.get("hasVariant")
     if raw is None:
         return None
     entries = raw if isinstance(raw, list) else [raw]
+
+    dims = _variesby_dims(group)
+    compune = len(dims) > 1        # o singura dimensiune => comportamentul de azi
 
     variants, currency, saw_candidate = [], None, False
     for variant in entries:
@@ -419,8 +480,11 @@ def _candidate_from_group(group: dict):
         offer = offer or {}
         if currency is None:
             currency = _normalize_currency(offer.get("priceCurrency"))
+        # Toate partile lipsa => cadem pe plasa existenta, ca variantele fara
+        # dimensiunile declarate sa nu ramana cu eticheta goala.
+        compusa = _compound_label(variant, dims) if compune else ""
         variants.append({
-            "variant": _variant_label(variant),
+            "variant": compusa or _variant_label(variant),
             "price": price,
             "in_stock": _normalize_availability(offer.get("availability")),
         })

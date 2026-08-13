@@ -22,7 +22,8 @@ CURENTA; acolo e ISTORICUL. Un val nou adauga intrari aici si o sectiune acolo.
 
 Campurile unei intrari:
   label       — numele magazinului, pentru UI
-  category    — electronice | fashion | sneakers | incaltaminte | tcg
+  category    — electronice | fashion | sneakers | incaltaminte | tcg | outdoor
+                | jucarii | foto
   country     — cod de tara ISO, sau "EU" cand tara exacta nu e confirmata
   delivery    — ro_confirmed   (livreaza in RO, confirmat la sonda)
                 ro_storefront  (magazin cu vitrina .ro)
@@ -483,6 +484,78 @@ SHOP_REGISTRY: dict[str, dict] = {
         "notes": "LOT1: SSR fara date structurate; .discount-price candidat de "
                  "selector (capcana: .total-price=0,00 al cosului); micro-sonda pe "
                  "produse NEreduse inainte de validare",
+    },
+
+    # ── LOT2 / LOT2b — tinte usoare straine (sonde 2026-08-13) ────────────────
+    # Doua sonde: LOT2 si-a DESCOPERIT singura produsele (samanta outlet/sale ->
+    # ancore filtrate -> confirmare), LOT2b a completat pe link-uri manuale ce
+    # descoperirea n-a scos. Toate au raspuns pe treapta implicita de impersonare.
+    "computeruniverse.net": {
+        "label": "computeruniverse",
+        "category": "electronice",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT2; aterizare pe storefront /de, EUR",
+    },
+    "jb-spielwaren.de": {
+        "label": "JB Spielwaren",
+        "category": "jucarii",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT2; plentyShop; LEGO retired + SALE",
+    },
+    "caseking.de": {
+        "label": "Caseking",
+        "category": "electronice",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT2b; /en localizat lingvistic, moneda EUR; sku/mpn prezente pe "
+                 "pagina de produs",
+    },
+    "bergfreunde.eu": {
+        "label": "Bergfreunde",
+        "category": "outdoor",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT2b; OXID; ProductGroup cu variesBy size+color — primul client "
+                 "al etichetei compuse",
+    },
+    "alternate.de": {
+        "label": "Alternate",
+        "category": "electronice",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT2b",
+    },
+    "foto-erhardt.com": {
+        "label": "Foto Erhardt",
+        "category": "foto",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT2b; starea second-hand traieste doar in calea URL "
+                 "(itemCondition absent); bucati unice, comportament la vandut nemasurat",
+    },
+    "hhv.de": {
+        "label": "HHV",
+        "category": "fashion",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "browser",
+        "status": "probed",
+        "notes": "LOT2: challenge servit pe 200 — corp ~2KB JS obfuscat, zero "
+                 "ancore, fara titlu; candidat Grup 4 (browser)",
     },
 }
 
