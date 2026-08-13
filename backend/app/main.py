@@ -125,6 +125,21 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             print(f"[Playwright] install skip: {exc}")
 
+        # BR-2: harness-ul BR-1 (browser_fetch) foloseste PATCHRIGHT, ale carui
+        # revizii de Chromium difera de ale playwright (1208 vs 1228 la audit), iar
+        # rezolvarea se face pe numele exact al directorului — deci instalarea de
+        # mai sus nu-l acopera. Pe linux/arm64 (Pi) Chrome real nici nu exista, deci
+        # Chromium-ul bundled e SINGURA ramura din _lanseaza; fara el, toate cele
+        # patru domenii browser pica tacut (fetch_failed, pretul anterior pastrat).
+        # Idempotent ca fratele lui: sare peste daca e deja instalat.
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "patchright", "install", "chromium", "--with-deps"],
+                check=False, capture_output=True,
+            )
+        except Exception as exc:
+            print(f"[Patchright] install skip: {exc}")
+
     scheduler.add_job(
         check_alerts,
         "interval",
