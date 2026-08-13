@@ -1,34 +1,40 @@
 """Comune pentru scraperele de loturi din licitatii auto (Copart, IAAI, SCA, OpenLane).
 
-curl_cffi (impersonate="chrome131") + BeautifulSoup. Multe campuri (licitatie
+curl_cffi (profil din app/utils/http_profile.py) + BeautifulSoup. Multe campuri (licitatie
 curenta, VIN, stare cheie/pornire) necesita cont — la scraping public le marcam
 ca None si le listam in `requires_account`.
 """
-import random
 import re
 from datetime import datetime
 from typing import Optional
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
-IMPERSONATE = "chrome131"
+IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 MAX_LOTS = 30
 
 # Campurile care, la scraping public (fara cont), nu sunt disponibile.
 REQUIRES_ACCOUNT = ["current_bid", "title_type", "starts", "drives", "keys", "vin", "full_photos"]
 
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-]
 
 
 def build_headers(extra: Optional[dict] = None) -> dict:
+    """Headers proprii — DOAR ce nu poate pune curl_cffi din profilul impersonat.
+
+    IMP-1b: cu `impersonate=<profil>` curl_cffi trimite singur setul complet si
+    COERENT al browserului (User-Agent, Sec-Ch-Ua* cu versiunea si platforma
+    potrivite, Accept cu avif/webp, Accept-Encoding cu zstd, Sec-Fetch-*, Priority).
+    Vechea implementare suprascria User-Agent-ul cu unul rotit din lista, deci
+    requestul spunea "Chrome 131" (sau Edge) in UA in timp ce Sec-Ch-Ua si amprenta
+    TLS spuneau alta versiune — contradictie pe care niciun browser real n-o produce.
+    La fel Accept/Accept-Encoding (fara zstd/avif) si `Connection: keep-alive`,
+    care pe HTTP/2 nici nu exista. Le-am scos pe toate.
+
+    Ramane Accept-Language (en-US — site-uri de licitatii US): nu contrazice amprenta (e preferinta de utilizator) si conteaza pe
+    site-urile tinta. `extra` ramane suveran — call site-urile isi pun in continuare
+    Referer, Accept: application/json, X-Requested-With, Content-Type sau alta limba.
+    """
     headers = {
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
     }
     if extra:
         headers.update(extra)

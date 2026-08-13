@@ -1,6 +1,6 @@
 """Scraper OLX.ro general (Marketplace) — exclude categoriile auto si imobiliare.
 
-curl_cffi AsyncSession + impersonate=chrome131 + BeautifulSoup. Max 3 pagini.
+curl_cffi AsyncSession + profil din app/utils/http_profile.py + BeautifulSoup. Max 3 pagini.
 """
 import asyncio
 import random

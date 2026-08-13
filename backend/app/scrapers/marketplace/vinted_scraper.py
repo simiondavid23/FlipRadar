@@ -1,6 +1,6 @@
 """Scraper Vinted.ro prin API-ul intern v2/catalog/items.
 
-curl_cffi AsyncSession + impersonate=chrome131. Vinted poate cere un cookie de
+curl_cffi AsyncSession + profil din app/utils/http_profile.py. Vinted poate cere un cookie de
 sesiune pentru raspunsuri complete; daca `filters["cookie"]` e prezent, il trimitem.
 """
 from curl_cffi.requests import AsyncSession
