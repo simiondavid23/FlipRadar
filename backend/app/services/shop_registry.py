@@ -547,6 +547,66 @@ SHOP_REGISTRY: dict[str, dict] = {
         "notes": "LOT2b; starea second-hand traieste doar in calea URL "
                  "(itemCondition absent); bucati unice, comportament la vandut nemasurat",
     },
+    # ── LOT3 / LOT3b — fashion RO (sonde 2026-08-13) ──────────────────────────
+    "buzzsneakers.ro": {
+        "label": "Buzz Sneakers",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT3",
+    },
+    "officeshoes.ro": {
+        "label": "Office Shoes",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "microdata",
+        "status": "validated",
+        "notes": "LOT3",
+    },
+    "otter.ro": {
+        "label": "Otter",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT3b; ProductGroup cu hasVariant si variesBy=[size] — "
+                 "marimile ies deja ca variante",
+    },
+    "spartoo.ro": {
+        "label": "Spartoo",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT3b; og:type propriu (non-standard); site-ul tolereaza dublu "
+                 "slash in cale — normalizat la salvare (C3)",
+    },
+    "boozt.com": {
+        "label": "Boozt",
+        "category": "fashion",
+        "country": "DK",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT3b; storefront /eu/en, EUR; variante DOAR pe colorway "
+                 "(variesBy=color), marimile absente din date — UI sa nu promita "
+                 "selectie pe marime",
+    },
+    "booztlet.com": {
+        "label": "Booztlet",
+        "category": "fashion",
+        "country": "DK",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT3b; outlet integral, sora boozt; aceleasi variante doar pe "
+                 "colorway; EUR",
+    },
     "hhv.de": {
         "label": "HHV",
         "category": "fashion",

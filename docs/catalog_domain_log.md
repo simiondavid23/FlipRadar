@@ -533,6 +533,101 @@ canonical) e corect si domeniul nu are nevoie de `url_identity`.
 
 badabum.ro a fost deja consemnat ca ELIMINAT la LOT1 (site mort, confirmat manual).
 
+## LOT3 / LOT3b
+
+Doua sonde, 2026-08-13, pentru lotul 2c — fashion/incaltaminte RO. Nucleul
+categoriei era deja validat din valurile FASHION; lotul acopera restul.
+
+### Verdicte
+
+| domeniu | sonda | confirmate | metoda | moneda | verdict |
+|---|---|---|---|---|---|
+| buzzsneakers.ro | LOT3 | 3/3 | jsonld | RON | validat |
+| officeshoes.ro | LOT3 | 3/3 | microdata | RON | validat |
+| otter.ro | LOT3b | 3/3 | jsonld | RON | validat |
+| spartoo.ro | LOT3b | 3/3 | jsonld | RON | validat |
+| boozt.com | LOT3b | 2/2 | jsonld | EUR | validat |
+| booztlet.com | LOT3b | 3/3 | jsonld | EUR | validat |
+
+### Descoperirea — verdictul de maturitate: NU
+
+LOT3 era testul de maturitate al mecanismului de descoperire: a doua rulare, cu
+lectiile LOT2/LOT2b incorporate de la inceput. Rezultat: **2 din 6**, deci NU devine
+standardul Fazei 2 in forma actuala; restul lotului a trecut pe link-uri manuale.
+
+Ce a lucrat: fatetele in cale au filtrat masiv (126 pe officeshoes, 202 pe otter);
+detectorul strans a respins corect listele intalnite. Ce a lipsit: pe fashion,
+taxonomiile de categorie sunt adanci si cu sluguri lungi — exact ce premia scorul
+de forma a URL-ului, deci categoriile urcau in top. Semnal adaugat in runda:
+**cardul de produs are miniatura**, link-ul de navigatie rareori (masurat pe otter:
+103 ancore cu `<img>` vs 453 fara). Efect: officeshoes 0 -> 3/3.
+
+Oprire deliberata dupa a doua iteratie: a treia ar fi insemnat reglaj pe cele sase
+magazine din lot, adica supra-potrivire, nu mecanism.
+
+### RETRAGEREA discriminatorului `url`/`@id`
+
+Raportul LOT3 propunea, pentru descoperirea v3, ca produsul principal sa fie
+identificat prin `url`/`@id` egal cu URL-ul paginii. Masurat la LOT3b: **zero**
+dintre Product-urile otter poarta `url` sau `@id`. Discriminatorul nu poate
+functiona; propunerea se retrage.
+
+### CORECTIA raportului LOT3b — nu exista "a treia forma"
+
+Raportul LOT3b a descris otter ca "ProductGroup + Product-uri FRATI cu sku comun,
+o a treia forma structurala". **Ambele afirmatii erau artefacte ale sondei:**
+
+1. Walker-ul recursiv al sondei coboara in `hasVariant`, deci numara variantele
+   NESTED ca obiecte de nivel inalt — de aici "8 Product-uri cu oferta".
+   `_iter_jsonld_objects` (ce vede extractorul) intoarce UN singur obiect: grupul.
+2. Print-ul de diagnostic trunchia sku-ul la 14 caractere, deci sku-uri distincte
+   pareau identice. Masurat intreg: 8 sku-uri DIFERITE din 8
+   (`KZNZ40111BK2206139` pentru grup, `...923`, `...921`, `...919` pentru marimi).
+
+otter e **FASHION-1b curat**: ProductGroup cu `hasVariant` nested si
+`variesBy: [size]`. Extractorul il gestiona deja corect INAINTE de acest val —
+verificat pe dump: `variants=7`, etichete `45, 44, 43, 42 ½, 42, 41, 40`, pret 409
+RON (minimul marimilor in stoc), nume curat de la grup.
+
+Consecinta: capabilitatea "variante din frati cu sku comun", planificata pentru
+acest val, a fost ABANDONATA. Conditia ei de activare (sku partajat) n-ar fi pornit
+niciodata pe datele reale, deci ar fi ramas cod fara acoperire. In locul ei, un
+test PINUIESTE forma reala, ca eroarea sa nu se repete si sa nu mai justifice cod.
+
+### variesBy la o singura dimensiune (C2)
+
+Garda din LOT2 cerea mai mult de o dimensiune. Extinsa: compunerea porneste oricand
+`variesBy` e declarat si parsabil. Pe `[size]` rezultatul e identic cu cel de
+dinainte (partea `size` singura E `_variant_label`-ul pe size). Castigul e pe
+dimensiunile NON-size: boozt/booztlet declara `variesBy: [color]`, iar fara
+compunere eticheta cadea pe plasa de nume. Masurat pe dump, inainte -> dupa:
+
+| inainte | dupa |
+|---|---|
+| `Adrian Cherry Red Arcadia - CHERRY RED` | `CHERRY RED` |
+| `VINTAGE BUTTERFLY S/S TEE - WHITE` | `WHITE` |
+| `501 LOOSE IN MY BRONCO - LIGHT INDIGO - WORN IN` | `LIGHT INDIGO - WORN IN` |
+
+### Normalizarea caii (C3)
+
+spartoo.ro serveste IDENTIC `/Nike-x.php` si `//Nike-x.php`: fara redirect, fara
+canonical care sa normalizeze (masurat — URL-ul final pastreaza dublul slash). Doua
+forme ale aceluiasi URL ar trece amandoua de dedup si ar deveni doua surse pentru
+acelasi produs. La salvare, secventele de `/` se colapseaza in CALE; schema, query
+si fragmentul raman neatinse.
+
+### Alte observatii
+
+- **spartoo publica `og:type` propriu**: `spartoo_com:article`, nu `product`. Ramura
+  OG a oricarui detector nu se poate baza pe conformitate cu vocabularul standard.
+  Paginile sunt insa perfect extractibile prin ld+json (293.60 / 811.76 / 225.56 RON).
+- **boozt a raspuns cu 429** la ritmul standard de 1.5s intre cereri. La LOT3b, cu
+  3s pe grupul boozt, niciun 429. Grupul cere politete mai mare.
+- **boozt/booztlet publica variante DOAR pe colorway**; marimile lipsesc cu totul
+  din datele structurate, desi lotul e fashion. UI-ul nu trebuie sa promita selectie
+  pe marime pe aceste domenii.
+- **hhv.de** ramane `probed` (challenge servit pe 200, consemnat la LOT2).
+
 ---
 
 ## Domenii neintrate

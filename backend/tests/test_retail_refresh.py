@@ -170,6 +170,9 @@ def test_validated_domains_santinela():
         "computeruniverse.net", "jb-spielwaren.de",   # LOT2
         "caseking.de", "bergfreunde.eu",              # LOT2b
         "alternate.de", "foto-erhardt.com",           # LOT2b
+        "buzzsneakers.ro", "officeshoes.ro",          # LOT3
+        "otter.ro", "spartoo.ro",                     # LOT3b
+        "boozt.com", "booztlet.com",                  # LOT3b
     }
 
 

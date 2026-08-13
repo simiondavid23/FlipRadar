@@ -1,4 +1,5 @@
 import random
+import re
 import time
 import urllib.parse
 from datetime import datetime, timezone
@@ -562,6 +563,26 @@ def _host_key(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _normalize_source_path(u: str) -> str:
+    """Colapseaza secventele de `/` din CALEA unui URL, restul neatins.
+
+    Doar calea: schema (`https://`) ramane intacta, la fel query-ul si fragmentul.
+    Masurat la LOT3b pe spartoo.ro, care serveste identic `/Nike-x.php` si
+    `//Nike-x.php` fara redirect si fara canonical care sa normalizeze — deci doua
+    forme ale aceluiasi produs ar trece amandoua de dedup si ar deveni doua surse.
+    """
+    if not u:
+        return u
+    try:
+        parts = urllib.parse.urlsplit(u)
+    except Exception:
+        return u
+    cale = re.sub(r"/{2,}", "/", parts.path)
+    if cale == parts.path:
+        return u
+    return urllib.parse.urlunsplit(parts._replace(path=cale))
+
+
 def _from_url_http_error(exc: ProductExtractionError, url: str) -> HTTPException:
     """ProductExtractionError.reason -> status + mesaj pentru UI."""
     if exc.reason == "domain_not_allowed":
@@ -653,6 +674,11 @@ def create_product_from_url(
         source_url = canonical if canonical and _host_key(canonical) == res["domain"] else (
             urllib.parse.urldefrag(url)[0] or url
         )
+    # LOT3b — spartoo.ro serveste IDENTIC cu si fara dublu slash in cale, fara sa
+    # redirecteze si fara sa normalizeze. Doua forme ale aceluiasi URL ar ocoli
+    # dedup-ul si ar crea doua surse pentru acelasi produs, deci colapsam `//` in
+    # CALE. Se aplica pe rezultatul FINAL, indiferent de ramura care l-a ales.
+    source_url = _normalize_source_path(source_url)
 
     # FASHION-1c — cand userul cere o marime anume, ea devine sursa de adevar
     # pentru pret si stoc: agregatul "de la" al grupului ar fi pretul ALTEI marimi.

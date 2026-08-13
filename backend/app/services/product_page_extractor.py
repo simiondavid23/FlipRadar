@@ -448,9 +448,14 @@ def _candidate_from_group(group: dict):
     MULT de o dimensiune, eticheta se COMPUNE din toate, in ordinea din `variesBy`
     ("S / Olive Green").
 
-    Garda de activare e deliberata: cu o singura dimensiune, cu `variesBy` absent
-    sau neparsabil, eticheta ramane exact `_variant_label` — deci grupurile
-    masurate pana acum (eobuwie, About You) se comporta byte-identic.
+    Garda de activare: compunerea porneste oricand `variesBy` e declarat si
+    parsabil; absent sau neparsabil, eticheta ramane exact `_variant_label` — deci
+    grupurile masurate pana acum (eobuwie, About You) se comporta byte-identic.
+    Pe o singura dimensiune `[size]` rezultatul coincide oricum cu
+    `_variant_label`; extinderea de la LOT3b conteaza pentru dimensiunile NON-size:
+    pe boozt/booztlet grupurile declara `variesBy: [color]`, iar fara compunere
+    eticheta cadea pe plasa de nume ("Adrian Cherry Red Arcadia - CHERRY RED")
+    in loc de culoarea curata.
 
     LIMITA CONSTIENTA: pe un grup care produce etichete duplicate FARA sa declare
     `variesBy` multi, coliziunea ramane — n-avem din ce compune. Cazul n-a fost
@@ -465,7 +470,13 @@ def _candidate_from_group(group: dict):
     entries = raw if isinstance(raw, list) else [raw]
 
     dims = _variesby_dims(group)
-    compune = len(dims) > 1        # o singura dimensiune => comportamentul de azi
+    # LOT3b: compunerea se aplica oricand grupul DECLARA dimensiunile, chiar si una
+    # singura. Pe `[size]` rezultatul e identic cu cel de dinainte (partea `size`
+    # singura E `_variant_label`-ul pe size, iar lipsa lui cade pe acelasi fallback),
+    # dar pe `[color]` — boozt/booztlet — eticheta devine culoarea ("CHERRY RED") in
+    # loc de numele intreg al produsului ("Adrian Cherry Red Arcadia - CHERRY RED"),
+    # care venea din plasa de siguranta. `variesBy` absent sau neparsabil => plasa.
+    compune = bool(dims)
 
     variants, currency, saw_candidate = [], None, False
     for variant in entries:

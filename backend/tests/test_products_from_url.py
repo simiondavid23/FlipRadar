@@ -239,6 +239,29 @@ def test_url_identity_exact_pastreaza_query(auth_client, fake_extract, monkeypat
     assert canonical in [s.source_url for s in sources]
 
 
+def test_normalizare_dublu_slash_in_cale(auth_client, fake_extract):
+    """LOT3b — spartoo.ro serveste identic `/Nike-x.php` si `//Nike-x.php`, fara
+    redirect si fara canonical care sa normalizeze. Doua forme ale aceluiasi URL ar
+    trece amandoua de dedup si ar deveni doua surse pentru acelasi produs."""
+    murdar = "https://www.spartoo.ro//Nike-Air-Max-Sc-Little-x31560256.php"
+    curat = "https://www.spartoo.ro/Nike-Air-Max-Sc-Little-x31560256.php"
+    fake_extract["result"] = _res(domain="spartoo.ro", canonical_url=murdar)
+
+    auth_client.post("/api/products/from-url", json={"url": murdar})
+
+    _, sources, _ = _db_rows()
+    # Calea colapsata, schema intacta (`https://` nu se atinge).
+    assert sources[0].source_url == curat
+
+    # Un URL deja curat ramane neschimbat.
+    alt = "https://www.spartoo.ro/Jack-Jones-x24127888.php"
+    fake_extract["result"] = _res(domain="spartoo.ro", canonical_url=alt)
+    auth_client.post("/api/products/from-url", json={"url": alt})
+
+    _, sources, _ = _db_rows()
+    assert alt in [s.source_url for s in sources]
+
+
 # ── maparea erorilor ──────────────────────────────────────────────────────────
 
 def test_domain_not_allowed_400_cu_hostname(auth_client, fake_extract):

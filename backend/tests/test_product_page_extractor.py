@@ -1537,3 +1537,75 @@ def test_eticheta_compusa_parti_lipsa():
     # Fara nicio dimensiune, cade pe _variant_label -> `size` lipsa, deci numele.
     assert etichete[3] == "Tricou {}"
     assert etichete[4] == "42 / Black"
+
+
+# ── LOT3: variesBy monodimensional + pin pe forma reala otter ─────────────────
+
+def test_variesby_o_dimensiune():
+    """C2 — compunerea porneste si la o singura dimensiune declarata.
+
+    Pe `[size]` rezultatul e identic cu cel de dinainte. Ce castiga extinderea e
+    cazul NON-size: boozt/booztlet declara `variesBy: [color]`, iar fara compunere
+    eticheta cadea pe plasa de nume — numele intreg al produsului in loc de culoare.
+    """
+    culori = _grup(
+        varies=["https://schema.org/color"],
+        variante=[_var("195.0", color="CHERRY RED", size=None),
+                  _var("195.0", color="WHITE", size=None)])
+    res = parse_product_html(culori, "https://www.boozt.com/eu/en/x")
+    assert [v["variant"] for v in res["variants"]] == ["CHERRY RED", "WHITE"]
+
+    # Garda: pe `[size]` singur, exact ce dadea si inainte de extindere.
+    marimi = _grup(varies=["https://schema.org/size"],
+                   variante=[_var("67.96", size="S", color="Olive Green"),
+                             _var("71.96", size="M", color="Summer Blue")])
+    assert [v["variant"] for v in parse_product_html(marimi, URL)["variants"]] == ["S", "M"]
+
+    # Garda: `variesBy` absent -> plasa de nume, neschimbata.
+    fara = _grup(variante=[_var("10.0", size="S"), _var("11.0", size="M")])
+    assert [v["variant"] for v in parse_product_html(fara, URL)["variants"]] == ["S", "M"]
+
+
+def test_forma_otter_ramane_pe_calea_grupului():
+    """PIN pe forma REALA otter.ro, masurata la LOT3b.
+
+    Raportul LOT3b a descris gresit forma ca "Product-uri FRATI cu sku comun" —
+    doua artefacte ale sondei: walker-ul ei recursiv numara variantele NESTED ca
+    obiecte de nivel inalt, iar print-ul de diagnostic trunchia sku-ul la 14
+    caractere, deci sku-uri distincte pareau identice. Masurat corect, otter e
+    FASHION-1b curat: `_iter_jsonld_objects` vede UN singur obiect (ProductGroup),
+    variantele ies din `hasVariant`, iar sku-urile difera de la o marime la alta.
+    Testul pinuieste asta ca eroarea sa nu se repete si sa nu justifice cod nou.
+    """
+    def _marime(sku, size, pret, disponibil=True):
+        return {"@type": "Product", "name": f"Pantofi SKECHERS kaki, din {size}",
+                "sku": sku, "size": size,
+                "offers": {"@type": "Offer", "price": pret, "priceCurrency": "RON",
+                           "availability": ("https://schema.org/InStock" if disponibil
+                                            else "https://schema.org/OutOfStock")}}
+
+    marimi = [
+        _marime("KZNZ40111BK220613923", "45", "409.00"),
+        _marime("KZNZ40111BK220613918", "42 ½", "409.00"),
+        _marime("KZNZ40111BK220613913", "40", "389.00", disponibil=False),
+    ]
+    # Sku-urile DIFERA intre marimi — presupunerea de "sku comun" era falsa, si e
+    # motivul pentru care o activare pe sku partajat n-ar fi pornit niciodata aici.
+    assert len({m["sku"] for m in marimi}) == 3
+
+    html = _page(head=_ld(json.dumps({
+        "@context": "https://schema.org", "@type": "ProductGroup",
+        "name": "Pantofi sport SKECHERS kaki, 220613, din material textil",
+        "sku": "KZNZ40111BK2206139", "productGroupID": "KZNZ40111BK2206139",
+        "variesBy": ["https://schema.org/size"],
+        "hasVariant": marimi,
+    })))
+
+    res = parse_product_html(html, "https://www.otter.ro/pantofi-sport-skechers")
+
+    # Numele CURAT vine de la grup, nu de la vreo varianta ("... din 45").
+    assert res["name"] == "Pantofi sport SKECHERS kaki, 220613, din material textil"
+    assert [v["variant"] for v in res["variants"]] == ["45", "42 ½", "40"]
+    # Agregatul e minimul marimilor IN STOC: 389.00 e epuizat, deci nu castiga.
+    assert res["price"] == 409.0
+    assert res["is_aggregate"] is True
