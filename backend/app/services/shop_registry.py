@@ -34,6 +34,13 @@ Campurile unei intrari:
                 payload-ul Ajax al Shopify NU poarta moneda, deci registrul e
                 singura ei sursa. Optionala altfel (celelalte metode o citesc din
                 pagina). Pinuita de test_shopify_cere_moneda.
+  url_identity— OPTIONAL, singura valoare permisa: "exact". Marcheaza magazinele
+                unde QUERY STRING-ul face parte din identitatea sursei, deci URL-ul
+                lipit de user se salveaza ca atare (fara fragment), iar canonicalul
+                se ignora. Cerut de flip.ro, unde `?shape=` alege starea produsului
+                si odata cu ea pretul (2999.99 cu `?shape=Excelent` vs 2849.99 fara,
+                masurat la LOT1). Absent = comportamentul implicit (canonical
+                preferat). Consultat in routers/products.py prin url_identity_of().
   impersonate — OPTIONAL, treapta TLS/HTTP2 cand default-ul nu deschide site-ul
   overrides   — OPTIONAL, payload-ul DOMAIN_OVERRIDES (contractul campurilor e
                 documentat la structura din product_page_extractor)
@@ -393,6 +400,90 @@ SHOP_REGISTRY: dict[str, dict] = {
         "currency": "RON",
         "notes": "SHOP-1a",
     },
+
+    # ── LOT1 — electronice RO (sonda 2026-08-13) ──────────────────────────────
+    # Primul val in care extractorul EXISTENT a fost rulat pe HTML-ul capturat
+    # (parse_product_html e pura), nu reimplementat in sonda. Toate 8 domeniile au
+    # raspuns pe treapta IMPLICITA de impersonare — niciun `impersonate` de adaugat.
+    "itgalaxy.ro": {
+        "label": "IT Galaxy",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT1",
+    },
+    "carrefour.ro": {
+        "label": "Carrefour",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT1",
+    },
+    "flip.ro": {
+        "label": "Flip",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "url_identity": "exact",
+        "notes": "LOT1; ?shape= semantic — starea e parte din identitatea sursei",
+    },
+    "usedproducts.ro": {
+        "label": "Used Products",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "LOT1; bucati unice second-hand, comportamentul la vandut nemasurat",
+    },
+    "senetic.ro": {
+        "label": "Senetic",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "overrides": {"vat_prices": True},
+        "notes": "LOT1; ld+json = pret net (fara TVA), microdata = brut; "
+                 "raport 1.21 masurat 3/3",
+    },
+    "pcgarage.ro": {
+        "label": "PC Garage",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "microdata",
+        "status": "validated",
+        "notes": "LOT1; deblocat de scoparea nested; refresh migrat de pe calea "
+                 "dedicata pe cea generica",
+    },
+    "orange.ro": {
+        "label": "Orange",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "browser",
+        "status": "probed",
+        "notes": "LOT1: CSR real — 339KB, titlu generic, zero purtatori de pret in "
+                 "HTML-ul initial; Grup 4",
+    },
+    "powerup.ro": {
+        "label": "PowerUp",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "custom",
+        "status": "probed",
+        "notes": "LOT1: SSR fara date structurate; .discount-price candidat de "
+                 "selector (capcana: .total-price=0,00 al cosului); micro-sonda pe "
+                 "produse NEreduse inainte de validare",
+    },
 }
 
 
@@ -422,6 +513,15 @@ def impersonate_overrides() -> dict[str, str]:
     """Domeniu -> treapta impersonate, doar intrarile care au cheia."""
     return {domain: meta["impersonate"]
             for domain, meta in SHOP_REGISTRY.items() if "impersonate" in meta}
+
+
+def url_identity_of(domain: str) -> str | None:
+    """Politica de identitate a URL-ului pentru un domeniu, sau None (implicit).
+
+    Lookup direct, fara copie: valoarea e un scalar imutabil, deci n-are cum sa fie
+    mutata de apelant — spre deosebire de set-urile si dict-urile de mai sus.
+    """
+    return (SHOP_REGISTRY.get(domain) or {}).get("url_identity")
 
 
 def shopify_domains() -> set[str]:

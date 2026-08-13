@@ -51,6 +51,13 @@ def test_registru_intrari_valide():
         if "currency" in meta:
             assert isinstance(meta["currency"], str) and re.fullmatch(r"[A-Z]{3}", meta["currency"]), \
                 f"{domain}: currency trebuie sa fie cod ISO din 3 litere mari"
+        # LOT1 — singura politica de identitate definita deocamdata.
+        if "url_identity" in meta:
+            assert meta["url_identity"] == "exact", \
+                f"{domain}: url_identity accepta doar \"exact\" (are {meta['url_identity']!r})"
+        if "vat_prices" in (meta.get("overrides") or {}):
+            assert isinstance(meta["overrides"]["vat_prices"], bool), \
+                f"{domain}: overrides.vat_prices trebuie sa fie boolean"
 
 
 def test_derivarile_intorc_obiecte_proaspete():

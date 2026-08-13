@@ -40,6 +40,8 @@ from app.services.product_page_extractor import (
     ProductExtractionError,
     VALIDATED_DOMAINS,
 )
+# LOT1 — politica de identitate a URL-ului per magazin (vezi create_product_from_url).
+from app.services.shop_registry import url_identity_of
 
 _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
@@ -635,12 +637,22 @@ def create_product_from_url(
     except ProductExtractionError as exc:
         raise _from_url_http_error(exc, url)
 
-    # Canonical-ul e preferat (taie parametrii de sesiune/tracking), dar DOAR daca
-    # ramane pe acelasi magazin: un canonical catre alt domeniu ar muta sursa.
+    # LOT1 — pe magazinele marcate `url_identity: "exact"` in registru, QUERY-ul e
+    # parte din identitatea sursei, deci pastram URL-ul lipit de user (fara
+    # fragment, care e stare de UI) si IGNORAM canonicalul. Pe flip.ro `?shape=`
+    # alege starea produsului si odata cu ea pretul — masurat 2999.99 cu
+    # `?shape=Excelent` vs 2849.99 fara — deci un canonical curatat de parametri ar
+    # urmari alt pret decat cel vazut de user.
+    #
+    # Altfel: canonical-ul e preferat (taie parametrii de sesiune/tracking), dar
+    # DOAR daca ramane pe acelasi magazin — un canonical catre alt domeniu ar muta sursa.
     canonical = res.get("canonical_url") or ""
-    source_url = canonical if canonical and _host_key(canonical) == res["domain"] else (
-        urllib.parse.urldefrag(url)[0] or url
-    )
+    if url_identity_of(res["domain"]) == "exact":
+        source_url = urllib.parse.urldefrag(url)[0] or url
+    else:
+        source_url = canonical if canonical and _host_key(canonical) == res["domain"] else (
+            urllib.parse.urldefrag(url)[0] or url
+        )
 
     # FASHION-1c — cand userul cere o marime anume, ea devine sursa de adevar
     # pentru pret si stoc: agregatul "de la" al grupului ar fi pretul ALTEI marimi.

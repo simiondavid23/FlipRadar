@@ -99,19 +99,31 @@ def test_domeniu_nevalidat_nu_atinge_extractorul(spy_extract, monkeypatch):
     assert spy_extract["calls"] == []  # sole.ro nu e validat -> zero fetch pe pagina
 
 
-def test_pcgarage_ramane_pe_fetch_direct(spy_extract, monkeypatch):
-    # Pin explicit: pcgarage n-a fost validat la FAZA A (fara URL-uri de produs),
-    # deci ramane pe parserul dedicat, nu pe extractorul generic.
-    assert "pcgarage.ro" not in VALIDATED_DOMAINS
-    monkeypatch.setattr(ss, "fetch_pcgarage_price_from_url", lambda url, **kw: 1499.0)
+def test_pcgarage_pe_cale_generica(spy_extract, monkeypatch):
+    """LOT1 a INVERSAT pin-ul de aici, deliberat.
+
+    Vechiul `test_pcgarage_ramane_pe_fetch_direct` documenta o LIPSA: pcgarage n-a
+    fost validat la FAZA A (n-a avut URL-uri de produs la RETAIL-3a), deci refresh-ul
+    ramanea pe parserul dedicat. Sonda LOT1 l-a validat pe pagini reale, iar
+    scoparea nested a deblocat microdata — asa ca acum calea (a) a domeniilor
+    validate intercepteaza prima, iar (b) devine fallback istoric.
+    """
+    assert "pcgarage.ro" in VALIDATED_DOMAINS
+    monkeypatch.setattr(ss, "fetch_pcgarage_price_from_url",
+                        lambda url, **kw: pytest.fail("calea dedicata nu trebuie atinsa"))
 
     res = ss.refresh_source("pcgarage.ro", PCG_URL, "Placa video", None)
 
-    assert res == {"price": 1499.0, "in_stock": None, "method": "pcgarage"}
-    assert spy_extract["calls"] == []
+    assert res == {"price": 249.99, "in_stock": True, "method": "url"}
+    assert spy_extract["calls"] == [PCG_URL]
 
 
-def test_pcgarage_fara_pret_intoarce_none(monkeypatch):
+def test_pcgarage_fara_pret_intoarce_none(spy_extract, monkeypatch):
+    # Ramura (b) ramane plasa: cand extractia esueaza, calea (a) cade mai jos.
+    # `spy_extract` e OBLIGATORIU aici de la LOT1 — fara el, pcgarage fiind acum
+    # validat, calea (a) ar chema extractorul REAL si testul ar iesi pe retea,
+    # contrar contractului din docstring-ul fisierului.
+    spy_extract["error"] = ProductExtractionError("fetch_failed", "pagina indisponibila")
     monkeypatch.setattr(ss, "fetch_pcgarage_price_from_url", lambda url, **kw: None)
 
     assert ss.refresh_source("pcgarage.ro", PCG_URL, "Placa video", None) is None
@@ -126,8 +138,11 @@ def test_sursa_sau_url_lipsa_intoarce_none(spy_extract):
 def test_wrapper_back_compat_intoarce_doar_pretul(spy_extract, monkeypatch):
     assert ss.refresh_price_from_source("emag.ro", EMAG_URL, "Produs test") == 249.99
 
-    monkeypatch.setattr(ss, "fetch_pcgarage_price_from_url", lambda url, **kw: None)
-    assert ss.refresh_price_from_source("pcgarage.ro", PCG_URL, "x") is None
+    # LOT1: pcgarage trece acum prin calea generica, deci wrapper-ul intoarce
+    # pretul extras. Inainte cadea pe parserul dedicat, stub-uit aici cu None.
+    monkeypatch.setattr(ss, "fetch_pcgarage_price_from_url",
+                        lambda url, **kw: pytest.fail("calea dedicata nu trebuie atinsa"))
+    assert ss.refresh_price_from_source("pcgarage.ro", PCG_URL, "x") == 249.99
 
 
 def test_validated_domains_santinela():
@@ -150,6 +165,8 @@ def test_validated_domains_santinela():
         "caliroots.com", "patta.nl", "slamjam.com",   # SHOP-1a
         "redgoblin.ro", "ada-shoes.ro",               # SHOP-1a
         "rocashoes.ro", "shopium.ro", "sosukicks.ro", # SHOP-1a
+        "itgalaxy.ro", "carrefour.ro", "flip.ro",     # LOT1
+        "usedproducts.ro", "senetic.ro", "pcgarage.ro",  # LOT1
     }
 
 

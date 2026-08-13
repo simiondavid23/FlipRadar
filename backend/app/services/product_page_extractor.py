@@ -70,6 +70,14 @@ class ProductExtractionError(Exception):
 #   price_selector / name_selector / image_selector — selectori CSS
 #   out_of_stock_text — substring case-insensitive in pagina => in_stock False
 #   currency — moneda fixa a magazinului
+#   vat_prices — True pe magazinele care publica DOUA preturi: net in JSON-LD si
+#                brut in microdata (senetic.ro, raport 1.21 = TVA, masurat 3/3 la
+#                LOT1). Precedenta normala ar lua netul, adica un pret cu 21% sub
+#                cel platit — pe un comparator, fiecare produs ar parea chilipir.
+#                Efectul: `price` devine brutul, iar ambele preturi se expun ca
+#                VARIANTE ("cu TVA" / "fara TVA"), prin masinaria existenta din
+#                FASHION-1b. Se aplica DOAR daca ambele preturi sunt valide si
+#                brutul e mai mare ca netul; altfel comportamentul ramane cel de azi.
 DOMAIN_OVERRIDES: dict[str, dict] = domain_overrides()
 
 # Domeniile pe care extractorul a fost validat pe pagini de produs REALE.
@@ -528,6 +536,23 @@ def _collect_og(soup):
     }
 
 
+def _in_scope(el, root) -> bool:
+    """True daca `el` apartine DIRECT scope-ului `root`, nu unui obiect NESTED.
+
+    Regula standard de scopare microdata: o proprietate apartine itemului al carui
+    `itemscope` e cel mai apropiat stramos al ei. Urcam din `el`; daca dam peste
+    root inainte de orice alt `itemscope`, proprietatea e a root-ului.
+    """
+    parent = el.parent
+    while parent is not None:
+        if parent is root:
+            return True
+        if parent.has_attr("itemscope"):
+            return False
+        parent = parent.parent
+    return False
+
+
 def _collect_microdata(soup):
     """Microdata schema.org (itemprop in atribute HTML) — a PATRA sursa, ultima.
 
@@ -546,6 +571,18 @@ def _collect_microdata(soup):
     Pretul are REGULA DE SIGURANTA proprie: cu 0 sau >=2 elemente de pret nu
     furnizam nimic, nici macar `price_seen`. Un pret gresit ajunge in istoric si in
     alerte, deci ambiguitatea trebuie sa ramana esec, nu ghicitoare.
+
+    SCOPARE NESTED, DOAR PE NUME (LOT1): un obiect microdata nested isi poarta
+    propriile proprietati, iar `brand` are si el un `name`. Pe pcgarage.ro scope-ul
+    Product contine DOUA `itemprop="name"` — `<td>`-ul produsului si un
+    `<meta itemprop="name" content="Lenovo">` care apartine obiectului nested
+    `itemprop="brand"` — deci regula "un singur candidat sau h1-ul" pica si numele
+    ramane None. Filtram numele la elementele al caror cel mai apropiat stramos cu
+    `itemscope` E CHIAR root-ul.
+    Filtrul se opreste DELIBERAT la nume. Pretul, moneda si stocul apartin PRIN
+    DESIGN obiectului nested `offers` (asa e si pe evomag, si pe pcgarage — exact
+    ca `Product.offers.price` din JSON-LD), deci aceeasi filtrare aplicata lor le-ar
+    face zero candidati si ar rupe domeniile care merg azi (masurat la LOT1).
     """
     scopes = soup.select('[itemtype*="schema.org/Product"]')
     root = scopes[0] if len(scopes) == 1 else soup
@@ -576,6 +613,9 @@ def _collect_microdata(soup):
     # --- nume: un singur candidat, sau h1-ul dintre ei ---
     name = None
     nume = root.select('[itemprop="name"]')
+    if len(scopes) == 1:
+        # Doar proprietatile Product-ului INSUSI; brand/Review/Rating isi tin ale lor.
+        nume = [el for el in nume if _in_scope(el, root)]
     if len(nume) == 1:
         name = _valoare(nume[0])
     elif len(nume) > 1:
@@ -657,6 +697,25 @@ def parse_product_html(html: str, url: str) -> dict:
         result["currency"] = micro["currency"]
     if result["in_stock"] is None and micro["in_stock"] is not None:
         result["in_stock"] = micro["in_stock"]
+
+    # LOT1 — preturi duale cu/fara TVA (senetic.ro): JSON-LD poarta NETUL, microdata
+    # BRUTUL. Precedenta normala ar lua netul, adica un pret cu ~21% sub cel platit;
+    # intr-un comparator, fiecare produs al magazinului ar parea chilipir.
+    # Pastram AMBELE, prin masinaria de variante din FASHION-1b: `price` devine
+    # brutul (comparabilul de consumator), iar netul ramane accesibil ca varianta.
+    # Garda de sens (brut > net) tine flag-ul inofensiv pe o pagina care nu se
+    # comporta asa: conditia neindeplinita => exact comportamentul de azi.
+    if ((DOMAIN_OVERRIDES.get(override_key) or {}).get("vat_prices")
+            and method == "jsonld"
+            and result["price"] is not None and result["price"] > 0
+            and micro["price"] is not None and micro["price"] > result["price"]):
+        fara_tva, cu_tva = result["price"], micro["price"]
+        result["price"] = cu_tva
+        result["variants"] = [
+            {"variant": "cu TVA", "price": cu_tva, "in_stock": result["in_stock"]},
+            {"variant": "fara TVA", "price": fara_tva, "in_stock": result["in_stock"]},
+        ]
+        override_applied = True
 
     name, price = result["name"], result["price"]
     if not name:

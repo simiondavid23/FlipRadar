@@ -305,6 +305,123 @@ Domeniul gol `afew-store.com` redirecteaza spre storefront-ul `de.*`, iar
 handle, acelasi pret, aceeasi disponibilitate. Ramane o singura intrare, cea cu
 subdomeniu; domeniul gol nu se adauga.
 
+## LOT1
+
+Sonda 2026-08-13, lotul 2a (electronice RO), 8 domenii. Primul val in care sonda
+NU si-a reimplementat parsarea: a IMPORTAT `parse_product_html` si a rulat-o pe
+HTML-ul capturat (functia e pura), deci intrebarea masurata a fost "extractorul
+EXISTENT le citeste corect?", nu "s-ar putea citi?".
+
+Toate cele 8 domenii au raspuns pe treapta implicita `chrome131`. Nicio escaladare
+de impersonate, niciun BLOCAT, niciun MORT.
+
+### Verdicte
+
+| domeniu | URL-uri OK | metoda | verdict |
+|---|---|---|---|
+| itgalaxy.ro | 3/3 | jsonld | validat |
+| carrefour.ro | 3/3 | jsonld | validat |
+| flip.ro | 3/3 | jsonld | validat, `url_identity: exact` |
+| usedproducts.ro | 3/3 | jsonld | validat |
+| senetic.ro | 3/3 | jsonld | validat, override `vat_prices` |
+| pcgarage.ro | 3/3 | microdata | validat DUPA fixul de scopare |
+| orange.ro | 0/3 | — | probed (Grup 4) |
+| powerup.ro | 0/3 | — | probed (Grup 3) |
+
+### pcgarage.ro — blocat de o regula de-a noastra, nu de site
+
+Paginile publica microdata completa: un singur scope Product, un singur
+`itemprop="price"` cu `content` in format masina, `priceCurrency=RON`,
+`availability`, `sku`, `mpn`, `brand`, `name`. Rulat pe dump, `_collect_microdata`
+dadea pret/moneda/stoc CORECTE si cadea doar pe nume, iar garda de nume din
+`parse_product_html` ridica `no_product_data` inainte sa se uite la pret.
+
+Cauza: in scope-ul Product exista DOUA `itemprop="name"` — `<td>`-ul produsului si
+un `<meta itemprop="name" content="Lenovo">` care apartine obiectului NESTED
+`itemprop="brand"`. Regula "un singur candidat, sau h1-ul dintre mai multi" vedea
+doi si niciun h1.
+
+Fixul: scopare nested standard (un element apartine root-ului daca cel mai apropiat
+stramos cu `itemscope` E root-ul), aplicata DOAR la nume.
+
+DE CE doar la nume, si nu uniform pe toate campurile: pretul, moneda si stocul
+apartin PRIN DESIGN obiectului nested `offers` — asa e si pe pcgarage, si pe
+evomag, exact ca `Product.offers.price` din JSON-LD. Masurat inainte de
+implementare: filtrarea uniforma da (1 nume, 0 preturi) pe AMANDOUA, adica ar fi
+rupt si evomag, domeniu validat din CONTENT-2. Filtrarea doar pe nume da (1, 1) pe
+amandoua. Numai `name` are coliziune reala, fiindca doar `brand` poarta o
+proprietate cu acelasi nume.
+
+Preturile extrase dupa fix — 5498.99 / 2249.99 / 1136.92 — coincid exact cu ce
+intoarce parserul dedicat `fetch_pcgarage_price_from_url` pe aceleasi URL-uri, deci
+refresh-ul a migrat pe calea generica (ordinea din `refresh_source` o face automat:
+ramura domeniilor validate precede ramura pcgarage). Ramura dedicata ramane
+fallback istoric.
+
+La URL-ul cu ancora de desigilat (`#u38312673`), purtatorii structurati poarta DOAR
+produsul nou — oferta resigilata nu e distinsa in microdata.
+
+### flip.ro — `?shape=` e semantic, deci starea e parte din identitate
+
+Aceeasi pagina, acelasi produs:
+
+| URL | pret extras |
+|---|---|
+| `.../75268382/?shape=Excelent` | 2999.99 |
+| `.../75268382/` (fara shape) | 2849.99 |
+
+Datele structurate URMEAZA parametrul. De aici campul `url_identity: "exact"` din
+registru: la salvarea sursei se pastreaza URL-ul lipit de user (fara fragment, care
+e stare de UI) si se IGNORA canonicalul — altfel am urmari tacut alt pret decat cel
+vazut.
+
+### senetic.ro — preturi duale, decizia de a le pastra pe amandoua
+
+Toate trei paginile poarta doua preturi, in raport EXACT 1.21:
+
+| produs | ld+json | microdata | raport |
+|---|---|---|---|
+| AD1J1ET | 3394.59 | 4107.45 | 1.21 |
+| DELL-U4025QW | 8146.23 | 9856.94 | 1.21 |
+| UCK-G2-SSD | 1152.62 | 1394.67 | 1.21 |
+
+Adica TVA 21%: ld+json publica NETUL, microdata BRUTUL. Cu precedenta normala am fi
+luat sistematic netul — un pret cu 21% sub cel platit, deci fiecare produs senetic
+ar fi parut chilipir intr-un comparator.
+
+Decizia: pastram AMANDOUA, prin masinaria de variante din FASHION-1b. Override-ul
+`vat_prices` face `price` = brutul (comparabilul de consumator) si expune
+`variants` = ["cu TVA", "fara TVA"], deci selectia per-marime din add-by-link
+functioneaza din prima. Garda de sens (brut strict mai mare ca netul, ambele
+valide) tine flag-ul inofensiv pe o pagina care nu se comporta asa.
+
+### orange.ro vs powerup.ro — doua feluri de "fara date"
+
+Ies amandoua fara purtatori, dar NU sunt acelasi caz:
+
+- **orange.ro** — CSR real. 339 KB de HTML, titlu GENERIC ("Orange Magazin Online",
+  fara numele produsului), zero ld+json, zero `itemprop` in ambele scrieri (lower si
+  camelCase — verificat dupa lectia footshop), zero clase de pret, zero stare JS
+  incorporata. Shell-ul nu poarta nimic despre produs. **Grup 4** (necesita browser).
+- **powerup.ro** — SSR fara date structurate. Titlurile SUNT specifice produsului,
+  iar pretul E in DOM: `.discount-price` = "3.990 ,00 LEI" (platit), `.full-price` =
+  "5.590 ,00 LEI" (taiat). **Grup 3**, candidat de `price_selector`.
+  CAPCANA pentru cine implementeaza: exista si `.total-price` = "0 ,00 LEI", totalul
+  cosului gol — un selector prea lax ar extrage 0. De aceea intrarea cere o
+  micro-sonda pe produse NEreduse inainte de validare.
+
+### usedproducts.ro
+
+Toate trei `https://schema.org/InStock`, extrase corect (299.99 / 350.00 / 599.99).
+Fiind bucati unice second-hand, un "vandut" ar fi permanent — dar sonda NU a
+intalnit niciun produs vandut, deci comportamentul paginii in acel caz ramane
+NEMASURAT.
+
+### badabum.ro — ELIMINAT
+
+Site mort, confirmat manual de David in 2026-08. Scos din lot inainte de sonda,
+deci nu apare in masuratori. Reverificare optionala la un val viitor.
+
 ---
 
 ## Domenii neintrate

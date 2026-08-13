@@ -209,6 +209,36 @@ def test_canonical_pe_alt_domeniu_e_ignorat(auth_client, fake_extract):
     assert sources[0].source_url == URL  # URL-ul de intrare, fara fragment
 
 
+def test_url_identity_exact_pastreaza_query(auth_client, fake_extract, monkeypatch):
+    """LOT1 — pe magazinele cu `url_identity: "exact"`, query-ul e parte din
+    identitatea sursei, deci URL-ul lipit de user castiga in fata canonicalului.
+
+    Cazul flip.ro: `?shape=` alege starea produsului si odata cu ea pretul
+    (2999.99 cu `?shape=Excelent` vs 2849.99 fara, masurat la sonda LOT1). Salvarea
+    canonicalului curatat de parametri ar urmari tacut alt pret decat cel vazut.
+    """
+    import app.routers.products as products
+
+    flip_url = "https://flip.ro/magazin/samsung/telefon/75268382/?shape=Excelent"
+    canonical = "https://flip.ro/magazin/samsung/telefon/75268382/"
+    fake_extract["result"] = _res(domain="flip.ro", canonical_url=canonical)
+
+    monkeypatch.setattr(products, "url_identity_of", lambda domain: "exact")
+    auth_client.post("/api/products/from-url", json={"url": flip_url + "#specs"})
+
+    _, sources, _ = _db_rows()
+    # Query PASTRAT, fragment taiat, canonical ignorat.
+    assert sources[0].source_url == flip_url
+
+    # Fara flag, acelasi input revine la comportamentul canonical de pana acum.
+    monkeypatch.setattr(products, "url_identity_of", lambda domain: None)
+    auth_client.post("/api/products/from-url",
+                     json={"url": flip_url.replace("75268382", "75268999") + "#specs"})
+
+    _, sources, _ = _db_rows()
+    assert canonical in [s.source_url for s in sources]
+
+
 # ── maparea erorilor ──────────────────────────────────────────────────────────
 
 def test_domain_not_allowed_400_cu_hostname(auth_client, fake_extract):

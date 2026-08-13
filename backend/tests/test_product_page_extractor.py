@@ -16,7 +16,7 @@ import pytest
 
 from app.services import product_page_extractor as ppe
 from app.services.product_page_extractor import (
-    ProductExtractionError, _parse_price_any, parse_product_html,
+    DOMAIN_OVERRIDES, ProductExtractionError, _parse_price_any, parse_product_html,
 )
 
 URL = "https://www.magazin-test.ro/p/produs-1"
@@ -1361,3 +1361,93 @@ def test_sufixele_inselatoare_discovery2_raman_respinse(url):
     from app.services.scraper_service import _is_allowed_shop_url
 
     assert _is_allowed_shop_url(url) is False
+
+
+# ── LOT1: scoparea nested pe nume + preturi duale cu/fara TVA ─────────────────
+
+def test_microdata_scopare_nested():
+    """Forma pcgarage: numele produsului convietuieste cu cel al brandului.
+
+    Brandul e un obiect NESTED cu propriul `itemscope`, deci poarta si el un
+    `itemprop="name"`. Inainte de LOT1, regula "un singur candidat sau h1-ul" vedea
+    doi candidati si niciun h1, deci intorcea None si domeniul cadea pe
+    no_product_data — desi pretul era acolo, corect.
+    """
+    html = _page(body='<div itemscope itemtype="http://schema.org/Product">'
+                      '<td itemprop="name">Procesor AMD Ryzen 7 9800X3D</td>'
+                      '<div itemscope itemtype="http://schema.org/Brand">'
+                      '<meta itemprop="name" content="AMD"/></div>'
+                      '<div itemscope itemtype="http://schema.org/Offer">'
+                      '<meta itemprop="priceCurrency" content="RON"/>'
+                      '<meta itemprop="price" content="2249.990039"/>'
+                      '<link itemprop="availability" href="https://schema.org/InStock"/>'
+                      '</div></div>')
+
+    res = parse_product_html(html, "https://www.pcgarage.ro/procesoare/amd/test/")
+
+    assert res["name"] == "Procesor AMD Ryzen 7 9800X3D"
+    assert res["price"] == 2249.990039
+    assert res["currency"] == "RON"
+    assert res["in_stock"] is True
+    assert res["method"] == "microdata"
+
+    # Caz-limita: TOATE numele stau in scope-uri nested -> lista filtrata e goala,
+    # deci regula "un singur candidat" nu are ce alege si numele ramane None.
+    fara_nume = _page(body='<div itemscope itemtype="http://schema.org/Product">'
+                           '<div itemscope itemtype="http://schema.org/Brand">'
+                           '<meta itemprop="name" content="AMD"/></div>'
+                           '<meta itemprop="price" content="99.00"/></div>')
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(fara_nume, "https://www.pcgarage.ro/x/")
+    assert exc.value.reason == "no_product_data"
+
+
+def _senetic(*, net="3394.59", brut="4107.45") -> str:
+    """Forma senetic: ld+json poarta NETUL, microdata BRUTUL (raport 1.21 = TVA)."""
+    return _page(
+        head=_ld(json.dumps({
+            "@context": "https://schema.org", "@type": "Product",
+            "name": "Monitor Dell U4025QW",
+            "offers": {"@type": "Offer", "price": net, "priceCurrency": "RON",
+                       "availability": "https://schema.org/InStock"},
+        })),
+        body='<div itemscope itemtype="http://schema.org/Product">'
+             '<h1 itemprop="name">Monitor Dell U4025QW</h1>'
+             '<div itemscope itemtype="http://schema.org/Offer">'
+             f'<meta itemprop="price" content="{brut}"/>'
+             '</div></div>')
+
+
+def test_vat_prices_variante_duale(monkeypatch):
+    monkeypatch.setitem(DOMAIN_OVERRIDES, "senetic.ro", {"vat_prices": True})
+
+    res = parse_product_html(_senetic(), "https://www.senetic.ro/product/DELL-U4025QW")
+
+    # Pretul principal devine BRUTUL — comparabilul de consumator.
+    assert res["price"] == 4107.45
+    assert res["variants"] == [
+        {"variant": "cu TVA", "price": 4107.45, "in_stock": True},
+        {"variant": "fara TVA", "price": 3394.59, "in_stock": True},
+    ]
+    assert res["override_applied"] is True
+
+
+def test_vat_prices_garda(monkeypatch):
+    """Garda de sens: fara un brut STRICT mai mare ca netul, flag-ul nu face nimic."""
+    monkeypatch.setitem(DOMAIN_OVERRIDES, "senetic.ro", {"vat_prices": True})
+    URL_SEN = "https://www.senetic.ro/product/X"
+
+    # microdata <= jsonld: nu e raport de TVA, deci comportament normal.
+    res = parse_product_html(_senetic(net="4107.45", brut="3394.59"), URL_SEN)
+    assert res["price"] == 4107.45      # pretul din ld+json, ca pana acum
+    assert res["variants"] is None
+    assert res["override_applied"] is False
+
+    # microdata lipseste cu totul -> la fel.
+    fara_micro = _page(head=_ld(
+        '{"@context": "https://schema.org", "@type": "Product", "name": "X",'
+        ' "offers": {"@type": "Offer", "price": "100.00", "priceCurrency": "RON"}}'))
+    res = parse_product_html(fara_micro, URL_SEN)
+    assert res["price"] == 100.0
+    assert res["variants"] is None
+    assert res["override_applied"] is False

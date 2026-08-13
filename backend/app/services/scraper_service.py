@@ -1160,6 +1160,14 @@ def refresh_source(
     # (b) PCGarage: refresh direct de pe pagina de produs (source_url stocat), ocolind
     # complet cautarea /cauta/ care e challenge-uita agresiv de Cloudflare. Restul
     # aplicatiei (cautare, cross-shop) continua sa foloseasca _sync_scrape_pcgarage.
+    #
+    # LOT1: de cand pcgarage.ro e in VALIDATED_DOMAINS (sonda 2026-08-13 + scoparea
+    # nested din _collect_microdata, care i-a deblocat numele), calea (a) de mai sus
+    # intercepteaza PRIMA si citeste pretul din microdata paginii — masurat identic
+    # cu ce da parserul dedicat. Ramura asta ramane deci FALLBACK istoric: se atinge
+    # doar cand extractia esueaza, sau daca domeniul ar iesi vreodata din
+    # VALIDATED_DOMAINS. Se pastreaza tocmai fiindca e plasa care a facut refresh-ul
+    # pcgarage sa mearga prin Cloudflare ani la rand.
     if sdomain == "pcgarage.ro" or domain == "pcgarage.ro":
         price = fetch_pcgarage_price_from_url(source_url)
         return {"price": price, "in_stock": None, "method": "pcgarage"} if price else None
