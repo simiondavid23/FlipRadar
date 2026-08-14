@@ -24,6 +24,7 @@ from app.models.radar_settings import RadarSettings
 from app.services.currency_service import convert
 from app.services.email_service import send_alert_email, is_configured as email_is_configured
 from app.services.scraper_service import refresh_source
+from app.services.deal_scanner import record_refresh_diff_deal
 from app.services import catalog_health_watchdog
 from app.services.discord_service import (
     build_alert_embed, build_drop_alert_embed, build_flash_deal_embed,
@@ -238,6 +239,18 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
                     _check_and_send_flash_deals(db, product, float(old_price), float(new_price),
                                                 ps.source, min_30d=min30, variant=ps.variant,
                                                 currency=ps.currency, product_url=ps.source_url)
+                    # DEAL-1 — aceeasi scadere intra si ca RAND in feed-ul de deal-uri.
+                    # Sub aceeasi garda: 5.3e se aplica identic, un deal necumparabil
+                    # nu e deal. Toata logica de feed (prag, upsert, incheiere) sta in
+                    # helper; aici e doar apelul. Bloc propriu: o eroare de feed nu are
+                    # voie sa opreasca refresh-ul, ca la blocurile vecine.
+                    try:
+                        record_refresh_diff_deal(db, product=product, ps=ps,
+                                                 old_price=float(old_price),
+                                                 new_price=float(new_price), min30=min30)
+                    except Exception as exc:            # noqa: BLE001
+                        print(f"[AlertChecker] Deal refresh_diff esuat pentru sursa {ps.id} "
+                              f"({ps.source}): {type(exc).__name__}: {str(exc)[:120]}")
             else:
                 print(f"[AlertChecker] Pret neschimbat pentru \"{product.name[:50]}\" ({ps.source}): {new_price} {ps.currency}")
         except Exception as exc:

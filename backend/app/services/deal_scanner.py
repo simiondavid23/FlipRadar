@@ -234,6 +234,9 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
                     compare_at_price=compare_at, discount_pct=discount_pct,
                     reason=reason, sizes_available=marimi,
                     min_price_seen=min_price_vechi, state="nou",
+                    # DEAL-1 — explicit, nu pe default: proveniența se citeste la
+                    # locul crearii.
+                    deal_source="shopify_enum",
                     first_seen_at=acum, last_seen_at=acum)
                 db.add(deal)
                 db.flush()
@@ -323,3 +326,80 @@ def run_deal_scan(db) -> dict:
         return rezumat
     finally:
         _SCAN_LOCK.release()
+
+
+# ── DEAL-1: a doua sursa a feed-ului — scaderile prinse de refresh ───────────
+
+def record_refresh_diff_deal(db, *, product, ps, old_price, new_price, min30):
+    """Persista ca Deal o scadere de pret vazuta la refresh-ul unei surse urmarite.
+
+    A doua sursa a feed-ului, dupa scannerul Shopify. Mecanismul de detectie exista
+    deja in bucla de refresh (flash-deal); ce lipsea era RANDUL — scaderea se anunta
+    si se pierdea. Toata logica de feed sta AICI, ca alert_checker doar sa cheme.
+
+    Criteriul e scaderea fata de pretul anterior al sursei, nu fata de o referinta
+    de magazin: la un produs urmarit, `old_price` chiar e pretul pe care l-ai fi
+    platit ieri, deci e referinta cinstita. `min30` intra doar informativ.
+
+    Fara Discord aici, DELIBERAT: momentul e deja acoperit de flash-deal, pe canalul
+    lui si cu pragul lui (`flash_deal_threshold`). Un al doilea mesaj pentru acelasi
+    eveniment ar fi zgomot. Livrabilul acestei cai e randul din feed.
+
+    Intoarce Deal-ul scris/actualizat, sau None cand scaderea nu califica.
+    """
+    settings = _settings(db)
+    prag = _prag(settings)
+    try:
+        vechi, nou = float(old_price), float(new_price)
+    except (TypeError, ValueError):
+        return None
+    if vechi <= 0 or nou <= 0:
+        return None
+
+    shop_domain = ps.source
+    # Stabil per INSTANTA de sursa (produs + magazin + varianta sunt deja unice pe
+    # ProductSource), si mult sub 64 de caractere.
+    external_id = f"src:{ps.id}"
+    acum = datetime.now(timezone.utc)
+    existent = (db.query(Deal)
+                .filter(Deal.shop_domain == shop_domain,
+                        Deal.external_id == external_id)
+                .first())
+
+    discount_pct = (vechi - nou) / vechi * 100.0
+    if discount_pct < prag:
+        # Pretul a urcat inapoi peste cel al deal-ului activ -> oferta s-a terminat.
+        # D7: se scrie `ended_at`, starea userului ramane neatinsa, randul nu se sterge.
+        if existent is not None and existent.ended_at is None and nou > (existent.price or 0):
+            existent.ended_at = acum
+            db.commit()
+        return None
+
+    titlu = str(product.name or "")[:500]
+    if ps.variant:
+        titlu = f"{titlu} — {ps.variant}"[:500]
+
+    if existent is None:
+        existent = Deal(
+            shop_domain=shop_domain, external_id=external_id, handle=None,
+            title=titlu, url=ps.source_url, image_url=getattr(product, "image_url", None),
+            currency=ps.currency, price=nou, compare_at_price=None,
+            discount_pct=discount_pct, reason="istoric", sizes_available=[],
+            min_price_seen=min30, state="nou", deal_source="refresh_diff",
+            first_seen_at=acum, last_seen_at=acum)
+        db.add(existent)
+    else:
+        # D7, ca la scanner: starea e a USERULUI si ramane neatinsa.
+        existent.title = titlu
+        existent.url = ps.source_url
+        existent.image_url = getattr(product, "image_url", None)
+        existent.currency = ps.currency
+        existent.price = nou
+        existent.compare_at_price = None
+        existent.discount_pct = discount_pct
+        existent.reason = "istoric"
+        existent.min_price_seen = min30
+        existent.last_seen_at = acum
+        existent.ended_at = None
+    db.commit()
+    return existent

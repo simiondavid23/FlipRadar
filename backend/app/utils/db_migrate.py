@@ -246,6 +246,15 @@ def _portable_migrations(conn, inspector):
             _migrate(conn, f"add_radar_settings_{_col}",
                      f"ALTER TABLE radar_settings ADD COLUMN {_col} {_type}")
 
+    # DEAL-1 — proveniența randului de deal, pe tabela EXISTENTA `deals`.
+    # server_default 'shopify_enum': toate randurile de pana acum sunt ale
+    # scannerului Shopify, deci backfill-ul e corect prin chiar default-ul coloanei.
+    if (_table_exists(inspector, "deals")
+            and not _column_exists(inspector, "deals", "deal_source")):
+        _migrate(conn, "add_deals_deal_source",
+                 "ALTER TABLE deals ADD COLUMN deal_source VARCHAR(20) "
+                 "NOT NULL DEFAULT 'shopify_enum'")
+
 
 def run_migrations():
     """Apply any pending column additions."""

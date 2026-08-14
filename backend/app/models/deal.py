@@ -45,6 +45,14 @@ class Deal(Base):
     # calculului (nu se recalculeaza retroactiv).
     discount_pct = Column(Float, nullable=False)
     reason = Column(String(20), nullable=False)        # compare_at | istoric | ambele
+    # DEAL-1 — de UNDE vine randul. Feed-ul are mai multe surse, iar proveniența
+    # trebuie sa fie citibila fara sa ghicesti dupa `reason`:
+    #   shopify_enum — scannerul care enumera magazinele Shopify (SHOP-2a)
+    #   refresh_diff — o scadere prinsa de refresh-ul surselor urmarite (DEAL-1)
+    # viitoare: listing_scan. Default-ul acopera randurile existente, toate ale
+    # scannerului; caile care creeaza randuri il seteaza EXPLICIT, ca intentia sa
+    # fie scrisa la locul crearii, nu dedusa din default.
+    deal_source = Column(String(20), nullable=False, default="shopify_enum")
     # D6 — etichetele marimilor in stoc, metadata de card (nu intra in evaluare).
     sizes_available = Column(JSON, default=list)
     # Snapshot informativ din memoria de pret la momentul deal-ului.
