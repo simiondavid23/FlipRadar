@@ -6,7 +6,8 @@ ramane intacta si va fi aleasa printr-un comutator manual `FB_MOD` la cablare.
 
 Public: doar `search` si `fetch_detail`.
 """
+from .anchors import ANCORE, selecteaza
 from .client import search
 from .detail import fetch_detail
 
-__all__ = ["search", "fetch_detail"]
+__all__ = ["ANCORE", "selecteaza", "search", "fetch_detail"]
