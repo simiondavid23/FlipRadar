@@ -46,6 +46,12 @@ from app.services.radar.base_scraper import (
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
 from app.utils.number_format import parse_number
 from app.utils.http_profile import DEFAULT_IMPERSONATE
+# FB-5: nucleul logat-out (FB-1) + registrul de ancore (FB-2). Aliasurile exista ca
+# testele sa inlocuiasca o singura tinta pe modulul asta, fara sa atinga nucleul.
+# Calea de sesiune (A4) NU le foloseste — ea ramane pe functiile de mai jos.
+from app.scrapers.facebook import search as nucleu_search
+from app.scrapers.facebook import fetch_detail as nucleu_fetch_detail
+from app.scrapers.facebook.anchors import dupa_slug
 
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 _BASE = "https://www.facebook.com"
@@ -301,6 +307,116 @@ def _known_facebook_category_ids() -> set:
 # Search
 # ──────────────────────────────────────────────────────────────────────────────
 
+_ANCORA_IMPLICITA = "bucuresti"
+
+
+def _ancora_configurata(env_var: str, modul_log: str):
+    """Ancora geografica interim a unui apel (slug din registrul FB-2).
+
+    O SINGURA ancora per apel: scanner-ul de azi nu stie de ancore, iar acoperirea pe
+    toate cele 51 vine cu planificatorul la FB-6. Slug necunoscut = WARN + Bucuresti.
+    """
+    slug = (os.getenv(env_var) or _ANCORA_IMPLICITA).strip().lower()
+    ancora = dupa_slug(slug)
+    if ancora is None:
+        log_manager.emit(modul_log, "WARN",
+            f"Facebook: ancora '{slug}' nu exista in registru — folosesc "
+            f"'{_ANCORA_IMPLICITA}'.")
+        ancora = dupa_slug(_ANCORA_IMPLICITA)
+    return ancora
+
+
+def _naiv_local(dt):
+    """UTC aware (conventia nucleului) -> naiv local (conventia Radar/Auto).
+
+    `_too_old` din radar_scanner compara `datetime.now()` naiv cu `listed_at`, deci un
+    datetime aware ar arunca TypeError acolo. Imobiliare a mers pe alt drum (string
+    ISO) fiindca scanner-ul lui face `fromisoformat` — conventii diferite per
+    consumator, fiecare respectata.
+    """
+    return dt.astimezone().replace(tzinfo=None) if dt else None
+
+
+def _search_logout(keyword: str, max_price, exclude_words, min_price, category) -> list[dict]:
+    """Calea LOGAT-OUT (FB_MOD=logout): search prin nucleul FB-1, fara sesiune.
+
+    Filtrele sunt aceleasi ca pe sesiune, aplicate pe dicturile canonice si prin
+    ACELEASI functii de modul (`is_excluded`, `_known_facebook_category_ids`), ca sa
+    nu divergem. `seller_name`/`seller_id` sunt None: vanzatorul NU exista logat-out
+    (masurat) — nu e o pierdere de parsare, ci o lipsa la sursa.
+    """
+    ancora = _ancora_configurata("FB_RADAR_ANCORA", "radar")
+    log_manager.emit("radar", "SCAN", f'Facebook logat-out "{keyword}"')
+
+    canonice = nucleu_search(keyword, ancora.lat, ancora.lon, raza_km=65.0,
+                             fb_slug=ancora.fb_slug) or []
+
+    known_ids = _known_facebook_category_ids() if category else None
+    results: list[dict] = []
+    vazute = set()
+    fara_categorie = 0
+    for c in canonice:
+        title = (c.get("title") or "").strip()
+        if not title:
+            continue
+        if is_excluded(title, exclude_words):
+            continue
+
+        price = c.get("price")
+        if price is None or price <= 0:
+            continue
+        if max_price and max_price > 0 and price is not None and price > max_price:
+            continue
+        if min_price and min_price > 0 and price is not None and price < min_price:
+            continue
+
+        cat_id = c.get("category_id")
+        cat_id = str(cat_id) if cat_id is not None else None
+        if category:
+            if cat_id and known_ids is not None and cat_id not in known_ids:
+                log_manager.emit("radar", "INFO",
+                    f"Facebook: category_id necunoscut {cat_id} ('{title[:40]}')")
+            # A6/A7 — aceeasi regula fail-open ca pe sesiune: se exclude DOAR cand
+            # cardul poarta o categorie care difera. Vezi comentariul lung din
+            # _search_sesiune; NU transforma in comparatie stricta.
+            if cat_id is None:
+                fara_categorie += 1
+            elif cat_id != str(category):
+                continue
+
+        ext = str(c.get("external_id") or "")
+        if not ext or ext in vazute:
+            continue
+        vazute.add(ext)
+
+        image_url = c.get("image_url")
+        results.append({
+            # canonic-ul da id-ul BRUT (prefixarea e treaba consumatorului) — Radar
+            # isi pune prefixul aici, ca pe sesiune.
+            "external_id": f"fb_{ext}",
+            "platform": "facebook",
+            "title": title,
+            "price": price,
+            "currency": c.get("currency"),
+            "condition": None,
+            "location": c.get("location"),
+            "url": c.get("source_url"),
+            "images": [image_url] if image_url else [],
+            "description": None,
+            "seller_name": None,
+            "seller_id": None,
+            "listed_at": _naiv_local(c.get("listed_at")),
+        })
+
+    if fara_categorie:
+        log_manager.emit("radar", "INFO",
+            f"Facebook: {fara_categorie} anunturi pastrate fara categorie pe card "
+            f"(nu se poate verifica filtrul de categorie)")
+    log_manager.emit("radar", "OK",
+        f'Facebook logat-out: {len(results)} rezultate pentru "{keyword}"')
+    return results
+
+
 def search_facebook(
     keyword: str,
     max_price: float,
@@ -325,7 +441,45 @@ def search_facebook(
         poate filtra prin URL).
     `category` — dacă e setat, se filtrează CLIENT-SIDE pe
         marketplace_listing_category_id == category.
+
+    FB-5 (A4): dispecer pe `FB_MOD`. `logout` = nucleul logat-out (fără sesiune);
+    ORICE altceva, inclusiv variabila absentă, = calea de sesiune de până acum,
+    neschimbată. Implicitul rămâne `sesiune` DELIBERAT: calea logat-out scanează
+    deocamdată o singură ancoră per apel, deci ar îngusta geografic feed-ul;
+    comutarea se face la FB-6, cu planificatorul. Fără fallback automat între căi.
     """
+    exclude_words = exclude_words or []
+    keyword_clean = (keyword or "").strip()
+    if not keyword_clean:
+        return []
+    # FB nu pagineaza prin URL — un singur fetch aduce tot; page>1 nu mai aduce nimic.
+    # Garda sta in dispecer, INAINTE de orice cale: semantica e a platformei, nu a caii.
+    if page and page > 1:
+        return []
+
+    mod = (os.getenv("FB_MOD") or "sesiune").strip().lower()
+    if mod == "logout":
+        return _search_logout(keyword_clean, max_price, exclude_words, min_price, category)
+    if mod != "sesiune":
+        log_manager.emit("radar", "WARN",
+            f"Facebook: FB_MOD='{mod}' necunoscut — folosesc calea de sesiune.")
+    return _search_sesiune(keyword, max_price, judet, oras, exclude_words,
+                           session_path, min_price, category, page, max_scrolls)
+
+
+def _search_sesiune(
+    keyword: str,
+    max_price: float,
+    judet: Optional[str] = None,
+    oras: Optional[str] = None,
+    exclude_words: Optional[list[str]] = None,
+    session_path: Optional[str] = None,
+    min_price: Optional[float] = None,
+    category: Optional[str] = None,
+    page: int = 1,
+    max_scrolls: int = 10,
+) -> list[dict]:
+    """Calea de sesiune, FB_MOD=sesiune — mutata verbatim din search_facebook la FB-5."""
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
     if not keyword_clean:
@@ -499,7 +653,25 @@ def _collect_key(root, key: str) -> list:
 
 
 def fetch_facebook_listing_detail(url: str, session_path: Optional[str]) -> dict:
-    """Enrichment on-demand pentru un anunt Facebook — descriere completa + toata
+    """Enrichment on-demand: descriere + galerie, din pagina de detaliu.
+
+    FB-5 (A4): dispecer pe `FB_MOD`, ca `search_facebook`. Pe `logout` cererea pleaca
+    prin nucleu si `session_path` e IGNORAT (calea logat-out nu are sesiune); pe orice
+    altceva ruleaza corpul de pana acum, neschimbat. Semnatura publica ramane aceeasi,
+    deci consumatorii care o imbraca — inclusiv auto/listings/detail.py — mostenesc
+    dispecerul automat, fara sa fie atinsi.
+    """
+    mod = (os.getenv("FB_MOD") or "sesiune").strip().lower()
+    if mod == "logout":
+        return nucleu_fetch_detail(url)
+    return _detail_sesiune(url, session_path)
+
+
+def _detail_sesiune(url: str, session_path: Optional[str]) -> dict:
+    """Calea de sesiune, FB_MOD=sesiune — mutata verbatim din
+    fetch_facebook_listing_detail la FB-5.
+
+    Enrichment on-demand pentru un anunt Facebook — descriere completa + toata
     galeria de poze, din pagina de detaliu, prin curl_cffi (FARA Playwright).
 
     Mirror pe stilul fetch_okazii_listing_details / get_vinted_item_detail. Cheile
