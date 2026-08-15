@@ -86,7 +86,7 @@ def test_fb_bucla_sare_cardul_fara_pret():
     # fara pret cardul e sarit inainte de a intra in rezultate (precedent SCRAPE-1a).
     import inspect
     from app.scrapers.real_estate import facebook_real_estate as fb
-    src = inspect.getsource(fb.search_facebook_real_estate)
+    src = inspect.getsource(fb._search_sesiune)
     assert "_parse_card_lines(lines)" in src
     assert "if price is None or price <= 0:" in src
 
@@ -172,7 +172,7 @@ def test_fb_bucla_foloseste_post_filtrul_de_pret():
     # pin pe sursa: o refactorizare sa nu piarda plasa locala de pret.
     import inspect
     from app.scrapers.real_estate import facebook_real_estate as fb
-    src = inspect.getsource(fb.search_facebook_real_estate)
+    src = inspect.getsource(fb._search_sesiune)
     assert "_price_in_bounds(price, filters)" in src
 
 
@@ -194,7 +194,7 @@ def test_fb_masca_aplicata_pe_ambele_ramuri_de_context():
     # (cea cu storage_state sau fallback-ul fara).
     import inspect
     from app.scrapers.real_estate import facebook_real_estate as fb
-    src = inspect.getsource(fb.search_facebook_real_estate)
+    src = inspect.getsource(fb._search_sesiune)
     assert src.count("new_context(") == 2
     assert src.count("**_CONTEXT_KWARGS") == 2
     assert "add_init_script" in src
@@ -261,7 +261,7 @@ def test_fb_bucla_verifica_login_wall_doar_pe_ramura_goala():
     # pe calea cu iteme (cost inutil).
     import inspect
     from app.scrapers.real_estate import facebook_real_estate as fb
-    src = inspect.getsource(fb.search_facebook_real_estate)
+    src = inspect.getsource(fb._search_sesiune)
     assert "_looks_like_login_wall" in src
     assert "page.content()" in src
     assert src.count("page.content()") == 1

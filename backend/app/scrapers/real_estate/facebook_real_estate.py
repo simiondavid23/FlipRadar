@@ -6,6 +6,7 @@ fel ca facebook_auto, dispecerul din real_estate_scanner o apeleaza DIRECT, nu p
 asyncio.run (sync_playwright nu poate rula intr-un event loop asyncio).
 """
 import json
+import os
 import re
 import urllib.parse
 from typing import Optional
@@ -157,6 +158,12 @@ def _price_in_bounds(price, filters: dict) -> bool:
 # ca modulul chiar il APELEAZA mai jos — nu e un re-export de compatibilitate.
 from app.services.radar.facebook_scraper import _looks_like_login_wall   # noqa: E402
 
+# FB-4: nucleul logat-out (FB-1) + registrul de ancore (FB-2). Aliasul `nucleu_search`
+# exista ca testele sa poata inlocui O SINGURA tinta pe modulul asta, fara sa atinga
+# nucleul. Calea de sesiune de mai jos nu il foloseste deloc.
+from app.scrapers.facebook import search as nucleu_search   # noqa: E402
+from app.scrapers.facebook.anchors import dupa_slug   # noqa: E402
+
 
 # FBM-1c: browserul pornea fara nicio masca — user-agent "HeadlessChrome/141.0" si
 # navigator.webdriver=true. Scanul ruleaza periodic din scheduler pe storage_state-ul
@@ -189,23 +196,187 @@ _STEALTH_INIT_JS = """
         """
 
 
-def search_facebook_real_estate(query: str = "", filters: dict = {},
-                                session_path: Optional[str] = None) -> list:
-    """FB-AUDIT A2: `session_path` vine de la apelant (real_estate_scanner._call_scraper),
-    rezolvat PER USER cu resolve_facebook_session_path. Fara descoperire pe disc aici."""
-    from app.services.log_manager import log_manager
-    from app.scrapers.auto.listings.facebook_auto_scraper import _is_session_valid
-    filters = filters or {}
+# ── FB-4: configurarea caii logat-out ────────────────────────────────────────
+# Termenii pentru keyword-ul GOL, masurati la FB-4b pe cluj-napoca: uniune 185 din
+# 191 intoarse, contributie marginala 19-24 fiecare — practic disjuncti, deci toti
+# opt isi merita cererea. Fara diacritice: asa au fost masurati.
+_TERMENI_GOL_IMPLICIT = ("chirie", "inchiriez", "de inchiriat", "apartament",
+                         "garsoniera", "casa", "camera", "regim hotelier")
 
-    # GUARD: nu porni scan pe o categorie NECONFIRMATA (ex. propertyforsale/vanzare —
-    # intoarce doar Partner listings/electronice+chirii, nu vanzari imobiliare reale).
-    # Vezi re_categories.RE_PROPERTY_TYPES["facebook_real_estate"]["categorie_tip_anunt"].
-    tip_anunt = (filters.get("tip_anunt") or "inchiriere").lower()
+# Categoria dominanta a chiriilor pe search, MASURATA la FB-4b (80.7% la termenii
+# imobiliari) si cross-confirmata: e acelasi id cu `categoryIDArray` al paginii
+# propertyrentals. Zgomotul cert vazut alaturi: 1583634935226685 (canapele).
+_CATEGORII_IMPLICITE = ("1468271819871448",)
+
+_ANCORA_IMPLICITA = "bucuresti"
+
+
+def _guard_categorie(filters: dict) -> bool:
+    """GUARD: nu porni scan pe o categorie NECONFIRMATA (ex. propertyforsale/vanzare —
+    intoarce doar Partner listings/electronice+chirii, nu vanzari imobiliare reale).
+    Vezi re_categories.RE_PROPERTY_TYPES["facebook_real_estate"]["categorie_tip_anunt"].
+
+    Extras din calea de sesiune la FB-4 ca sa fie apelat IDENTIC de ambele cai —
+    singura refactorizare facuta codului de sesiune. False = scan omis.
+    """
+    from app.services.log_manager import log_manager
+    tip_anunt = ((filters or {}).get("tip_anunt") or "inchiriere").lower()
     spec = RE_PROPERTY_TYPES["facebook_real_estate"]["categorie_tip_anunt"].get(tip_anunt)
     if not spec or not spec.get("confirmed"):
         log_manager.emit("real_estate", "WARN",
             f"Facebook RE: categoria pentru tip_anunt='{tip_anunt}' e neconfirmata "
             f"(vezi re_categories.RE_PROPERTY_TYPES) — scan omis, 0 rezultate.")
+        return False
+    return True
+
+
+def _termeni_gol() -> list:
+    """Termenii in care se expandeaza un keyword GOL (FB_IMOBILIARE_TERMENI_GOL, CSV)."""
+    brut = os.getenv("FB_IMOBILIARE_TERMENI_GOL") or ""
+    alesi = [t.strip() for t in brut.split(",") if t.strip()]
+    return alesi or list(_TERMENI_GOL_IMPLICIT)
+
+
+def _categorii_permise() -> set:
+    """Id-urile de categorie pastrate (FB_IMOBILIARE_CATEGORII, CSV)."""
+    brut = os.getenv("FB_IMOBILIARE_CATEGORII") or ""
+    alese = {c.strip() for c in brut.split(",") if c.strip()}
+    return alese or set(_CATEGORII_IMPLICITE)
+
+
+def _ancora_configurata():
+    """Ancora geografica a apelului (FB_IMOBILIARE_ANCORA, slug din registrul FB-2).
+
+    O SINGURA ancora per apel: scanner-ul de azi nu stie de ancore, iar acoperirea pe
+    toate cele 51 vine cu planificatorul la FB-6. Slug necunoscut = WARN + Bucuresti,
+    nu eroare: un scan ingust e recuperabil, unul care nu porneste nu se vede.
+    """
+    from app.services.log_manager import log_manager
+    slug = (os.getenv("FB_IMOBILIARE_ANCORA") or _ANCORA_IMPLICITA).strip().lower()
+    ancora = dupa_slug(slug)
+    if ancora is None:
+        log_manager.emit("real_estate", "WARN",
+            f"Facebook RE: ancora '{slug}' nu exista in registru — folosesc "
+            f"'{_ANCORA_IMPLICITA}'.")
+        ancora = dupa_slug(_ANCORA_IMPLICITA)
+    return ancora
+
+
+def _search_logout(query: str, filters: dict) -> list:
+    """Calea LOGAT-OUT (FB_MOD=logout): search prin nucleul FB-1, fara sesiune.
+
+    Designul (Q), fixat de masuratorile FB-4a/FB-4b: pagina de CATEGORIE nu e
+    ancorabila logat-out (doc_id-ul de browse e refuzat cu code 1675004 in acelasi
+    minut in care search-ul intoarce 24 de anunturi), deci mergem pe SEARCH. Un
+    keyword cu termeni = o cautare; un keyword GOL = expandare in termenii de baza.
+
+    Nu exista parghie de recenta la sursa: `commerce_search_and_rp_ctime_days`
+    goleste raspunsul logat-out (0 anunturi la 1 si la 7 zile, masurat). Prospetimea
+    vine din scanare repetata + dedup — bazinul e mult mai mare decat cele 24.
+    """
+    from app.services.log_manager import log_manager
+    filters = filters or {}
+    if not _guard_categorie(filters):
+        return []
+
+    q = (query or "").strip()
+    termeni = [q] if q else _termeni_gol()
+    ancora = _ancora_configurata()
+    categorii = _categorii_permise()
+
+    log_manager.emit("real_estate", "SCAN",
+        f"Facebook RE logat-out: {q!r} -> {len(termeni)} termen(i) pe ancora "
+        f"'{ancora.slug}'")
+
+    rezultate, vazute = [], set()
+    intrate = trecute = fara_categorie = respinse = 0
+
+    for termen in termeni:
+        canonice = nucleu_search(termen, ancora.lat, ancora.lon, raza_km=65.0,
+                                 fb_slug=ancora.fb_slug) or []
+        log_manager.emit("real_estate", "INFO",
+            f"Facebook RE logat-out: '{termen}' -> {len(canonice)} anunturi")
+
+        for c in canonice:
+            intrate += 1
+            cid = c.get("category_id")
+            if cid is None:
+                # Lipsa campului nu e dovada de zgomot — pastram, dar numaram separat.
+                fara_categorie += 1
+            elif str(cid) not in categorii:
+                respinse += 1
+                continue
+
+            ext_id = str(c.get("external_id") or "")
+            if not ext_id or ext_id in vazute:
+                continue
+
+            # Aceeasi regula ca pe sesiune: fara pret nu putem aplica marginile
+            # keyword-ului, iar `_price_in_bounds` presupune `price` non-None.
+            price = c.get("price")
+            if price is None or price <= 0:
+                continue
+            if not _price_in_bounds(price, filters):
+                continue
+
+            vazute.add(ext_id)
+            trecute += 1
+            # `listed_at` pleaca STRING ISO: `_seed_from_raw` il trece prin
+            # `datetime.fromisoformat`, iar stringul poarta offsetul — asa nu se
+            # pierde caracterul UTC-aware al lui `canonic` (capcana notata la FB-1).
+            listed = c.get("listed_at")
+            rezultate.append({
+                "external_id":   ext_id,
+                "title":         c.get("title"),
+                "price":         price,
+                "currency":      c.get("currency"),
+                "location":      c.get("location"),
+                "url":           c.get("source_url"),
+                "source_url":    c.get("source_url"),
+                "image_url":     c.get("image_url") or "",
+                "listed_at":     listed.isoformat() if listed else None,
+                "platform":      "facebook_marketplace",
+            })
+
+    log_manager.emit("real_estate", "OK",
+        f"Facebook RE logat-out: {len(rezultate)} rezultate din {intrate} intrate "
+        f"({trecute} trecute, {fara_categorie} fara categorie, {respinse} respinse "
+        f"de filtrul de categorie)")
+    return rezultate
+
+
+def search_facebook_real_estate(query: str = "", filters: dict = {},
+                                session_path: Optional[str] = None) -> list:
+    """FB-AUDIT A2: `session_path` vine de la apelant (real_estate_scanner._call_scraper),
+    rezolvat PER USER cu resolve_facebook_session_path. Fara descoperire pe disc aici.
+
+    FB-4 (A4): dispecer pe `FB_MOD`. `logout` = nucleul logat-out (fara sesiune,
+    fara Playwright); ORICE altceva, inclusiv variabila absenta, = calea de sesiune
+    de pana acum, neschimbata. Implicitul ramane `sesiune` DELIBERAT: adaptorul
+    logat-out scaneaza deocamdata o singura ancora per apel, deci ar INGUSTA
+    geografic feed-ul fata de sesiune; comutarea implicitului se face la FB-6, cand
+    planificatorul aduce acoperirea pe toate ancorele. Nu exista fallback automat
+    intre cai — comutarea e manuala, prin variabila de mediu.
+    """
+    from app.services.log_manager import log_manager
+    mod = (os.getenv("FB_MOD") or "sesiune").strip().lower()
+    if mod == "logout":
+        return _search_logout(query, filters)
+    if mod != "sesiune":
+        log_manager.emit("real_estate", "WARN",
+            f"Facebook RE: FB_MOD='{mod}' necunoscut — folosesc calea de sesiune.")
+    return _search_sesiune(query, filters, session_path)
+
+
+def _search_sesiune(query: str = "", filters: dict = {},
+                    session_path: Optional[str] = None) -> list:
+    """Calea de sesiune, FB_MOD=sesiune — mutata verbatim din
+    search_facebook_real_estate la FB-4."""
+    from app.services.log_manager import log_manager
+    from app.scrapers.auto.listings.facebook_auto_scraper import _is_session_valid
+    filters = filters or {}
+
+    if not _guard_categorie(filters):
         return []
 
     if not session_path or not _is_session_valid(session_path):
