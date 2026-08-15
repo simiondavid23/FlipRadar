@@ -34,6 +34,38 @@ def _clean_watchdog():
     catalog_health_watchdog._reset_state()
 
 
+@pytest.fixture(autouse=True)
+def _fara_bnr_live(monkeypatch, tmp_path):
+    """BNR-1c — ultimul test din suita care mai atingea reteaua.
+
+    `test_flash_deal_foloseste_moneda_si_linkul_sursei` are produsul in RON si sursa in EUR,
+    deci calea de flash deal cheama `currency_service.convert()` → fetch REAL la BNR.
+    Cache-ul global cu TTL 6h l-a mascat pana la BNR-1b: primul test care convertea facea
+    fetch-ul, iar toti ceilalti gaseau cache-ul cald si pareau offline.
+
+    Mock-ul sta SUB `convert`, nu peste el: testul verifica moneda sursei (assert pe EUR),
+    deci conversia trebuie sa ramana reala — doar ratele devin fixe si deterministe.
+    """
+    from app.services import currency_service as cs
+
+    monkeypatch.setattr(cs, "_fetch_bnr_rates",
+                        lambda: {"EUR": 5.0, "USD": 4.5, "SEK": 0.44})
+    # Dupa BNR-1, un fetch reusit PERSISTA ratele pe disc: fara redirectarea caii, testul
+    # ar scrie backend/curs_bnr.json la fiecare rulare.
+    monkeypatch.setattr(cs, "_disk_path", lambda: tmp_path / "curs_bnr.json")
+
+    def _igiena():
+        cs._CACHE.clear()
+        cs._CACHE_TIMESTAMP.clear()
+        cs._LAST_FETCH_FAILURE = 0.0
+
+    # Inainte: un cache cald lasat de alt test ar ocoli fixture-ul si l-ar face sa para ca
+    # merge. Dupa: ratele fixe nu au voie sa se scurga in restul suitei.
+    _igiena()
+    yield
+    _igiena()
+
+
 @pytest.fixture
 def sent(monkeypatch):
     calls = []
