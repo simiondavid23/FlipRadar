@@ -1,0 +1,1534 @@
+{
+ "data": {
+  "marketplace_search": {
+   "feed_units": {
+    "edges": [
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27712588755089021",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27712588755089021\",\"top_level_post_id\":\"27712588755089021\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27712588755089021,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9663261995152643",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9806543646976607"
+        },
+        "creation_time": 1786636940,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "650 RON",
+         "amount_with_offset_in_currency": "14208",
+         "amount": "650.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea coltar extensibil",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27712588755089021:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27905281112460385",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27905281112460385\",\"top_level_post_id\":\"27905281112460385\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27905281112460385,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9265901336356416",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9599942780172455"
+        },
+        "creation_time": 1786607958,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "700 RON",
+         "amount_with_offset_in_currency": "15301",
+         "amount": "700.00"
+        },
+        "strikethrough_price": {
+         "formatted_amount": "800 RON",
+         "amount": "800.00"
+        },
+        "location": {
+         "reverse_geocode": {
+          "city": "Chiajna",
+          "state": "",
+          "city_page": {
+           "display_name": "Comuna Chiajna, Ilfov",
+           "id": "9245517186593307"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea Antracit, 3 locuri, extensibila, cu stofa, lada depozitare si 2 perne décor incluse\nDimensiu",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON",
+         "DOOR_PICKUP"
+        ]
+       },
+       "id": "27905281112460385:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28550712397880100",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28550712397880100\",\"top_level_post_id\":\"28550712397880100\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28550712397880100,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9995960594445490",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9103896599122293"
+        },
+        "creation_time": 1786655143,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.000 RON",
+         "amount_with_offset_in_currency": "21859",
+         "amount": "1000.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Snagov",
+          "state": "",
+          "city_page": {
+           "display_name": "Comuna Snagov, Ilfov",
+           "id": "9525331166321447"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Set canapea plus fotolii",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28550712397880100:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27515850434774556",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27515850434774556\",\"top_level_post_id\":\"27515850434774556\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27515850434774556,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9321030681265807",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9143122888901449"
+        },
+        "creation_time": 1785438567,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "3.600 RON",
+         "amount_with_offset_in_currency": "78693",
+         "amount": "3600.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Adunații-Copăceni",
+          "state": "",
+          "city_page": {
+           "display_name": "Comuna Adunații-Copăceni, Giurgiu",
+           "id": "9977826811887767"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "CANAPEA IMPORT",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27515850434774556:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28156860703939404",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28156860703939404\",\"top_level_post_id\":\"28156860703939404\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28156860703939404,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9162635243929992",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9511205266040523"
+        },
+        "creation_time": 1786608943,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.500 RON",
+         "amount_with_offset_in_currency": "32789",
+         "amount": "1500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Tunari",
+          "state": "",
+          "city_page": {
+           "display_name": "Tunari, Ilfov, Romania",
+           "id": "9418706410235135"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibila",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28156860703939404:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27809595341984441",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27809595341984441\",\"top_level_post_id\":\"27809595341984441\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27809595341984441,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9185374787549084",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9129635579819195"
+        },
+        "creation_time": 1786021186,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "800 RON",
+         "amount_with_offset_in_currency": "17487",
+         "amount": "800.00"
+        },
+        "strikethrough_price": {
+         "formatted_amount": "1.250 RON",
+         "amount": "1250.00"
+        },
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea/ Colțar extensibil MARSLEV gri închis",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27809595341984441:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "37917460204534579",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"37917460204534579\",\"top_level_post_id\":\"37917460204534579\",\"commerce_rank_obj\":\"{\\\"target_id\\\":37917460204534579,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9440065448357383",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9604233631975965"
+        },
+        "creation_time": 1786358343,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.500 RON",
+         "amount_with_offset_in_currency": "32789",
+         "amount": "1500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea Chesterfield",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "37917460204534579:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27863534123305857",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27863534123305857\",\"top_level_post_id\":\"27863534123305857\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27863534123305857,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9112041435924915",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9113318846128682"
+        },
+        "creation_time": 1786610019,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.000 RON",
+         "amount_with_offset_in_currency": "21859",
+         "amount": "1000.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Glina",
+          "state": "",
+          "city_page": {
+           "display_name": "Comuna Glina, Ilfov",
+           "id": "9567408175059934"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea catifea verde smarald",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27863534123305857:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27630062236665075",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27630062236665075\",\"top_level_post_id\":\"27630062236665075\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27630062236665075,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9121266726794297",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9916421064955816"
+        },
+        "creation_time": 1785864901,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "650 RON",
+         "amount_with_offset_in_currency": "14208",
+         "amount": "650.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Pantelimon",
+          "state": "",
+          "city_page": {
+           "display_name": "Pantelimon, Bucuresti, Romania",
+           "id": "9106643440136766"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibila noua",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27630062236665075:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28325489363724110",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28325489363724110\",\"top_level_post_id\":\"28325489363724110\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28325489363724110,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9863245925040126",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9506069101613206"
+        },
+        "creation_time": 1786536205,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "500 RON",
+         "amount_with_offset_in_currency": "10930",
+         "amount": "500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibila tip divan",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28325489363724110:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27758982447106734",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27758982447106734\",\"top_level_post_id\":\"27758982447106734\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27758982447106734,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9785707797038195",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9806055117879294"
+        },
+        "creation_time": 1786615589,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.200 RON",
+         "amount_with_offset_in_currency": "26231",
+         "amount": "1200.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Ploiești",
+          "state": "",
+          "city_page": {
+           "display_name": "Ploiești",
+           "id": "9328560256052057"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibila +fotolii!!!",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27758982447106734:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27398075106542036",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27398075106542036\",\"top_level_post_id\":\"27398075106542036\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27398075106542036,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9895639919875590",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9833957962823706"
+        },
+        "creation_time": 1785560112,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "500 RON",
+         "amount_with_offset_in_currency": "10930",
+         "amount": "500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Set canapea extensibilă, 2 fotolii si măsuță  - vintage",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27398075106542036:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "37690610023918983",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"37690610023918983\",\"top_level_post_id\":\"37690610023918983\",\"commerce_rank_obj\":\"{\\\"target_id\\\":37690610023918983,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9970841917939749",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9889526271412367"
+        },
+        "creation_time": 1786008081,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "500 RON",
+         "amount_with_offset_in_currency": "10930",
+         "amount": "500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibila",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "37690610023918983:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28042002118799862",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28042002118799862\",\"top_level_post_id\":\"28042002118799862\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28042002118799862,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9931454348088701",
+        "primary_listing_photo": {
+         "__typename": "Photo",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9111292989657780"
+        },
+        "creation_time": 1786360634,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "3.500 RON",
+         "amount_with_offset_in_currency": "76507",
+         "amount": "3500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Vând canapea noua",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28042002118799862:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28505311885719027",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28505311885719027\",\"top_level_post_id\":\"28505311885719027\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28505311885719027,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9942864215644674",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9567475050441804"
+        },
+        "creation_time": 1786610846,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.300 RON",
+         "amount_with_offset_in_currency": "28417",
+         "amount": "1300.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Pantelimon",
+          "state": "",
+          "city_page": {
+           "display_name": "Pantelimon, Bucuresti, Romania",
+           "id": "9106643440136766"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea /coltar",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28505311885719027:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28038585959069971",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28038585959069971\",\"top_level_post_id\":\"28038585959069971\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28038585959069971,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9824951822815297",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9782471950180899"
+        },
+        "creation_time": 1785598672,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1.490 RON",
+         "amount_with_offset_in_currency": "32570",
+         "amount": "1490.00"
+        },
+        "strikethrough_price": {
+         "formatted_amount": "1.790 RON",
+         "amount": "1790.00"
+        },
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibilă modulară 220 cm | Pat 140x200 | Șezlong stânga/dreapta | Ladă depozitare | Catif",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28038585959069971:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28728949400041238",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28728949400041238\",\"top_level_post_id\":\"28728949400041238\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28728949400041238,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9978370322720593",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9107259139090986"
+        },
+        "creation_time": 1786182836,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "5.000 RON",
+         "amount_with_offset_in_currency": "109295",
+         "amount": "5000.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea Chesterfield",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28728949400041238:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27887107337552030",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27887107337552030\",\"top_level_post_id\":\"27887107337552030\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27887107337552030,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9108148368427169",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9675458198112383"
+        },
+        "creation_time": 1785512839,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "150 RON",
+         "amount_with_offset_in_currency": "3279",
+         "amount": "150.00"
+        },
+        "strikethrough_price": {
+         "formatted_amount": "250 RON",
+         "amount": "250.00"
+        },
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea IKEA GLOSTAD",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27887107337552030:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "26748400411434496",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"26748400411434496\",\"top_level_post_id\":\"26748400411434496\",\"commerce_rank_obj\":\"{\\\"target_id\\\":26748400411434496,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9840833541066631",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9894375417854465"
+        },
+        "creation_time": 1774623638,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "0 RON",
+         "amount_with_offset_in_currency": "0",
+         "amount": "0.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "canapea si 2 fotolii din piele le dau gratuit pentru cine are nevoie",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "26748400411434496:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "25893294840336286",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"25893294840336286\",\"top_level_post_id\":\"25893294840336286\",\"commerce_rank_obj\":\"{\\\"target_id\\\":25893294840336286,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9382740772006444",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9136112232638811"
+        },
+        "creation_time": 1771610265,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "1 RON",
+         "amount_with_offset_in_currency": "22",
+         "amount": "1.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibila",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "25893294840336286:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28090839707214978",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28090839707214978\",\"top_level_post_id\":\"28090839707214978\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28090839707214978,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9185735829614180",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9360450144182158"
+        },
+        "creation_time": 1786611906,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "4.000 RON",
+         "amount_with_offset_in_currency": "87436",
+         "amount": "4000.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Bragadiru",
+          "state": "",
+          "city_page": {
+           "display_name": "Bragadiru, Ilfov, Romania",
+           "id": "9215872861375826"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea de sufragerie",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28090839707214978:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27781894758166283",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27781894758166283\",\"top_level_post_id\":\"27781894758166283\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27781894758166283,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9114663985098441",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9851449883482625"
+        },
+        "creation_time": 1782893022,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "350 RON",
+         "amount_with_offset_in_currency": "7651",
+         "amount": "350.00"
+        },
+        "strikethrough_price": {
+         "formatted_amount": "850 RON",
+         "amount": "850.00"
+        },
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extensibilă 200 × 140 cm – Stare foarte bună",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27781894758166283:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "28467547382849290",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"28467547382849290\",\"top_level_post_id\":\"28467547382849290\",\"commerce_rank_obj\":\"{\\\"target_id\\\":28467547382849290,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9789838454366602",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9106722185652492"
+        },
+        "creation_time": 1786622818,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "500 RON",
+         "amount_with_offset_in_currency": "10930",
+         "amount": "500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "Snagov",
+          "state": "",
+          "city_page": {
+           "display_name": "Comuna Snagov, Ilfov",
+           "id": "9525331166321447"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea extenaibila",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "28467547382849290:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     },
+     {
+      "node": {
+       "__typename": "MarketplaceFeedListingStoryObject",
+       "story_type": "POST",
+       "story_key": "27236704692671676",
+       "tracking": "{\"qid\":1,\"mf_story_key\":\"27236704692671676\",\"top_level_post_id\":\"27236704692671676\",\"commerce_rank_obj\":\"{\\\"target_id\\\":27236704692671676,\\\"target_type\\\":0,\\\"primary_position\\\":-1,\\\"ranking_signature\\\":0,\\\"ranking_region\\\":null,\\\"ranking_request_id\\\":null,\\\"commerce_channel\\\":503,\\\"value\\\":0,\\\"upsell_type\\\":null,\\\"candidate_retrieval_source_map\\\":null,\\\"candidate_write_path_source_map\\\":null,\\\"delivery_flow_path\\\":null,\\\"grouping_info\\\":null,\\\"is_prefetch\\\":false,\\\"request_fetch_reason\\\":null}\"}",
+       "listing": {
+        "__typename": "GroupCommerceProductItem",
+        "id": "9612969101640203",
+        "primary_listing_photo": {
+         "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+         "image": {
+          "uri": "https://placeholder.invalid/photo.jpg"
+         },
+         "id": "9773535984867956"
+        },
+        "creation_time": 1786641680,
+        "__isMarketplaceListingRenderable": "GroupCommerceProductItem",
+        "listing_price": {
+         "formatted_amount": "500 RON",
+         "amount_with_offset_in_currency": "10930",
+         "amount": "500.00"
+        },
+        "strikethrough_price": null,
+        "location": {
+         "reverse_geocode": {
+          "city": "București",
+          "state": "",
+          "city_page": {
+           "display_name": "București",
+           "id": "9528925177937892"
+          }
+         }
+        },
+        "is_hidden": false,
+        "is_live": true,
+        "is_pending": false,
+        "is_sold": false,
+        "is_viewer_seller": false,
+        "min_listing_price": null,
+        "max_listing_price": null,
+        "marketplace_listing_category_id": "1583634935226685",
+        "marketplace_listing_title": "Canapea",
+        "__isMarketplaceListingWithPulseAttribution": "GroupCommerceProductItem",
+        "created_with_seller_app": false,
+        "custom_title": null,
+        "custom_sub_titles_with_rendering_flags": [],
+        "origin_group": null,
+        "listing_video": null,
+        "__isMarketplaceListingWithChildListings": "GroupCommerceProductItem",
+        "parent_listing": null,
+        "__isMarketplaceListingWithDeliveryOptions": "GroupCommerceProductItem",
+        "delivery_types": [
+         "IN_PERSON"
+        ]
+       },
+       "id": "27236704692671676:IN_MEMORY_MARKETPLACE_FEED_STORY_ENT:MarketplaceFeedStoryBase:503"
+      },
+      "cursor": null,
+      "__typename": "MarketplaceSearchFeedStoriesEdge"
+     }
+    ],
+    "page_info": {
+     "end_cursor": "{\"pg\":0,\"b2c\":{\"br\":\"\",\"it\":0,\"hmsr\":false,\"tbi\":0},\"c2c\":{\"br\":\"Abq2TxRR1notISxBUGp9LbvXrKJt6lePnT66NJUmCq5fQ2MiQ2Ck_cf6RUgFfW3Ycmb7UCYxMHekFUrdktJpniCf1WfTM_Ad_e8q18dzfnIr2cPKKZtMs_to77hW28mAmnNAuJzraEAM6i5S_zJBMQqEGVLTIFI4h5pJe-iga3HCJraUNAA_qGHn_GBexLVXkMFKto0PxqvmBRmuqty41V2HAlwXiSs0C0dw0nbP1rSaaXMSrMOXA_kcPAD8wp6kGzNnHSVfc5MVD8uO0_84n5CZK0hNUaITQO2nhEXIAE2zLb6WPLxIjBmIkwu5GTHiuVi1_m3550s36jpktOPCt74Z_rD5t58__pbp66Z56dW4nAKuUDDQuK3hO8hN9hw6S5v-IO0tVTOcreOA5MwR_yONesWAqxQqHgTdFp2HZERHZ6BcuBVLu6ERFXhl26s4G0txwFmfRkyusXGLlPcI70WuwduuFa1YOokaHeUydRD0-eXY4AXnUJLIPxGOdmxMkkMH555YUncz_Gu3SNp3NLXZ\",\"it\":24,\"rpbr\":\"\",\"rphr\":false,\"rmhr\":false,\"ssi\":false,\"ssco\":0,\"sspi\":[]},\"irr\":false,\"serp_cta\":false,\"rui\":[],\"mpid\":[],\"ubp\":null,\"ncrnd\":0,\"irsr\":false,\"bmpr\":[],\"bmpeid\":[],\"nmbmp\":false,\"skrr\":false,\"ioour\":false,\"ise\":false,\"sms_cursor\":{\"page_index\":0,\"blended_ad_index\":0,\"organics_since_last_ad\":0,\"page_organic_count\":0,\"blended_organic_index\":0,\"returned_ad_index\":0,\"total_index\":0}}",
+     "has_next_page": true
+    },
+    "session_id": "d5770185-2082-4ac5-9371-826899570752",
+    "logging_unit_id": null
+   },
+   "should_log_jobs_comet_exposure": false
+  },
+  "marketplace_seo_page": null,
+  "viewer": {
+   "marketplace_settings": {
+    "current_marketplace": {
+     "__typename": "Marketplace",
+     "is_metric_base": true,
+     "id": "9100726753705064"
+    },
+    "id": "TWFya2V0cGxhY2VTZXR0aW5nczow"
+   },
+   "buy_location": {
+    "buy_location": {
+     "location": {
+      "reverse_geocode": {
+       "city": "București"
+      }
+     },
+     "id": "9528925177937892"
+    }
+   },
+   "marketplace_saved_searches": {
+    "edges": []
+   }
+  }
+ },
+ "extensions": {
+  "fulfilled_payloads": [
+   {
+    "label": "CometMarketplaceSearchContentContainerQuery$defer$CometMarketplaceSearchTopicPageLinks_topic",
+    "path": []
+   }
+  ],
+  "server_metadata": {
+   "request_start_time_ms": 1786703062230,
+   "time_at_flush_ms": 1786703062759
+  },
+  "is_final": true
+ }
+}

@@ -1,0 +1,13 @@
+{
+ "data": {
+  "marketplace_search": {
+   "feed_units": {
+    "edges": [],
+    "page_info": null,
+    "session_id": null,
+    "logging_unit_id": null
+   },
+   "should_log_jobs_comet_exposure": false
+  }
+ }
+}
