@@ -59,7 +59,7 @@ from app.models import log_entry
 from app.models import resale_fee_profile, resale_reference
 # SHOP-2a — scannerul de deal-uri Shopify: observatii globale + memoria de pret
 # care alimenteaza referinta R2 + starea de sanatate per magazin.
-from app.models import deal, shop_price_memory, shop_scan_state
+from app.models import deal, fb_scan_state, shop_price_memory, shop_scan_state
 
 # Create all database tables
 Base.metadata.create_all(bind=engine)
