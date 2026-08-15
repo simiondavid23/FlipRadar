@@ -1058,6 +1058,27 @@ browser nu porneste.
 
 ---
 
+## SHOP-3 — migrarea jucarii-vorbarete.ro la extractorul Shopify
+
+Sonda: `scripts/diagnostics/dumps/sonda_vorbarete/` (un fetch per endpoint, fara reincercari).
+
+| domeniu | verdict sonda | metoda inainte | metoda dupa | moneda |
+|---|---|---|---|---|
+| jucarii-vorbarete.ro | SHOPIFY_DESCHIS | jsonld (LOT5) | shopify | RON (/cart.js, incrucisat cu ld+json 3/3) |
+
+Masurat: `/products.json?limit=5` 200 cu `variants` (chei: available, compare_at_price,
+price ca STRING zecimal, sku, title...), `/products/<handle>.js` 200 cu `available` bool
+si pretul ca INT in bani (3040 == "30.40" pe aceeasi varianta), semnatura powered-by
+Shopify, datadome absent. `available` LIPSESTE din `/products/<handle>.json` (SHOP-1a,
+0/39) dar e prezent in enumerare si in `.js` — trei formate distincte, nu contradictie.
+
+Limite: FASHION-2 (minimul marimilor disponibile) neexercitata — handle-ul enumerat are
+o singura varianta „Default Title"; dimensiunea catalogului nemasurata (limit=5).
+
+Consecinta: domeniul intra automat in scannerul de deal-uri prin `shopify_domains()`.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

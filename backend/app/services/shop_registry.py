@@ -726,12 +726,15 @@ SHOP_REGISTRY: dict[str, dict] = {
         "category": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
-        "method": "jsonld",
+        "method": "shopify",
         "status": "validated",
-        "notes": "LOT5; platforma Shopify (compare_at_price in bani, masurat) "
-                 "validata aici prin jsonld — candidat de migrare la method "
-                 "shopify dupa o sonda de enumerare (ar intra si in scannerul de "
-                 "deal-uri)",
+        "currency": "RON",
+        "notes": "SHOP-3; migrat de la jsonld (LOT5) dupa sonda de enumerare: "
+                 "SHOPIFY_DESCHIS, /products.json cu variants, .js cu available, "
+                 "moneda RON din /cart.js incrucisata cu ld+json 3/3, datadome "
+                 "absent; regula FASHION-2 neexercitata la sonda (o singura "
+                 "varianta Default Title) — pretul in enumerare e STRING zecimal, "
+                 "in .js e INT in bani",
     },
     "nichiduta.ro": {
         "label": "Nichiduta",

@@ -1283,7 +1283,7 @@ def _shopify_extractor_for(url: str):
     """True daca domeniul e servit de extractorul generic Shopify.
 
     De ce NU prin CUSTOM_EXTRACTORS: acela mapeaza domenii la cod BESPOKE, cate o
-    functie per magazin (asos). Aici 13 domenii impart UN singur extractor condus
+    functie per magazin (asos). Aici domeniile `shopify` impart UN singur extractor condus
     de registru, iar apartenenta se decide din campul `method`, nu dintr-o lista
     paralela care ar putea diverge de el.
     """
