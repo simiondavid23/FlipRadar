@@ -59,7 +59,7 @@ from app.models import log_entry
 from app.models import resale_fee_profile, resale_reference
 # SHOP-2a — scannerul de deal-uri Shopify: observatii globale + memoria de pret
 # care alimenteaza referinta R2 + starea de sanatate per magazin.
-from app.models import deal, fb_scan_state, shop_price_memory, shop_scan_state
+from app.models import deal, fb_pool, fb_scan_state, shop_price_memory, shop_scan_state
 
 # Create all database tables
 Base.metadata.create_all(bind=engine)
@@ -287,6 +287,36 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] Deal scan setup failed: {exc}")
 
+    # DEAL-2 — scannerul de listari HTML: parcurge paginile de reduceri ale
+    # magazinelor non-Shopify. Interval mult mai larg decat la Shopify (24h),
+    # fiindca o pagina HTML e de ordinul megabaitilor, iar cele 4 domenii pilot
+    # inseamna sute de pagini per rulare. Prima rulare e amanata cu 10 minute, dupa
+    # cea de deal-uri, ca sa nu porneasca amandoua peste rafala de la boot.
+    try:
+        from app.services.listing_scanner import run_listing_scan
+
+        def _run_listing_scan():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_listing_scan(_db)
+            except Exception as exc:
+                print(f"[ListingScan] eroare: {exc}")
+            finally:
+                _db.close()
+
+        scheduler.add_job(
+            _run_listing_scan,
+            "interval",
+            hours=24,
+            id="listing_scan",
+            replace_existing=True,
+            next_run_time=datetime.now() + timedelta(minutes=10),
+        )
+        print("[Scheduler] Listing scan HTML (24h) inregistrat.")
+    except Exception as exc:
+        print(f"[Scheduler] Listing scan setup failed: {exc}")
+
     # FlipRadar — Imobiliare Monitor: scan (tick 5m, polling per keyword) + cleanup (12:30).
     try:
         from app.services.real_estate_scanner import run_real_estate_scan, RE_PLATFORMS
@@ -391,6 +421,39 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         _fb_jobs_ok = False
         print(f"[Scheduler] Setup joburi Grupuri Facebook esuat: {exc}")
+
+    # FB-6a — executorul Marketplace logat-out: consuma planificatorul pe perechi
+    # (keyword x ancora) si umple bazinul `fb_pool`. Implicit OPRIT: volumul porneste
+    # doar cand David il porneste explicit cu FB_EXECUTOR=1. Prima rulare e amanata
+    # cu 2 minute ca sa nu intre in rafala de la boot.
+    try:
+        if (os.getenv("FB_EXECUTOR") or "").strip().lower() in ("1", "true"):
+            from app.scrapers.facebook.executor import tick as _fb_tick
+
+            def _run_fb_executor():
+                from app.database import SessionLocal
+                _db = SessionLocal()
+                try:
+                    _fb_tick(_db)
+                except Exception as exc:
+                    print(f"[FBExecutor] eroare: {exc}")
+                finally:
+                    _db.close()
+
+            _fb_tick_min = int(os.getenv("FB_EXECUTOR_TICK_MIN") or 5)
+            scheduler.add_job(
+                _run_fb_executor,
+                "interval",
+                minutes=_fb_tick_min,
+                id="fb_executor",
+                replace_existing=True,
+                next_run_time=datetime.now() + timedelta(minutes=2),
+            )
+            print(f"[Scheduler] FB executor logat-out ({_fb_tick_min}m) inregistrat.")
+        else:
+            print("[Scheduler] FB executor dezactivat (FB_EXECUTOR absent).")
+    except Exception as exc:
+        print(f"[Scheduler] FB executor setup failed: {exc}")
 
     # MODIFICARE 7 — cleanup zilnic (03:30) al cozii Discord: sterge itemele
     # trimise mai vechi de 7 zile (istoricul nu trebuie pastrat la nesfarsit).

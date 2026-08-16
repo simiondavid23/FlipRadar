@@ -6,12 +6,13 @@ ramane intacta si va fi aleasa printr-un comutator manual `FB_MOD` la cablare.
 
 Public: `ANCORE` si `selecteaza` (registrul de ancore, FB-2), `Planificator` si
 `ConfigPlanificator` (planificatorul pe perechi, FB-3), `search` si `fetch_detail`
-(nucleul, FB-1).
+(nucleul, FB-1). `search_cu_stare` (FB-6a) e `search` care spune SI ce s-a intamplat
+(ok/gol/blocat/esec), nu doar ce a gasit — executorul are nevoie de distinctie.
 """
 from .anchors import ANCORE, selecteaza
-from .client import search
+from .client import search, search_cu_stare
 from .detail import fetch_detail
 from .planner import ConfigPlanificator, Planificator
 
 __all__ = ["ANCORE", "ConfigPlanificator", "Planificator", "selecteaza",
-           "search", "fetch_detail"]
+           "search", "search_cu_stare", "fetch_detail"]

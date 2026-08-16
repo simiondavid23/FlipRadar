@@ -115,6 +115,20 @@ def cauta(client, boot, variabile: dict) -> Optional[dict]:
     None e SEMNALUL pentru client sa invalideze bootstrap-ul si sa reincerce o
     singura data (treapta 2 din scara): un `errors` la radacina inseamna aproape
     intotdeauna ca sablonul salvat s-a invechit fata de ce serveste Facebook acum.
+
+    Invelis subtire peste `cauta_cu_cod`, pastrat cu semnatura si comportamentul
+    neschimbate — treapta 2 din client depinde de ele.
+    """
+    return cauta_cu_cod(client, boot, variabile)[0]
+
+
+def cauta_cu_cod(client, boot, variabile: dict) -> tuple:
+    """Ca `cauta`, dar intoarce si CODUL erorii de resolver: (json|None, cod|None).
+
+    Codul distinge lucruri care arata la fel de la distanta: 1675004 ("Rate limit
+    exceeded", masurat la FB-4a pe doc_id-ul de browse) e un refuz de ACCES, pe cand
+    1675012 ("missing_required_variable_value") inseamna sablon invechit. Primul nu
+    se repara reincercand; al doilea da. Pana acum codul se pierdea in `cauta`.
     """
     date = {
         "av": "0", "__user": "0", "__a": "1", "__req": "1", "dpr": "1",
@@ -137,25 +151,28 @@ def cauta(client, boot, variabile: dict) -> Optional[dict]:
     if status != 200 or not corp:
         log_manager.emit("radar", "WARN",
             f"Facebook GraphQL: HTTP {status} ({len(corp or '')} octeti)")
-        return None
+        return None, None
 
     payloads = _payloads(corp)
     if not payloads:
         log_manager.emit("radar", "WARN",
             "Facebook GraphQL: raspuns neparsabil ca JSON")
-        return None
+        return None, None
 
     for p in payloads:
         erori = p.get("errors")
         if erori:
-            mesaj = ""
+            mesaj, cod = "", None
             if isinstance(erori, list) and erori and isinstance(erori[0], dict):
                 mesaj = str(erori[0].get("message") or "")[:120]
+                brut = erori[0].get("code")
+                cod = brut if isinstance(brut, int) else None
             log_manager.emit("radar", "WARN",
-                f"Facebook GraphQL: eroare de resolver — {mesaj or 'fara mesaj'}")
-            return None
+                f"Facebook GraphQL: eroare de resolver — {mesaj or 'fara mesaj'}"
+                + (f" (code {cod})" if cod is not None else ""))
+            return None, cod
 
-    return payloads[0] if len(payloads) == 1 else {"payloads": payloads}
+    return (payloads[0] if len(payloads) == 1 else {"payloads": payloads}), None
 
 
 def extrage_anunturi(json_raspuns: dict) -> list[dict]:

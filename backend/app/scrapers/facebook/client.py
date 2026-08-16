@@ -23,6 +23,7 @@ n-ar da eroare, doar ar ascunde de unde vine mesajul.
 import os
 import random
 import time
+from dataclasses import dataclass
 from typing import Optional
 
 from curl_cffi import requests as curl_requests
@@ -35,7 +36,7 @@ from app.services.radar.base_scraper import (
 from app.utils.http_profile import impersonate_for
 
 from .bootstrap import incarca_sau_bootstrapeaza, invalideaza
-from .graphql import muta, cauta, extrage_anunturi
+from .graphql import muta, cauta_cu_cod, extrage_anunturi
 from .parse import canonic
 from .ssr import cauta_ssr
 
@@ -117,6 +118,12 @@ class FacebookClient:
             return (r.text or ""), status
         return "", None
 
+    @property
+    def blocat(self) -> bool:
+        """Zavorul de 403/429, expus public: e dovada DURA de refuz, iar executorul
+        (FB-6a) trebuie sa poata deosebi „blocat" de „n-am gasit nimic"."""
+        return self._blocat
+
     def get(self, url: str) -> tuple[str, Optional[int]]:
         return self._cere("get", url)
 
@@ -169,27 +176,51 @@ def _canonice(obiecte: list) -> list[dict]:
     return out
 
 
-def search(query: str, lat: float, lon: float, *, raza_km: float = 65,
-           fb_slug: Optional[str] = None, client: Optional[FacebookClient] = None
-           ) -> list[dict]:
-    """Anunturi CANONICE pentru o ancora geografica. Lista goala = nimic obtinut.
+COD_REFUZ_ACCES = 1675004      # "Rate limit exceeded", masurat la FB-4a pe browse
 
-    `client` e o cusatura de test (injecteaza un dublu cu get/post); in productie
-    ramane None si se creeaza unul implicit.
+
+@dataclass(frozen=True)
+class StareCautare:
+    """Ce s-a intamplat la o cautare, nu doar ce a gasit.
+
+    `search` intoarce doar lista, deci un rezultat gol e ambiguu: loc chiar gol,
+    sablon invechit sau refuz de acces? Executorul (FB-6a) trebuie sa deosebeasca —
+    la `blocat` opreste tot tick-ul, la `gol` merge mai departe linistit.
     """
+    eticheta: str                  # ok | gol | blocat | esec
+    cod: Optional[int] = None      # codul de resolver, daca a existat
+    trepte_incercate: int = 0
+
+
+def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
+                   fb_slug: Optional[str] = None,
+                   client: Optional[FacebookClient] = None) -> tuple:
+    """Scara de robustete, cu verdict. Intoarce (canonice, StareCautare)."""
     cl = client if client is not None else _client_implicit()
+    cod = None
+    trepte = 0
+
+    def _verdict(lista, eticheta_reusita):
+        e = eticheta_reusita if lista else "gol"
+        if _pare_blocat(cl, cod):
+            e = "blocat"
+        return lista, StareCautare(e, cod, trepte)
 
     # ── treapta 1: GraphQL cu bootstrap din cache ────────────────────────────
+    trepte = 1
     boot = incarca_sau_bootstrapeaza(cl)
     obiecte = None
     if boot is not None:
         variabile = muta(boot.variables, query=query, lat=lat, lon=lon, raza_km=raza_km)
         if variabile is not None:
-            obiecte = _obiecte_sau_none(cauta(cl, boot, variabile))
+            raspuns, cod_nou = cauta_cu_cod(cl, boot, variabile)
+            cod = cod_nou if cod_nou is not None else cod
+            obiecte = _obiecte_sau_none(raspuns)
     if obiecte is not None:
-        return _canonice(obiecte)
+        return _verdict(_canonice(obiecte), "ok")
 
     # ── treapta 2: sablon invechit -> re-bootstrap fortat, O SINGURA DATA ─────
+    trepte = 2
     log_manager.emit("radar", "WARN",
         "Facebook treapta 1->2: GraphQL cu sablonul din cache a esuat, "
         "reimprospatez bootstrap-ul si reincerc")
@@ -198,24 +229,59 @@ def search(query: str, lat: float, lon: float, *, raza_km: float = 65,
     if boot is not None:
         variabile = muta(boot.variables, query=query, lat=lat, lon=lon, raza_km=raza_km)
         if variabile is not None:
-            obiecte = _obiecte_sau_none(cauta(cl, boot, variabile))
+            raspuns, cod_nou = cauta_cu_cod(cl, boot, variabile)
+            cod = cod_nou if cod_nou is not None else cod
+            obiecte = _obiecte_sau_none(raspuns)
     if obiecte is not None:
-        return _canonice(obiecte)
+        return _verdict(_canonice(obiecte), "ok")
 
     # ── treapta 3: SSR, doar cu slug validat ─────────────────────────────────
     if fb_slug:
+        trepte = 3
         log_manager.emit("radar", "WARN",
             f"Facebook treapta 2->3: GraphQL a esuat si dupa re-bootstrap, "
             f"incerc SSR pe slug-ul '{fb_slug}'")
         brute = cauta_ssr(cl, fb_slug, query)
         if brute:
-            return _canonice(brute)
+            return _verdict(_canonice(brute), "ok")
         motiv = f"SSR pe '{fb_slug}' nu a intors anunturi"
     else:
         motiv = "fara fb_slug validat, calea SSR nu se poate incerca"
 
     # ── treapta 4: nimic ─────────────────────────────────────────────────────
+    trepte = 4
     log_manager.emit("radar", "WARN",
         f"Facebook treapta 3->4: {motiv} — nicio cale nu a functionat")
     report_outcome("facebook", Outcome.BLOCKED)
-    return []
+    return [], StareCautare("blocat" if _pare_blocat(cl, cod) else "esec", cod, trepte)
+
+
+def _pare_blocat(cl, cod) -> bool:
+    """Dovada DURA de refuz: zavorul de 403/429 sau codul de refuz de acces.
+
+    Un sablon invechit (1675012) NU intra aici — acela se repara singur la treapta 2.
+    """
+    return bool(getattr(cl, "blocat", False)) or cod == COD_REFUZ_ACCES
+
+
+def search(query: str, lat: float, lon: float, *, raza_km: float = 65,
+           fb_slug: Optional[str] = None, client: Optional[FacebookClient] = None
+           ) -> list[dict]:
+    """Anunturi CANONICE pentru o ancora geografica. Lista goala = nimic obtinut.
+
+    `client` e o cusatura de test (injecteaza un dublu cu get/post); in productie
+    ramane None si se creeaza unul implicit.
+
+    Semnatura si comportamentul sunt NESCHIMBATE de la FB-1; cine are nevoie si de
+    verdict foloseste `search_cu_stare`.
+    """
+    return _search_intern(query, lat, lon, raza_km=raza_km, fb_slug=fb_slug,
+                          client=client)[0]
+
+
+def search_cu_stare(query: str, lat: float, lon: float, *, raza_km: float = 65,
+                    fb_slug: Optional[str] = None,
+                    client: Optional[FacebookClient] = None) -> tuple:
+    """Ca `search`, dar intoarce (canonice, StareCautare)."""
+    return _search_intern(query, lat, lon, raza_km=raza_km, fb_slug=fb_slug,
+                          client=client)

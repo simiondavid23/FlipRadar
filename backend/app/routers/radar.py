@@ -1343,6 +1343,19 @@ def facebook_status(
     return {"valid": valid, "status": status, "age_hours": age_hours}
 
 
+@router.get("/facebook/planner-status")
+def facebook_planner_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """FB-6a — starea executorului logat-out: frana, perechile, bazinul, ultimul tick.
+
+    Importul e LENES ca routerul sa nu traga nucleul Facebook la importul aplicatiei.
+    """
+    from app.scrapers.facebook.executor import stare_executor
+    return stare_executor(db)
+
+
 @router.post("/facebook/connect")
 def facebook_connect(
     db: Session = Depends(get_db),
