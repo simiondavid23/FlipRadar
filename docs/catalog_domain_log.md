@@ -1079,6 +1079,63 @@ Consecinta: domeniul intra automat in scannerul de deal-uri prin `shopify_domain
 
 ---
 
+## DEAL-2 — scannerul de listari HTML pe 4 domenii pilot
+
+Sonde: `scripts/diagnostics/dumps_lst1/` (LST-1, 20 de cereri) si `dumps_lst1b/`
+(LST-1b, 4 cereri). Toti selectorii din descriptorii de listare sunt MASURATI pe
+aceste dump-uri; fixture-urile de test sunt fragmente decupate din ele.
+
+A treia sursa a feed-ului de deal-uri, dupa scannerul Shopify (SHOP-2a) si
+scaderile de la refresh (DEAL-1). Magazinele non-Shopify n-au endpoint de
+enumerare, deci singura cale de a le scana integral e parcurgerea propriilor
+pagini de reduceri. Apartenenta la scanner se decide din prezenta cheii `listing`
+in registru, prin `listing_domains()` — cod generic, descriptori declarativi.
+
+| domeniu | listare | paginare | produse/pag | pagini masurate | pret platit | pret taiat | referinta |
+|---|---|---|---|---|---|---|---|
+| otter.ro | /reduceri | `?p={n}` | 24 | 197 | `data-price-amount` (finalPrice) | `data-price-amount` (oldPrice) | PRP |
+| caseking.de | /en/sale | `?page={n}` | 40 | 34 (1.338 produse) | `content` in `span.sales .value` | `content` in `span.sales-original .value` | nemarcat |
+| noriel.ro | /promotii | `?p={n}` | 60 | 115 | `.special-price .price` | `.old-price .price` | nemarcat |
+| bergfreunde.eu | /outlet/ | `/outlet/{n}/` | 72 | 190 (13.638 produse) | `[data-codecept='currentPrice']` | `[data-codecept='strokePrice']` | PRP |
+
+**Conditia de oprire NU e statusul HTTP.** Toate cele patru raspund 200 dincolo de
+ultima pagina, dar diferit: otter si caseking servesc grila GOALA, noriel CLAMEAZA
+la pagina 1 (acelasi set de 60 de linkuri), bergfreunde CLAMEAZA la ultima pagina
+(30 de carduri). Un scanner care s-ar opri doar la „zero carduri" ar bucla la
+infinit pe doua din patru. De aceea oprirea e compusa: grila goala SAU toate
+linkurile paginii deja vazute SAU `max_pages` (plasa de siguranta).
+
+**Pretul taiat nu e minim pe 30 de zile.** La otter e PRP explicit („PRP: 379,00 lei",
+„Salvezi 82 lei fata de pretul recomandat de producator"); la bergfreunde e `uvp`,
+etichetat „Original price" — exista si un camp „Lowest price in the last 30 days",
+dar e `!hidden`, gol si in spatele unui A/B test oprit. La caseking si noriel nu
+exista nicio eticheta legala. `reference_kind` din descriptor consemneaza asta, iar
+codul nu pretinde nicaieri „minim 30 de zile".
+
+**Capcane de potrivire, masurate:** cardul se potriveste pe SUBSET de clase — noriel
+eticheteaza fiecare container cu id-ul produsului (`div.product-item.freegifts-223986`),
+deci potrivirea pe lista completa da zero carduri. Tot la noriel, `<a>`-ul fara clasa
+inveleste CONTINUTUL cardului (h2 + price-box inauntru), dar containerul ii ramane
+parinte — linkul e deci descendent, nu stramos.
+
+**Anti-avalansa Discord:** la primul scan reusit al unui domeniu nu se trimite nicio
+notificare. R1 e gratuit pe calea asta (orice card cu pret taiat califica instant),
+deci primul scan al lui otter singur ar declansa sute de alerte pentru produse aflate
+la reducere de saptamani. De la al doilea scan alerteaza doar deal-urile NOI, plafonat
+la 10 per domeniu per scan; restul intra tacut in feed.
+
+**Retrogradat:** booztlet.com — listarea reala (`/eu/en/women/view-all`, 80 de carduri
+server-renderate, 57.129 produse) nu expune NICIO paginare in HTML brut (infinite
+scroll). Revine pe un val cu API, nu pe calea asta.
+
+**Sortare (masurata, NEfolosita inca):** doar noriel expune sortare dupa reducere
+(`product_list_order=discount.percent`). otter are acelasi toolbar Magento fara
+optiunea de reducere, caseking are `?srule=` cu 6 valori fara reducere (dar si
+`start`/`sz`, deci dimensiunea paginii ar putea creste peste 40), bergfreunde n-are
+marcaj de sortare. Materie prima pentru o runda de tuning, nu pentru scanul curent.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

@@ -19,7 +19,7 @@ from app.models.shop_scan_state import ShopScanState
 from app.models.tracked_product import TrackedProduct
 from app.models.user import User
 from app.services.currency_service import convert
-from app.services.shop_registry import SHOP_REGISTRY, shopify_domains
+from app.services.shop_registry import SHOP_REGISTRY, listing_domains, shopify_domains
 from app.utils.auth import get_current_user
 
 # Prefixul /api/deals e aplicat la include_router in main.py.
@@ -125,8 +125,13 @@ def deals_shops(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Universul de deal-uri: intrarile de registru cu `method == "shopify"`, cu
-    starea ultimului scan atasata acolo unde exista.
+    """Universul de deal-uri: magazinele enumerabile Shopify REUNITE cu cele care
+    au descriptor de listare (DEAL-2), cu starea ultimului scan atasata acolo unde
+    exista.
+
+    Reuniune, nu concatenare: cele doua capabilitati sunt independente, deci un
+    domeniu ar putea intr-o zi sa le aiba pe amandoua fara sa apara de doua ori.
+    Starile vin oricum din ShopScanState, care e comun ambelor scannere.
 
     Alimenteaza filtrele, banda de sanatate si checklist-ul din setari. E si
     samanta viitorului endpoint general /shops.
@@ -137,13 +142,17 @@ def deals_shops(
     stari = {s.shop_domain: s for s in db.query(ShopScanState).all()}
 
     iesire = []
-    for domain in sorted(shopify_domains()):
+    for domain in sorted(shopify_domains() | listing_domains()):
         meta = SHOP_REGISTRY.get(domain) or {}
         rand = {
             "domain": domain,
             "label": meta.get("label") or domain,
             "category": meta.get("category"),
-            "currency": meta.get("currency"),
+            # Domeniile de listare n-au `currency` la nivelul intrarii — moneda lor
+            # e o proprietate a LISTARII (masurata acolo), nu a extractorului de
+            # produs, care la `jsonld` o citeste din pagina. Fara rezerva asta,
+            # cele 4 randuri noi ar aparea cu moneda goala in panoul de sanatate.
+            "currency": meta.get("currency") or (meta.get("listing") or {}).get("currency"),
             "disabled": domain in dezactivate,
             "last_scan_at": None, "last_status": None,
             "products_seen": None, "deals_active": None,
@@ -186,6 +195,38 @@ def scan_now(
             run_deal_scan(_db)
         except Exception as exc:                        # noqa: BLE001
             print(f"[DealScan manual] eroare: {exc}")
+        finally:
+            _db.close()
+
+    threading.Thread(target=_background_scan, daemon=True).start()
+    return {"started": True}
+
+
+@router.post("/scan-listings")
+def scan_listings_now(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """DEAL-2 — porneste imediat scanarea listarilor HTML, fara jobul de 24h.
+
+    Acelasi tipar ca `/scan`, dar pe lock-ul PROPRIU al scannerului de listari:
+    cele doua scaneaza domenii disjuncte, deci pot merge in paralel, iar 409-ul de
+    aici raspunde doar pentru o scanare de listari deja in curs.
+    """
+    from app.services.listing_scanner import is_listing_scan_running, run_listing_scan
+
+    if is_listing_scan_running():
+        raise HTTPException(
+            status_code=409,
+            detail="O scanare de listări este deja în curs. Așteaptă să se termine.")
+
+    def _background_scan():
+        from app.database import SessionLocal
+        _db = SessionLocal()
+        try:
+            run_listing_scan(_db)
+        except Exception as exc:                        # noqa: BLE001
+            print(f"[ListingScan manual] eroare: {exc}")
         finally:
             _db.close()
 

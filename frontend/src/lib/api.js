@@ -373,6 +373,9 @@ export const dealsAPI = {
   setState: (id, state) => api.patch(`/api/deals/${id}`, { state }),
   promote: (id) => api.post(`/api/deals/${id}/promote`),
   scanNow: () => api.post("/api/deals/scan"),
+  // DEAL-2 — scanul listarilor HTML are lock propriu in backend, deci e un
+  // endpoint separat, nu un parametru al celui de sus.
+  scanListingsNow: () => api.post("/api/deals/scan-listings"),
 };
 
 // PKG-UPD — versiune aplicatie + verificare de actualizare (GitHub Releases).

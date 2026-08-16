@@ -17,7 +17,7 @@ from app.models.radar_settings import RadarSettings
 from app.models.shop_price_memory import ShopPriceMemory
 from app.models.user import User
 from app.services import deal_scanner
-from app.services.shop_registry import shopify_domains
+from app.services.shop_registry import listing_domains, shopify_domains
 from app.utils import alert_checker
 
 DOM = "asphaltgold.com"          # intrare reala in registru, currency EUR
@@ -379,7 +379,10 @@ def test_stats_si_shops(auth_client):
     assert stats["last_scan_at"] is not None
 
     shops = {s["domain"]: s for s in auth_client.get("/api/deals/shops").json()}
-    assert shops.keys() == shopify_domains(), "universul vine din registru"
+    # DEAL-2: universul e REUNIUNEA celor doua capabilitati — enumerarea Shopify si
+    # descriptorii de listare. Starile vin din acelasi ShopScanState pentru amandoua.
+    assert shops.keys() == shopify_domains() | listing_domains(), \
+        "universul vine din registru"
     assert shops["patta.nl"]["disabled"] is True
     assert shops[DOM]["disabled"] is False
     assert shops[DOM]["label"] and shops[DOM]["currency"] == "EUR"

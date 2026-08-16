@@ -529,6 +529,24 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "LOT2b; /en localizat lingvistic, moneda EUR; sku/mpn prezente pe "
                  "pagina de produs",
+        # DEAL-2 — masurat in LST-1: 34 de pagini a 40 de produse (1.338 Results).
+        # Oprirea reala e grila GOALA pe 200, nu 404; `max_pages` e doar plasa.
+        "listing": {
+            "url": "https://www.caseking.de/en/sale",
+            "page_url_template": "https://www.caseking.de/en/sale?page={n}",
+            "max_pages": 40,
+            "currency": "EUR",
+            "card": "div.product-tile",
+            "link": "a[href]",
+            "title_from": "link_aria_label",
+            # Atributul `content` poarta zecimala cu PUNCT ("619.90"), deci nu
+            # trecem prin textul vizibil ("619,70 €") si prin parserul de virgula.
+            "price_attr": ("span.sales .value", "content"),
+            "compare_attr": ("span.sales-original .value", "content"),
+            "price_parse": "attr_float",
+            "stock_attr": ("[data-available]", "data-available", "in-stock"),
+            "reference_kind": "nemarcat",
+        },
     },
     "bergfreunde.eu": {
         "label": "Bergfreunde",
@@ -539,6 +557,32 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "LOT2b; OXID; ProductGroup cu variesBy size+color — primul client "
                  "al etichetei compuse",
+        # DEAL-2 — masurat in LST-1/1b: 190 de pagini a 72 de produse (13.638),
+        # paginare pe CALE, iar pagina 500 CLAMEAZA la ultima pagina (30 de carduri,
+        # zero overlap) — deci oprirea cere regula de linkuri deja vazute.
+        "listing": {
+            "url": "https://www.bergfreunde.eu/outlet/",
+            "page_url_template": "https://www.bergfreunde.eu/outlet/{n}/",
+            "max_pages": 200,
+            "currency": "EUR",
+            "card": "li.product-item",
+            "link": "a.product-link",
+            # NU `link_aria_label`: pe bergfreunde `aria-label` e o FRAZA de
+            # accesibilitate care include si preturile ("Brand: …; Original price:
+            # € 79,95; Price: € 47,97; The product is reduced by 40%; …"), deci ar
+            # umple feed-ul cu titluri de 250 de caractere. `div.product-title` sta
+            # in acelasi dump si da "Women's Flower Boots Tee Merino shirt".
+            "title": "div.product-title",
+            "price_text": "[data-codecept='currentPrice']",
+            # Rezerva documentata: aceeasi valoare sta si pe `span.uvp`, clasa pe
+            # care CSS-ul o taie (`.product-price .uvp{text-decoration:line-through}`).
+            "compare_text": "[data-codecept='strokePrice']",
+            "price_parse": "eu_comma",
+            # LST-1b: exista un camp "Lowest price in the last 30 days" DAR e
+            # `!hidden`, gol si in spatele unui A/B test oprit. Taiatul e `uvp`,
+            # etichetat "Original price" — deci referinta e PRP, nu minim 30 de zile.
+            "reference_kind": "prp",
+        },
     },
     "alternate.de": {
         "label": "Alternate",
@@ -587,6 +631,24 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "LOT3b; ProductGroup cu hasVariant si variesBy=[size] — "
                  "marimile ies deja ca variante",
+        # DEAL-2 — masurat in LST-1: Magento, 197 de pagini a 24 de produse.
+        # Pagina 500 da 200 cu grila GOALA.
+        "listing": {
+            "url": "https://www.otter.ro/reduceri",
+            "page_url_template": "https://www.otter.ro/reduceri?p={n}",
+            "max_pages": 210,
+            "currency": "RON",
+            "card": "li.product-item",
+            "link": "a.product-item-photo",
+            "title": "h3.product-item-name",
+            # Magento expune pretul numeric in atribut, deci nu parsam "98,00 lei".
+            "price_attr": ("[data-price-type='finalPrice']", "data-price-amount"),
+            "compare_attr": ("[data-price-type='oldPrice']", "data-price-amount"),
+            "price_parse": "attr_float",
+            # Omnibus LST-1, verbatim din dump: "PRP: 379,00 lei" si "Salvezi 82 lei
+            # fata de pretul recomandat de producator".
+            "reference_kind": "prp",
+        },
     },
     "spartoo.ro": {
         "label": "Spartoo",
@@ -708,6 +770,28 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "LOT5; ld+json poarta DOAR pretul platit — referinta taiata sta "
                  "in afara datelor structurate (special-price/old-price in DOM)",
+        # DEAL-2 — masurat in LST-1/1b: Magento, 115 pagini a 60 de produse.
+        # Pagina 500 CLAMEAZA la pagina 1 (acelasi set de 60 de linkuri), deci
+        # fara regula de linkuri deja vazute scannerul ar bucla la infinit.
+        "listing": {
+            "url": "https://noriel.ro/promotii",
+            "page_url_template": "https://noriel.ro/promotii?p={n}",
+            "max_pages": 125,
+            "currency": "RON",
+            # SUBSET de clase: containerul real e `div.product-item.freegifts-<id>`,
+            # cu token per-produs. Potrivirea pe lista completa ar da zero carduri.
+            "card": "div.product-item",
+            # `<a>` fara clasa, DESCENDENT al cardului: inveleste CONTINUTUL
+            # (h2 + price-box sunt inauntrul lui), dar containerul `div.product-item`
+            # ii ramane parinte. LST-1 descrisese asta ca "inveleste cardul", de unde
+            # ipoteza `@parent_a` din briefing — masuratoarea pe dump o infirma.
+            "link": "a[href]",
+            "title": "h2.product-item-name",
+            "price_text": ".special-price .price",
+            "compare_text": ".old-price .price",
+            "price_parse": "eu_comma",
+            "reference_kind": "nemarcat",
+        },
     },
     "regatuljocurilor.ro": {
         "label": "Regatul Jocurilor",
@@ -807,6 +891,28 @@ def shopify_domains() -> set[str]:
     """
     return {domain for domain, meta in SHOP_REGISTRY.items()
             if meta.get("method") == "shopify"}
+
+
+def listing_domains() -> set[str]:
+    """Domeniile cu descriptor de listare (DEAL-2), pentru scannerul de reduceri.
+
+    Apartenenta se decide din PREZENTA cheii `listing`, nu dintr-o lista paralela
+    si nici din `method`: un magazin poate fi citit prin `jsonld` la nivel de produs
+    si, separat, parcurs pe paginile lui de reduceri — cele doua capabilitati sunt
+    independente, exact ca la `shopify_domains`.
+    """
+    return {domain for domain, meta in SHOP_REGISTRY.items() if "listing" in meta}
+
+
+def listing_descriptor(domain: str) -> dict | None:
+    """Descriptorul de listare al unui domeniu, copiat adanc.
+
+    Copia e obligatorie din acelasi motiv ca la `domain_overrides`: payload-ul e un
+    dict mutabil, iar scannerul il plimba prin functii — o referinta ar lasa un bug
+    de acolo sa rescrie registrul pentru tot procesul.
+    """
+    meta = SHOP_REGISTRY.get(domain) or {}
+    return copy.deepcopy(meta["listing"]) if "listing" in meta else None
 
 
 def browser_domains() -> set[str]:

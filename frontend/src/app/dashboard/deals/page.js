@@ -74,6 +74,10 @@ export default function DealsPage() {
   const [actionMessage, setActionMessage] = useState("");
   const [promoting, setPromoting] = useState(null);
   const [scanning, setScanning] = useState(false);
+  // Stare separata de `scanning`: cele doua scanari au lock-uri diferite in
+  // backend si pot rula in paralel, deci un singur flag ar bloca gresit butonul
+  // celalalt.
+  const [scanningListings, setScanningListings] = useState(false);
 
   const [tab, setTab] = useState("active");
   const [shopFilter, setShopFilter] = useState("");
@@ -178,6 +182,23 @@ export default function DealsPage() {
     }
   };
 
+  // DEAL-2 — acelasi tratament ca mai sus, pe endpoint-ul de listari. Scanul de
+  // listari e mai lung (sute de pagini HTML), dar conventia de reimprospatare
+  // ramane aceeasi: starea per magazin incepe sa se miste devreme.
+  const handleScanListings = async () => {
+    setScanningListings(true);
+    setActionMessage("");
+    try {
+      await dealsAPI.scanListingsNow();
+      setActionMessage("Scanare a listărilor pornită în fundal.");
+      setTimeout(() => { loadDeals(); loadSide(); setScanningListings(false); }, 15000);
+    } catch (err) {
+      // 409 = o scanare de listari e deja in curs; mesajul vine din backend.
+      setActionMessage(err.response?.data?.detail || "Nu am putut porni scanarea listărilor.");
+      setScanningListings(false);
+    }
+  };
+
   const handleOpen = (deal) => {
     if (deal.state === "nou") {
       patch(deal.id, { state: "vazut" });
@@ -218,12 +239,14 @@ export default function DealsPage() {
     <div>
       <TopBar path={["CATALOG", "DEAL-URI"]}>
         <ScanNowButton onScan={handleScanNow} scanning={scanning} />
+        <ScanNowButton onScan={handleScanListings} scanning={scanningListings}
+                       label="Scanează listările" />
       </TopBar>
 
       <PageHeading
         icon={Percent}
         title="Deal-uri"
-        subtitle={<>Chilipiruri găsite automat în magazinele Shopify — <Hl>{visibleDeals.length}</Hl> în vizualizare.</>}
+        subtitle={<>Chilipiruri găsite automat în magazinele urmărite — <Hl>{visibleDeals.length}</Hl> în vizualizare.</>}
         meta={stats?.last_scan_at ? `ULTIMUL SCAN · ${timeAgo(stats.last_scan_at)}` : null}
       />
 
