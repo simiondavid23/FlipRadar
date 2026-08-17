@@ -219,6 +219,77 @@ def test_oprire_pe_grila_goala(scan):
     assert len(scan.cereri) == 2, "a doua pagina (goala) opreste bucla"
 
 
+def _pagina_cu_produs_repetat():
+    """(p1, p2) — p2 repeta PRIMUL produs al lui p1 si aduce doua produse noi.
+
+    SINTETICA, marcata ca atare: cardurile sunt cele reale din fixture-ul otter,
+    doar href-urile ultimelor doua sunt rescrise ca sa fie produse distincte.
+    Fenomenul reprodus e insa real, observat in G1-2 pe scanul complet tezyo (69 de
+    pagini): catalogul se re-sorteaza intre cereri, iar un produs de la granita unei
+    pagini aluneca pe urmatoarea si e vazut de DOUA ori in acelasi scan.
+
+    p2 NU e submultime a lui p1 (are linkuri noi), deci conditia de oprire
+    `linkuri_pagina <= linkuri_vazute` nu se activeaza si bucla chiar proceseaza
+    produsul repetat a doua oara — exact drumul pe care apare dublura.
+    """
+    from bs4 import BeautifulSoup
+
+    supa = BeautifulSoup(_fixture("otter.ro"), "html.parser")
+    carduri = supa.select("li.product-item")
+    repetat = str(carduri[0])                      # verbatim: acelasi external_id
+    noi = []
+    for i, card in enumerate(carduri[1:], start=1):
+        copie = BeautifulSoup(str(card), "html.parser")
+        for a in copie.find_all("a", href=True):
+            a["href"] = a["href"].replace("https://www.otter.ro/",
+                                          f"https://www.otter.ro/p2-{i}-")
+        noi.append(str(copie))
+    p2 = '<html><body><div id="grid">' + repetat + "".join(noi) + "</div></body></html>"
+    return _fixture("otter.ro"), p2
+
+
+def test_produs_repetat_intre_pagini_nu_dubleaza_memoria(scan):
+    """SCAN-1 — regresie: un `external_id` vazut a doua oara in ACELASI scan.
+
+    Pe codul de dinainte de fix scanul cadea cu
+    `IntegrityError: UNIQUE constraint failed: shop_price_memory.shop_domain,
+    shop_price_memory.external_id`: `SessionLocal` are `autoflush=False`, deci randul
+    adaugat cu `db.add(ShopPriceMemory(...))` NU era vizibil interogarii de la a doua
+    aparitie, iar codul mai adauga unul. Caderea nu iese la suprafata ca exceptie —
+    `run_listing_scan` o prinde per domeniu si o scrie ca `state="error"` — de aceea
+    asertia e pe rezumat + numarul de randuri, nu pe `pytest.raises`.
+
+    `compare_attr` tinteste DELIBERAT un selector inexistent, si asta e miezul
+    reproducerii: fara pret taiat niciun produs nu califica drept deal, deci nu se
+    executa `db.add(deal)` + `db.flush()`. Acel flush persista TOATE obiectele
+    pending, inclusiv memoria de pret, si de aceea masca bugul — cu el, a doua
+    aparitie isi gaseste randul si totul pare in regula. Fereastra periculoasa e
+    exact secventa de produse NECALIFICATE dintre cele doua aparitii, adica situatia
+    normala pe paginile tarzii ale unei listari mari, unde dealurile sunt deja in
+    baza si nu se mai creeaza randuri noi. Asta explica si de ce cei 4 piloti au
+    scapat empiric, desi codul lor e identic.
+    """
+    p1, p2 = _pagina_cu_produs_repetat()
+    descriptor = _descriptor_test()
+    descriptor["compare_attr"] = ("[data-price-type='nuExista']", "data-price-amount")
+
+    rezumat = scan([p1, p2, "<html><body></body></html>"], descriptor=descriptor)
+
+    assert rezumat["erori"] == 0, "produsul repetat nu are voie sa pice scanul"
+
+    db = SessionLocal()
+    try:
+        randuri = (db.query(ShopPriceMemory)
+                   .filter(ShopPriceMemory.shop_domain == DOM).all())
+    finally:
+        db.close()
+
+    externe = [r.external_id for r in randuri]
+    assert len(externe) == len(set(externe)), "un external_id = un singur rand"
+    # 3 din p1 + 2 noi din p2; al treilea card al lui p2 e produsul repetat.
+    assert len(randuri) == 5
+
+
 def test_oprire_pe_pagina_repetata(scan):
     """noriel clameaza la pagina 1, bergfreunde la ultima: statusul ramane 200 si
     grila e PLINA, deci fara regula linkurilor deja vazute bucla ar merge la

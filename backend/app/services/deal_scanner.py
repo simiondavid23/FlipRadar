@@ -217,8 +217,18 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
             if citit is None:
                 continue  # epuizat: nici deal, nici memorie
             pret, compare_at, marimi = citit
-            produse_vazute += 1
             external_id = str(produs["id"])
+            # SCAN-1, simetric cu listing_scanner: acelasi produs vazut de doua ori
+            # in ACELASI scan se sare de tot. Enumerarea Shopify e paginata, deci un
+            # produs poate reaparea daca magazinul se modifica intre cereri; a doua
+            # aparitie ar reintra in blocul de memorie, iar cu `autoflush=False`
+            # randul adaugat la prima nu e inca vizibil interogarii — s-ar adauga al
+            # doilea si commit-ul ar cadea pe cheia unica. Fixul e aici desi caderea
+            # a fost reprodusa pe calea de listari: tiparul e identic, iar imunitatea
+            # de pana acum e empirica, nu structurala.
+            if external_id in vazute:
+                continue
+            produse_vazute += 1
             vazute.add(external_id)
 
             # --- memoria R2: se citeste minimul VECHI inainte de a-l actualiza ---

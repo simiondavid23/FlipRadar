@@ -315,8 +315,27 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
         pagini += 1
 
         for card in carduri:
-            produse_vazute += 1
             external_id = card["external_id"]
+            # SCAN-1 — a product ALREADY handled in this scan is skipped outright.
+            # A shop's listing re-sorts between requests, so an item on a page
+            # boundary can slide onto the next page and be seen twice. Without this
+            # guard the second sighting re-entered the memory block, and because
+            # `SessionLocal` runs with `autoflush=False` the row added by the first
+            # sighting was still invisible to the query — so a SECOND row was added
+            # and the commit died on the unique key. `vazute` already tracks exactly
+            # "seen in this scan", so no new bookkeeping is needed.
+            #
+            # A local set rather than a `flush()` after each add: flushing per
+            # product would break the insertmany batching at commit and cost ~13k
+            # round-trips on a scan the size of bergfreunde, to buy the same answer.
+            #
+            # Skipping the whole iteration (not just the memory write) is deliberate:
+            # the FIRST sighting already read the old minimum and decided the deal.
+            # Re-evaluating on the second one would compare the price against a
+            # minimum this same scan has just lowered, inventing a discount.
+            if external_id in vazute:
+                continue
+            produse_vazute += 1
             vazute.add(external_id)
 
             # --- R2 memory: the OLD minimum is read before being updated ---

@@ -110,6 +110,31 @@ def _memorie():
 
 # ── testele ──────────────────────────────────────────────────────────────────
 
+def test_produs_repetat_intre_pagini_nu_dubleaza_memoria(scan):
+    """SCAN-1, perechea simetrica a testului din test_listing_scanner.
+
+    Enumerarea Shopify e paginata, deci un produs poate reaparea daca magazinul se
+    modifica intre cereri. A doua aparitie reintra in blocul de memorie, iar cu
+    `SessionLocal(autoflush=False)` randul adaugat la prima nu e inca vizibil
+    interogarii — se adauga al doilea si commit-ul cade pe cheia unica.
+
+    Produsele n-au `compare_at_price` DELIBERAT: fara el nu califica drept deal,
+    deci nu se executa `db.add(deal)` + `db.flush()`, iar acel flush ar persista tot
+    ce e pending — inclusiv memoria — si ar masca bugul. Fereastra periculoasa e
+    tocmai secventa de produse necalificate dintre cele doua aparitii.
+    """
+    repetat = _produs(1, [_varianta("100.00")], handle="repetat")
+    p1 = [repetat, _produs(2, [_varianta("110.00")], handle="al-doilea")]
+    p2 = [repetat, _produs(3, [_varianta("120.00")], handle="al-treilea")]
+
+    rezumat = scan([p1, p2, []])
+
+    assert rezumat["erori"] == 0, "produsul repetat nu are voie sa pice scanul"
+    externe = [m.external_id for m in _memorie()]
+    assert len(externe) == len(set(externe)), "un external_id = un singur rand"
+    assert sorted(externe) == ["1", "2", "3"]
+
+
 def test_pret_minim_al_variantelor_disponibile(scan):
     # Pretul e string zecimal ('249.99'), NU int in bani ca la endpointul .js din
     # SHOP-1. Minimul se ia doar peste variantele disponibile.
