@@ -436,11 +436,25 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "discord_here_auto": bool(getattr(s, "discord_here_auto", False)),
         "discord_here_imob": bool(getattr(s, "discord_here_imob", False)),
         "custom_zone_aliases": getattr(s, "custom_zone_aliases", None) or {},
-        # DEAL-2b — pragul R1 al listarilor trebuie sa se intoarca in UI, altfel
-        # input-ul din Settings apare gol dupa fiecare reincarcare si userul nu
-        # poate sti ce prag e in vigoare. (Vezi raportul rundei: celelalte setari
-        # de deal-uri NU sunt in dict-ul asta, gol preexistent, neatins aici.)
-        "listing_r1_threshold": getattr(s, "listing_r1_threshold", None),
+        # SET-1 — setarile scannerului de deal-uri se intorc TOATE prin GET.
+        #
+        # PUT-ul le persista de la SHOP-2a, dar GET-ul le omitea, iar frontend-ul
+        # citeste de aici. Doua consecinte, amandoua reale: input-urile de prag
+        # apareau goale dupa fiecare reincarcare, iar `toggleDealShop` construia
+        # setul din `settings.deal_shops_disabled || []` — mereu `undefined` dupa
+        # reload — deci prima dezactivare a unui magazin STERGEA toate celelalte
+        # dezactivari. Cauza era integral aici; frontend-ul era deja corect.
+        #
+        # Acces direct, nu `getattr` cu default: coloanele exista garantat din
+        # SHOP-2a/DEAL-2b, iar un `getattr` ar masca o regresie de model in loc
+        # sa o lase sa cada zgomotos.
+        "deal_discount_threshold": s.deal_discount_threshold,
+        "listing_r1_threshold": s.listing_r1_threshold,
+        # Consecvent cu default-ul modelului (True): un rand mai vechi cu NULL nu
+        # trebuie sa apara in UI ca „scanare oprita".
+        "deal_scan_enabled": bool(s.deal_scan_enabled) if s.deal_scan_enabled is not None else True,
+        # Niciodata None spre frontend: consumatorul face `new Set(...)` pe el.
+        "deal_shops_disabled": s.deal_shops_disabled or [],
         "platform_olx_enabled": s.platform_olx_enabled,
         "platform_vinted_enabled": s.platform_vinted_enabled,
         "platform_okazii_enabled": s.platform_okazii_enabled,

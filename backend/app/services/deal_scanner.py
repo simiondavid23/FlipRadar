@@ -77,10 +77,21 @@ def _settings(db):
     """Setarile care guverneaza scanul.
 
     Deal-urile sunt globale pe instanta (fara user_id), dar RadarSettings ramane
-    per-user ca tot restul — deci luam PRIMUL rand, pe acelasi argument care face
+    per-user ca tot restul — deci luam UN rand, pe acelasi argument care face
     deal-urile globale: aplicatia se distribuie ca instanta locala single-user.
+
+    SET-1 — ordonarea e OBLIGATORIE, nu cosmetica. `.first()` fara ORDER BY lasa
+    randul castigator la mila planului de query: pe baza de dezvoltare (3 randuri
+    `radar_settings`, 9 useri) pragul de 60 salvat de user 1 a fost ignorat la
+    scanul de verificare DEAL-2b, care a citit randul userului 13, cu None. In
+    produsul impachetat exista un singur rand, deci acolo nimic nu se schimba;
+    pe baze multi-user regula devine explicita: guverneaza randul userului cu
+    id-ul cel mai mic, adica proprietarul instantei.
+
+    `listing_scanner` mosteneste regula prin import — o singura implementare,
+    deci cele doua scannere nu pot ajunge sa citeasca randuri diferite.
     """
-    return db.query(RadarSettings).first()
+    return db.query(RadarSettings).order_by(RadarSettings.user_id.asc()).first()
 
 
 def _prag(settings) -> float:

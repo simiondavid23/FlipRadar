@@ -709,3 +709,95 @@ def test_list_deals_sursa_invalida_da_422(auth_client):
 
     assert raspuns.status_code == 422
     assert "Sursă invalidă" in raspuns.json()["detail"]
+
+
+# ── SET-1 — setarile de deal-uri se intorc din GET + rand determinist ────────
+
+def test_get_settings_intoarce_setarile_de_dealuri(auth_client):
+    """Testul-regresie al pierderii de date: PUT-ul persista de la SHOP-2a, dar
+    GET-ul omitea cheile, iar frontend-ul citeste de aici. `toggleDealShop`
+    construia setul din `deal_shops_disabled || []` — mereu undefined dupa reload
+    — deci prima dezactivare STERGEA toate celelalte."""
+    pus = auth_client.put("/api/radar/settings", json={
+        "deal_discount_threshold": 25.0,
+        "listing_r1_threshold": 60.0,
+        "deal_scan_enabled": False,
+        "deal_shops_disabled": ["patta.nl", "otter.ro"],
+    })
+    assert pus.status_code == 200, pus.text
+
+    date = auth_client.get("/api/radar/settings").json()
+
+    assert date["deal_discount_threshold"] == 25.0
+    assert date["listing_r1_threshold"] == 60.0
+    assert date["deal_scan_enabled"] is False
+    assert sorted(date["deal_shops_disabled"]) == ["otter.ro", "patta.nl"]
+
+
+def test_get_settings_dezactivari_ramane_lista_dupa_a_doua_dezactivare(auth_client):
+    """Scenariul exact al bug-ului, jucat pe server: doua dezactivari succesive,
+    fiecare trimisa ca reuniune peste ce a intors GET-ul, ca in UI."""
+    auth_client.put("/api/radar/settings", json={"deal_shops_disabled": ["patta.nl"]})
+
+    curent = auth_client.get("/api/radar/settings").json()["deal_shops_disabled"]
+    auth_client.put("/api/radar/settings",
+                    json={"deal_shops_disabled": sorted(set(curent) | {"otter.ro"})})
+
+    final = auth_client.get("/api/radar/settings").json()["deal_shops_disabled"]
+    assert sorted(final) == ["otter.ro", "patta.nl"], \
+        "a doua dezactivare nu are voie sa stearga prima"
+
+
+def test_get_settings_dezactivari_gol_e_lista_nu_none(auth_client):
+    """Consumatorul face `new Set(...)` pe valoare, deci None ar fi o capcana."""
+    date = auth_client.get("/api/radar/settings").json()
+
+    assert date["deal_shops_disabled"] == []
+    assert date["deal_scan_enabled"] is True, "default-ul modelului, nu None"
+
+
+def test_settings_randul_e_determinist_pe_user_id():
+    """`.first()` fara ORDER BY lasa randul castigator la mila planului de query:
+    asa a fost ignorat pragul de 60 al userului 1 la scanul DEAL-2b."""
+    db = SessionLocal()
+    try:
+        for user_id, prag in ((13, None), (1, 60.0)):
+            email = f"set1_{user_id}_{uuid.uuid4().hex[:8]}@example.com"
+            u = User(id=user_id, email=email, username=email.split("@")[0],
+                     hashed_password="x", is_active=True)
+            db.add(u)
+            db.flush()
+            db.add(RadarSettings(user_id=user_id, listing_r1_threshold=prag,
+                                 deal_discount_threshold=prag))
+        db.commit()
+
+        setari = deal_scanner._settings(db)
+
+        assert setari.user_id == 1, "guverneaza userul cu id-ul cel mai mic"
+        assert setari.listing_r1_threshold == 60.0
+        assert deal_scanner._prag(setari) == 60.0
+        from app.services.listing_scanner import _prag_r1
+        assert _prag_r1(setari) == 60.0, "listing_scanner mosteneste randul prin import"
+    finally:
+        db.close()
+
+
+def test_settings_un_singur_rand_neschimbat():
+    """Regresie de context: pe instanta impachetata (un singur rand) nimic nu se
+    schimba fata de comportamentul de dinainte de SET-1."""
+    db = SessionLocal()
+    try:
+        email = f"set1_solo_{uuid.uuid4().hex[:8]}@example.com"
+        u = User(email=email, username=email.split("@")[0], hashed_password="x",
+                 is_active=True)
+        db.add(u)
+        db.flush()
+        db.add(RadarSettings(user_id=u.id, deal_discount_threshold=33.0))
+        db.commit()
+
+        setari = deal_scanner._settings(db)
+
+        assert setari.user_id == u.id
+        assert deal_scanner._prag(setari) == 33.0
+    finally:
+        db.close()
