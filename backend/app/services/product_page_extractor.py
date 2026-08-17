@@ -1470,9 +1470,120 @@ def _shopify_extractor_for(url: str):
 
 # Domenii unde datele NU stau in HTML-ul paginii, deci fluxul generic n-are ce citi.
 # Cheia e domeniul de baza; potrivirea e suffix-safe, ca la allow-list-ul C-14.
+# ── powerup.ro (G2A-1/G2A-2) ─────────────────────────────────────────────────
+
+# Blocul de pret al PDP-ului, VERBATIM din `dumps_g2a/powerup.ro_prod_red1.html`:
+#
+#   <div class="product-price clearfix">
+#     <span class="full-price">26.900<sup>,00</sup> LEI</span><br/>
+#     <span class="discount-price"><i>19.990<sup>,00</sup> LEI</i>
+#       <span class="price-unit">/ buc.</span></span>
+#   </div>
+#
+# Zecimalele stau in `<sup>`, deci textul se ia cu separator GOL: `get_text(" ")`
+# ar da "19.990 ,00 LEI", cu un spatiu intre intreg si zecimale.
+_POWERUP_PRET_RE = re.compile(r"^(\d{1,3}(?:\.\d{3})*|\d+),(\d{2})\s*lei$", re.I)
+
+
+def _parse_pret_powerup(text) -> float | None:
+    """Pretul dintr-un nod de pret powerup, parsare STRICTA.
+
+    Ca la elefant, NU trece prin `_parse_price_any`: acela e permisiv prin design
+    si ar transforma un text corupt intr-un numar plauzibil. Sursa are UN singur
+    format masurat ("19.990,00LEI"), iar abaterea de la el inseamna ca pagina s-a
+    schimbat — semnal pe care il vrem ca esec curat.
+    """
+    if not isinstance(text, str):
+        return None
+    curat = re.sub(r"\s+", "", text.replace("\xa0", "")).strip()
+    potrivire = _POWERUP_PRET_RE.match(curat)
+    if potrivire is None:
+        return None
+    try:
+        return float(f"{potrivire.group(1).replace('.', '')}.{potrivire.group(2)}")
+    except ValueError:
+        return None
+
+
+def _extract_powerup(url: str) -> dict:
+    """powerup.ro — OpenCart cu tema proprie, zero date structurate in pagina.
+
+    Masurat la G2A-1 (2026-08-17) pe doua PDP-uri cu reducere reala: domeniul
+    n-are ld+json, n-are microdata si n-are OG de pret, deci fluxul generic ridica
+    `no_product_data` pe orice pagina de produs (pinuit de testul-garda).
+
+    UN singur fetch, prin poarta guarded C-14.
+    """
+    html = _fetch_text_guarded(url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # `<h1>` e GOL pe domeniu (masurat), deci numele vine din `<title>`.
+    titlu = soup.find("title")
+    name = _clean_text(titlu.get_text(" ", strip=True)) if titlu is not None else None
+
+    # --- Pretul platit -------------------------------------------------------
+    # Ancorarea in `.product-price` e OBLIGATORIE, nu cosmetica: `.discount-price`
+    # apare de DOUA ori pe pagina, iar al doilea nod e `.discount-price.nav-price`
+    # din bara de sus. Un selector neancorat ar putea citi bara in loc de produs.
+    #
+    # `.price-unit` ("/ buc.") se scoate INAINTE de parsare: apare doar la unele
+    # produse, iar parserul strict ar respinge textul cu sufix — adica pretul s-ar
+    # pierde exact pe produsele vandute la bucata.
+    price = None
+    nod = soup.select_one(".product-price .discount-price")
+    if nod is not None:
+        bloc = BeautifulSoup(str(nod), "html.parser")
+        for unitate in bloc.select(".price-unit"):
+            unitate.decompose()
+        price = _parse_pret_powerup(bloc.get_text("", strip=True))
+
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina powerup fara <title>: {(url or '')[:120]}")
+    if price is None:
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Pagina powerup fara pret citibil in .product-price .discount-price: "
+            f"{(url or '')[:120]}")
+    if price <= 0:
+        raise ProductExtractionError(
+            "invalid_price", f"Pret invalid ({price!r}) la '{name[:60]}'")
+
+    return {
+        "name": name,
+        "price": price,
+        # MONEDA din COD, si e singura intrare unde se intampla asta. Pagina n-o
+        # poarta nicaieri ca data structurata: fara ld+json, fara microdata, fara
+        # OG — masurat pe ambele PDP-uri. Singurul indiciu e sufixul "LEI" din
+        # textul vizibil, pe care parserul strict deja il cere ca sa accepte
+        # valoarea, deci constanta nu presupune nimic ce nu s-a verificat.
+        #
+        # A NU se generaliza tiparul: pe domeniile unde moneda E masurabila
+        # (ld+json, microdata, atribut) ea se citeste din pagina, fiindca o
+        # constanta ar ascunde exact momentul in care magazinul si-o schimba.
+        "currency": "RON",
+        # STOC: None NECONDITIONAT, si e o lipsa ONESTA, nu o decizie masurata ca
+        # la elefant. G2A-1 n-a sondat nicio pagina de produs EPUIZAT, deci nu
+        # exista ramura negativa cu care sa se compare semnalele. Pe /refurbished-sh
+        # produsele sunt bucati unice, deci stocul chiar conteaza — tiparul
+        # foto-erhardt. O micro-sonda viitoare pe un produs epuizat poate ridica
+        # asta la True/False; pana atunci avalul e tri-state si afiseaza
+        # "Stoc necunoscut", ceea ce e informatie corecta.
+        "in_stock": None,
+        "is_aggregate": False,
+        "variants": None,
+        "image_url": _meta(soup, "og:image"),
+        "canonical_url": _canonical_url(soup, url),
+        "domain": _domain_of(url),
+        "method": "powerup_opencart",
+        "override_applied": False,
+    }
+
+
 CUSTOM_EXTRACTORS: dict[str, callable] = {
     "asos.com": _extract_asos,
     "elefant.ro": _extract_elefant,
+    "powerup.ro": _extract_powerup,
 }
 
 

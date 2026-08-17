@@ -2018,3 +2018,132 @@ def test_elefant_fluxul_generic_chiar_nu_poate_citi_pagina():
     with pytest.raises(ProductExtractionError) as exc:
         parse_product_html(_elefant_fixture("prod_redus.html"), ELEFANT_URL_REDUS)
     assert exc.value.reason == "no_product_data"
+
+
+# ── G2A-2: extractorul custom OpenCart pentru powerup.ro ─────────────────────
+#
+# Fixture-urile sunt fragmente taiate VERBATIM din dump-urile sondei G2A-1
+# (`dumps_g2a/`), pastrand capcanele masurate acolo: blocul de pret al produsului
+# IMPREUNA cu dublura `.discount-price.nav-price` din bara de sus, si doua carduri
+# de carusel FARA `.full-price` (produse nereduse).
+
+_POWERUP_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "powerup")
+
+# URL-uri reale, din meta-urile dump-urilor.
+POWERUP_URL_1 = ("https://www.powerup.ro/amd-ryzen-9-9950x3d-16core-5-7ghz-rtx-5090-"
+                 "32gb-gddr7-128gb-ddr5-ssd-2tb-m-2-1000w-watercooling-aio-powerup-"
+                 "micro-179352")
+POWERUP_URL_2 = ("https://www.powerup.ro/16-port-gigabit-desktop-switch-with-16-port-"
+                 "poe-port-16-gigabit-poe-ports-spec-802-3at-af-120-w-poe-power-"
+                 "desktop-steel-case-feature-extend-mode-for-250m-poe-transmitting-"
+                 "priority-mode-for-port1-4-isolation-mode-poe-auto-recovery-plug-"
+                 "and-play-227146")
+
+
+def _powerup_fixture(nume: str) -> str:
+    with open(os.path.join(_POWERUP_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("fisier,url,pret", [
+    ("pdp_179352.html", POWERUP_URL_1, 19990.0),
+    ("pdp_227146.html", POWERUP_URL_2, 637.78),
+])
+def test_powerup_extrage_pret_si_moneda_din_cod(fetch_mock, fisier, url, pret):
+    """Cele doua PDP-uri cu reducere reala pe care s-a transat capcana in G2A-1.
+
+    Moneda e RON din COD — pagina n-o poarta nicaieri ca data structurata — iar
+    stocul e None fiindca nicio pagina de produs epuizat n-a fost sondata.
+    """
+    state = fetch_mock(_powerup_fixture(fisier))
+
+    data = ppe.extract_product(url)
+
+    assert data["price"] == pret
+    assert data["currency"] == "RON"
+    assert data["in_stock"] is None
+    assert data["method"] == "powerup_opencart"
+    assert data["domain"] == "powerup.ro"
+    assert data["is_aggregate"] is False
+    assert state["calls"] == 1
+
+
+def test_powerup_nu_citeste_dublura_nav_price_din_bara(fetch_mock):
+    """Ancorarea in `.product-price` e ceruta de structura, nu de eleganta.
+
+    `.discount-price` apare de DOUA ori pe pagina: o data in blocul produsului si
+    o data in bara de sus, ca `.discount-price.nav-price`. Fixture-ul contine
+    dublura INAINTEA blocului de produs, deci un selector neancorat ar citi-o pe
+    ea. Ii dam bara o valoare vizibil diferita ca testul sa poata discrimina.
+    """
+    html = _powerup_fixture("pdp_179352.html")
+    stricat = html.replace(
+        '<span class="discount-price nav-price">',
+        '<span class="discount-price nav-price">1,11 LEI</span>'
+        '<span class="discount-price nav-price">', 1)
+    state = fetch_mock(stricat)
+
+    data = ppe.extract_product(POWERUP_URL_1)
+
+    assert data["price"] == 19990.0, "pretul vine din .product-price, nu din bara"
+    assert state["calls"] == 1
+
+
+def test_powerup_pretul_ignora_unitatea_de_masura():
+    """`.price-unit` ('/ buc.') apare doar la unele produse.
+
+    Se scoate INAINTE de parsare: parserul e strict si ar respinge textul cu
+    sufix, deci pretul s-ar pierde exact pe produsele vandute la bucata.
+    """
+    assert "/ buc." in _powerup_fixture("pdp_179352.html")
+
+
+@pytest.mark.parametrize("brut,asteptat", [
+    ("19.990,00LEI", 19990.0),        # forma masurata: zecimalele in <sup>
+    ("637,78 LEI", 637.78),
+    ("26.900,00LEI", 26900.0),        # pretul taiat, acelasi format
+    ("19.990 ,00 LEI", 19990.0),      # get_text(" ") insereaza spatiul
+    ("1.045,69 lei", 1045.69),
+])
+def test_powerup_parser_formele_masurate(brut, asteptat):
+    assert ppe._parse_pret_powerup(brut) == asteptat
+
+
+@pytest.mark.parametrize("brut", ["abc", "", "19.990", "19,9 LEI", None, 42])
+def test_powerup_parser_respinge_ce_nu_e_formatul_masurat(brut):
+    """Strict prin design, ca la elefant: o abatere inseamna ca pagina s-a
+    schimbat, iar asta se vede ca esec curat, nu ca reparatie tacuta."""
+    assert ppe._parse_pret_powerup(brut) is None
+
+
+def test_powerup_fara_full_price_inseamna_produs_neredus():
+    """Regula masurata pe caruselul SH: 15/15 carduri au `.discount-price`, dar
+    doar 8/15 au `.full-price`. Referinta NU intra in contractul extractorului de
+    pagina — dar absenta ei e semnalul „neredus", folosit de descriptorul de
+    listare, deci merita pinuita pe fixture-ul real."""
+    from bs4 import BeautifulSoup
+
+    supa = BeautifulSoup(_powerup_fixture("carusel_nereduse.html"), "html.parser")
+    carduri = supa.select("div.item-display-box")
+
+    assert len(carduri) == 2
+    for card in carduri:
+        assert card.select_one(".discount-price") is not None
+        assert card.select_one(".full-price") is None
+
+
+def test_powerup_e_in_registrul_de_extractoare_custom():
+    assert ppe.CUSTOM_EXTRACTORS["powerup.ro"] is ppe._extract_powerup
+    assert ppe._custom_extractor_for(POWERUP_URL_1) is ppe._extract_powerup
+    assert ppe._custom_extractor_for("https://powerup.ro/x-1") is ppe._extract_powerup
+
+
+def test_powerup_fluxul_generic_chiar_nu_poate_citi_pagina():
+    """Justificarea extractorului custom, pe fixture-ul REAL — tiparul elefant.
+
+    Daca powerup capata candva ld+json/microdata/OG, testul cade si intrebarea
+    'mai avem nevoie de cod bespoke?' se pune singura.
+    """
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_powerup_fixture("pdp_179352.html"), POWERUP_URL_1)
+    assert exc.value.reason == "no_product_data"

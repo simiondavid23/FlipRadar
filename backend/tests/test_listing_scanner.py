@@ -108,6 +108,7 @@ def _deals():
     ("noriel.ro", 49.99, 99.99),          # ".special-price .price", "49,99\xa0lei"
     ("bergfreunde.eu", 47.97, 79.95),     # data-codecept, "€ 47,97"
     ("tezyo.ro", 244.0, 349.0),           # G1-2: Magento, AMBELE ramuri in atribut
+    ("powerup.ro", 197.01, 199.0),        # G2A-2: OpenCart, zecimalele in <sup>
 ])
 def test_parsare_fixture_real(domeniu, pret, taiat):
     """Descriptorul din registru extrage din dump-ul REAL exact valorile masurate."""
@@ -139,6 +140,43 @@ def test_tezyo_titlul_vine_din_textul_ancorei():
         "Mocasini ALDO bej, CARROBRERIA 110, din piele naturala lacuita",
         "Pantofi sport EPICA albi, 6159290, din material textil si piele naturala",
     ]
+
+
+def test_powerup_products5_tine_caruselul_afara():
+    """G2A-2 — `products5` din selectorul de card nu e decorativ.
+
+    Pe dump-ul real al listarii SH exista 55 de noduri `div.item-display-box`:
+    40 in grila (`.products5`) si 15 intr-un carusel de recomandari. Fixture-ul
+    reproduce proportia — 3 carduri de grila + 2 de carusel — iar descriptorul
+    trebuie sa vada exact cele 3. Fara `products5` ar intra si caruselul, adica
+    fix capcana din LOT5 (nichiduta).
+    """
+    from bs4 import BeautifulSoup
+
+    html = _fixture("powerup.ro")
+    supa = BeautifulSoup(html, "html.parser")
+    assert len(supa.select("div.item-display-box")) == 5, "fixture: 3 grila + 2 carusel"
+
+    carduri = extrage_carduri(html, listing_descriptor("powerup.ro"), "powerup.ro")
+
+    assert len(carduri) == 3
+
+
+def test_powerup_quickview_ul_nu_devine_link_de_produs():
+    """Fiecare card poarta DOUA ancore catre acelasi produs: slug-ul si
+    `index.php?route=product/quickview&product_id=<id>`. Sonda G2A-1 a cazut exact
+    aici — a ales quickview-ul drept „al doilea produs" — deci descriptorul il
+    exclude prin `a:not(.quickview)`, iar fixture-ul pastreaza ancorele quickview
+    ca excluderea sa fie chiar testata."""
+    html = _fixture("powerup.ro")
+    assert "route=product/quickview" in html, "fixture: quickview-urile sunt pastrate"
+
+    carduri = extrage_carduri(html, listing_descriptor("powerup.ro"), "powerup.ro")
+
+    assert carduri, "descriptorul trebuie sa dea carduri"
+    for card in carduri:
+        assert "quickview" not in card["url"]
+        assert "/refurbished-sh/" in card["url"]
 
 
 def test_card_fara_pret_valid_e_sarit():
@@ -449,9 +487,9 @@ def test_plafonul_de_productie_este_zece():
 # ── 7. Registrul ─────────────────────────────────────────────────────────────
 
 def test_listing_domains_exact_cele_din_registru():
-    """Cei 4 piloti DEAL-2 + tezyo.ro, adaugat in G1-2."""
+    """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2)."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
-                                 "bergfreunde.eu", "tezyo.ro"}
+                                 "bergfreunde.eu", "tezyo.ro", "powerup.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():

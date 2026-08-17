@@ -1499,8 +1499,120 @@ de reduceri (barbati, copii) se adauga in valul D, dupa sondare — nu se presup
 
 ---
 
+## G2A-1/G2A-2 — powerup.ro (OpenCart) pe ambele axe; badabum.ro nu exista
+
+Restantele electronice RO. O sonda de 7 cereri (din 16 permise) si o implementare.
+Dump-urile stau in `scripts/diagnostics/dumps_g2a/` (gitignorate), fragmentele
+folosite de teste in `backend/tests/fixtures/powerup/` si
+`backend/tests/fixtures/listing/powerup.ro_cards.html`.
+
+### badabum.ro — NU intra, si nu din cauza vreunui anti-bot
+
+Lista master il marca „anti-bot probabil redus". Masuratoarea a infirmat premisa
+insasi: domeniul **nu are inregistrare A si nici AAAA**, deci nu exista server web
+la care sa te conectezi. Zona e delegata la Cloudflare
+(`amir.ns.cloudflare.com` / `miki.ns.cloudflare.com`) si are MX activ catre
+Microsoft 365 (`badabum-ro.mail.protection.outlook.com`) — domeniul e detinut si
+folosit pentru email, dar nu serveste niciun magazin. Verificat si prin resolver
+public (8.8.8.8), cu `powerup.ro` drept control (a raspuns cu adresa). Nu s-a
+cheltuit decat 1 cerere, esuata la DNS; celelalte 7 au ramas nefolosite.
+
+### powerup.ro — `method: custom`, `powerup_opencart` (FACUT)
+
+OpenCart cu tema proprie: `index.php?route=`, `catalog/view/theme` in corp,
+`x-powered-by: PHP/7.3.33`, `server: LiteSpeed`. Toate cele 6 cereri au raspuns 2xx
+pe amprenta de PRODUCTIE, deci fara camp `impersonate`.
+
+Fluxul generic chiar n-are ce citi — verificat pe dump-urile reale,
+`parse_product_html` ridica `no_product_data`: zero ld+json, zero microdata, zero OG
+de pret. Testul `test_powerup_fluxul_generic_chiar_nu_poate_citi_pagina` pinuieste
+asta, ca la elefant.
+
+Blocul de pret, VERBATIM din `powerup.ro_prod_red1.html`:
+
+    <div class="product-price clearfix">
+      <span class="full-price">26.900<sup>,00</sup> LEI</span><br/>
+      <span class="discount-price"><i>19.990<sup>,00</sup> LEI</i>
+        <span class="price-unit">/ buc.</span></span>
+    </div>
+
+**Capcana din LOT1, transata definitiv.** Nota veche marca `.discount-price` drept
+„candidat" si semnala `.total-price=0,00` ca posibila capcana, dar micro-sonda se
+facuse pe produse NEREDUSE, unde nimic nu discrimineaza. G2A-1 a masurat testul de
+componente partajate pe doua produse cu preturi complet distincte (pid 179352:
+26.900 -> 19.990; pid 227146: 955,34 -> 637,78):
+
+| selector | pagina A | pagina B | verdict |
+|---|---|---|---|
+| `.discount-price` | 19.990,00 | 637,78 | pretul PLATIT |
+| `.full-price` | 26.900,00 | 955,34 | referinta taiata |
+| `.total-price` | 0,00 LEI | 0,00 LEI | **COSUL** — componenta partajata |
+| `.price-new` / `.price-old` / `.price` / `.special-price` / `.old-price` | — | — | absente (nu e tema standard) |
+
+Trei finete masurate, toate in cod:
+
+* **Ancorarea in `.product-price` e obligatorie**: `.discount-price` apare de doua
+  ori pe pagina, a doua oara ca `.discount-price.nav-price` in bara de sus. Fixture-ul
+  de test pastreaza dublura, iar testul ii da o valoare diferita ca sa poata
+  discrimina un selector neancorat.
+* **Zecimalele stau in `<sup>`**, deci textul se ia cu separator GOL (`get_text("")`
+  da „19.990,00LEI"; cu spatiu ar iesi „19.990 ,00 LEI").
+* **`.price-unit` („/ buc.") se scoate inainte de parsare**: apare doar la unele
+  produse, iar parserul strict ar respinge textul cu sufix — s-ar pierde pretul
+  exact pe produsele vandute la bucata.
+
+Moneda e `"RON"` **din cod**, si e singura intrare unde se intampla asta: pagina n-o
+poarta nicaieri ca data structurata. Singurul indiciu e sufixul „LEI" din textul
+vizibil, pe care parserul strict deja il cere ca sa accepte valoarea. Tiparul NU se
+generalizeaza la domeniile unde moneda e masurabila.
+
+Stocul e `None` **nemasurat** — spre deosebire de elefant, unde None e o decizie
+sprijinita pe 12 semnale verificate, aici pur si simplu nicio pagina de produs
+epuizat n-a fost sondata. Pe `/refurbished-sh` produsele sunt bucati unice, deci
+stocul chiar conteaza (tiparul foto-erhardt); o micro-sonda viitoare poate ridica
+asta la True/False.
+
+**RISC DE CALITATE A DATELOR, consemnat:** titlurile difera pe TREI surse pentru
+acelasi produs — slug-ul URL zice `ryzen-9-9950x3d ... rtx-5090`, textul ancorei din
+listare zice „AMD Ryzen 7 9800X3D ... RTX 5080", iar `<title>`-ul PDP-ului zice
+„AMD Ryzen 9 9950X ... RTX 5080". `<h1>` e GOL, deci numele vine din `<title>`.
+Verificat pe HTML-ul verbatim al aceleiasi ancore: e inconsistenta site-ului, nu a
+masuratorii. Pentru axa D inseamna ca titlul din card poate descrie alta configuratie
+decat produsul de la acel URL.
+
+### Axa D — `/refurbished-sh` in scannerul DEAL-2 (FACUT)
+
+„Afişare 1 - 40 din **605** (16 pagini)", paginare `?page={n}`, `max_pages: 20` ca
+plasa. Doua capcane, amandoua in descriptor:
+
+* **`products5` e obligatoriu in selectorul de card.** Pe dump-ul SH exista 55 de
+  noduri `div.item-display-box`: 40 in grila (`.products5`) si 15 intr-un carusel de
+  recomandari. Fara token, scannerul ar scana caruselul — capcana din LOT5.
+* **Quickview-urile se exclud prin `a:not(.quickview)`.** Fiecare card poarta doua
+  ancore catre acelasi produs, iar sonda a cazut exact aici: `prod_red2` a nimerit
+  `route=product/quickview&product_id=179352`, adica al doilea „produs" era acelasi
+  cu primul, ceea ce a invalidat testul de componente partajate pana la pasa de
+  corectie. Verificat pe toate cele 40 de carduri: zero cazuri in care selectorul
+  cade pe quickview.
+
+Pretul se ia pe TEXT, nu pe atribut — tema nu expune valoarea numerica nicaieri.
+Parserul `eu_comma` EXISTENT digera forma cu `<sup>` fara nicio modificare: el curata
+orice non-cifra/punct/virgula, deci si spatiul pe care `get_text(" ")` al scannerului
+il insereaza intre intreg si zecimale. Omnibus: absent si pe listari, si pe PDP-uri.
+
+**ACOPERIRE PARTIALA, asumata**: doar `/refurbished-sh`. `/oferte-speciale`
+(5.668 produse, 142 pagini) asteapta extensia multi-listing per domeniu, la valul D.
+
+---
+
 ## Domenii neintrate
 
+> badabum.ro — NU exista site: domeniul n-are inregistrare A sau AAAA (masurat in
+> G2A-1, si prin resolver public, cu powerup.ro drept control). Zona e la Cloudflare
+> si MX-ul e activ pe Microsoft 365, deci domeniul e detinut si folosit pentru email,
+> dar nu serveste niciun magazin. De re-verificat DOAR daca cineva confirma ca
+> site-ul a fost lansat — nu e o chestiune de anti-bot.
+>
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe
 > pagina de produs, respectiv cautare goala) si pcgarage.ro (n-a avut URL-uri de
 > produs la sonda RETAIL-3a; refresh-ul lui ramane pe fetch_pcgarage_price_from_url,

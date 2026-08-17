@@ -492,10 +492,60 @@ SHOP_REGISTRY: dict[str, dict] = {
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "custom",
-        "status": "probed",
-        "notes": "LOT1: SSR fara date structurate; .discount-price candidat de "
-                 "selector (capcana: .total-price=0,00 al cosului); micro-sonda pe "
-                 "produse NEreduse inainte de validare",
+        "status": "validated",
+        "notes": "LOT1 + G2A-1/G2A-2; OpenCart cu tema proprie, SSR fara NICIO data "
+                 "structurata (zero ld+json, zero microdata, zero OG de pret) — de "
+                 "aici extractorul custom `powerup_opencart`. Pretul platit: "
+                 ".product-price .discount-price, ancorat OBLIGATORIU in "
+                 ".product-price fiindca `.discount-price` apare si in bara de sus "
+                 "ca `.nav-price`; `.price-unit` ('/ buc.') se scoate inainte de "
+                 "parsare. CAPCANA TRANSATA: `.total-price` NU e pretul paginii — e "
+                 "COSUL, masurat identic 0,00 LEI pe doua produse cu preturi "
+                 "complet diferite (testul de componente partajate, G2A-1). "
+                 "Referinta taiata sta in .product-price .full-price si e prezenta "
+                 "DOAR la produsele reduse (masurat pe caruselul SH: 15/15 au "
+                 "discount-price, 7/15 n-au full-price) — nu intra in contractul "
+                 "extractorului de pagina, doar in descriptorul de listare. "
+                 "Zecimalele stau in <sup>, deci textul se ia cu separator GOL. "
+                 "Moneda vine din COD (RON): nu e nicaieri in pagina ca data "
+                 "structurata. Stocul e None NEMASURAT — nicio pagina de produs "
+                 "epuizat nu a fost sondata, iar pe SH produsele sunt bucati unice. "
+                 "RISC DE CALITATE: titlurile difera pe TREI surse pentru acelasi "
+                 "produs (slug 'ryzen-9-9950x3d...rtx-5090', ancora din listare "
+                 "'Ryzen 7 9800X3D...RTX 5080', <title> 'Ryzen 9 9950X...RTX 5080'), "
+                 "iar <h1> e GOL — vezi docs/catalog_domain_log.md",
+        # DEAL-2 — masurat in G2A-1: „Afişare 1 - 40 din 605 (16 pagini)".
+        # DOAR /refurbished-sh: /oferte-speciale (5.668 produse, 142 pagini) asteapta
+        # extensia multi-listing per domeniu, la valul D.
+        "listing": {
+            "url": "https://www.powerup.ro/refurbished-sh",
+            "page_url_template": "https://www.powerup.ro/refurbished-sh?page={n}",
+            "max_pages": 20,
+            "currency": "RON",
+            # `products5` e OBLIGATORIU, nu decorativ: fara el selectorul prinde si
+            # caruselul de recomandari (55 de noduri in loc de 40 pe dump-ul SH),
+            # adica exact capcana caruselului din LOT5.
+            "card": "div.item-display-box.products5",
+            # Fiecare card poarta DOUA ancore catre acelasi produs: slug-ul si
+            # `index.php?route=product/quickview&product_id=<id>`. Excluderea se
+            # face pe schema EXISTENTA, printr-un selector CSS negativ — ancora de
+            # quickview e singura cu clasa `quickview`. Verificat pe toate cele 40
+            # de carduri ale dump-ului: zero cazuri in care selectorul cade pe ea.
+            "link": "a:not(.quickview)",
+            # Titlul vine din textul aceleiasi ancore (cardul n-are h2/h3 de nume).
+            # Vezi riscul de calitate din `notes`: titlul poate descrie alta
+            # configuratie decat produsul de la acel URL.
+            "title": "a:not(.quickview)",
+            # Pe text, nu pe atribut: tema nu expune valoarea numerica nicaieri.
+            # `eu_comma` digera forma cu <sup> fara modificari — verificat in G2A-2:
+            # el curata orice non-cifra/punct/virgula, deci si spatiul pe care
+            # `get_text(" ")` al scannerului il insereaza intre intreg si zecimale.
+            "price_text": ".discount-price",
+            "compare_text": ".full-price",
+            "price_parse": "eu_comma",
+            # Omnibus masurat ABSENT: nici pe cele doua listari, nici pe PDP-uri.
+            "reference_kind": "nemarcat",
+        },
     },
 
     # ── LOT2 / LOT2b — tinte usoare straine (sonde 2026-08-13) ────────────────
