@@ -11,6 +11,7 @@ Din `extract_product` se testeaza DOAR bucla de erori adaugata la FASHION-4
 poarta de fetch mock-uita; restul buclei ramane acoperit in scraper_service.
 """
 import json
+import os
 
 import pytest
 
@@ -1883,3 +1884,137 @@ def test_moneda_price_specification_garda():
     res = parse_product_html(_parfumdreams(moneda_spec=None), URL)
     assert res["currency"] == "RON"
     assert res["price"] == 59.9
+
+
+# ── ELF-2: extractorul custom Intershop pentru elefant.ro ────────────────────
+#
+# Fixture-urile NU sunt sintetice: sunt fragmente taiate VERBATIM din dump-urile
+# sondelor ELF-1/ELF-1b (bloc de pret + zona butonului + payload GTM), pastrand
+# inclusiv capcanele masurate acolo — bara sticky cu ambele butoane ascunse si
+# butonul de cos prezent pe produsul indisponibil. Singura exceptie e marcata
+# explicit in numele fisierului (`_SINTETIC`).
+
+_ELEFANT_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "elefant")
+
+# URL-uri reale, din meta-urile dump-urilor.
+ELEFANT_URL_REDUS = ("https://www.elefant.ro/"
+                     "marea-carte-de-colorat-si-activitati-dorinta_"
+                     "e51b5fde-7f5b-432c-9976-79bca49eb88d")
+ELEFANT_URL_NEREDUS = ("https://www.elefant.ro/puzzle-d-toys-tropical-240-piese_"
+                       "7fcfa5a6-a268-41bb-9558-141c135572e3")
+ELEFANT_URL_EPUIZAT = ("https://www.elefant.ro/INTERSHOP/web/WFS/"
+                       "elefant-elefantRO-Site/ro_RO/-/RON/ViewProduct-Start"
+                       "?SKU=7bf57638-e749-4309-870a-146746b44648")
+
+
+def _elefant_fixture(nume: str) -> str:
+    with open(os.path.join(_ELEFANT_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("fisier,url,pret,nume", [
+    ("prod_redus.html", ELEFANT_URL_REDUS, 19.31,
+     "Marea carte de colorat si activitati. Dorinta"),
+    ("prod_neredus.html", ELEFANT_URL_NEREDUS, 89.99,
+     "Puzzle D-Toys - Tropical, 240 piese"),
+    ("prod_epuizat.html", ELEFANT_URL_EPUIZAT, 10.99, "Spirala magica"),
+])
+def test_elefant_extrage_pret_moneda_si_stoc_necunoscut(fetch_mock, fisier, url, pret, nume):
+    """Cele trei stari masurate: redus, neredus si clasat INDISPONIBIL de catalog.
+
+    Toate trei dau pret + moneda din acelasi atribut, si toate trei dau
+    `in_stock=None` — inclusiv cea epuizata. Asta NU e o scapare: ELF-1b a
+    masurat ca pagina produsului indisponibil e identica cu a unuia in stoc.
+    """
+    state = fetch_mock(_elefant_fixture(fisier))
+
+    data = ppe.extract_product(url)
+
+    assert data["price"] == pret
+    assert data["currency"] == "RON"
+    assert data["name"] == nume
+    assert data["in_stock"] is None
+    assert data["method"] == "elefant_intershop"
+    assert data["domain"] == "elefant.ro"
+    assert data["is_aggregate"] is False
+    # UN singur fetch, si acela prin poarta guarded C-14.
+    assert state["calls"] == 1
+
+
+def test_elefant_nu_deduce_stocul_din_butoane_desi_exista_in_pagina(fetch_mock):
+    """Anti-regresie pe capcanele enumerate in comentariul extractorului.
+
+    Fixture-ul produsului INDISPONIBIL contine si butonul de adaugare in cos, si
+    bara sticky cu 'Indisponibil' — exact semnalele care par a spune stocul.
+    Daca cineva 'repara' extractorul citindu-le, testul asta cade.
+    """
+    html = _elefant_fixture("prod_epuizat.html")
+    assert 'data-testing-id="addToCartButton"' in html
+    assert 'name="StickyNotAvailable"' in html
+
+    fetch_mock(html)
+
+    assert ppe.extract_product(ELEFANT_URL_EPUIZAT)["in_stock"] is None
+
+
+def test_elefant_rezerva_gtm_da_pretul_dar_nu_inventeaza_moneda(fetch_mock):
+    """Fara ancora primara se cade pe payload-ul GTM, care n-are moneda.
+
+    Moneda ramane None DELIBERAT: pagina din care a disparut `current-price` e o
+    pagina schimbata, iar un 'RON' presupus ar ascunde tocmai schimbarea.
+    """
+    html = _elefant_fixture("prod_fara_testingid_SINTETIC.html")
+    assert 'data-price-currencymnemonic="RON"' in html   # RON E in pagina...
+
+    fetch_mock(html)
+    data = ppe.extract_product(ELEFANT_URL_REDUS)
+
+    assert data["price"] == 19.31                        # ...pretul vine din GTM
+    assert data["currency"] is None                      # ...dar moneda NU se presupune
+    assert data["method"] == "elefant_intershop"
+    assert data["in_stock"] is None
+
+
+@pytest.mark.parametrize("text,asteptat", [
+    ("19,31 lei", 19.31),
+    ("89,99 lei", 89.99),
+    ("1.603,00\xa0lei", 1603.0),          # mii cu punct + nbsp, ca in pagina
+    ("  10,99   lei  ", 10.99),
+    ("100 lei", 100.0),                    # pret rotund, fara zecimale
+    ("39,99 lei19,31 lei", None),          # doua preturi lipite -> esec curat
+    ("Pret la cerere", None),
+    ("", None),
+    (None, None),
+])
+def test_parse_pret_elefant_strict(text, asteptat):
+    """Parserul acopera formatul MASURAT si refuza restul, fara reparatii tacute."""
+    assert ppe._parse_pret_elefant(text) == asteptat
+
+
+def test_elefant_fara_nicio_sursa_de_pret_ridica_no_product_data(fetch_mock):
+    """Ambele ramuri esuate -> eroarea standard a extractoarelor."""
+    # SINTETIC: pagina pastreaza numele, dar nu are nici testing-id, nici GTM.
+    fetch_mock("<html><body><h1>Produs fara pret</h1></body></html>")
+
+    with pytest.raises(ProductExtractionError) as exc:
+        ppe.extract_product(ELEFANT_URL_REDUS)
+    assert exc.value.reason == "no_product_data"
+
+
+def test_elefant_e_inregistrat_ca_extractor_custom():
+    """Rutarea: domeniul nu mai trece prin fluxul generic, care n-are ce citi."""
+    assert ppe.CUSTOM_EXTRACTORS["elefant.ro"] is ppe._extract_elefant
+    assert ppe._custom_extractor_for(ELEFANT_URL_REDUS) is ppe._extract_elefant
+    # si pe subdomeniu, ca la allow-list-ul C-14
+    assert ppe._custom_extractor_for("https://elefant.ro/x_1") is ppe._extract_elefant
+
+
+def test_elefant_fluxul_generic_chiar_nu_poate_citi_pagina():
+    """Justificarea extractorului custom, verificata pe fixture-ul REAL.
+
+    Daca elefant ar capata candva ld+json/OG, testul asta cade si intrebarea
+    'mai avem nevoie de cod bespoke?' se pune singura.
+    """
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_elefant_fixture("prod_redus.html"), ELEFANT_URL_REDUS)
+    assert exc.value.reason == "no_product_data"

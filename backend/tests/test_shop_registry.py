@@ -20,7 +20,8 @@ from app.services.shop_registry import (
 _CAMPURI_OBLIGATORII = ("label", "category", "country", "delivery", "method", "status", "notes")
 
 _CATEGORII = {"electronice", "fashion", "sneakers", "incaltaminte", "tcg",
-              "outdoor", "jucarii", "foto", "beauty"}
+              "outdoor", "jucarii", "foto", "beauty",
+              "general"}   # ELF-2 — magazine generaliste (elefant)
 _LIVRARI = {"ro_confirmed", "ro_storefront", "b2b_only", "unconfirmed"}
 _METODE = {"jsonld", "og", "microdata", "custom", "shopify", "browser"}
 _STARI = {"validated", "probed", "planned", "watchlist"}
@@ -126,3 +127,29 @@ def test_shopify_cere_moneda():
     intai, apoi = shopify_domains(), shopify_domains()
     assert intai == apoi
     assert intai is not apoi
+
+
+def test_harta_de_impersonate_e_pinuita():
+    """ELF-2: harta COMPLETA de override-uri de amprenta, domeniu cu domeniu.
+
+    De ce pinuita si nu doar validata ca forma: un override sters trece suita fara
+    sa clipeasca (suita e offline) si reapare abia in PRODUCTIE, ca
+    `ProductExtractionError(reason="challenge")` pe fiecare extractie de pe
+    domeniul respectiv. Exact asa s-a manifestat elefant.ro la ELF-2 — sonda il
+    validase de cinci ori in aceeasi zi, fiindca sondele merg pe `chrome`
+    (DEFAULT_IMPERSONATE), iar productia pe alt profil implicit.
+
+    Literalele de profil sunt permise AICI: garda
+    test_niciun_profil_hardcodat_vechi_in_app scaneaza doar `backend/app/**`.
+    """
+    assert impersonate_overrides() == {
+        "43einhalb.com": "firefox135",   # ACCESS-2
+        "flanco.ro": "firefox135",       # CONTENT-2
+        "notino.ro": "firefox135",       # LOT4
+        "elefant.ro": "chrome",          # ELF-2 — 403 Cloudflare pe implicit, 200 pe chrome
+    }
+
+    # Si harta chiar ajunge la fetch: rezolvarea per-URL a productiei o onoreaza,
+    # inclusiv pe subdomeniu. Fara asta, harta ar putea fi corecta si ocolita.
+    assert ss._impersonate_for("https://www.elefant.ro/produs_abc") == "chrome"
+    assert ss._impersonate_for("https://elefant.ro/produs_abc") == "chrome"

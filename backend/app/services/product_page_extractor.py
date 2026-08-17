@@ -1129,6 +1129,156 @@ def _extract_asos(url: str) -> dict:
     }
 
 
+# ── elefant.ro (ELF-2) ────────────────────────────────────────────────────────
+
+# Formatul de pret MASURAT pe elefant (ELF-1/1b, trei PDP-uri): "19,31 lei",
+# "89,99 lei", "10,99 lei"; mii cu punct, zecimale cu virgula, sufix "lei".
+# Zecimalele sunt OPTIONALE (un pret rotund se randeaza fara ele), dar restul e
+# strict: ancorat la capete, deci un nod care ar contine DOUA preturi lipite
+# ("39,99 lei19,31 lei") intoarce None in loc sa produca un numar inventat.
+_ELEFANT_PRET_RE = re.compile(
+    r"^(\d{1,3}(?:\.\d{3})*|\d+)(?:,(\d{2}))?\s*lei$", re.I)
+
+# Payload-ul GTM al paginii de produs; `price` vine cu punct zecimal ("19.31").
+_ELEFANT_GTM_RE = re.compile(r"GTMproductDetail\.push\(\s*(\{.*?\})\s*\)", re.S)
+
+
+def _parse_pret_elefant(text) -> float | None:
+    """Pretul din textul vizibil al unui nod de pret elefant, parsare STRICTA.
+
+    NU foloseste _parse_price_any dinadins: acela e permisiv prin design (curata
+    orice non-cifra si ghiceste separatorul), deci ar transforma si un text
+    corupt intr-un numar plauzibil. Aici sursa are UN singur format masurat, iar
+    o abatere de la el inseamna ca pagina s-a schimbat — semnal pe care il vrem
+    ca esec curat (None), nu ca reparatie tacuta.
+    """
+    if not isinstance(text, str):
+        return None
+    curat = re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
+    potrivire = _ELEFANT_PRET_RE.match(curat)
+    if potrivire is None:
+        return None
+    intreg = potrivire.group(1).replace(".", "")
+    zecimale = potrivire.group(2) or "0"
+    try:
+        return float(f"{intreg}.{zecimale}")
+    except ValueError:
+        return None
+
+
+def _pret_elefant_din_gtm(html: str):
+    """(pret, gasit_payload) din `window.ish.GTMproductDetail`.
+
+    Rezerva pentru cazul in care ancora primara dispare. Parsare STRICTA cu
+    float(), ca la _price_from_regex: sursa e o stare JS incorporata, unde
+    punctul e MEREU separator zecimal.
+    """
+    potrivire = _ELEFANT_GTM_RE.search(html or "")
+    if potrivire is None:
+        return None, False
+    try:
+        payload = json.loads(potrivire.group(1))
+    except Exception:
+        return None, True
+    if not isinstance(payload, dict):
+        return None, True
+    brut = payload.get("price")
+    if not isinstance(brut, (str, int, float)) or isinstance(brut, bool):
+        return None, True
+    try:
+        return float(brut), True
+    except (TypeError, ValueError):
+        return None, True
+
+
+def _extract_elefant(url: str) -> dict:
+    """elefant.ro — Intershop, zero date structurate in pagina.
+
+    Masurat la VTX-1c + ELF-1/1b (2026-08-17): domeniul n-are ld+json, n-are
+    microdata si n-are OG, deci fluxul generic ridica `no_product_data` pe orice
+    pagina de produs. Datele stau in DOM si intr-un payload GTM.
+
+    UN singur fetch, prin poarta guarded C-14 (pagina poarta tot ce ne trebuie).
+    """
+    html = _fetch_text_guarded(url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Numele: <h1>, masurat curat pe toate cele trei PDP-uri (redus, neredus,
+    # epuizat). `<title>` ar aduce si brandul si sufixul " - elefant.ro".
+    titlu = soup.find("h1")
+    name = _clean_text(titlu.get_text(" ", strip=True)) if titlu is not None else None
+
+    # --- Pretul, in ordinea de incredere masurata ---------------------------
+    # 1. PRIMAR: `[data-testing-id="current-price"]`, exact 1 aparitie per PDP pe
+    #    toate cele trei pagini masurate, cu moneda pe ACELASI element.
+    price, currency = None, None
+    nod = soup.select_one('[data-testing-id="current-price"]')
+    if nod is not None:
+        price = _parse_pret_elefant(nod.get_text(" ", strip=True))
+        if price is not None:
+            currency = _normalize_currency(nod.get("data-price-currencymnemonic"))
+
+    # 2. REZERVA: payload-ul GTM. Moneda NU e in payload, deci ramane None —
+    #    DELIBERAT. Fluxul generic pune "RON" pe magazinele romanesti (vezi
+    #    parse_product_html), dar acolo defaultul acopera o pagina care oricum a
+    #    dovedit ca e de produs; aici am ajunge la el tocmai fiindca ancora
+    #    primara a disparut, adica pagina s-a schimbat. Intr-un asemenea moment o
+    #    moneda presupusa ar ascunde exact schimbarea pe care vrem s-o vedem:
+    #    lasam None si semnaleaza validarea din aval.
+    if price is None:
+        price, _ = _pret_elefant_din_gtm(html)
+
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina elefant fara <h1>: {(url or '')[:120]}")
+    if price is None:
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Pagina elefant fara pret citibil (nici testing-id, nici GTM): "
+            f"{(url or '')[:120]}")
+    if price <= 0:
+        raise ProductExtractionError(
+            "invalid_price", f"Pret invalid ({price!r}) la '{name[:60]}'")
+
+    # Imaginea: masurata pe `.product-image-container img` (varianta de 1000px).
+    # OG lipseste cu totul pe domeniu, dar il pastram ca plasa daca apare candva.
+    img = soup.select_one(".product-image-container img[src]")
+    image_url = (img.get("src") if img is not None else None) or _meta(soup, "og:image")
+
+    return {
+        "name": name,
+        "price": price,
+        "currency": currency,
+        # STOC: None NECONDITIONAT, si e o decizie masurata, nu o scapare.
+        #
+        # ELF-1b a comparat PDP-ul unui produs pe care catalogul il clasa
+        # `AvailableFlag-0` ("Indisponibil") cu PDP-uri de produse in stoc: din 12
+        # semnale verificate, ZERO separa ramurile. elefant.ro nu randeaza stocul
+        # server-side nici pe pagina de produs, nici pe placa de listare — il
+        # stampileaza JS, dupa un apel la GetProductData-GetInventoryStatusForProducts.
+        #
+        # NU "repara" asta cu niciuna dintre urmatoarele, toate masurate ca false:
+        #   * `[data-testing-id="addToCartButton"]` — prezent IDENTIC si pe produsul
+        #     indisponibil (fara `disabled`, fara style); ar da True mereu;
+        #   * bara sticky — `StickyAddProduct` SI `StickyNotAvailable` ("Indisponibil")
+        #     exista amandoua in DOM pe ORICE produs, ambele cu `display: none`;
+        #   * `data-sold-out-text="Stoc epuizat!"` — sablon pe fiecare placa din
+        #     ORICE listare (61 aparitii si in cea de indisponibile, si in cea in
+        #     stoc), ascuns in `div.hidden.js-product-sold-out-text`.
+        #
+        # Avalul e tri-state si stie sa afiseze necunoscutul (StockBadge -> "Stoc
+        # necunoscut"), deci None e informatie corecta, nu lipsa de informatie.
+        "in_stock": None,
+        "is_aggregate": False,
+        "variants": None,
+        "image_url": image_url,
+        "canonical_url": _canonical_url(soup, url),
+        "domain": _domain_of(url),
+        "method": "elefant_intershop",
+        "override_applied": False,
+    }
+
+
 # ── Shopify (SHOP-1) ──────────────────────────────────────────────────────────
 
 _SHOPIFY_HANDLE_RE = re.compile(r"/products/([^/?#]+)")
@@ -1322,6 +1472,7 @@ def _shopify_extractor_for(url: str):
 # Cheia e domeniul de baza; potrivirea e suffix-safe, ca la allow-list-ul C-14.
 CUSTOM_EXTRACTORS: dict[str, callable] = {
     "asos.com": _extract_asos,
+    "elefant.ro": _extract_elefant,
 }
 
 

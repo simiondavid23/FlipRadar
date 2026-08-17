@@ -618,6 +618,35 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "API-ul de catalog VTEX e deschis (206 + header resources, 52.930 "
                  "produse), rezervat axei D — vezi docs/catalog_domain_log.md",
     },
+    "elefant.ro": {
+        "label": "Elefant",
+        "category": "general",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "custom",
+        "status": "validated",
+        # Amprenta implicita a productiei (_IMPERSONATE din scraper_service) ia 403
+        # de la Cloudflare pe elefant; `chrome` ia 200. Profilul concret NU se scrie
+        # aici: garda test_niciun_profil_hardcodat_vechi_in_app face grep pe app/**
+        # dupa profilele vechi, iar tabelul complet e in docs/catalog_domain_log.md.
+        "impersonate": "chrome",
+        "notes": "ELF-1/1b/2; Intershop, ZERO date structurate (fara ld+json, "
+                 "microdata sau OG) — de aici extractorul custom. Pretul: "
+                 "[data-testing-id='current-price'], cu moneda pe acelasi element "
+                 "(data-price-currencymnemonic); rezerva payload-ul GTM "
+                 "window.ish.GTMproductDetail, care insa n-are moneda. Stocul NU e "
+                 "randat server-side nicaieri: PDP-ul unui produs AvailableFlag-0 e "
+                 "identic cu al unuia in stoc pe toate cele 12 semnale verificate, "
+                 "deci in_stock e None PRIN DESIGN (ELF-1b). URL de produs "
+                 "/<slug>_<uuid>; ruta ViewProduct-Start?SKU=<uuid> functioneaza. "
+                 "Outlet 'lichidari-de-stoc', ~9k produse, placi hidratate cu AMBELE "
+                 "preturi la 5,7KB — material pentru un val D. AMPRENTA: profilul "
+                 "implicit al productiei primeste 403 Cloudflare, `chrome` primeste "
+                 "200 — masurat ELF-2, de aici campul impersonate; profilele concrete "
+                 "sunt in tabelul din docs/catalog_domain_log.md (nu aici: garda "
+                 "anti-profil-hardcodat face grep pe app/**) — "
+                 "vezi docs/catalog_domain_log.md",
+    },
     # ── LOT3 / LOT3b — fashion RO (sonde 2026-08-13) ──────────────────────────
     "buzzsneakers.ro": {
         "label": "Buzz Sneakers",

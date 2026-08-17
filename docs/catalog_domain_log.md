@@ -1254,7 +1254,13 @@ paginile partiale de segment), ~35–40 min la pauza de politete de 1,5s + jitte
 Nemasurat inca: cate din cele 41 de categorii depasesc 2.550 (2 testate, 1 a picat)
 si daca vreo subcategorie de nivel 2 depaseste ea insasi plafonul.
 
-### elefant.ro — amanat (Intershop)
+### elefant.ro — amanat la VTX (Intershop) — INCHIS de ELF-1/1b/2, mai jos
+
+> Sectiunea de mai jos ramane cum a fost scrisa la VTX-1c, ca istoric. Doua
+> afirmatii din ea s-au dovedit GRESITE si sunt corectate in sectiunea ELF:
+> „secțiune de Outlet (`data-testing-id="Outlet-link"`)" — acel testing-id NU
+> poarta un URL de outlet; si ipoteza despre `StickyAddProduct` la epuizat —
+> masurata si INFIRMATA la ELF-1b.
 
 Axa L cere **extractor custom**: pagina de produs are ZERO `application/ld+json`,
 zero `itemtype`/`itemscope` (cele 3 `itemprop` sunt `reviewRating`), fara
@@ -1280,6 +1286,121 @@ Placa hidratata (6K, `text/html`) livreaza pretul si linkul canonic, de forma
 (1.603 doar pentru o categorie), ori harness de browser. Bonus masurat: elefant are
 secțiune de Outlet (`data-testing-id="Outlet-link"`), punctul firesc de intrare
 pentru un val de reduceri.
+
+---
+
+## ELF-1/1b/2 — elefant.ro: extractor custom Intershop, cu stoc onest necunoscut
+
+Trei sonde (5 cereri) si o implementare. Sondele au inchis pe rand: pretul curent
+si moneda (VTX-1c), pretul taiat + Omnibus (ELF-1), ramura negativa a stocului
+(ELF-1b). Dump-urile stau in `scripts/diagnostics/dumps_elf1/` si `dumps_elf1b/`
+(gitignorate), iar fragmentele folosite de teste in `backend/tests/fixtures/elefant/`.
+
+### Axa L — `method: custom`, `elefant_intershop` (FACUT)
+
+Fluxul generic chiar n-are ce citi: verificat pe dump-ul real, `parse_product_html`
+ridica `no_product_data` (zero ld+json, zero microdata, zero OG pe domeniu). Testul
+`test_elefant_fluxul_generic_chiar_nu_poate_citi_pagina` pinuieste asta — daca
+elefant capata candva date structurate, testul cade si intrebarea „mai avem nevoie
+de cod bespoke?" se pune singura.
+
+Pretul, in ordinea de incredere masurata pe TREI PDP-uri (redus, neredus, epuizat):
+
+1. `[data-testing-id="current-price"]` — exact **1 aparitie per pagina** pe toate
+   trei, cu moneda pe ACELASI element (`data-price-currencymnemonic="RON"`).
+2. Rezerva: `window.ish.GTMproductDetail`, unde `price` are zecimala cu PUNCT.
+   Moneda nu e in payload, deci pe ramura asta ramane `None` — deliberat: pagina
+   din care a disparut ancora primara e o pagina schimbata, iar un „RON" presupus
+   ar ascunde exact schimbarea.
+
+Pretul TAIAT exista, dar NU face parte din contractul extractorului de pagina —
+e material de val D (mai jos). Forma lui, pe doua suprafete:
+
+```html
+<!-- blocul principal, table.pdp-table — FARA testing-id -->
+<span class="old-price">39,99&nbsp;lei</span><span class="current-price">19,31&nbsp;lei</span>
+<!-- bara sticky, div.price-container — CU testing-id -->
+<div class="was-price old-price" data-testing-id="old-price">39,99 lei</div>
+<div class="current-price sale-price" data-testing-id="current-price"
+     data-price-currencymnemonic="RON">19,31 lei </div>
+```
+
+Comentariul de template `<!-- Determines if the SalePrice is equal to the Comparable
+Price Type -->` apare doar pe produsul NEREDUS: e marker de ramura, nu de pret.
+
+**Omnibus: NEMARCAT.** Zero „30 de zile", „cel mai mic", „recomandat", PRP/RRP/PVR
+pe pagina redusa; textul vizibil din jurul perechii e gol (`39,99 lei 19,31 lei`).
+Procentul e decorativ si are clase diferite per suprafata (`product-img-discount`
+pe PDP, `product-label product-label-discount` pe placa). Consecinta pentru un
+eventual R1 pe elefant: referinta exista, dar **fara eticheta legala** — de decis
+separat daca asta califica pentru prag.
+
+### Amprenta: `impersonate: chrome` e OBLIGATORIU (ELF-2)
+
+Prima verificare live prin `extract_product` a picat pe toate cele trei URL-uri cu
+`reason=challenge`, desi sonda validase domeniul de cinci ori in aceeasi zi.
+Cauza nu era extractorul, ci amprenta — masurat pe acelasi URL, la minute distanta:
+
+| amprenta | de unde vine | raspuns |
+|---|---|---|
+| `chrome131` | `_IMPERSONATE`, implicitul productiei (`scraper_service`) | **403**, `server: cloudflare` |
+| `chrome` | `DEFAULT_IMPERSONATE`, ce folosesc SONDELE (`app/utils/http_profile`) | **200**, 142.696 octeti |
+
+De aici campul `impersonate: "chrome"` in intrarea din registru. Lectia trece
+dincolo de elefant: **sondele si productia merg pe doua amprente diferite**, deci o
+sonda verde NU dovedeste ca domeniul merge in productie — doar verificarea live
+prin calea de productie o dovedeste.
+
+### Stocul — `in_stock=None` PRIN DESIGN (ELF-1b)
+
+elefant.ro **nu randeaza stocul server-side nicaieri**. PDP-ul unui produs pe care
+catalogul il claseaza `AvailableFlag-0` („Indisponibil") e identic cu al unuia in
+stoc: din 12 semnale verificate, ZERO separa ramurile; singura diferenta de
+testing-id intre paginile comparate a fost `old-price`, adica ramura de PRET.
+PDP-ul n-are nici macar mecanism de inventar (`GetInventoryStatus`,
+`inventory-status`, `js-product-sold-out` = 0 aparitii), iar ETA-ul livrarii e un
+`<span class="js-eta" id="ArrivalTime"></span>` GOL pe toate paginile.
+
+Trei semnale par sa spuna stocul si toate sunt FALSE — enumerate si in comentariul
+extractorului, ca sa nu le „repare" nimeni din reflex:
+
+| semnal | de ce nu merge |
+|---|---|
+| `[data-testing-id="addToCartButton"]` | prezent identic pe produsul indisponibil, fara `disabled` — ar da `True` mereu |
+| bara sticky | `StickyAddProduct` SI `StickyNotAvailable` („Indisponibil") exista amandoua in DOM pe ORICE produs, ambele cu `display: none` |
+| `data-sold-out-text="Stoc epuizat!"` | sablon pe fiecare placa din ORICE listare (61 aparitii si in cea de indisponibile, si in cea in stoc), ascuns in `div.hidden.js-product-sold-out-text` |
+
+Stocul real traieste doar in `GetProductData-GetInventoryStatusForProducts`,
+declarat de LISTARE prin `data-inventory-status-url` si apelat de JS — NEMASURAT
+(probabil POST + `SynchronizerToken`). Avalul e tri-state (`StockBadge` -> „Stoc
+necunoscut", garda `is not None` in `products.py`), deci `None` e informatie
+corecta, nu lipsa de informatie.
+
+> RAMANE NEEXCLUS ca produsele din `AvailableFlag-0` sa fie totusi cumparabile,
+> iar flagul sa insemne altceva decat „epuizat". Cele 2 cereri ale ELF-1b nu
+> departajeaza; ar departaja doar endpoint-ul de inventar.
+
+### Navigare si material pentru axa D (DOCUMENTAT, nu implementat)
+
+* URL de produs: `/<slug>_<uuid>`, unde `<uuid>` e `data-sku`-ul din listare.
+  Ruta `ViewProduct-Start?SKU=<uuid>` (prefix
+  `/INTERSHOP/web/WFS/elefant-elefantRO-Site/ro_RO/-/RON/`) intoarce PDP-ul
+  complet, 200, fara redirect — utila cand ai doar `data-sku`. Atentie: pagina
+  venita pe ruta asta **nu poarta `link rel=canonical`**.
+* Outlet: `https://www.elefant.ro/list/promotii-speciale/lichidari-de-stoc/filters/warehouse_stock-true`
+  — ~9.060 produse, 151 pagini x 60, `?pag=N`. **NU** se ajunge la el prin
+  `data-testing-id="Outlet-link"`: acela e un testing-id reciclat pe slotul de link
+  promotional din bara de utilitati (Marketplace / Targul de cadouri / Esentiale,
+  toate CMS, doua dintre ele intr-un comentariu HTML).
+* Listarile implicite arata doar produse in stoc (`AvailableFlag=1` in
+  `SearchParameter`); filtrul de indisponibile e ascuns utilizatorului printr-o
+  regula CSS din pagina: `li:has(a[href*="AvailableFlag-0"]) { display: none !important; }`.
+* Scheletul de listare **poarta link canonic**, pe `a.product-list-item__sold-out-wrapper`,
+  frate al lui `div.lazy.inventory-item` in `div.product-list-item`. Deci un val D
+  ajunge la PDP-uri FARA hidratare.
+* Hidratarea placii (`data-action` -> `ViewProductTileAsync-Start`) ramane utila
+  pentru PRETURI: placa poarta AMBELE preturi si eticheta de discount, la **5,7 KB
+  fata de 133 KB pagina** — de ~23x mai ieftin, la aceeasi 1 cerere/produs.
 
 ---
 

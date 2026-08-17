@@ -181,6 +181,7 @@ def test_validated_domains_santinela():
         "jucarii-vorbarete.ro",                       # LOT5
         "nichiduta.ro", "brickdepot.ro",              # LOT5b
         "f64.ro",                                     # VTX-2
+        "elefant.ro",                                 # ELF-2
     }
 
 

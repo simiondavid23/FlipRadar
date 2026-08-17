@@ -70,6 +70,7 @@ const CATEGORY_LABEL = {
   tcg: "TCG",
   fashion: "Fashion",
   electronice: "Electronice",
+  general: "General",
 };
 
 const round1 = (n) => (n == null ? null : Math.round(n * 10) / 10);
