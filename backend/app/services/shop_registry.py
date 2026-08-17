@@ -647,6 +647,79 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "anti-profil-hardcodat face grep pe app/**) — "
                  "vezi docs/catalog_domain_log.md",
     },
+    # ── G1 — ultimele doua din Grupul 1 (sonda G1-1 + pasa 2, 2026-08-17) ──────
+    # Amandoua erau marcate "sonda Shopify la implementare"; masuratoarea le-a
+    # infirmat pe amandoua, deci intra pe jsonld. Fara camp `impersonate`: 12/12
+    # cereri au raspuns 2xx pe amprenta implicita a productiei, lantul de
+    # escaladare nu s-a activat niciodata.
+    "sivasdescalzo.com": {
+        "label": "Sivasdescalzo",
+        "category": "sneakers",
+        "country": "ES",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G1-1; Next.js/RSC, NU Shopify (/products.json da 404 cu "
+                 "__next_error__). Ruta /en/ serveste USD, nu EUR: ld+json, "
+                 "payload-ul RSC (price_range.regular_price.currency) si textul "
+                 "vizibil ($190) spun toate acelasi lucru, iar EUR apare in pagina "
+                 "DOAR in tabelul de livrari per tara — moneda se citeste din "
+                 "pagina, conversia BNR acopera restul. ld+json ABSENT pe unele "
+                 "pagini (gift card: zero blocuri application/ld+json), deci "
+                 "no_product_data e comportamentul CORECT acolo, nu un bug. "
+                 "Marimile stau doar in RSC, nu in ld+json (hasVariant lipseste). "
+                 "Axa D cere o runda RSC separata in valul D — pagina de promotii "
+                 "e o aterizare, nu o listare — vezi docs/catalog_domain_log.md",
+    },
+    "tezyo.ro": {
+        "label": "Tezyo",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G1-1/pasa 2; Magento 2, CDN comun cu otter.ro (cdn.otter.ro). "
+                 "DOUA forme de ld+json: produsul simplu da Product + Offer cu "
+                 "price/availability, iar produsul cu marimi da ProductGroup + "
+                 "AggregateOffer — acolo pretul si stocul stau in oferta IMBRICATA "
+                 "(AggregateOffer.offers[]) si in hasVariant[].offers, cate una pe "
+                 "marime, cu size si sku propriu; agregatul in sine n-are "
+                 "availability, exact tiparul f64/VTX-2. Referinta taiata NU e in "
+                 "ld+json (lowPrice == highPrice == pretul platit): sta doar in DOM "
+                 "(.old-price) si in cardurile de listare — de aici descriptorul de "
+                 "mai jos. `.product-info-stock-sku` poarta placeholderul Magento "
+                 "NEINLOCUIT ('Numai %1 ramase'), deci textul de stoc din DOM e "
+                 "inutilizabil; datele structurate sunt sursa buna",
+        # DEAL-2 — masurat in G1-1: 1.655 produse pe 69 de pagini (toolbar-amount
+        # "Produsele 1 - 23 din 1655"). ACOPERIRE PARTIALA ASUMATA: doar sectiunea
+        # femei e masurata; celelalte sectiuni de reduceri se adauga in valul D,
+        # dupa sondare — nu le presupunem aici.
+        "listing": {
+            "url": "https://www.tezyo.ro/reduceri/pentru/femei",
+            "page_url_template": "https://www.tezyo.ro/reduceri/pentru/femei?p={n}",
+            "max_pages": 80,
+            "currency": "RON",
+            "card": "li.product-item",
+            "link": "a.product-item-link",
+            # Titlul VINE DIN TEXTUL LINKULUI: `title` e un selector CSS pe card, iar
+            # aici tinteste chiar ancora, deci _titlu_of ii ia textul. Nu e nevoie de
+            # o conventie noua — pe otter.ro acelasi camp tinteste h3.product-item-name.
+            "title": "a.product-item-link",
+            # Magento expune numericul in atribut, deci nu parsam "244,00 lei".
+            # `finalPrice` (nu `.special-price [data-price-amount]`): acelasi nod pe
+            # cardurile REDUSE, dar il poarta si cardurile la pret plin, deci un
+            # produs nereus nu dispare tacit daca listarea ajunge sa contina unul.
+            "price_attr": ("[data-price-type='finalPrice']", "data-price-amount"),
+            # Masurat G1-2, PASUL 0.5: ramura taiata ARE data-price-amount ("349",
+            # data-price-type="oldPrice"), deci merge tot pe attr_float — nu a fost
+            # nevoie de rezerva pe text cu eu_comma.
+            "compare_attr": ("[data-price-type='oldPrice']", "data-price-amount"),
+            "price_parse": "attr_float",
+            # Omnibus MASURAT absent: nici pe listare, nici pe cele doua PDP-uri nu
+            # apare vreo formulare de pret de referinta (nici PRP, nici 30 de zile).
+            "reference_kind": "nemarcat",
+        },
+    },
     # ── LOT3 / LOT3b — fashion RO (sonde 2026-08-13) ──────────────────────────
     "buzzsneakers.ro": {
         "label": "Buzz Sneakers",

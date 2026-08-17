@@ -1404,6 +1404,101 @@ corecta, nu lipsa de informatie.
 
 ---
 
+## G1-1/G1-2 — sivasdescalzo.com (Next.js/RSC) si tezyo.ro (Magento 2)
+
+Ultimele doua domenii ale Grupului 1. Amandoua erau marcate in lista master
+„sonda Shopify la implementare; daca nu e Shopify -> jsonld", iar miza era ca un
+domeniu Shopify confirmat ar fi intrat pe AMBELE axe dintr-un foc (L prin metoda
+`shopify`, D gratis prin `shopify_domains()`). **Masuratoarea le-a infirmat pe
+amandoua**, deci Grupul 1 se inchide fara acel castig. Sonda: 12 cereri in total
+(10 in G1-1 + 2 in pasa 2), dump-urile in `scripts/diagnostics/dumps_g1/` si
+`dumps_g1_pasa2/` (gitignorate), fragmentul de listare in
+`backend/tests/fixtures/listing/tezyo.ro_cards.html`.
+
+### Amprenta — de ce niciunul n-are camp `impersonate`
+
+Doctrina ELF-2 aplicata din start: sonda a masurat cu profilul de PRODUCTIE al caii
+retail, nu cu cel de sonda, iar la challenge ar fi escaladat pe profilul alternativ
+si apoi pe `firefox135`, consemnand care a raspuns. **Toate cele 12 cereri au primit
+2xx pe prima incercare**, deci lantul de escaladare nu s-a activat niciodata si
+registrul nu are ce suprascrie. Spre deosebire de elefant.ro, aici sonda verde chiar
+dovedeste ca merge in productie.
+
+### sivasdescalzo.com — `method: jsonld`
+
+Nu e Shopify: `/products.json` da **404** cu `<html id="__next_error__">`, iar home-ul
+poarta `x-powered-by: Next.js` si 69 de referinte `/_next/static`. Zero markeri
+Shopify in corp, headere sau cookies.
+
+* **Moneda e USD, nu EUR**, desi magazinul e spaniol. Nu e artefact de masurare:
+  ld+json (`priceCurrency: "USD"`), payload-ul RSC
+  (`price_range.regular_price.currency`) si textul vizibil (`$190`) spun toate acelasi
+  lucru. `EUR` apare de 39 de ori in pagina, dar **exclusiv** in tabelul de metode de
+  livrare per tara (`"country_code":"AT" … "currency":"EUR"`). Home-ul expune un
+  singur prefix de limba (`/en/`). Moneda se citeste din pagina, conversia BNR acopera.
+* **ld+json lipseste pe unele pagini**: pe `/en/p/svd-gift-card` sunt **zero** blocuri
+  `application/ld+json` si zero aparitii de `"price"`. Verificat cu extractorul real pe
+  dump: `parse_product_html` ridica `no_product_data`. Acesta e comportamentul CORECT
+  acolo, nu un bug de raportat.
+* Marimile stau doar in RSC (`self.__next_f`), nu in ld+json — `hasVariant` lipseste,
+  exista un singur `"sku"`. Cine are nevoie de ele deschide o runda de tip Vinted.
+* **Axa D e scumpa**: `/en/l/active-promotions` e o pagina de ATERIZARE, nu o listare —
+  3.549 de caractere de text vizibil, doua linkuri `/p/`, zero `<del>`. Listarea e
+  hidratata client-side prin RSC, deci axa D cere o runda separata in valul D.
+
+### tezyo.ro — `method: jsonld` + descriptor de listare
+
+Magento 2, confirmat de cookie-urile de server `X-Magento-Vary` si `PHPSESSID`, de 67
+de aparitii `Magento_` si de `requirejs/mixins`. Foloseste acelasi CDN ca otter.ro
+(`cdn.otter.ro`). `/products.json` da 404.
+
+**Doua forme de ld+json, masurate pe doua PDP-uri alese deliberat** (unul cu reducere
+si marimi, unul la pret plin fara variante):
+
+| forma | tip | pret | stoc |
+|---|---|---|---|
+| produs simplu | `Product` + `Offer` | `price: "27.00"` | `availability: InStock` |
+| produs cu marimi | `ProductGroup` + `AggregateOffer` | `lowPrice`/`highPrice` | in oferta IMBRICATA |
+
+Pe forma agregata, pretul si stocul stau in `AggregateOffer.offers[]` si in
+`hasVariant[].offers` — cate o oferta pe marime, fiecare cu `size`, `sku` si
+`availability` proprii. Agregatul in sine n-are `availability`: exact tiparul f64/VTEX
+care a cerut coborarea adaugata la VTX-2, iar extractorul o face deja — verificat pe
+dump, iese `is_aggregate: true` cu 5 variante (35–39), fiecare in stoc.
+
+* **Referinta taiata NU e in ld+json**: `lowPrice == highPrice == pretul platit`
+  (244.00), iar 349,00 lei apare doar in DOM (`.old-price`) si in cardurile de listare.
+* `.product-info-stock-sku` poarta placeholderul Magento **neinlocuit** — literal
+  `"Numai %1 ramase SKU 3WMS13114DT5519999"` — deci textul de stoc din DOM e
+  inutilizabil. Datele structurate sunt sursa buna.
+* Omnibus: **absent**, masurat atat pe listare cat si pe ambele PDP-uri — de aici
+  `reference_kind: "nemarcat"`.
+
+### Axa D — listarea de reduceri, in scannerul DEAL-2 (FACUT)
+
+`/reduceri/pentru/femei`: **1.655 de produse pe 69 de pagini**, citit verbatim din
+`#toolbar-amount` („Produsele 1 - 23 din 1655"). `max_pages: 80` e plasa, nu tinta.
+
+Descriptorul e aproape geamanul lui otter.ro — aceeasi tema Magento — cu doua note:
+
+* **titlul vine din TEXTUL ancorei**: cardul n-are un `h2`/`h3` de nume, deci `title`
+  tinteste chiar `a.product-item-link`. Nu a cerut conventie noua (`_titlu_of` ia
+  textul oricarui selector), dar e primul descriptor de forma asta, deci e pinuit de
+  `test_tezyo_titlul_vine_din_textul_ancorei`.
+* **ambele ramuri de pret sunt in atribut**: verificat offline inainte de implementare,
+  ramura taiata ARE `data-price-amount="349"` (`data-price-type="oldPrice"`), la fel ca
+  cea platita — deci tot descriptorul merge pe `attr_float` si nu a fost nevoie de
+  rezerva pe text cu `eu_comma`.
+* Pretul platit se ia de pe `[data-price-type='finalPrice']`, nu de pe
+  `.special-price [data-price-amount]`: pe cardurile reduse sunt acelasi nod, dar
+  `finalPrice` il poarta si cardurile la pret plin, deci un produs nereus nu dispare
+  tacit daca listarea ajunge sa contina unul.
+
+**ACOPERIRE PARTIALA, asumata**: doar sectiunea femei e masurata. Celelalte sectiuni
+de reduceri (barbati, copii) se adauga in valul D, dupa sondare — nu se presupun aici.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

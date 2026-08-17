@@ -182,6 +182,8 @@ def test_validated_domains_santinela():
         "nichiduta.ro", "brickdepot.ro",              # LOT5b
         "f64.ro",                                     # VTX-2
         "elefant.ro",                                 # ELF-2
+        "sivasdescalzo.com",                          # G1-2
+        "tezyo.ro",                                   # G1-2
     }
 
 

@@ -107,6 +107,7 @@ def _deals():
     ("caseking.de", 619.90, 759.70),      # content="619.90", zecimala cu punct
     ("noriel.ro", 49.99, 99.99),          # ".special-price .price", "49,99\xa0lei"
     ("bergfreunde.eu", 47.97, 79.95),     # data-codecept, "€ 47,97"
+    ("tezyo.ro", 244.0, 349.0),           # G1-2: Magento, AMBELE ramuri in atribut
 ])
 def test_parsare_fixture_real(domeniu, pret, taiat):
     """Descriptorul din registru extrage din dump-ul REAL exact valorile masurate."""
@@ -120,6 +121,24 @@ def test_parsare_fixture_real(domeniu, pret, taiat):
     assert domeniu.split(".")[0] in primul["url"]
     assert primul["title"], "titlul nu poate fi gol"
     assert primul["external_id"].startswith("lst:")
+
+
+def test_tezyo_titlul_vine_din_textul_ancorei():
+    """G1-2: primul descriptor la care `title` tinteste CHIAR ancora produsului.
+
+    Pe otter/noriel/bergfreunde `title` e un element separat (h3/h2/div); aici
+    cardul n-are asa ceva, iar numele sta in textul lui `a.product-item-link`.
+    Nu a fost nevoie de o conventie noua — `_titlu_of` ia textul oricarui selector
+    — dar tiparul merita fixat, ca o refactorizare a titlurilor sa nu-l rupa tacit.
+    """
+    carduri = extrage_carduri(_fixture("tezyo.ro"), listing_descriptor("tezyo.ro"),
+                              "tezyo.ro")
+
+    assert [c["title"] for c in carduri] == [
+        "Sandale elegante EPICA albe, 551, din piele ecologica",
+        "Mocasini ALDO bej, CARROBRERIA 110, din piele naturala lacuita",
+        "Pantofi sport EPICA albi, 6159290, din material textil si piele naturala",
+    ]
 
 
 def test_card_fara_pret_valid_e_sarit():
@@ -358,8 +377,10 @@ def test_plafonul_de_productie_este_zece():
 
 # ── 7. Registrul ─────────────────────────────────────────────────────────────
 
-def test_listing_domains_exact_cele_patru_pilot():
-    assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro", "bergfreunde.eu"}
+def test_listing_domains_exact_cele_din_registru():
+    """Cei 4 piloti DEAL-2 + tezyo.ro, adaugat in G1-2."""
+    assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
+                                 "bergfreunde.eu", "tezyo.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
