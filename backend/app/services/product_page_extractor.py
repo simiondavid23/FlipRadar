@@ -360,6 +360,32 @@ def _offer_currency(offer):
     return None
 
 
+def _availability_din_oferte_imbricate(offer) -> bool | None:
+    """VTX-2 — disponibilitatea din `offers` IMBRICATE intr-un AggregateOffer.
+
+    A treia forma de `offers`, dupa ProductGroup/hasVariant (FASHION-1) si lista
+    de oferte cu `size` (FASHION-2): un `Product` simplu al carui `offers` e un
+    singur `AggregateOffer`, care poarta preturile in low/highPrice si tine
+    ofertele reale intr-o lista imbricata. Agregatul NU are `availability`, deci
+    citirea lui dadea None si stocul se pierdea desi era publicat corect — masurat
+    pe f64.ro (VTEX): `offers.@type = AggregateOffer`, `availability` absenta pe
+    agregat, dar `offers[0].availability = "http://schema.org/InStock"`.
+
+    Agregare optimista, ca la `_aggregate_variants`: produsul e cumparabil daca
+    MACAR o oferta imbricata e in stoc. Toate False -> False. Niciuna cunoscuta ->
+    None, adica "necunoscut" — nu se inventeaza un True.
+    """
+    if not isinstance(offer, dict):
+        return None
+    stari = [_normalize_availability(nod.get("availability"))
+             for nod in (offer.get("offers") or [])
+             if isinstance(nod, dict)]
+    cunoscute = [s for s in stari if s is not None]
+    if not cunoscute:
+        return None
+    return True if any(cunoscute) else False
+
+
 def _variant_label(variant: dict, *, fallback_name: bool = True) -> str:
     """Eticheta unei variante: campul `size`, cu numele ca plasa de siguranta.
 
@@ -610,6 +636,8 @@ def _collect_jsonld(soup):
             is_aggregate = True
         else:
             in_stock = _normalize_availability(offer.get("availability"))
+            if in_stock is None:
+                in_stock = _availability_din_oferte_imbricate(offer)
         candidate = {
             "name": _clean_text(obj.get("name")),
             "price": price,

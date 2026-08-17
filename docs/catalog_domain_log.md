@@ -1177,6 +1177,112 @@ filtrul de categorie, care lucreaza client-side pe lista deja incarcata.
 
 ---
 
+## VTX-1/1b/1c/2 — f64.ro (VTEX) si elefant.ro (Intershop)
+
+Sonde: `scripts/diagnostics/dumps_vtx1/`, `dumps_vtx1b/`, `dumps_vtx1c/`
+(6 + 4 + 5 = 15 cereri, read-only). Prezumtia initiala era o "pereche VTEX";
+**doar f64.ro e VTEX**. elefant.ro ruleaza pe **Intershop** — dovada verbatim din
+`elefant.ro_home.html`: `media.elefant.ro/INTERSHOP/static/WFS/elefant-Site/...`.
+
+### Axa L — f64.ro intra pe `method: jsonld` (VTX-2, FACUT)
+
+ld+json `Product` cu `AggregateOffer`, iar oferta REALA sta intr-o lista imbricata:
+
+```json
+{"@type":"AggregateOffer","lowPrice":475.9,"priceCurrency":"RON","offerCount":1,
+ "offers":[{"@type":"Offer","price":475.9,"priceCurrency":"RON",
+            "availability":"http://schema.org/InStock","sku":"00381218"}]}
+```
+
+Agregatul **nu are `availability`**, deci extractorul (care citea doar nivelul
+agregatului) intorcea `in_stock=None` desi stocul era publicat corect. VTX-2 a
+adaugat coborarea in ofertele imbricate — a treia forma de `offers`, dupa
+ProductGroup/hasVariant (FASHION-1) si lista de oferte cu `size` (FASHION-2).
+Agregare optimista: cumparabil daca MACAR o oferta imbricata e in stoc; toate
+epuizate -> False; niciuna declarata -> None (nu se inventeaza True).
+`availability` pe agregat, cand exista, are precedenta.
+
+Pretul taiat **NU e in ld+json** — sta doar in DOM, cu doua etichete distincte
+(`Pret anterior` si `PRP`, cu aceeasi valoare pe produsul masurat). Omnibus **PRP**;
+care din cele doua e minimul pe 30 de zile ramane NEMASURAT (doua pagini nu ajung).
+
+### Axa D — API-ul de catalog VTEX (DOCUMENTAT, nu implementat)
+
+Endpoint: `/api/catalog_system/pub/products/search`. **2xx include 206** — VTEX
+raspunde `206 Partial Content`, iar o verificare pe `status == 200` clasifica API-ul
+drept inchis (exact greseala primei treceri). Header-ul `resources` poarta
+`interval/total`, deci prima pagina a oricarui segment da totalul GRATIS.
+
+Plafoane MASURATE, verbatim din raspunsurile de eroare:
+
+```
+_from=0&_to=99      -> 400  "Parameter _to can't be greater than 50."
+_from=2540&_to=2549 -> 400  "Parameter _from can't be greater than 2500."
+```
+
+Deci enumerarea liniara acoperă ~2.550 din **52.930** de produse (4,8%):
+**segmentarea e obligatorie.**
+
+**Designul aprobat — descendere adaptiva in arbore.** `/api/catalog_system/pub/category/tree/2`
+da **41 categorii de nivel 1 si 179 noduri de nivel 2**. Prima pagina a unui segment
+(`fq=C:<id>`) intoarce totalul in `resources`; sub ~2.500 se enumera liniar, peste
+se coboara pe copiii de nivel 2. Contraexemplul masurat, care a decis designul:
+
+| categorie | id | `resources` | total | enumerabila liniar? |
+|---|---|---|---|---|
+| Aparate foto | 1000003 | `0-9/1164` | 1.164 | da |
+| Obiective foto | 1000017 | `0-9/2855` | 2.855 | **nu** (are 5 subcategorii) |
+
+Filtrul restrange real: doar 2 din 10 produse ale paginii nefiltrate cad in
+"Aparate foto". Frunza care depaseste ea insasi plafonul: sub-segmentare pe
+intervale de preț (`fq=P:[a TO b]`), tipar VTEX clasic dar **NEMASURAT la f64** —
+de verificat cu o cerere la implementare, nu de presupus.
+
+Excludere din arbore (categorii ne-catalog, citite din `tree`): `Advanced Payment
+Products`, `EOL`, `SH-uri de postat`, `frontend`, `NoDepartment`, `Insurance`,
+`Card Cadou F64`. Fara ele, segmentarea cheltuie cereri pe zgomot.
+
+R1 = `ListPrice` vs `Price` din `commertialOffer`. Semantica e de **PRP**, deci
+pragul relevant e `listing_r1_threshold` (DEAL-2b), nu cel global. Moneda **NU e in
+`commertialOffer`** — se ia din registru/pagina (RON masurat). **1 seller per produs**
+la toate cele 10 masurate: f64 nu e marketplace.
+
+Aritmetica: ~1.100–1.300 de cereri per scan complet (52.930/50 = 1.059 minim, plus
+paginile partiale de segment), ~35–40 min la pauza de politete de 1,5s + jitter
+0–0,6s (cadenta JSON din `deal_scanner`, nu cea de 2,5s a paginilor HTML).
+
+Nemasurat inca: cate din cele 41 de categorii depasesc 2.550 (2 testate, 1 a picat)
+si daca vreo subcategorie de nivel 2 depaseste ea insasi plafonul.
+
+### elefant.ro — amanat (Intershop)
+
+Axa L cere **extractor custom**: pagina de produs are ZERO `application/ld+json`,
+zero `itemtype`/`itemscope` (cele 3 `itemprop` sunt `reviewRating`), fara
+`og:price`. Doua ancore curate exista totusi:
+
+```html
+<div class="current-price" data-testing-id="current-price"
+     data-price-currencymnemonic="RON">89,99 lei </div>
+```
+```javascript
+window.ish.GTMproductDetail.push({"id":"7fcfa5a6-...","price":"89.99","brand":"D-Toys"});
+```
+
+Payload-ul GTM are zecimala cu PUNCT si acelasi UUID ca `data-sku` (tiparul noriel).
+**Stocul nu s-a putut masura**: zero `availability`/`in-stock` pe pagina; butonul
+`StickyAddProduct` exista lang preț, dar absenta lui la epuizat e ipoteza, nu
+masuratoare (un singur produs, in stoc).
+
+Axa D: listarea de categorie e un **schelet** — 60 de placi `div.lazy.inventory-item`
+GOALE, fiecare cu `data-action` catre `ViewProductTileAsync-Start?...ProductID=...`.
+Placa hidratata (6K, `text/html`) livreaza pretul si linkul canonic, de forma
+`/<slug>_<data-sku>`. Deci `listing_scan` clasic nu merge: ori o cerere per produs
+(1.603 doar pentru o categorie), ori harness de browser. Bonus masurat: elefant are
+secțiune de Outlet (`data-testing-id="Outlet-link"`), punctul firesc de intrare
+pentru un val de reduceri.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

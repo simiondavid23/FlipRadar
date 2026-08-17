@@ -180,6 +180,7 @@ def test_validated_domains_santinela():
         "noriel.ro", "regatuljocurilor.ro",           # LOT5
         "jucarii-vorbarete.ro",                       # LOT5
         "nichiduta.ro", "brickdepot.ro",              # LOT5b
+        "f64.ro",                                     # VTX-2
     }
 
 

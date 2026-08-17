@@ -603,6 +603,21 @@ SHOP_REGISTRY: dict[str, dict] = {
         "notes": "LOT2b; starea second-hand traieste doar in calea URL "
                  "(itemCondition absent); bucati unice, comportament la vandut nemasurat",
     },
+    "f64.ro": {
+        "label": "F64",
+        "category": "foto",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "VTX-1/2; VTEX. Pretul si stocul vin din oferta IMBRICATA a "
+                 "AggregateOffer, nu din agregat (agregatul n-are availability — a "
+                 "cerut coborarea adaugata la VTX-2). Pretul taiat NU e in ld+json: "
+                 "sta doar in DOM, cu DOUA etichete, 'Pret anterior' si 'PRP' — "
+                 "Omnibus PRP, care din ele e minimul pe 30 de zile e NEMASURAT. "
+                 "API-ul de catalog VTEX e deschis (206 + header resources, 52.930 "
+                 "produse), rezervat axei D — vezi docs/catalog_domain_log.md",
+    },
     # ── LOT3 / LOT3b — fashion RO (sonde 2026-08-13) ──────────────────────────
     "buzzsneakers.ro": {
         "label": "Buzz Sneakers",

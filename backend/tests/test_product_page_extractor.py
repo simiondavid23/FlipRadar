@@ -178,6 +178,69 @@ def test_aggregate_offer_lowprice():
     assert res["is_aggregate"] is True
 
 
+def test_aggregate_offer_stoc_din_oferte_imbricate():
+    """VTX-2 — a treia forma de `offers`: agregatul poarta preturile, iar ofertele
+    REALE stau intr-o lista imbricata, care duce `availability`.
+
+    Structura e COPIATA VERBATIM din sonda VTX-1 pe f64.ro (VTEX),
+    `dumps_vtx1/f64.ro_prod1.html`: agregatul n-are `availability`, deci citirea
+    lui dadea `in_stock=None` si stocul se pierdea desi era publicat corect.
+    """
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Godox iT32 Mini Blit TTL iFlash", "sku": "00381218",
+         "offers": {"@type": "AggregateOffer", "lowPrice": 475.9, "highPrice": 475.9,
+                    "priceCurrency": "RON", "offerCount": 1,
+                    "offers": [{"@type": "Offer", "price": 475.9, "priceCurrency": "RON",
+                                "availability": "http://schema.org/InStock",
+                                "sku": "00381218",
+                                "seller": {"@type": "Organization", "name": "F64"}}]}}
+    """))
+
+    res = parse_product_html(html, URL)
+
+    assert res["price"] == 475.9
+    assert res["currency"] == "RON"
+    assert res["is_aggregate"] is True
+    assert res["in_stock"] is True, "stocul vine din oferta imbricata, nu din agregat"
+
+
+def test_aggregate_offer_stoc_imbricat_epuizat():
+    """Toate ofertele imbricate epuizate -> False, nu None: informatia EXISTA."""
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Blit epuizat",
+         "offers": {"@type": "AggregateOffer", "lowPrice": 100.0, "priceCurrency": "RON",
+                    "offers": [{"@type": "Offer", "price": 100.0,
+                                "availability": "http://schema.org/OutOfStock"}]}}
+    """))
+
+    assert parse_product_html(html, URL)["in_stock"] is False
+
+
+def test_aggregate_offer_stoc_imbricat_necunoscut_ramane_none():
+    """Nicio disponibilitate publicata -> None. Nu se inventeaza un True."""
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Blit fara stoc declarat",
+         "offers": {"@type": "AggregateOffer", "lowPrice": 100.0, "priceCurrency": "RON",
+                    "offers": [{"@type": "Offer", "price": 100.0}]}}
+    """))
+
+    assert parse_product_html(html, URL)["in_stock"] is None
+
+
+def test_aggregate_offer_availability_pe_agregat_are_precedenta():
+    """Cand agregatul DECLARA disponibilitatea, ea castiga — coborarea in ofertele
+    imbricate e doar plasa pentru cazul in care agregatul tace."""
+    html = _page(head=_ld("""
+        {"@type": "Product", "name": "Produs cu stoc pe agregat",
+         "offers": {"@type": "AggregateOffer", "lowPrice": 100.0, "priceCurrency": "RON",
+                    "availability": "http://schema.org/OutOfStock",
+                    "offers": [{"@type": "Offer", "price": 100.0,
+                                "availability": "http://schema.org/InStock"}]}}
+    """))
+
+    assert parse_product_html(html, URL)["in_stock"] is False
+
+
 def test_offers_price_specification():
     html = _page(head=_ld("""
         {"@type": "Product", "name": "Aspirator ZZ",
