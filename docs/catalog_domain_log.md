@@ -1136,6 +1136,47 @@ marcaj de sortare. Materie prima pentru o runda de tuning, nu pentru scanul cure
 
 ---
 
+## DEAL-2b — zgomotul PRP: prag separat pentru R1 pe listari
+
+Primul scan DEAL-2 a produs **15.832 de deal-uri**, dominate de „reduceri" fata de
+pretul recomandat: la otter.ro, **87%** din tot ce apare pe /reduceri califica la
+pragul global de 20%. R1 nu mai purta informatie pe calea asta si ingropa R2 —
+scaderea sub minimul istoric, adica semnalul curat.
+
+**Prag separat pentru R1 pe listari.** `_evalueaza` primeste `prag_r1` optional
+(`None` = acelasi prag ca R2, deci apelurile existente se comporta IDENTIC — o
+singura implementare, fara copie divergenta). `listing_scanner` il alimenteaza din
+`RadarSettings.listing_r1_threshold`, implicit `DEFAULT_LISTING_R1_THRESHOLD = 40.0`.
+La `reason="ambele"`, fiecare regula se compara cu pragul EI.
+
+R2 ramane pe `deal_discount_threshold`, neatins. Scannerul Shopify ramane integral
+pe pragul global: acolo `compare_at_price` chiar e referinta unui comerciant activ,
+deci semantica SHOP-2 nu se schimba.
+
+**Inchiderea deal-urilor care nu mai califica — defect in AMBELE scannere.** Pana
+acum criteriul era `external_id not in vazute`, deci se inchideau doar produsele
+DISPARUTE. Un produs inca prezent dar care nu mai trece pragul (pretul a urcat, sau
+pragul a fost marit din UI) trecea prin `continue` la evaluare si ramanea „activ" cu
+date vechi pentru totdeauna. Ambele module tin acum si `calificate` (id-urile care
+au primit deal in scanul curent), iar inchiderea se face pe el.
+
+Efect **retroactiv prin design**: primul scan de dupa o schimbare de prag isi face
+singur curatenia — zero SQL manual, zero migratie de date. Fara fixul asta, pragul
+de mai sus n-ar fi avut niciun efect asupra celor 15.832 de randuri existente.
+
+Filtrul pe `deal_source` e acum EXPLICIT in ambele scannere (`shopify_enum`,
+respectiv `listing_scan`). Randurile `refresh_diff` pot sta pe acelasi domeniu (un
+produs urmarit prin link) si niciun scanner nu spune nimic despre ele; pana acum
+scapau doar fiindca `external_id`-ul lor (`src:<id>`) nu se ciocnea accidental.
+D7 ramane: starea userului nu se atinge, randul nu se sterge.
+
+**Filtru de sursa in feed.** `_serialize` intoarce `deal_source`; `list_deals`
+primeste `source`, validat contra `_SURSE` (422 explicit pe valoare invalida).
+Filtrarea e pe SERVER — feed-ul are zeci de mii de randuri, spre deosebire de
+filtrul de categorie, care lucreaza client-side pe lista deja incarcata.
+
+---
+
 ## Domenii neintrate
 
 > NU sunt validate: sole.ro si farmaciatei.ro (degradate la sonda RETAIL-1 — 502 pe

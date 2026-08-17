@@ -379,3 +379,107 @@ def test_fiecare_descriptor_are_cheile_obligatorii():
             assert d.get(cheie), f"{domeniu} nu are `{cheie}`"
         assert d["reference_kind"] in {"prp", "min30", "nemarcat"}
         assert "{n}" in d["page_url_template"]
+
+
+# ── 8. DEAL-2b — pragul separat al lui R1 + inchiderea pe calificare ─────────
+
+def test_prag_r1_implicit_este_40():
+    """None inseamna implicitul, nu 0 — altfel tot catalogul ar califica."""
+    assert listing_scanner.DEFAULT_LISTING_R1_THRESHOLD == 40.0
+    assert listing_scanner._prag_r1(None) == 40.0
+
+    class _Gol:
+        listing_r1_threshold = None
+    assert listing_scanner._prag_r1(_Gol()) == 40.0
+
+    class _Zero:
+        listing_r1_threshold = 0
+    assert listing_scanner._prag_r1(_Zero()) == 40.0, "0 nu e un prag valid"
+
+
+def test_prag_r1_valoarea_userului_e_respectata():
+    class _Setari:
+        listing_r1_threshold = 65.0
+    assert listing_scanner._prag_r1(_Setari()) == 65.0
+
+
+def _seteaza_prag(valoare):
+    """Muta pragul R1 pe randul de setari existent (fixture-ul `scan` creeaza
+    setarile doar la prima rulare)."""
+    db = SessionLocal()
+    try:
+        s = db.query(RadarSettings).first()
+        s.listing_r1_threshold = valoare
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_r1_sub_pragul_de_listare_nu_califica(scan):
+    """Cardul otter e 98 fata de 379 = 74%. Peste pragul global (20), dar sub un
+    prag de listare de 80 — deci NU e deal pe calea asta."""
+    scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
+    assert _deals(), "cu implicitul de 40% cardul califica"
+
+    db = SessionLocal()
+    try:
+        db.query(Deal).delete()
+        db.commit()
+    finally:
+        db.close()
+    _seteaza_prag(80.0)
+
+    scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
+
+    assert _deals() == [], "74% < 80% -> niciun deal"
+
+
+def test_r2_nu_e_afectat_de_pragul_de_listare(scan):
+    """Pragul R1 urcat nu trebuie sa taie si semnalul curat (minim istoric)."""
+    import re
+    # Prima trecere: stabileste memoria de pret, fara compare_at (deci fara R1).
+    fara_taiat = re.sub(r'data-price-type="oldPrice"', 'data-price-type="fostPret"',
+                        _fixture("otter.ro"))
+    scan([fara_taiat, ""], descriptor=_descriptor_test())
+    assert _deals() == [], "prima vedere n-are istoric, deci nici R2"
+
+    _seteaza_prag(95.0)          # R1 practic dezactivat
+    # A doua trecere: acelasi produs la jumatate de pret -> R2 pe pragul GLOBAL.
+    mai_ieftin = fara_taiat.replace('data-price-amount="98"', 'data-price-amount="40"')
+    scan([mai_ieftin, ""], descriptor=_descriptor_test())
+
+    deals = [d for d in _deals() if d.reason == "istoric"]
+    assert deals, "R2 ramane pe pragul global, neatins de pragul R1"
+
+
+def test_inchide_dealul_prezent_dar_necalificat(scan):
+    """Efectul retroactiv prin design: primul scan de dupa marirea pragului isi
+    face singur curatenia, fara SQL manual si fara migratie de date."""
+    scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
+    active = [d for d in _deals() if d.ended_at is None]
+    assert active, "linia de baza: dealul e activ"
+
+    _seteaza_prag(90.0)
+    scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
+
+    assert all(d.ended_at is not None for d in _deals()), \
+        "produsul e tot pe pagina, dar nu mai califica -> inchis"
+
+
+def test_inchiderea_pe_calificare_nu_atinge_starea(scan):
+    """D7 ramane valabil si pe calea noua de inchidere."""
+    scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
+    db = SessionLocal()
+    try:
+        for d in db.query(Deal).all():
+            d.state = "ignorat"
+        db.commit()
+    finally:
+        db.close()
+
+    _seteaza_prag(90.0)
+    scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
+
+    for d in _deals():
+        assert d.ended_at is not None
+        assert d.state == "ignorat", "inchiderea nu rescrie starea userului"

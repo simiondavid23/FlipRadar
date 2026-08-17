@@ -38,6 +38,10 @@ class RadarSettings(Base):
     discord_webhook_deals = Column(Text, nullable=True)
     # None -> DEFAULT_DISCOUNT_THRESHOLD (20.0) din deal_scanner.
     deal_discount_threshold = Column(Float, nullable=True)
+    # DEAL-2b — prag SEPARAT pentru R1 pe calea de listare: acolo pretul taiat e un
+    # PRP permanent, nu referinta unui comerciant activ, deci relevanta incepe mult
+    # mai sus. None -> DEFAULT_LISTING_R1_THRESHOLD (40.0) din listing_scanner.
+    listing_r1_threshold = Column(Float, nullable=True)
     deal_scan_enabled = Column(Boolean, default=True, nullable=False)
     deal_shops_disabled = Column(JSON, default=list)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

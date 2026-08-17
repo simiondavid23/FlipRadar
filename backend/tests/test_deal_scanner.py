@@ -576,3 +576,136 @@ def test_scanner_seteaza_shopify_enum(scan):
     deals = [d for d in _deals() if d.shop_domain == DOM and d.external_id == "9001"]
     assert len(deals) == 1
     assert deals[0].deal_source == "shopify_enum"
+
+
+# ── DEAL-2b — prag separat pentru R1 + inchiderea pe calificare ──────────────
+
+def test_evalueaza_prag_r1_separat_pentru_r1():
+    """R1 se compara cu pragul LUI: peste pragul global, dar sub cel dedicat R1,
+    produsul NU mai califica."""
+    # 25% reducere fata de compare_at: trece de 20, dar nu de 40.
+    assert deal_scanner._evalueaza(75.0, 100.0, None, 20.0, prag_r1=40.0) == (None, None)
+    assert deal_scanner._evalueaza(75.0, 100.0, None, 20.0)[1] == "compare_at"
+
+
+def test_evalueaza_prag_r1_nu_atinge_r2():
+    """R2 ramane pe pragul global — el e semnalul curat si nu se muta."""
+    discount, reason = deal_scanner._evalueaza(75.0, None, 100.0, 20.0, prag_r1=90.0)
+
+    assert reason == "istoric"
+    assert discount == pytest.approx(25.0)
+
+
+def test_evalueaza_ambele_cu_praguri_diferite():
+    """Cand amandoua trec, fiecare s-a comparat cu pragul EI, iar procentul
+    raportat e maximul lor."""
+    # R1 = 50% (compare_at 200 -> 100), R2 = 20% (minim vechi 125 -> 100).
+    discount, reason = deal_scanner._evalueaza(100.0, 200.0, 125.0, 15.0, prag_r1=40.0)
+
+    assert reason == "ambele"
+    assert discount == pytest.approx(50.0)
+
+    # Acelasi caz, dar R1 sub pragul lui -> ramane doar R2.
+    discount, reason = deal_scanner._evalueaza(100.0, 200.0, 125.0, 15.0, prag_r1=60.0)
+    assert reason == "istoric"
+    assert discount == pytest.approx(20.0)
+
+
+def test_evalueaza_fara_prag_r1_identic_cu_vechiul_comportament():
+    """Apelurile existente (fara `prag_r1`) trebuie sa dea EXACT ce dadeau —
+    schimbarea e backward-compatible, nu o a doua implementare."""
+    for pret, compare_at, minim, prag in ((75.0, 100.0, None, 20.0),
+                                          (75.0, None, 100.0, 20.0),
+                                          (100.0, 200.0, 125.0, 15.0),
+                                          (99.0, 100.0, 100.0, 20.0)):
+        assert (deal_scanner._evalueaza(pret, compare_at, minim, prag)
+                == deal_scanner._evalueaza(pret, compare_at, minim, prag, prag_r1=None))
+
+
+def test_inchide_dealul_prezent_dar_necalificat(scan):
+    """DEFECTUL reparat: pana acum se inchideau doar produsele DISPARUTE, deci un
+    produs inca prezent al carui pret a urcat ramanea „activ" cu date vechi."""
+    scan([[_produs(7001, [_varianta("100.00", compare_at="200.00")])]],
+         deal_discount_threshold=20.0)
+    deal = [d for d in _deals() if d.external_id == "7001"][0]
+    assert deal.ended_at is None
+
+    # Acelasi produs, tot prezent, dar pretul a urcat: 190 fata de 200 = 5%.
+    scan([[_produs(7001, [_varianta("190.00", compare_at="200.00")])]])
+
+    deal = [d for d in _deals() if d.external_id == "7001"][0]
+    assert deal.ended_at is not None, "produs prezent dar necalificat -> inchis"
+
+
+def test_inchiderea_nu_atinge_starea_userului(scan):
+    """D7: inchiderea scrie `ended_at`, nu se atinge de starea userului."""
+    scan([[_produs(7002, [_varianta("100.00", compare_at="200.00")])]],
+         deal_discount_threshold=20.0)
+    db = SessionLocal()
+    try:
+        db.query(Deal).filter(Deal.external_id == "7002").first().state = "ignorat"
+        db.commit()
+    finally:
+        db.close()
+
+    scan([[_produs(7002, [_varianta("190.00", compare_at="200.00")])]])
+
+    deal = [d for d in _deals() if d.external_id == "7002"][0]
+    assert deal.ended_at is not None
+    assert deal.state == "ignorat"
+
+
+def test_inchiderea_shopify_nu_atinge_refresh_diff(scan):
+    """Protectia pe `deal_source` e EXPLICITA: un rand `refresh_diff` poate sta pe
+    acelasi domeniu (produs urmarit prin link) si scanul nu spune nimic despre el."""
+    scan([[_produs(7003, [_varianta("100.00", compare_at="200.00")])]],
+         deal_discount_threshold=20.0)
+    db = SessionLocal()
+    try:
+        db.add(Deal(shop_domain=DOM, external_id="src:4242", title="urmarit prin link",
+                    url=f"https://{DOM}/x", currency="EUR", price=10.0,
+                    discount_pct=50.0, reason="istoric", state="nou",
+                    deal_source="refresh_diff"))
+        db.commit()
+    finally:
+        db.close()
+
+    scan([[]])                      # totul a disparut din enumerare
+
+    strain = [d for d in _deals() if d.external_id == "src:4242"][0]
+    shopify = [d for d in _deals() if d.external_id == "7003"][0]
+    assert strain.ended_at is None, "randul refresh_diff ramane neatins"
+    assert shopify.ended_at is not None
+
+
+# ── DEAL-2b — filtrul de sursa in feed ──────────────────────────────────────
+
+def _deal_de_sursa(db, sursa, external_id):
+    db.add(Deal(shop_domain=DOM, external_id=external_id, title=f"deal {sursa}",
+                url="https://x", currency="EUR", price=10.0, discount_pct=50.0,
+                reason="istoric", state="nou", deal_source=sursa))
+
+
+def test_list_deals_filtreaza_pe_sursa(auth_client):
+    db = SessionLocal()
+    try:
+        _deal_de_sursa(db, "shopify_enum", "s1")
+        _deal_de_sursa(db, "listing_scan", "l1")
+        _deal_de_sursa(db, "refresh_diff", "r1")
+        db.commit()
+    finally:
+        db.close()
+
+    toate = auth_client.get("/api/deals/").json()
+    assert len(toate) == 3
+    assert all("deal_source" in d for d in toate), "proveniența pleaca spre UI"
+
+    doar_listari = auth_client.get("/api/deals/?source=listing_scan").json()
+    assert [d["external_id"] for d in doar_listari] == ["l1"]
+
+
+def test_list_deals_sursa_invalida_da_422(auth_client):
+    raspuns = auth_client.get("/api/deals/?source=xyz")
+
+    assert raspuns.status_code == 422
+    assert "Sursă invalidă" in raspuns.json()["detail"]

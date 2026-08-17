@@ -55,6 +55,15 @@ const REASON_LABEL = {
   ambele: "reducere + minim istoric",
 };
 
+// DEAL-2b — cele trei surse ale feed-ului. Valorile sunt exact cele acceptate de
+// backend (`_SURSE`); orice altceva ar primi 422.
+const SOURCE_FILTERS = [
+  { value: "", label: "Toate sursele" },
+  { value: "shopify_enum", label: "Scanner Shopify" },
+  { value: "listing_scan", label: "Scanner listări" },
+  { value: "refresh_diff", label: "Produse urmărite" },
+];
+
 const CATEGORY_LABEL = {
   sneakers: "Sneakers",
   incaltaminte: "Încălțăminte",
@@ -82,6 +91,8 @@ export default function DealsPage() {
   const [tab, setTab] = useState("active");
   const [shopFilter, setShopFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  // DEAL-2b — proveniența randului; se trimite ca query param, nu se filtreaza local.
+  const [sourceFilter, setSourceFilter] = useState("");
   const [minDiscount, setMinDiscount] = useState("");
   const [sortBy, setSortBy] = useState("discount");
 
@@ -96,6 +107,10 @@ export default function DealsPage() {
       if (tab === "noi") params.state = "nou";
       if (tab === "ignorate") params.state = "ignorat";
       if (shopFilter) params.shop_domain = shopFilter;
+      // DEAL-2b — filtrare pe SERVER: feed-ul are zeci de mii de randuri, deci nu
+      // le aducem pe toate ca sa le aruncam in browser (spre deosebire de filtrul
+      // de categorie, care lucreaza pe lista deja incarcata).
+      if (sourceFilter) params.source = sourceFilter;
       if (minDiscount) params.min_discount = Number(minDiscount);
 
       const { data } = await dealsAPI.list(params);
@@ -107,7 +122,7 @@ export default function DealsPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, shopFilter, minDiscount]);
+  }, [tab, shopFilter, sourceFilter, minDiscount]);
 
   const loadSide = useCallback(async () => {
     try {
@@ -278,6 +293,12 @@ export default function DealsPage() {
           <option value="">Toate categoriile</option>
           {categories.map((c) => (
             <option key={c} value={c}>{CATEGORY_LABEL[c] || c}</option>
+          ))}
+        </select>
+
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={selectStyle}>
+          {SOURCE_FILTERS.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
 

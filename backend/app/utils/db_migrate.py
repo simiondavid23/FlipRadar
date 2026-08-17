@@ -246,6 +246,16 @@ def _portable_migrations(conn, inspector):
             _migrate(conn, f"add_radar_settings_{_col}",
                      f"ALTER TABLE radar_settings ADD COLUMN {_col} {_type}")
 
+    # DEAL-2b — pragul separat al lui R1 pe calea de listare, pe radar_settings.
+    # Acelasi tipar ca blocul SHOP-2a de mai sus: garda _column_exists, un singur
+    # ALTER, inregistrare prin _migrate. Nullable, fara default: None inseamna
+    # "foloseste DEFAULT_LISTING_R1_THRESHOLD", deci randurile existente nu au
+    # nevoie de backfill.
+    if (_table_exists(inspector, "radar_settings")
+            and not _column_exists(inspector, "radar_settings", "listing_r1_threshold")):
+        _migrate(conn, "add_radar_settings_listing_r1_threshold",
+                 "ALTER TABLE radar_settings ADD COLUMN listing_r1_threshold FLOAT")
+
     # DEAL-1 — proveniența randului de deal, pe tabela EXISTENTA `deals`.
     # server_default 'shopify_enum': toate randurile de pana acum sunt ale
     # scannerului Shopify, deci backfill-ul e corect prin chiar default-ul coloanei.

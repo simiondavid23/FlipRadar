@@ -42,6 +42,9 @@ export default function SettingsPage() {
   // SHOP-2b — scannerul de deal-uri: prag + lista de magazine scanate.
   const [dealThreshold, setDealThreshold] = useState("");
   const [savingDealThreshold, setSavingDealThreshold] = useState(false);
+  // DEAL-2b — pragul separat pentru R1 pe listari (preț tăiat de tip PRP).
+  const [listingR1Threshold, setListingR1Threshold] = useState("");
+  const [savingListingR1, setSavingListingR1] = useState(false);
   const [dealShops, setDealShops] = useState([]);
 
   const load = useCallback(async () => {
@@ -56,6 +59,9 @@ export default function SettingsPage() {
     if (s?.data) setSettings(s.data);
     if (s?.data?.deal_discount_threshold != null) {
       setDealThreshold(String(s.data.deal_discount_threshold));
+    }
+    if (s?.data?.listing_r1_threshold != null) {
+      setListingR1Threshold(String(s.data.listing_r1_threshold));
     }
     if (ds?.data) setDealShops(ds.data);
     if (fb?.data) setFbStatus(fb.data);
@@ -148,6 +154,27 @@ export default function SettingsPage() {
       alert(e.response?.data?.detail || "Eroare la salvare.");
     } finally {
       setSavingDealThreshold(false);
+    }
+  };
+
+  // DEAL-2b — aceleasi validari si acelasi flux ca pragul de mai sus, pe cealalta
+  // setare. Implicitul difera (40%), fiindca referinta e alta.
+  const saveListingR1 = async () => {
+    const brut = String(listingR1Threshold).trim();
+    const pct = brut === "" ? null : Number(brut);
+    if (pct !== null && (!Number.isFinite(pct) || pct <= 0 || pct > 95)) {
+      alert("Pragul trebuie să fie între 1 și 95%, sau gol pentru implicit.");
+      return;
+    }
+    setSavingListingR1(true);
+    try {
+      await radarAPI.updateSettings({ listing_r1_threshold: pct });
+      update({ listing_r1_threshold: pct });
+      alert(pct === null ? "Pragul revine la implicit (40%)." : "Pragul pentru listări a fost salvat.");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la salvare.");
+    } finally {
+      setSavingListingR1(false);
     }
   };
 
@@ -528,6 +555,28 @@ export default function SettingsPage() {
                 <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>%</span>
                 <button onClick={saveDealThreshold} disabled={savingDealThreshold} style={smallBtn("#4ade80")}>
                   {savingDealThreshold ? "Se salvează..." : "Salvează pragul"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: "0.625rem 0.75rem", background: "rgba(4,9,18,.45)", borderRadius: "10px", border: "1px solid var(--border-color)" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>Prag reducere listări (R1, %)</label>
+              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
+                Pe paginile de reduceri, prețul tăiat e de obicei un preț recomandat
+                permanent, față de care aproape tot catalogul pare redus — deci pragul
+                lui e separat și mult mai sus. Nu afectează scăderile sub minimul
+                istoric, care rămân pe pragul de mai sus. Lasă gol pentru implicit (40%).
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <input
+                  type="number" min={1} max={95} placeholder="40"
+                  value={listingR1Threshold}
+                  onChange={(e) => setListingR1Threshold(e.target.value)}
+                  style={{ width: "5rem", padding: "0.375rem 0.5rem", background: "var(--bg-card)", backdropFilter: "blur(20px)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: "8px", fontSize: "0.8125rem" }}
+                />
+                <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>%</span>
+                <button onClick={saveListingR1} disabled={savingListingR1} style={smallBtn("#4ade80")}>
+                  {savingListingR1 ? "Se salvează..." : "Salvează pragul"}
                 </button>
               </div>
             </div>

@@ -146,16 +146,27 @@ def _citeste_produs(produs: dict):
     return min(disponibile), (min(compare_at_uri) if compare_at_uri else None), marimi
 
 
-def _evalueaza(pret: float, compare_at, min_price_vechi, prag: float):
+def _evalueaza(pret: float, compare_at, min_price_vechi, prag: float, prag_r1=None):
     """(discount_pct, reason) sau (None, None) daca produsul nu califica.
 
     R1 si R2 se evalueaza independent; cand trec amandoua, `discount_pct` e
     MAXIMUL lor, iar reason devine "ambele".
+
+    DEAL-2b — `prag_r1` da lui R1 un prag PROPRIU, fiindca referinta lui nu
+    inseamna acelasi lucru pe toate caile: la Shopify `compare_at_price` e pretul
+    unui comerciant activ, dar pe listarile de outlet pretul taiat e un PRP
+    permanent, fata de care tot catalogul pare redus. `None` inseamna "acelasi
+    prag ca R2", deci apelantii care nu-l dau se comporta EXACT ca inainte —
+    o singura implementare, fara copie divergenta.
+
+    Finete: la `reason="ambele"`, fiecare regula se compara cu pragul EI.
     """
+    prag_r1 = prag if prag_r1 is None else prag_r1
+
     r1 = None
     if compare_at is not None and compare_at > pret > 0:
         procent = (compare_at - pret) / compare_at * 100
-        if procent >= prag:
+        if procent >= prag_r1:
             r1 = procent
 
     r2 = None
@@ -181,6 +192,9 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
     moneda = (SHOP_REGISTRY.get(domain) or {}).get("currency")
     acum = datetime.now(timezone.utc)
     vazute: set[str] = set()
+    # DEAL-2b — `calificate` != `vazute`: primul e "am citit produsul", al doilea
+    # "produsul CHIAR e un deal acum". Inchiderea se face pe al doilea, vezi jos.
+    calificate: set[str] = set()
     produse_vazute = 0
     alerte = 0
 
@@ -216,6 +230,7 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
             discount_pct, reason = _evalueaza(pret, compare_at, min_price_vechi, prag)
             if discount_pct is None:
                 continue
+            calificate.add(external_id)
 
             deal = (db.query(Deal)
                     .filter(Deal.shop_domain == domain,
@@ -258,15 +273,28 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
                 deal.last_seen_at = acum
                 deal.ended_at = None
 
-    # --- deal-urile care n-au mai aparut in scanul curent se INCHEIE, nu se sterg ---
+    # --- deal-urile care nu mai CALIFICA se INCHEIE, nu se sterg ---
+    # DEAL-2b: pana acum criteriul era `not in vazute`, deci se inchideau doar
+    # produsele DISPARUTE. Un produs inca prezent dar care nu mai trece pragul
+    # (pretul a urcat, sau pragul a fost marit din UI) trecea prin `continue` la
+    # evaluare si ramanea "activ" cu date vechi pentru totdeauna. Pe `calificate`,
+    # primul scan de dupa o schimbare de prag isi face singur curatenia — fara SQL
+    # manual si fara migratie de date.
+    #
+    # Filtrul pe `deal_source` e EXPLICIT, nu accidental: randurile `refresh_diff`
+    # pot sta pe acelasi domeniu (un produs urmarit prin link) si scanul asta nu
+    # spune nimic despre ele. Pana acum scapau doar fiindca `external_id`-ul lor
+    # (`src:<id>`) nu se ciocnea cu product_id-urile Shopify.
     active = (db.query(Deal)
-              .filter(Deal.shop_domain == domain, Deal.ended_at.is_(None))
+              .filter(Deal.shop_domain == domain,
+                      Deal.ended_at.is_(None),
+                      Deal.deal_source == "shopify_enum")
               .all())
     for deal in active:
-        if deal.external_id not in vazute:
+        if deal.external_id not in calificate:
             deal.ended_at = acum
 
-    ramase = sum(1 for d in active if d.external_id in vazute)
+    ramase = sum(1 for d in active if d.external_id in calificate)
     db.commit()
     return {"produse": produse_vazute, "deals_active": ramase, "alerte": alerte}
 

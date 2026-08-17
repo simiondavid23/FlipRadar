@@ -72,6 +72,30 @@ _LISTING_LOCK = threading.Lock()
 # Anti-avalanche cap, per domain per scan. See `_scaneaza_domeniu`.
 _MAX_ALERTE = 10
 
+# DEAL-2b — R1's own threshold on this path, far above the global one.
+#
+# The struck price in a listing card is a RECOMMENDED price (PRP/UVP) or an
+# outlet reference, not an active merchant's `compare_at_price`. On an outlet the
+# whole catalogue is permanently "reduced" against it: the first DEAL-2 scan
+# produced 15.832 deals, 87% of everything otter.ro shows on /reduceri. At that
+# rate R1 carries no information and buries R2 — a real drop below the historic
+# minimum — under noise. 40% is a starting point, tunable per user from Settings.
+#
+# R2 keeps `deal_discount_threshold`: it is the clean signal and is not touched.
+# The Shopify scanner also keeps the global threshold — there `compare_at_price`
+# IS an active merchant's reference, so SHOP-2's semantics do not change.
+DEFAULT_LISTING_R1_THRESHOLD = 40.0
+
+
+def _prag_r1(settings) -> float:
+    """R1 threshold for listings: the user's setting, or the default."""
+    valoare = getattr(settings, "listing_r1_threshold", None) if settings else None
+    try:
+        valoare = float(valoare)
+    except (TypeError, ValueError):
+        return DEFAULT_LISTING_R1_THRESHOLD
+    return valoare if valoare > 0 else DEFAULT_LISTING_R1_THRESHOLD
+
 
 def is_listing_scan_running() -> bool:
     """True while a listing scan holds the lock. Consulted by the manual endpoint
@@ -258,7 +282,12 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
     # genuinely NEW deals notify, capped so a shop-wide sale cannot flood either.
     primul_scan = _e_primul_scan(db, domain)
 
+    prag_r1 = _prag_r1(settings)
+
     vazute: set[str] = set()
+    # DEAL-2b — `calificate` != `vazute`: primul e "am citit produsul", al doilea
+    # "produsul CHIAR e un deal acum". Inchiderea se face pe al doilea, vezi jos.
+    calificate: set[str] = set()
     linkuri_vazute: set[str] = set()
     produse_vazute = 0
     alerte = 0
@@ -308,9 +337,11 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 memorie.last_seen_at = acum
 
             discount_pct, reason = _evalueaza(
-                card["price"], card["compare_at"], min_price_vechi, prag)
+                card["price"], card["compare_at"], min_price_vechi, prag,
+                prag_r1=prag_r1)
             if discount_pct is None:
                 continue
+            calificate.add(external_id)
 
             deal = (db.query(Deal)
                     .filter(Deal.shop_domain == domain,
@@ -345,7 +376,14 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 deal.last_seen_at = acum
                 deal.ended_at = None
 
-    # --- deals that did not show up in this scan are ENDED, not deleted ---
+    # --- deals that no longer QUALIFY are ENDED, not deleted ---
+    # DEAL-2b: the criterion used to be `not in vazute`, so only VANISHED products
+    # were closed. A product still on the page but no longer over the threshold
+    # (price went up, or the threshold was raised from Settings) hit `continue`
+    # above and its row stayed "active" with stale numbers forever. On
+    # `calificate`, the first scan after a threshold change cleans up after
+    # itself — no manual SQL, no data migration.
+    #
     # Filtered on deal_source too: refresh_diff deals can sit on the SAME domain
     # (a user tracking an otter.ro product by link), and this scan says nothing
     # about whether those are still live.
@@ -355,10 +393,10 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                       Deal.deal_source == "listing_scan")
               .all())
     for deal in active:
-        if deal.external_id not in vazute:
+        if deal.external_id not in calificate:
             deal.ended_at = acum
 
-    ramase = sum(1 for d in active if d.external_id in vazute)
+    ramase = sum(1 for d in active if d.external_id in calificate)
     db.commit()
     return {"produse": produse_vazute, "deals_active": ramase,
             "alerte": alerte, "pagini": pagini}

@@ -30,6 +30,10 @@ router = APIRouter(tags=["Deals"])
 # putea fi scrise direct din UI.
 _STARI_MANUALE = {"vazut", "ignorat"}
 
+# DEAL-2b — cele trei surse ale feed-ului. Lista e inchisa si validata la intrare,
+# ca o valoare gresita sa dea 422 explicit, nu o lista goala derutanta.
+_SURSE = {"shopify_enum", "refresh_diff", "listing_scan"}
+
 
 class DealStateUpdate(BaseModel):
     state: str
@@ -59,6 +63,9 @@ def _serialize(deal: Deal) -> dict:
         "compare_at_price": deal.compare_at_price,
         "discount_pct": deal.discount_pct,
         "reason": deal.reason,
+        # DEAL-2b — proveniența pleaca spre UI: cele trei surse au semantici
+        # diferite ale pretului taiat, deci utilizatorul trebuie sa le poata separa.
+        "deal_source": deal.deal_source,
         "sizes_available": deal.sizes_available or [],
         "min_price_seen": deal.min_price_seen,
         "state": deal.state,
@@ -73,6 +80,7 @@ def _serialize(deal: Deal) -> dict:
 def list_deals(
     state: Optional[str] = None,
     shop_domain: Optional[str] = None,
+    source: Optional[str] = None,
     active: Optional[bool] = None,
     min_discount: Optional[float] = None,
     db: Session = Depends(get_db),
@@ -80,10 +88,23 @@ def list_deals(
 ) -> List[dict]:
     """Deal-urile, filtrabile. Conversia valutara pentru afisare ramane in
     frontend (SHOP-2b), prin endpointul de rate existent — aici pretul si moneda
-    pleaca exact cum le-a masurat scannerul."""
+    pleaca exact cum le-a masurat scannerul.
+
+    DEAL-2b — `source` filtreaza pe SERVER, nu in frontend: feed-ul are zeci de mii
+    de randuri, deci trimiterea lor toate ca sa fie aruncate in browser ar fi
+    risipa pe care filtrul de categorie (client-side, pe lista deja incarcata)
+    si-o permite doar fiindca lucreaza pe altceva.
+    """
+    if source is not None and source not in _SURSE:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Sursă invalidă. Valori acceptate: {', '.join(sorted(_SURSE))}.")
+
     q = db.query(Deal)
     if state:
         q = q.filter(Deal.state == state)
+    if source:
+        q = q.filter(Deal.deal_source == source)
     if shop_domain:
         q = q.filter(Deal.shop_domain == shop_domain)
     if active is not None:

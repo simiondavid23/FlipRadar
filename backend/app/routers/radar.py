@@ -182,8 +182,10 @@ class SettingsUpdate(BaseModel):
     deal_discount_threshold: Optional[float] = None
     deal_scan_enabled: Optional[bool] = None
     deal_shops_disabled: Optional[list[str]] = None
+    # DEAL-2b — pragul separat al lui R1 pe calea de listare.
+    listing_r1_threshold: Optional[float] = None
 
-    @field_validator("deal_discount_threshold")
+    @field_validator("deal_discount_threshold", "listing_r1_threshold")
     @classmethod
     def _check_deal_threshold(cls, v):
         # None = "revino la implicit"; 0 sau negativ n-ar avea sens ca prag de
@@ -434,6 +436,11 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "discord_here_auto": bool(getattr(s, "discord_here_auto", False)),
         "discord_here_imob": bool(getattr(s, "discord_here_imob", False)),
         "custom_zone_aliases": getattr(s, "custom_zone_aliases", None) or {},
+        # DEAL-2b — pragul R1 al listarilor trebuie sa se intoarca in UI, altfel
+        # input-ul din Settings apare gol dupa fiecare reincarcare si userul nu
+        # poate sti ce prag e in vigoare. (Vezi raportul rundei: celelalte setari
+        # de deal-uri NU sunt in dict-ul asta, gol preexistent, neatins aici.)
+        "listing_r1_threshold": getattr(s, "listing_r1_threshold", None),
         "platform_olx_enabled": s.platform_olx_enabled,
         "platform_vinted_enabled": s.platform_vinted_enabled,
         "platform_okazii_enabled": s.platform_okazii_enabled,
@@ -1271,6 +1278,8 @@ def update_settings(
         s.discord_webhook_deals = data.discord_webhook_deals or None
     if data.deal_discount_threshold is not None:
         s.deal_discount_threshold = float(data.deal_discount_threshold)
+    if data.listing_r1_threshold is not None:
+        s.listing_r1_threshold = float(data.listing_r1_threshold)
     if data.deal_scan_enabled is not None:
         s.deal_scan_enabled = bool(data.deal_scan_enabled)
     if data.deal_shops_disabled is not None:
