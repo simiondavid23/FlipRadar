@@ -185,6 +185,7 @@ def test_validated_domains_santinela():
         "sivasdescalzo.com",                          # G1-2
         "tezyo.ro",                                   # G1-2
         "powerup.ro",                                 # G2A-2
+        "cyberport.at",                               # G2B-2
     }
 
 

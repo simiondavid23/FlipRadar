@@ -643,6 +643,43 @@ SHOP_REGISTRY: dict[str, dict] = {
         "status": "validated",
         "notes": "LOT2b",
     },
+    # ── G2B — lotul EU de electronice (sonda 2026-08-18) ──────────────────────
+    # Din cele 5 domenii sondate a intrat DOAR cyberport.at. Celelalte patru si
+    # motivele lor sunt in docs/catalog_domain_log.md: pccomponentes.com si
+    # notebooksbilliger.de sunt Grup 4 (Cloudflare, respectiv Akamai), reichelt.com
+    # redirectioneaza spre .de si nu expune produse in listari, iar conrad.com isi
+    # randeaza listarile client-side.
+    "cyberport.at": {
+        "label": "Cyberport",
+        "category": "electronice",
+        "country": "AT",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        # Amprenta implicita a productiei ia challenge Cloudflare pe acest domeniu;
+        # profilul de aici trece. Ca la elefant.ro, valoarea concreta NU se comenteaza
+        # in text: garda test_niciun_profil_hardcodat_vechi_in_app face grep pe
+        # app/**, iar tabelul complet al profilelor sta in docs/catalog_domain_log.md.
+        "impersonate": "chrome",
+        "notes": "G2B-1/G2B-2; Next.js. ld+json complet pe PDP: Product + Offer cu "
+                 "price / priceCurrency EUR / availability, plus sku, gtin13, brand, "
+                 "priceValidUntil, priceSpecification, shippingDetails si "
+                 "hasMerchantReturnPolicy — ofertele se citesc INTEGRAL, nu doar "
+                 "prima. Moneda incrucisata: EUR in date structurate SI € in afisaj. "
+                 "Referinta taiata e o ETICHETA TEXTUALA, nu un <del>/<s>: verbatim "
+                 "„Store 1.299,00 € UVP 1.279,00 € inkl. MwSt.\", deci Omnibus e de "
+                 "tip PRP/UVP, iar ld+json poarta PLATITUL (1.279), nu UVP-ul. "
+                 "ATENTIE: aceeasi pagina poate purta si un pret de B-Ware "
+                 "(1.151,10 € pe PDP-ul masurat) — e ALTA oferta, a nu se confunda cu "
+                 "pretul platit. Outlet-ul /apple-und-zubehoer/outlet-a-b-ware-.html "
+                 "e identificat dar NEMASURAT (plafonul sondei s-a dus pe escaladari "
+                 "de amprenta) — axa D il ia in valul D, dupa o micro-sonda. "
+                 "AMPRENTA: profilul implicit al productiei primeste challenge "
+                 "Cloudflare, de aici campul impersonate; profilele concrete sunt in "
+                 "tabelul din docs/catalog_domain_log.md (nu aici: garda "
+                 "anti-profil-hardcodat face grep pe app/**) — "
+                 "vezi docs/catalog_domain_log.md",
+    },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",
         "category": "foto",

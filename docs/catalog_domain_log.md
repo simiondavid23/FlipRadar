@@ -1605,6 +1605,84 @@ il insereaza intre intreg si zecimale. Omnibus: absent si pe listari, si pe PDP-
 
 ---
 
+## G2B-1/G2B-2 — lotul EU de electronice: 5 sondate, 1 intrat
+
+Cel mai mare lot de sonda de pana acum: pccomponentes.com, reichelt.com, conrad.com,
+cyberport.at, notebooksbilliger.de. 23 de cereri din 30 (18 in pasa 1, 5 in pasa de
+corectie). Dump-urile stau in `scripts/diagnostics/dumps_g2b/` si `dumps_g2b_pasa2/`
+(gitignorate).
+
+| domeniu | verdict | profil care a raspuns | moneda |
+|---|---|---|---|
+| pccomponentes.com | **Grup 4** — Cloudflare | niciunul (403 pe toate trei) | — |
+| reichelt.com | nemasurat pe PDP; redirect spre `.de` | implicit al productiei | € vizibil |
+| conrad.com | listari client-side | `firefox135` | — |
+| **cyberport.at** | **`jsonld` — INTRAT** | `chrome` | **EUR** |
+| notebooksbilliger.de | **Grup 4** — Akamai | niciunul | — |
+
+**Trei domenii au cerut profiluri diferite de cel implicit al productiei**, iar doua
+dintre ele ar fi fost clasate FALS drept Grup 4 fara lantul de escaladare ELF-2:
+cyberport raspunde pe al doilea profil din lant, conrad abia pe al treilea. Tabelul
+concret al profilelor per domeniu ramane cel din sectiunea ELF-2.
+
+### cyberport.at — `method: jsonld` (FACUT)
+
+Next.js. PDP-ul poarta ld+json complet, verificat cu extractorul REAL pe dump-ul
+sondei (`cyberport.at_prod1_p2.html`): pret **1279.0**, moneda **EUR**, in stoc,
+`method: jsonld`. Structura, verbatim:
+
+    {"@type":"Product","name":"Apple iPhone 17 Pro 256GB Cosmic Orange MG8H4ZD/A",
+     "sku":"A415-20G","gtin13":"0195950627442","brand":"Apple",
+     "offers":[{"@type":"Offer","price":1279,"priceCurrency":"EUR",
+       "availability":"https://schema.org/InStock", …}]}
+
+Oferta mai poarta `priceValidUntil`, `priceSpecification`, `shippingDetails`,
+`hasMerchantReturnPolicy` si `seller`. Moneda e INCRUCISATA, nu presupusa: `EUR` in
+datele structurate si `€` in afisaj (lectia sivasdescalzo, unde un magazin spaniol
+servea USD).
+
+* **Referinta e o ETICHETA TEXTUALA, nu un `<del>`/`<s>`**: `taiat_in_dom` iese GOL,
+  iar textul vizibil spune „Store 1.299,00 € UVP 1.279,00 € inkl. MwSt." Deci
+  Omnibus e de tip **PRP/UVP**, iar ld+json poarta PLATITUL (1.279), nu UVP-ul.
+* **Capcana B-Ware**: aceeasi pagina poarta si un al treilea pret — 1.151,10 € „Als
+  B-Ware schon ab" — care e ALTA oferta, nu pretul produsului nou. Un extractor care
+  ar lua „cel mai mic pret vizibil" ar raporta gresit.
+* **Outlet identificat, NEMASURAT**: `/apple-und-zubehoer/outlet-a-b-ware-.html`,
+  gasit in home pe tiparul `outlet`. Plafonul per domeniu (6 cereri) s-a consumat pe
+  escaladari de amprenta, deci axa D cere intai o micro-sonda de 2-3 cereri.
+
+### Celelalte patru — de ce n-au intrat
+
+* **pccomponentes.com — Grup 4.** 403 cu interstitiul „just a moment" pe TOATE cele
+  trei profiluri din lant. Asteptarea listei master („override probabil de
+  impersonate") s-a infirmat: nu e o chestiune de amprenta.
+* **notebooksbilliger.de — Grup 4, Akamai.** Homepage-ul da **404** pe primele doua
+  profiluri, cu o pagina de eroare PERSONALIZATA a magazinului („uups... Die Seite
+  wurde nicht gefunden" + id de urmarire) — deci un 404 poate fi blocaj mascat, nu
+  pagina lipsa. Pe al treilea profil raspunde **200, dar cu corp de challenge**:
+  cookie `_abck`, `sec-if-cpt-container`, `behavioral-content`, 2.875 de octeti,
+  ZERO text vizibil. Un 200 se verifica pe CONTINUT, nu pe status. Ipoteza „doar PJ
+  pentru RO" din lista master a ramas NETESTATA — blocajul e anterior oricarui
+  semnal de continut.
+* **reichelt.com — nemasurat, si pe alt domeniu decat se credea.** Home-ul e un
+  selector de tara/limba, nu un magazin; forma reala e `reichelt.com/<tara>/<limba>/`
+  (`ro` chiar exista). Dar nici `/ro/de/` nu expune produse: 6 candidati, toti pagini
+  editoriale. In plus `.com` REDIRECTIONEAZA spre `.de` —
+  `url_final = https://www.reichelt.de/magazin/?lang=de&country=ro`. Urmatorul pas e
+  o sonda pe **reichelt.de**, pornind dintr-o pagina de CATEGORIE.
+* **conrad.com — listari client-side.** Home (204 KB) si `/en/promotions/sale.html`
+  (197 KB) sunt SSR dar au ZERO carduri cu pret si zero simboluri de moneda, iar
+  ld+json-ul lor e doar `Corporation`. Singurele linkuri cu cifre sunt de categorie
+  (`/en/o/weather-stations-0514060.html`, `/en/c/scanners-17157.html`). Cookie-ul
+  `pdpSSR=true` sugereaza ca PDP-urile SUNT server-side, deci urmatorul pas e un URL
+  de produs obtinut din **sitemap**, nu din listari.
+
+Nota de metoda: `cf-ray` NU e semn de blocaj. Conrad l-a servit pe un raspuns 200
+perfect valid (`cf-cache-status: HIT`) — Cloudflare il pune pe orice raspuns care
+trece prin reteaua lui.
+
+---
+
 ## Domenii neintrate
 
 > badabum.ro — NU exista site: domeniul n-are inregistrare A sau AAAA (masurat in
