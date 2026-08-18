@@ -295,8 +295,26 @@ def _search_logout(query: str, filters: dict) -> list:
         canonice = nucleu_search(termen, ancora.lat, ancora.lon, raza_km=65.0,
                                  city_page_id=ancora.city_page_id) or []
         log_manager.emit("real_estate", "INFO",
-            f"Facebook RE logat-out: '{termen}' -> {len(canonice)} anunturi")
+            f"Facebook RE nucleu: '{termen}' -> {len(canonice)} anunturi")
+        intrate, trecute, fara_categorie, respinse = _adauga_canonice_re(
+            canonice, filters, categorii, rezultate, vazute,
+            intrate, trecute, fara_categorie, respinse)
 
+    log_manager.emit("real_estate", "OK",
+        f"Facebook RE nucleu: {len(rezultate)} rezultate din {intrate} intrate "
+        f"({trecute} trecute, {fara_categorie} fara categorie, {respinse} respinse "
+        f"de filtrul de categorie)")
+    return rezultate
+
+
+def _adauga_canonice_re(canonice, filters, categorii, rezultate, vazute,
+                        intrate, trecute, fara_categorie, respinse):
+    """Dicturi CANONICE -> forma Imobiliare, adaugate in `rezultate`.
+
+    Extras din `_search_logout` la FBS-5 si folosit IDENTIC de calea de bazin: o
+    singura implementare a formei, deci o singura forma. Intoarce contoarele.
+    """
+    if True:
         for c in canonice:
             intrate += 1
             cid = c.get("category_id")
@@ -338,15 +356,37 @@ def _search_logout(query: str, filters: dict) -> list:
                 "platform":      "facebook_marketplace",
             })
 
-    log_manager.emit("real_estate", "OK",
-        f"Facebook RE logat-out: {len(rezultate)} rezultate din {intrate} intrate "
-        f"({trecute} trecute, {fara_categorie} fara categorie, {respinse} respinse "
-        f"de filtrul de categorie)")
+    return intrate, trecute, fara_categorie, respinse
+
+
+def _search_bazin(query: str, filters: dict, keyword_id) -> list:
+    """Citire din `fb_pool`, ZERO retea. Acelasi formator ca pe calea vie."""
+    # Import LOCAL, ca in restul fisierului (vezi `_search_logout`): modulul nu tine
+    # `log_manager` la nivel de modul.
+    from app.services.log_manager import log_manager
+    if not keyword_id:
+        log_manager.emit("real_estate", "WARN",
+            f"Facebook RE bazin: fara `keyword_id` pentru {query!r} — bazinul e "
+            f"cheiat pe el. Apelantul trebuie sa-l paseze (vezi FBS-5).")
+        return []
+    categorii = _categorii_permise()
+    from app.database import SessionLocal
+    from app.scrapers.facebook.bazin import citeste
+    db = SessionLocal()
+    try:
+        canonice = citeste(db, "real_estate", keyword_id)
+    finally:
+        db.close()
+    rezultate, vazute = [], set()
+    _adauga_canonice_re(canonice, filters, categorii, rezultate, vazute, 0, 0, 0, 0)
+    log_manager.emit("real_estate", "SCAN",
+        f"Facebook RE bazin {query!r}: {len(rezultate)} din {len(canonice)} in bazin")
     return rezultate
 
 
 def search_facebook_real_estate(query: str = "", filters: dict = {},
-                                session_path: Optional[str] = None) -> list:
+                                session_path: Optional[str] = None,
+                                keyword_id: Optional[int] = None) -> list:
     """FB-AUDIT A2: `session_path` vine de la apelant (real_estate_scanner._call_scraper),
     rezolvat PER USER cu resolve_facebook_session_path. Fara descoperire pe disc aici.
 
@@ -359,8 +399,11 @@ def search_facebook_real_estate(query: str = "", filters: dict = {},
     intre cai — comutarea e manuala, prin variabila de mediu.
     """
     from app.services.log_manager import log_manager
-    mod = (os.getenv("FB_MOD") or "sesiune").strip().lower()
-    if mod == "logout":
+    from app.scrapers.facebook.mod import mod_fb
+    mod = mod_fb("real_estate")
+    if mod == "bazin":
+        return _search_bazin(query, filters, keyword_id)
+    if mod == "nucleu":
         return _search_logout(query, filters)
     if mod != "sesiune":
         log_manager.emit("real_estate", "WARN",

@@ -346,11 +346,22 @@ def _search_logout(keyword: str, max_price, exclude_words, min_price, category) 
     (masurat) — nu e o pierdere de parsare, ci o lipsa la sursa.
     """
     ancora = _ancora_configurata("FB_RADAR_ANCORA", "radar")
-    log_manager.emit("radar", "SCAN", f'Facebook logat-out "{keyword}"')
+    log_manager.emit("radar", "SCAN", f'Facebook nucleu "{keyword}"')
 
     canonice = nucleu_search(keyword, ancora.lat, ancora.lon, raza_km=65.0,
                              city_page_id=ancora.city_page_id) or []
+    return _din_canonice(canonice, keyword, max_price, exclude_words,
+                         min_price, category)
 
+
+def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
+                  category) -> list[dict]:
+    """Dicturi CANONICE -> forma pe care o asteapta Radar.
+
+    Extras din `_search_logout` la FBS-5 si folosit IDENTIC de calea de bazin. Asta e
+    ce garanteaza ca forma intoarsa e aceeasi indiferent de unde vin datele: nu prin
+    doua implementari tinute sincronizate cu atentie, ci prin una singura.
+    """
     known_ids = _known_facebook_category_ids() if category else None
     results: list[dict] = []
     vazute = set()
@@ -413,7 +424,7 @@ def _search_logout(keyword: str, max_price, exclude_words, min_price, category) 
             f"Facebook: {fara_categorie} anunturi pastrate fara categorie pe card "
             f"(nu se poate verifica filtrul de categorie)")
     log_manager.emit("radar", "OK",
-        f'Facebook logat-out: {len(results)} rezultate pentru "{keyword}"')
+        f'Facebook nucleu/bazin: {len(results)} rezultate pentru "{keyword}"')
     return results
 
 
@@ -428,6 +439,7 @@ def search_facebook(
     category: Optional[str] = None,
     page: int = 1,
     max_scrolls: int = 10,
+    keyword_id: Optional[int] = None,
 ) -> list[dict]:
     """Caută pe Facebook Marketplace cu o sesiune pre-logată, prin curl_cffi.
 
@@ -457,14 +469,45 @@ def search_facebook(
     if page and page > 1:
         return []
 
-    mod = (os.getenv("FB_MOD") or "sesiune").strip().lower()
-    if mod == "logout":
+    from app.scrapers.facebook.mod import mod_fb
+    mod = mod_fb("radar")
+    if mod == "nucleu":
         return _search_logout(keyword_clean, max_price, exclude_words, min_price, category)
+    if mod == "bazin":
+        return _search_bazin(keyword_clean, keyword_id, max_price, exclude_words,
+                             min_price, category)
     if mod != "sesiune":
         log_manager.emit("radar", "WARN",
             f"Facebook: FB_MOD='{mod}' necunoscut — folosesc calea de sesiune.")
     return _search_sesiune(keyword, max_price, judet, oras, exclude_words,
                            session_path, min_price, category, page, max_scrolls)
+
+
+def _search_bazin(keyword: str, keyword_id, max_price, exclude_words,
+                  min_price, category) -> list[dict]:
+    """Citire din `fb_pool`, ZERO retea. Filtrele se aplica CLIENT-SIDE, prin exact
+    acelasi `_din_canonice` pe care il foloseste calea vie."""
+    if not keyword_id:
+        # Esec ZGOMOTOS, nu tacut. O lista goala fara mesaj ar arata identic cu „n-am
+        # gasit nimic", si exact clasa asta de defect a costat runde intregi in seria
+        # asta. Nu se cade automat pe reteaua vie: `FB_MOD=bazin` e o cerere explicita
+        # de a NU scrapa.
+        log_manager.emit("radar", "WARN",
+            f"Facebook bazin: fara `keyword_id` pentru \"{keyword}\" — bazinul e "
+            f"cheiat pe el, deci nu se poate citi. Apelantul trebuie sa-l paseze "
+            f"(vezi FBS-5); pana atunci calea `bazin` intoarce gol pentru el.")
+        return []
+    from app.database import SessionLocal
+    from app.scrapers.facebook.bazin import citeste
+    db = SessionLocal()
+    try:
+        canonice = citeste(db, "radar", keyword_id)
+    finally:
+        db.close()
+    log_manager.emit("radar", "SCAN",
+        f'Facebook bazin "{keyword}": {len(canonice)} anunturi in bazin')
+    return _din_canonice(canonice, keyword, max_price, exclude_words,
+                         min_price, category)
 
 
 def _search_sesiune(

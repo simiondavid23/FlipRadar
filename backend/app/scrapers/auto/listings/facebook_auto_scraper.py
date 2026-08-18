@@ -115,7 +115,14 @@ def _search_logout(query: str, filters: dict) -> list:
 
     canonice = nucleu_search(query, ancora.lat, ancora.lon, raza_km=65.0,
                              city_page_id=ancora.city_page_id) or []
+    return _din_canonice_auto(canonice, query, max_price_f, veh_cat,
+                              make_raw, make_tok, model_raw, model_tok)
 
+
+def _din_canonice_auto(canonice, query, max_price_f, veh_cat, make_raw, make_tok,
+                       model_raw, model_tok) -> list:
+    """Dicturi CANONICE -> forma Auto. Extras din `_search_logout` la FBS-5 si folosit
+    IDENTIC de calea de bazin — o singura implementare, deci o singura forma."""
     results = []
     vazute = set()
     skipped_cat = skipped_make = 0
@@ -177,7 +184,8 @@ def _search_logout(query: str, filters: dict) -> list:
 
 
 def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
-                         max_scrolls: int = 10, session_path: Optional[str] = None) -> list:
+                         max_scrolls: int = 10, session_path: Optional[str] = None,
+                         keyword_id: Optional[int] = None) -> list:
     """Cauta vehicule pe Facebook Marketplace prin curl_cffi + JSON structurat.
 
     Semnatura pastrata compatibila cu apelul din auto_listings_scanner
@@ -199,13 +207,45 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
     if page and page > 1:
         return []
 
-    mod = (os.getenv("FB_MOD") or "sesiune").strip().lower()
-    if mod == "logout":
+    from app.scrapers.facebook.mod import mod_fb
+    mod = mod_fb("auto_listings")
+    if mod == "nucleu":
         return _search_logout(query, filters)
+    if mod == "bazin":
+        return _search_bazin(query, filters, keyword_id)
     if mod != "sesiune":
         log_manager.emit("auto_listings", "WARN",
             f"Facebook Auto: FB_MOD='{mod}' necunoscut — folosesc calea de sesiune.")
     return _search_sesiune(query, filters, page, max_scrolls, session_path)
+
+
+def _search_bazin(query: str, filters: dict, keyword_id) -> list:
+    """Citire din `fb_pool`, ZERO retea. Aceleasi filtre, prin acelasi formator."""
+    if not keyword_id:
+        log_manager.emit("auto_listings", "WARN",
+            f"Facebook Auto bazin: fara `keyword_id` pentru \"{query}\" — bazinul e "
+            f"cheiat pe el. Apelantul trebuie sa-l paseze (vezi FBS-5).")
+        return []
+    max_price = filters.get("price_max")
+    try:
+        max_price_f = float(max_price) if max_price not in (None, "") else None
+    except (ValueError, TypeError):
+        max_price_f = None
+    make_raw = str(filters.get("make") or "").strip()
+    model_raw = str(filters.get("model") or "").strip()
+
+    from app.database import SessionLocal
+    from app.scrapers.facebook.bazin import citeste
+    db = SessionLocal()
+    try:
+        canonice = citeste(db, "auto", keyword_id)
+    finally:
+        db.close()
+    log_manager.emit("auto_listings", "SCAN",
+        f'Facebook Auto bazin "{query}": {len(canonice)} anunturi in bazin')
+    return _din_canonice_auto(canonice, query, max_price_f, _vehicles_category_id(),
+                              make_raw, fold_auto(make_raw).strip(),
+                              model_raw, fold_auto(model_raw).strip())
 
 
 def _search_sesiune(query: str = "", filters: dict = {}, page: int = 1,

@@ -548,6 +548,16 @@ def tick(db) -> dict:
         _lock.release()
 
 
+def _marime_bazin(db):
+    """Cate randuri, pe module, si varsta celui mai vechi — trei cifre care spun
+    imediat daca retentia functioneaza."""
+    try:
+        from .bazin import marime
+        return marime(db)
+    except Exception:
+        return None
+
+
 def _ultima_atingere():
     """Rezumatul ultimei atingeri, fara valori de cookie-uri. `None` daca n-a rulat."""
     try:
@@ -609,4 +619,5 @@ def stare_executor(db) -> dict:
         # Import LENES: `atingere` importa la randul lui `zavor_executor` de aici,
         # deci un import la nivel de modul ar inchide un ciclu.
         "atingere": _ultima_atingere(),
+        "bazin_marime": _marime_bazin(db),
     }

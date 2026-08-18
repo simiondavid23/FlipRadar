@@ -510,6 +510,40 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] FB atingere setup failed: {exc}")
 
+    # FBS-5 — retentia bazinului. GARDA IMPLICIT PORNITA, spre deosebire de restul
+    # seriei: un bazin care creste nemarginit e o problema GARANTATA, deci stergerea
+    # e comportamentul sigur, nu cel riscant. `FB_BAZIN_RETENTIE=0` o opreste.
+    try:
+        if (os.getenv("FB_BAZIN_RETENTIE") or "1").strip().lower() not in                 ("0", "false", "no", "off"):
+            def _run_fb_retentie():
+                from app.database import SessionLocal
+                from app.scrapers.facebook.bazin import sterge_vechi
+                _db = SessionLocal()
+                try:
+                    zile = float(os.getenv("FB_BAZIN_RETENTIE_ZILE") or 7)
+                    n = sterge_vechi(_db, zile)
+                    from app.services.log_manager import log_manager as _lm
+                    _lm.emit("radar", "INFO",
+                             f"FBBAZIN retentie: {n} randuri sterse, prag {zile:g} zile "
+                             f"pe `ultima_vedere_at`")
+                except Exception as exc:
+                    print(f"[FBBazin] retentie esuata: {exc}")
+                finally:
+                    _db.close()
+
+            scheduler.add_job(
+                _run_fb_retentie,
+                "cron", hour=4, minute=20,
+                id="fb_bazin_retentie",
+                replace_existing=True,
+                next_run_time=datetime.now() + timedelta(minutes=11),
+            )
+            print("[Scheduler] FB retentie bazin (04:20) inregistrata.")
+        else:
+            print("[Scheduler] FB retentie bazin OPRITA (FB_BAZIN_RETENTIE=0).")
+    except Exception as exc:
+        print(f"[Scheduler] FB retentie setup failed: {exc}")
+
     # MODIFICARE 7 — cleanup zilnic (03:30) al cozii Discord: sterge itemele
     # trimise mai vechi de 7 zile (istoricul nu trebuie pastrat la nesfarsit).
     def _cleanup_discord_queue():
