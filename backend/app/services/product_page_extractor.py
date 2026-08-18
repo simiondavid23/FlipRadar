@@ -1580,10 +1580,117 @@ def _extract_powerup(url: str) -> dict:
     }
 
 
+# ── intersport.ro (G2F-1b / G2F-2) ───────────────────────────────────────────
+
+# Pretul sta in ATRIBUT, cu virgula zecimala: `data-current-price="305,99"`.
+_INTERSPORT_PRET_RE = re.compile(r"^(\d{1,3}(?:\.\d{3})*|\d+),(\d{2})$")
+
+
+def _parse_pret_intersport(text) -> float | None:
+    """Pretul dintr-un atribut `data-current-price`, parsare STRICTA.
+
+    Ca la elefant si powerup, NU trece prin `_parse_price_any`: acela e permisiv
+    prin design si ar transforma un text corupt intr-un numar plauzibil. Sursa are
+    UN singur format masurat, iar abaterea de la el inseamna ca pagina s-a schimbat
+    — semnal pe care il vrem ca esec curat, nu ca reparatie tacuta.
+    """
+    if not isinstance(text, str):
+        return None
+    curat = re.sub(r"\s+", "", text.replace("\xa0", "")).strip()
+    potrivire = _INTERSPORT_PRET_RE.match(curat)
+    if potrivire is None:
+        return None
+    try:
+        return float(f"{potrivire.group(1).replace('.', '')}.{potrivire.group(2)}")
+    except ValueError:
+        return None
+
+
+def _extract_intersport(url: str) -> dict:
+    """intersport.ro — zero date structurate de produs.
+
+    Masurat la G2F-1b (2026-08-18) pe doua PDP-uri cu preturi distincte: ld+json are
+    doar `Organization` si `BreadcrumbList`, iar `[itemtype*="Product"]` lipseste cu
+    totul. Exista un `itemprop="price"` pe nodul de pret, dar e ORFAN — fara
+    `itemscope` de `Product` in jur — deci fluxul de microdata al extractorului
+    generic nu-l vede, si genericul ridica `no_product_data` (pinuit de test).
+
+    UN singur fetch, prin poarta guarded C-14.
+    """
+    html = _fetch_text_guarded(url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    titlu = soup.find("h1")
+    name = _clean_text(titlu.get_text(" ", strip=True)) if titlu is not None else None
+    if not name:
+        titlu = soup.find("title")
+        name = _clean_text(titlu.get_text(" ", strip=True)) if titlu is not None else None
+
+    # --- Pretul platit ------------------------------------------------------
+    # ANCORAREA in `.current-price` e obligatorie, si nu din eleganta: pagina mai
+    # contine `span.points-gain` cu EXACT aceeasi valoare, dar alt inteles —
+    # „305,99 puncte" de fidelitate, in `div.points-gain-container.hidden`. O
+    # selectie libera pe cifra sau pe atribut ar putea citi punctele in loc de pret.
+    price = None
+    nod = soup.select_one(".current-price[data-current-price]")
+    if nod is not None:
+        price = _parse_pret_intersport(nod.get("data-current-price"))
+    if price is None:
+        # Rezerva pe TEXTUL aceluiasi nod ancorat, nu pe alt selector: daca
+        # atributul dispare, textul „305,99 LEI" ramane in acelasi loc.
+        nod = soup.select_one(".current-price")
+        if nod is not None:
+            brut = re.sub(r"(?i)\s*lei\s*$", "", nod.get_text(" ", strip=True))
+            price = _parse_pret_intersport(brut)
+
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina intersport fara titlu: {(url or '')[:120]}")
+    if price is None:
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Pagina intersport fara pret citibil in .current-price: "
+            f"{(url or '')[:120]}")
+    if price <= 0:
+        raise ProductExtractionError(
+            "invalid_price", f"Pret invalid ({price!r}) la '{name[:60]}'")
+
+    return {
+        "name": name,
+        "price": price,
+        # MONEDA din COD. Pagina scrie „LEI" doar in textul de langa pret, in niciun
+        # atribut si in nicio data structurata — la fel ca powerup. A NU se
+        # generaliza tiparul: unde moneda E masurabila, se citeste din pagina,
+        # fiindca o constanta ar ascunde exact momentul in care magazinul o schimba.
+        "currency": "RON",
+        # STOC: None NECONDITIONAT, si e o lipsa ONESTA, nu o decizie masurata.
+        # Semnalele se contrazic pe ACEEASI pagina — „Adauga in cos" x2, „stoc" x10,
+        # „Indisponibil" x3 — plauzibil fiindca stocul e PER MARIME, iar pagina nu
+        # spune nimic despre produs ca intreg.
+        #
+        # NU „repara" asta cu `div.out-of-stock`: el apare pe TOATE cele 30 de
+        # carduri ale listarii /sale/, langa butonul de cos, si nu are `display:none`
+        # inline — e sablon ascuns prin CSS extern, exact tiparul `data-sold-out-text`
+        # de la elefant (ELF-1b). Ca semnal de stoc ar da False pe tot catalogul.
+        #
+        # Nicio pagina de produs complet epuizat n-a fost sondata, deci ramura
+        # negativa e NEMASURATA. Avalul e tri-state si afiseaza „Stoc necunoscut".
+        "in_stock": None,
+        "is_aggregate": False,
+        "variants": None,
+        "image_url": _meta(soup, "og:image"),
+        "canonical_url": _canonical_url(soup, url),
+        "domain": _domain_of(url),
+        "method": "intersport_custom",
+        "override_applied": False,
+    }
+
+
 CUSTOM_EXTRACTORS: dict[str, callable] = {
     "asos.com": _extract_asos,
     "elefant.ro": _extract_elefant,
     "powerup.ro": _extract_powerup,
+    "intersport.ro": _extract_intersport,
 }
 
 

@@ -734,6 +734,82 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "partajate) si n-are paginare server-side — "
                  "vezi docs/catalog_domain_log.md",
     },
+    # ── G2F — sub-lotul sport/outdoor (sonde 2026-08-18) ──────────────────────
+    # Din patru domenii sondate au intrat TREI. decathlon.ro e Grup 4 (Cloudflare
+    # „Just a moment" pe toate profilurile, la home) si asteapta valul de browser.
+    "intersport.ro": {
+        "label": "Intersport",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "custom",
+        "status": "validated",
+        "notes": "G2F-1/G2F-1b/G2F-2; ZERO date structurate de produs: ld+json are "
+                 "doar Organization si BreadcrumbList, iar [itemtype*='Product'] "
+                 "lipseste. Exista un itemprop='price' pe nodul de pret, dar e ORFAN "
+                 "— fara itemscope de Product in jur — deci fluxul generic de "
+                 "microdata nu-l vede si genericul ridica no_product_data (pinuit de "
+                 "test). De aici extractorul custom `intersport_custom`. Pretul platit "
+                 "vine din ATRIBUTUL data-current-price ('305,99' — virgula zecimala, "
+                 "deci parser strict propriu), ancorat OBLIGATORIU in .current-price: "
+                 "CAPCANA e span.points-gain, care poarta ACEEASI valoare cu alt "
+                 "inteles ('305,99 puncte' de fidelitate, in container .hidden). "
+                 "Referinta taiata sta in span.deleted-price (div.deleted-price-"
+                 "container) si NU intra in contractul extractorului — e materie de "
+                 "val D. Moneda vine din COD (RON): 'LEI' apare doar in textul de "
+                 "langa pret. Stocul e None NEMASURAT — semnalele se contrazic pe "
+                 "aceeasi pagina (stoc per marime), iar div.out-of-stock e sablon "
+                 "ascuns prin CSS extern pe TOATE cardurile listarii, deci interzis ca "
+                 "semnal (tiparul elefant). Componente partajate masurate pe ambele "
+                 "PDP-uri: 10/17/50/250 lei si 99.99/199.99 LEI (praguri de livrare si "
+                 "promotii din header). Axa D e val ULTERIOR: /sale/ are 86 de carduri "
+                 "cu article.x-product-box, dar paginarea e nemasurata — "
+                 "vezi docs/catalog_domain_log.md",
+    },
+    "toolnation.nl": {
+        "label": "Toolnation",
+        "category": "bricolaj",
+        "country": "NL",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-1/G2F-2; Magento. ld+json complet pe PDP: Product + Offer cu "
+                 "price / priceCurrency EUR / availability, plus itemCondition, seller "
+                 "si url. ATENTIE: preturile NU apar deloc in textul vizibil — sunt "
+                 "hidratate client-side — deci exista DOAR in datele structurate; o "
+                 "garda care cere preturi vizibile declara fals 'fara semnale de "
+                 "magazin' (s-a intamplat la sonda). Capcane masurate pe ambele "
+                 "PDP-uri: bannerul '€250' (Summer Deals) si NUMARUL DE TELEFON al "
+                 "magazinului, '31 85 237 15 00 €', pe care regexul de pret il citeste "
+                 "ca suma — ld+json le ocoleste pe amandoua. Omnibus: NEMARCAT (atentie, "
+                 "'van' e prepozitie in neerlandeza, nu marcaj de pret; termenul "
+                 "relevant ar fi 'adviesprijs'). Axa D: listarea aanbiedingen.html "
+                 "poarta 24 de noduri Product COMPLETE in ld+json — primul candidat "
+                 "pentru un mod ldjson-listing al scannerului, unde o singura cerere da "
+                 "toate produsele gata parsate — vezi docs/catalog_domain_log.md",
+    },
+    "direct-running.com": {
+        "label": "Direct Running",
+        "category": "incaltaminte",
+        # Sediul NU e dovedit juridic: singurul semnal masurat, prezent identic pe
+        # home, PDP si listare, e „Customer service in France". E serviciu de clienti,
+        # nu sediu, si sta in tensiune cu moneda USD — de aici mentiunea din notes.
+        "country": "FR",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-1/G2F-2; domeniul REAL e FARA www — redirect MASURAT "
+                 "www.direct-running.com -> direct-running.com. ld+json: Product + "
+                 "Offer cu price / priceCurrency / availability. MONEDA E USD, nu EUR: "
+                 "incrucisat intre ld+json si afisaj ($130.00 / $99.05 / $4.95), pe un "
+                 ".com cu 'Customer service in France' — conversia BNR acopera USD. "
+                 "TARA e o DEDUCTIE slaba, nu o masuratoare: singurul semnal e acel "
+                 "'Customer service in France', repetat pe toate paginile; nu exista "
+                 "adresa, VAT sau numar de inregistrare in dump-uri, iar moneda "
+                 "contrazice. Daca apare o dovada mai buna, campul se corecteaza. "
+                 "Axa D: /outlet are 97 de carduri (div.group.theme-elitelab...) — "
+                 "val ULTERIOR — vezi docs/catalog_domain_log.md",
+    },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",
         "category": "foto",

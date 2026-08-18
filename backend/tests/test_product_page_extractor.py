@@ -2147,3 +2147,110 @@ def test_powerup_fluxul_generic_chiar_nu_poate_citi_pagina():
     with pytest.raises(ProductExtractionError) as exc:
         parse_product_html(_powerup_fixture("pdp_179352.html"), POWERUP_URL_1)
     assert exc.value.reason == "no_product_data"
+
+
+# ── G2F-2: extractorul custom pentru intersport.ro ───────────────────────────
+#
+# Fixture-urile sunt fragmente taiate VERBATIM din dump-urile sondei G2F-1b
+# (`dumps_g2f_intersport/`), si pastreaza DELIBERAT capcana masurata acolo:
+# `span.points-gain` poarta ACEEASI valoare ca pretul, dar inseamna puncte de
+# fidelitate. Fara ea in fixture, testul de ancorare n-ar dovedi nimic.
+
+_INTERSPORT_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "intersport")
+
+# URL-uri reale, din meta-urile dump-urilor.
+INTERSPORT_URL_1 = ("https://www.intersport.ro/sale/incaltaminte-sale/"
+                    "jordan-pantofi-barbati-jordan-stay-loyal-3_911597/")
+INTERSPORT_URL_2 = ("https://www.intersport.ro/sale/imbracaminte-sale/"
+                    "adidas-costum-2p-j-3s-tiberio-ts_944648/")
+
+
+def _intersport_fixture(nume: str) -> str:
+    with open(os.path.join(_INTERSPORT_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("fisier,url,pret", [
+    ("pdp_911597.html", INTERSPORT_URL_1, 305.99),
+    ("pdp_944648.html", INTERSPORT_URL_2, 169.99),
+])
+def test_intersport_extrage_pret_din_atribut(fetch_mock, fisier, url, pret):
+    """Cele doua PDP-uri cu preturi distincte pe care s-a masurat structura.
+
+    Moneda e RON din COD — pagina scrie „LEI" doar in textul de langa pret — iar
+    stocul e None fiindca semnalele se contrazic pe aceeasi pagina (stoc per marime).
+    """
+    state = fetch_mock(_intersport_fixture(fisier))
+
+    data = ppe.extract_product(url)
+
+    assert data["price"] == pret
+    assert data["currency"] == "RON"
+    assert data["in_stock"] is None
+    assert data["method"] == "intersport_custom"
+    assert data["domain"] == "intersport.ro"
+    assert data["is_aggregate"] is False
+    assert state["calls"] == 1
+
+
+def test_intersport_nu_citeste_punctele_de_fidelitate(fetch_mock):
+    """Ancorarea in `.current-price` e ceruta de structura, nu de eleganta.
+
+    `span.points-gain` poarta ACEEASI valoare ca pretul, dar inseamna puncte de
+    fidelitate, si sta INAINTEA blocului de pret in fixture. Ii dam o valoare
+    vizibil diferita: un selector neancorat ar citi-o pe ea.
+    """
+    html = _intersport_fixture("pdp_911597.html")
+    assert "points-gain" in html, "fixture: capcana trebuie sa fie prezenta"
+    stricat = html.replace("Puncte unitare acumulate:",
+                           'Puncte: <span class="points-gain" '
+                           'data-current-price="1,11">1,11 puncte</span>', 1)
+    state = fetch_mock(stricat)
+
+    data = ppe.extract_product(INTERSPORT_URL_1)
+
+    assert data["price"] == 305.99, "pretul vine din .current-price, nu din puncte"
+    assert state["calls"] == 1
+
+
+def test_intersport_referinta_taiata_nu_intra_in_contract():
+    """`span.deleted-price` (611,99) exista in pagina, dar NU e in rezultat:
+    contractul extractorului de pagina poarta doar pretul platit. Referinta e
+    materie pentru descriptorul de listare, la valul D."""
+    html = _intersport_fixture("pdp_911597.html")
+
+    assert "deleted-price" in html and "611,99" in html
+
+
+@pytest.mark.parametrize("brut,asteptat", [
+    ("305,99", 305.99),          # formatul masurat: atribut cu virgula zecimala
+    ("169,99", 169.99),
+    ("1.234,56", 1234.56),       # punct de mii
+])
+def test_intersport_parser_formele_masurate(brut, asteptat):
+    assert ppe._parse_pret_intersport(brut) == asteptat
+
+
+@pytest.mark.parametrize("brut", ["305.99", "abc", "", "305,9", "305", None, 42])
+def test_intersport_parser_respinge_ce_nu_e_formatul_masurat(brut):
+    """Strict prin design, ca la elefant si powerup: o abatere inseamna ca pagina
+    s-a schimbat, iar asta se vede ca esec curat, nu ca reparatie tacuta."""
+    assert ppe._parse_pret_intersport(brut) is None
+
+
+def test_intersport_e_in_registrul_de_extractoare_custom():
+    assert ppe.CUSTOM_EXTRACTORS["intersport.ro"] is ppe._extract_intersport
+    assert ppe._custom_extractor_for(INTERSPORT_URL_1) is ppe._extract_intersport
+
+
+def test_intersport_fluxul_generic_chiar_nu_poate_citi_pagina():
+    """Justificarea extractorului custom, pe fixture-ul REAL.
+
+    `itemprop="price"` EXISTA in pagina, dar e ORFAN — fara `itemscope` de Product
+    in jur — deci fluxul de microdata nu-l vede. Daca intersport capata candva
+    ld+json sau microdata completa, testul cade si intrebarea „mai avem nevoie de
+    cod bespoke?" se pune singura.
+    """
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_intersport_fixture("pdp_911597.html"), INTERSPORT_URL_1)
+    assert exc.value.reason == "no_product_data"

@@ -1770,8 +1770,112 @@ n-are paginare server-side.
 
 ---
 
+## G2F-1/1b/2 — sub-lotul sport/outdoor: 4 sondate, 3 intrate
+
+Doua sonde (17 + 2 cereri) si o implementare. Dump-urile in
+`scripts/diagnostics/dumps_g2f/` si `dumps_g2f_intersport/` (gitignorate),
+fragmentele folosite de teste in `backend/tests/fixtures/intersport/`.
+
+| domeniu | verdict | profil | moneda |
+|---|---|---|---|
+| **intersport.ro** | **`custom` — INTRAT** | implicit | **RON** (din cod) |
+| **toolnation.nl** | **`jsonld` — INTRAT** | implicit | **EUR** |
+| **direct-running.com** | **`jsonld` — INTRAT** | implicit | **USD** |
+| decathlon.ro | Grup 4 — Cloudflare la home, pe toate profilurile | niciunul | — |
+
+### intersport.ro — `method: custom`, `intersport_custom` (FACUT)
+
+Fluxul generic chiar n-are ce citi: ld+json are doar `Organization` si
+`BreadcrumbList`, iar `[itemtype*="Product"]` lipseste. Exista un `itemprop="price"`
+pe nodul de pret, dar e **ORFAN** — fara `itemscope` de `Product` in jur.
+
+Finete masurata, care conteaza pentru testul-garda: pagina reala are **DOUA** noduri
+`itemprop="price"`, cu aceeasi valoare, in containere diferite
+(`div.current-price-container` si `div.prices-container`). Pe pagina intreaga
+genericul ridica `no_product_data`; pe un fragment care pastreaza doar UNUL dintre
+ele, genericul reuseste sa citeasca `microdata`. Fixture-ul de test le poarta pe
+amandoua — altfel testul-garda ar fi trecut degeaba.
+
+Contractul extractorului:
+
+* pret platit din **atributul** `data-current-price` (`"305,99"` — virgula zecimala,
+  deci parser strict propriu, tiparul powerup), citit de pe nodul ancorat in
+  `.current-price`;
+* **CAPCANA**: `span.points-gain` poarta ACEEASI valoare cu alt inteles —
+  „305,99 puncte" de fidelitate, in `div.points-gain-container.hidden`. O selectie
+  libera pe cifra ar citi punctele. Fixture-ul o contine, iar un test o pinuieste;
+* referinta taiata (`span.deleted-price` in `div.deleted-price-container`) NU intra in
+  contract — e materie de val D;
+* moneda `"RON"` din COD: „LEI" apare doar in textul de langa pret;
+* `in_stock: None` NEMASURAT — semnalele se contrazic pe aceeasi pagina („Adauga in
+  cos" x2, „stoc" x10, „Indisponibil" x3), plauzibil fiindca stocul e per marime.
+  `div.out-of-stock` e INTERZIS ca semnal: apare pe TOATE cele 30 de carduri ale
+  listarii, fara `display:none` inline — sablon ascuns prin CSS extern, exact tiparul
+  `data-sold-out-text` de la elefant.
+
+Componente partajate, masurate pe ambele PDP-uri: `10 lei`, `17 lei`, `50 lei`,
+`99.99 lei`, `199.99 LEI`, `250 lei` (praguri de livrare si promotii din header);
+propriile sunt 305,99/611,99 si 169,99/299,99 — exact perechile din cardurile
+listarii. Axa D e val ULTERIOR: `/sale/` are 86 de carduri cu
+`article.x-product-box`, dar paginarea e nemasurata.
+
+### toolnation.nl — `method: jsonld`, categoria noua `bricolaj` (FACUT)
+
+Magento. `Product` + `Offer` cu `price` / `priceCurrency: EUR` / `availability`, plus
+`itemCondition`, `seller`, `url`.
+
+**Preturile NU apar deloc in textul vizibil** — sunt hidratate client-side si exista
+DOAR in datele structurate. O garda care cere preturi vizibile declara fals „fara
+semnale de magazin"; s-a intamplat la sonda si a impiedicat fotografia listarii.
+
+Capcane masurate pe ambele PDP-uri: bannerul `€250` („Summer Deals") si **numarul de
+telefon** al magazinului, `31 85 237 15 00 €`, pe care regexul de pret il citeste ca
+suma. ld+json le ocoleste pe amandoua.
+
+Omnibus: **NEMARCAT**. Atentie la limba: `van` e prepozitie in neerlandeza, nu marcaj
+de pret — un tipar Omnibus care o include raporteaza fals (24 de aparitii pe un PDP).
+Termenul relevant ar fi `adviesprijs`.
+
+**Axa D — cel mai promitator caz de pana acum:** listarea `aanbiedingen.html` poarta
+**24 de noduri `Product` COMPLETE** in ld+json, fiecare cu pret, moneda, stoc si url.
+O singura cerere da toate produsele gata parsate, fara descriptor de carduri — primul
+candidat pentru un mod `ldjson-listing` al scannerului.
+
+Categoria `bricolaj` e introdusa aici (unelte/atelier); hornbach si action urmeaza.
+
+### direct-running.com — `method: jsonld` (FACUT)
+
+Domeniul REAL e **fara `www`**: redirect masurat `www.direct-running.com` ->
+`direct-running.com`. `Product` + `Offer` cu `price` / `priceCurrency` /
+`availability`.
+
+**Moneda e USD, nu EUR** — incrucisat intre ld+json si afisaj (`$130.00`, `$99.05`,
+`$4.95`). Conversia BNR acopera USD.
+
+**Tara e o DEDUCTIE SLABA, nu o masuratoare.** Singurul semnal gasit in dump-uri e
+„Customer service in France", repetat identic pe home, PDP si listare. E serviciu de
+clienti, nu sediu juridic: nu exista adresa, VAT sau numar de inregistrare, iar
+moneda USD sta in tensiune cu el. Campul `country: "FR"` se corecteaza daca apare o
+dovada mai buna. Axa D: `/outlet` are 97 de carduri — val ULTERIOR.
+
+### decathlon.ro — Grup 4
+
+Cloudflare „Just a moment" pe TOATE cele trei profiluri, chiar la home. Intra in valul
+de browser, alaturi de cardmarket.com, conrad.com si sportsdirect.ro.
+
+---
+
 ## Domenii neintrate
 
+> bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in
+> tot corpul (niciun `add_to_cart`, `/cart`, `/checkout`, „adauga in cos"), 0 din 54
+> de ancore poarta pret — produsele nu sunt linkabile — si toate cele 12 linkuri
+> interne sunt institutionale (`/despre-bipa`, `/pliant`, `/sortiment`, `/cariere`,
+> `/magazinul-meu` care e STORE LOCATOR, nu „contul meu"). Ofertele stau intr-un
+> pliant PDF (`Pliantul%20BIPA_kw32-33.pdf`). Cele 6 preturi afisate sunt blocul
+> „BIPA FAVES", identic pe home si `/pliant`, deci componenta partajata. Nuxt,
+> `server: istio-envoy`, zero date structurate.
+>
 > ccc.ro — DOMENIU PARCAT (masurat in G2C-1): `server: Caddy`, `robots: noindex`,
 > 6 caractere de text vizibil. Magazinul CCC nu e acolo. ccc.eu, domeniul real, are
 > selector de tara randat client-side, deci calea RO nu e obtenabila fara JS.

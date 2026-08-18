@@ -188,6 +188,9 @@ def test_validated_domains_santinela():
         "cyberport.at",                               # G2B-2
         "sportvision.ro",                             # G2C-2
         "sizeer.ro",                                  # G2C-2
+        "intersport.ro",                              # G2F-2
+        "toolnation.nl",                              # G2F-2
+        "direct-running.com",                         # G2F-2
     }
 
 
