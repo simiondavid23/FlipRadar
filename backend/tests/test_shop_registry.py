@@ -22,7 +22,8 @@ _CAMPURI_OBLIGATORII = ("label", "category", "country", "delivery", "method", "s
 _CATEGORII = {"electronice", "fashion", "sneakers", "incaltaminte", "tcg",
               "outdoor", "jucarii", "foto", "beauty",
               "general",    # ELF-2 — magazine generaliste (elefant)
-              "bricolaj"}   # G2F-2 — unelte/atelier (toolnation; hornbach/action urmeaza)
+              "bricolaj",   # G2F-2 — unelte/atelier (toolnation; hornbach/action urmeaza)
+              "pet"}        # G2F-4 — pet shop (zooplus; fressnapf e in valul de browser)
 _LIVRARI = {"ro_confirmed", "ro_storefront", "b2b_only", "unconfirmed"}
 _METODE = {"jsonld", "og", "microdata", "custom", "shopify", "browser"}
 _STARI = {"validated", "probed", "planned", "watchlist"}

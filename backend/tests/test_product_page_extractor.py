@@ -1000,9 +1000,17 @@ def test_offers_lista_availability_lipsa_da_none_pe_varianta():
     assert res["price"] == 79.99
 
 
-def test_offers_lista_fara_size_ramane_exact_ca_azi():
-    """REGRESIE PINUITA (forma sneakersnstuff): fara `size` pe niciun element,
-    calea ramane cea dinainte de FASHION-2 — primul cu pret, fara variante."""
+def test_offers_lista_fara_size_da_minimul_nu_primul():
+    """REGRESIE PINUITA (forma sneakersnstuff), REVIZUITA la G2F-4.
+
+    Fara `size` pe niciun element, `_variants_from_offer_list` refuza forma si
+    nu se fabrica variante — asta ramane. Ce s-a schimbat e ALEGEREA pretului:
+    pana la G2F-4 castiga PRIMUL element cotat (aici 149.99, epuizat), fiindca
+    ordinea listei era luata drept semnificativa; acum castiga MINIMUL (99.99),
+    ca la `lowPrice` si ca la minimul marimilor. Stocul si moneda vin de la
+    oferta care a castigat, nu de la prima — altfel pretul ar fi al unei
+    variante si disponibilitatea a alteia.
+    """
     html = _offers_page([
         _offer(None, 149.99, "OutOfStock"),
         _offer(None, 99.99, "InStock"),
@@ -1011,8 +1019,8 @@ def test_offers_lista_fara_size_ramane_exact_ca_azi():
     res = parse_product_html(html, "https://www.sneakersnstuff.com/p/x")
 
     assert res["variants"] is None
-    assert res["price"] == 149.99           # PRIMUL element, nu minimul
-    assert res["in_stock"] is False         # stocul primei oferte
+    assert res["price"] == 99.99            # MINIMUL, nu primul element
+    assert res["in_stock"] is True          # stocul ofertei castigatoare
     assert res["is_aggregate"] is False
 
 
@@ -2254,3 +2262,162 @@ def test_intersport_fluxul_generic_chiar_nu_poate_citi_pagina():
     with pytest.raises(ProductExtractionError) as exc:
         parse_product_html(_intersport_fixture("pdp_911597.html"), INTERSPORT_URL_1)
     assert exc.value.reason == "no_product_data"
+
+
+# ── G2F-4: pretul pe lista de oferte = minimul; zooplus (ProductGroup) ────────
+
+_ZOOPLUS_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "zooplus")
+
+# URL-uri reale, din meta-urile dump-urilor sondei G2F-3.
+ZOOPLUS_URL_1 = "https://www.zooplus.ro/shop/pisici/jucarii_pisici/mingiute/364856"
+ZOOPLUS_URL_2 = ("https://www.zooplus.ro/shop/pisici/hrana_uscata_pisici/purizon/"
+                 "pachete_de_testare/1347045")
+
+
+def _zooplus_fixture(nume: str) -> str:
+    with open(os.path.join(_ZOOPLUS_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_zooplus_pdp1_ia_pretul_post_voucher_din_ldjson():
+    """Un singur gramaj: ld+json publica pretul POST-VOUCHER, nu cel de lista.
+
+    Masurat pe dump: corpul arata 16,90 LEI si un -20%, iar ld+json da 13,52
+    (= 16,90 x 0,8). E pretul REAL PLATIBIL, deci il luam ca atare — fapt de
+    exploatare, nu defect. Fixture-ul pastreaza DELIBERAT si 16,90 in textul
+    vizibil: daca vreodata extractia ar aluneca pe text, testul cade aici.
+    """
+    res = parse_product_html(_zooplus_fixture("pdp1_364856.html"), ZOOPLUS_URL_1)
+
+    assert res["price"] == 13.52
+    assert res["currency"] == "RON"
+    assert res["method"] == "jsonld"
+    assert res["in_stock"] is True
+    assert [v["price"] for v in res["variants"]] == [13.52]
+
+
+def test_zooplus_pdp2_pretul_e_minimul_gramajelor_in_stoc():
+    """Zece gramaje sub un ProductGroup: pretul produsului e minimul celor in stoc.
+
+    ATENTIE la forma reala, masurata: zooplus NU e un `Product` cu offers-lista,
+    ci un `ProductGroup` cu `hasVariant`, fiecare varianta cu propriul Offer.
+    Prin urmare pretul iese din `_aggregate_variants` — regula care exista de la
+    FASHION-1 — nu din calea de lista atinsa la G2F-4. Al zecelea gramaj e tot
+    4,90 dar EPUIZAT, deci minimul in stoc coincide aici cu minimul global.
+    """
+    res = parse_product_html(_zooplus_fixture("pdp2_1347045.html"), ZOOPLUS_URL_2)
+
+    assert res["price"] == 4.9
+    assert res["currency"] == "RON"
+    assert res["method"] == "jsonld"
+    assert res["in_stock"] is True
+    assert len(res["variants"]) == 10
+    assert min(v["price"] for v in res["variants"] if v["in_stock"]) == 4.9
+
+
+def test_zooplus_pdp2_ordinea_variantelor_nu_schimba_pretul():
+    """Aceleasi zece gramaje, ordinea `hasVariant` INVERSATA — acelasi pret.
+
+    Inversiunea se face aici, pe fixture-ul real, nu intr-un al doilea fisier de
+    45 KB. Garda tine calea variantelor independenta de ordinea de serializare,
+    exact proprietatea pe care G2F-4 o cere si pe calea de lista.
+    """
+    brut = _zooplus_fixture("pdp2_1347045.html")
+    inceput = brut.index(">", brut.index("application/ld+json")) + 1
+    sfarsit = brut.index("</script>", inceput)
+    doc = json.loads(brut[inceput:sfarsit])
+    grup = [n for n in doc["@graph"] if n.get("@type") == "ProductGroup"][0]
+    grup["hasVariant"] = list(reversed(grup["hasVariant"]))
+    inversat = brut[:inceput] + json.dumps(doc, ensure_ascii=False) + brut[sfarsit:]
+
+    res = parse_product_html(inversat, ZOOPLUS_URL_2)
+
+    assert res["price"] == 4.9
+    assert len(res["variants"]) == 10
+
+
+def test_zooplus_turnat_in_offers_lista_da_tot_minimul():
+    """SINTETIC, si de aceea singurul care dovedeste regula G2F-4.
+
+    Pe dump-ul real minimul cade din intamplare pe prima pozitie a variantelor,
+    deci "minim" si "primul" nu se pot deosebi acolo. Fixture-ul asta ia exact
+    preturile masurate pe zooplus pdp2 si le toarna in forma pe care G2F-4 o
+    schimba — un `Product` cu `offers` LISTA, fara `size` — ordonate DESCRESCATOR,
+    ca minimul (4,90) sa stea spre coada listei, iar primul sa fie 50,26.
+    Inainte de G2F-4 rezultatul ar fi fost 50,26.
+    """
+    res = parse_product_html(_zooplus_fixture("pdp2_offers_lista_SINTETIC.html"),
+                             ZOOPLUS_URL_2)
+
+    assert res["price"] == 4.9              # minimul, desi primul element e 50,26
+    assert res["currency"] == "RON"
+    assert res["variants"] is None          # fara `size` nu se fabrica variante
+    assert res["is_aggregate"] is False
+
+
+def test_offers_lista_moneda_si_stocul_vin_din_oferta_castigatoare():
+    """Oferta INTOARSA e cea cu pretul minim, nu prima — altfel pretul ar fi al
+    unei variante, iar moneda si stocul ale alteia."""
+    html = _offers_page([
+        _offer(None, 300.0, "InStock", currency="EUR"),
+        _offer(None, 120.0, "OutOfStock", currency="RON"),
+    ])
+
+    res = parse_product_html(html, URL)
+
+    assert res["price"] == 120.0
+    assert res["currency"] == "RON"         # moneda ofertei castigatoare
+    assert res["in_stock"] is False         # stocul ofertei castigatoare
+
+
+def test_offers_lista_elementul_corupt_e_ignorat_nu_invalideaza_lista():
+    """Un element fara pret valid se SARE; restul listei decide pretul."""
+    html = _page(head=_ld(json.dumps({
+        "@type": "Product", "name": "Hrana uscata",
+        "offers": [{"@type": "Offer", "price": "n/a", "priceCurrency": "RON"},
+                   {"@type": "Offer", "price": None, "priceCurrency": "RON"},
+                   "sir-in-loc-de-oferta",
+                   {"@type": "Offer", "price": "89,90", "priceCurrency": "RON",
+                    "availability": "https://schema.org/InStock"},
+                   {"@type": "Offer", "price": "129,90", "priceCurrency": "RON"}]})))
+
+    res = parse_product_html(html, URL)
+
+    assert res["price"] == 89.9
+    assert res["in_stock"] is True
+
+
+def test_offers_lista_fara_niciun_pret_valid_pastreaza_eroarea_existenta():
+    """Lista in care NICIUN element nu are pret valid: comportamentul de eroare
+    ramane cel de dinainte — `invalid_price`, fiindca preturile EXISTA in pagina
+    (doar ca sunt de necitit), spre deosebire de absenta lor totala."""
+    html = _page(head=_ld(json.dumps({
+        "@type": "Product", "name": "Hrana uscata",
+        "offers": [{"@type": "Offer", "price": "n/a"},
+                   {"@type": "Offer", "price": "-"}]})))
+
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(html, URL)
+    assert exc.value.reason == "invalid_price"
+
+
+def test_g2f4_nu_atinge_minimul_pe_marimi_cand_cel_mai_ieftin_e_epuizat():
+    """GARDA: regula "minimul global" NU s-a scurs pe calea marimilor.
+
+    Pe o lista CU `size`, semantica ramane cea de la FASHION-2 — minimul
+    marimilor IN STOC. Aici cel mai ieftin element (79.99) e epuizat: daca
+    minimul global ar fi luat locul agregarii, pretul ar cadea la 79.99 si
+    variantele ar disparea. Trebuie sa iasa 119.99, cu toate cele trei marimi.
+    """
+    html = _offers_page([
+        _offer("42", 79.99, "OutOfStock"),
+        _offer("43", 119.99, "InStock"),
+        _offer("44", 149.99, "InStock"),
+    ])
+
+    res = parse_product_html(html, "https://www.bstn.com/p/x")
+
+    assert res["price"] == 119.99           # minimul IN STOC, nu minimul global
+    assert res["in_stock"] is True
+    assert [v["variant"] for v in res["variants"]] == ["42", "43", "44"]
+    assert [v["price"] for v in res["variants"]] == [79.99, 119.99, 149.99]

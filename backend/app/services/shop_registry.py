@@ -810,6 +810,34 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "Axa D: /outlet are 97 de carduri (div.group.theme-elitelab...) — "
                  "val ULTERIOR — vezi docs/catalog_domain_log.md",
     },
+    "zooplus.ro": {
+        "label": "Zooplus",
+        "category": "pet",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-3/G2F-4; Next.js. ld+json e un @graph, iar produsul e un "
+                 "ProductGroup cu `hasVariant` (o varianta per gramaj/pachet), NU un "
+                 "Product cu offers-lista: fiecare varianta isi poarta propriul Offer "
+                 "cu price / priceCurrency RON / availability, deci pretul "
+                 "product-level iese din `_aggregate_variants` — minimul variantelor "
+                 "in stoc, regula care exista de la FASHION-1. SEMANTICA PRETULUI: "
+                 "ld+json publica pretul POST-VOUCHER, nu pretul de lista — masurat pe "
+                 "PDP1, unde corpul arata 16,90 LEI si un -20%, iar ld+json da 13,52 "
+                 "(= 16,90 x 0,8). E pretul REAL PLATIBIL, deci fapt de exploatare, nu "
+                 "defect: un deal calculat pe el e un deal adevarat. De retinut la "
+                 "comparatii cu magazine care publica pretul de lista. Vitrina poarta "
+                 "componente partajate care NU apartin produsului — praguri de livrare "
+                 "(199 / '99 LEI') si un 9,90 recurent —, deci o extractie pe text "
+                 "vizibil ar culege cifre straine; datele structurate le ocolesc. "
+                 "PDP-ul are forma /shop/<cale-de-categorii>/<ID_numeric> (masurat: "
+                 "/shop/pisici/jucarii_pisici/mingiute/364856 si "
+                 "/shop/pisici/hrana_uscata_pisici/purizon/pachete_de_testare/1347045) "
+                 "— ID-ul numeric final e ancora, calea de categorii variaza. "
+                 "Axa D: /shop/oameni_animale/promotii cu 817 produse si selector "
+                 "stabil — val ULTERIOR — vezi docs/catalog_domain_log.md",
+    },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",
         "category": "foto",

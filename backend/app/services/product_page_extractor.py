@@ -302,31 +302,73 @@ def _first_image(value) -> str | None:
 def _price_from_offers(offers):
     """(pret, is_aggregate, offer_folosit, s_a_vazut_candidat) din `offers`.
 
-    `offers` poate fi dict sau lista — pe lista castiga primul cu pret. In cadrul
-    unei oferte ordinea e price > lowPrice (AggregateOffer => is_aggregate) >
-    priceSpecification.price. Flag-ul de candidat separa "nu exista pret in
-    pagina" (no_product_data) de "exista dar e invalid" (invalid_price).
+    `offers` poate fi dict sau lista — pe lista castiga oferta cu pretul MINIM
+    (G2F-4; inainte castiga PRIMA cu pret). In cadrul unei oferte ordinea ramane
+    price > lowPrice (AggregateOffer => is_aggregate) > priceSpecification.price.
+    Flag-ul de candidat separa "nu exista pret in pagina" (no_product_data) de
+    "exista dar e invalid" (invalid_price).
+
+    G2F-4 — de ce minimul, si nu primul: o lista de `Offer` sub acelasi `Product`
+    sunt variantele aceluiasi produs (gramaje, capacitati, pachete), iar ordinea
+    lor in JSON-LD e ARBITRARA — magazinul n-o declara nicaieri ca semnificativa.
+    "Primul cu pret" lega asadar pretul produsului de un accident de serializare:
+    la o reordonare tacuta a feed-ului, acelasi produs isi schimba pretul fara ca
+    magazinul sa fi schimbat ceva.
+
+    Minimul NU e o conventie noua — e conventia pe care extractorul o aplica DEJA
+    celorlalte doua forme de variante, doar ca acestea o poarta in alta haina:
+      * `lowPrice` la AggregateOffer (tezyo, f64) — magazinul insusi publica
+        minimul, si il citim ca atare;
+      * `_aggregate_variants` — minimul marimilor in stoc, pentru
+        ProductGroup.hasVariant (FASHION-1) si pentru offers-lista-cu-`size`
+        (FASHION-2).
+    Ramasese descoperita exact forma fara `size`: lista de oferte pe care
+    `_variants_from_offer_list` o refuza, fiindca nu poate numi variantele. G2F-4
+    ii da aceeasi semantica — "cea mai ieftina varianta", indiferent de haina.
+
+    Oferta INTOARSA e cea care a castigat pretul, nu prima din lista: moneda si
+    disponibilitatea se citesc din ea (`_offer_currency`, `availability`), deci
+    trebuie sa descrie exact varianta cotata, altfel pretul ar veni de la o
+    varianta si moneda de la alta. La egalitate castiga prima intalnita, ca
+    rezultatul sa ramana stabil pe liste cu preturi identice.
+
+    Masurat la G2F-4 pe cele 150 de dump-uri de sonda: doar 3 noduri au lista cu
+    >=2 preturi valide (tezyo pdp1, otter prod1, direct-running pdp2) si la toate
+    primul era deja minimul — deci regula nu misca niciun pret cunoscut azi; e o
+    plasa pentru ordinea viitoare, nu o corectie de valori. (zooplus, care a
+    declansat runda, nu trece pe aici deloc: e ProductGroup cu `hasVariant`.)
     """
     saw_candidate = False
     first_offer = None
+    best = None  # (pret, is_aggregate, offer) — cel mai mic pret valid de pana acum
     for offer in (offers if isinstance(offers, list) else [offers]):
         if not isinstance(offer, dict):
             continue
         if first_offer is None:
             first_offer = offer
+        # Pretul UNEI oferte, cu precedenta neschimbata; None daca oferta n-are
+        # niciun pret valid (element corupt) — atunci se sare, nu invalideaza lista.
+        gasit = None
         for key, is_aggregate in (("price", False), ("lowPrice", True)):
             if offer.get(key) is not None:
                 saw_candidate = True
                 price = _parse_price_any(offer.get(key))
                 if price is not None:
-                    return price, is_aggregate, offer, saw_candidate
-        spec = offer.get("priceSpecification")
-        for node in (spec if isinstance(spec, list) else [spec]):
-            if isinstance(node, dict) and node.get("price") is not None:
-                saw_candidate = True
-                price = _parse_price_any(node.get("price"))
-                if price is not None:
-                    return price, False, offer, saw_candidate
+                    gasit = (price, is_aggregate, offer)
+                    break
+        if gasit is None:
+            spec = offer.get("priceSpecification")
+            for node in (spec if isinstance(spec, list) else [spec]):
+                if isinstance(node, dict) and node.get("price") is not None:
+                    saw_candidate = True
+                    price = _parse_price_any(node.get("price"))
+                    if price is not None:
+                        gasit = (price, False, offer)
+                        break
+        if gasit is not None and (best is None or gasit[0] < best[0]):
+            best = gasit
+    if best is not None:
+        return best[0], best[1], best[2], saw_candidate
     return None, False, first_offer, saw_candidate
 
 

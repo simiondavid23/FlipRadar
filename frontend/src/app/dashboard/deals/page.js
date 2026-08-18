@@ -72,6 +72,7 @@ const CATEGORY_LABEL = {
   electronice: "Electronice",
   general: "General",
   bricolaj: "Bricolaj",
+  pet: "Pet Shop",
 };
 
 const round1 = (n) => (n == null ? null : Math.round(n * 10) / 10);

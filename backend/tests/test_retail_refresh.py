@@ -191,6 +191,7 @@ def test_validated_domains_santinela():
         "intersport.ro",                              # G2F-2
         "toolnation.nl",                              # G2F-2
         "direct-running.com",                         # G2F-2
+        "zooplus.ro",                                 # G2F-4
     }
 
 

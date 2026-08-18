@@ -1865,6 +1865,87 @@ de browser, alaturi de cardmarket.com, conrad.com si sportsdirect.ro.
 
 ---
 
+## G2F-3/G2F-4 — sub-lotul pet: 2 sondate, 1 intrat
+
+| domeniu | verdict | PDP-uri masurate | moneda |
+|---|---|---|---|
+| zooplus.ro | **jsonld, validat** | 2/2 | RON |
+| fressnapf.ro | catalog client-side pe toate cele 4 niveluri | 0 | — |
+
+### zooplus.ro — `method: jsonld`, categoria noua `pet` (FACUT)
+
+Next.js. ld+json-ul e un **`@graph`**, iar produsul din el e un **`ProductGroup` cu
+`hasVariant`** — o varianta per gramaj/pachet, fiecare cu propriul `Offer` (`price`,
+`priceCurrency: RON`, `availability`). NU e un `Product` cu `offers`-lista; distinctia
+conteaza, fiindca pretul product-level iese din `_aggregate_variants` (minimul
+variantelor in stoc, regula existenta de la FASHION-1), nu din calea de lista.
+
+Masurat: PDP1 `/shop/pisici/jucarii_pisici/mingiute/364856` — o varianta, 13,52 RON;
+PDP2 `/shop/pisici/hrana_uscata_pisici/purizon/pachete_de_testare/1347045` — zece
+variante intre 4,90 si 50,26, dintre care una epuizata, deci produsul iese la **4,90**.
+
+**Pretul din ld+json e cel POST-VOUCHER, nu cel de lista.** Pe PDP1 corpul arata
+`16,90 LEI` si un `-20%`, iar ld+json publica `13,52` (= 16,90 x 0,8). E **pretul real
+platibil**, deci un fapt de exploatare, nu un defect: un deal calculat pe el e un deal
+adevarat. De retinut doar la comparatii cu magazine care publica pretul de lista —
+acolo zooplus va parea sistematic mai ieftin, si chiar este.
+
+Vitrina poarta componente **partajate** care nu apartin produsului: pragurile de
+livrare (`199`, `99 LEI`) si un `9,90` recurent. O extractie pe text vizibil ar culege
+cifrele astea drept pret; datele structurate le ocolesc. Fixture-urile din
+`tests/fixtures/zooplus/` pastreaza deliberat zgomotul, ca garda sa cada daca extractia
+aluneca vreodata pe text.
+
+Forma PDP-ului: `/shop/<cale-de-categorii>/<ID_numeric>`. **ID-ul numeric final e
+ancora**; calea de categorii de dinaintea lui variaza si nu e stabila.
+
+**Axa D:** listarea `/shop/oameni_animale/promotii` are **817 produse** si selector
+stabil — val ULTERIOR.
+
+### fressnapf.ro — valul de browser
+
+Catalogul e client-side pe toate cele patru niveluri sondate: nimic despre produs in
+HTML-ul servit. Intra in **valul de browser**, care ajunge astfel la **7 membri**:
+decathlon.ro, conrad.com, sportsdirect.ro, cardmarket.com, fressnapf.ro,
+pccomponentes.com si notebooksbilliger.de.
+
+### Regula de semantica a pretului pe liste de oferte (G2F-4)
+
+Runda a aliniat ultima forma de variante care scapase conventiei comune.
+
+Extractorul intalneste **trei** forme in care un produs isi publica variantele, si de
+la G2F-4 toate trei raspund la aceeasi intrebare — *cat costa cea mai ieftina varianta
+disponibila*:
+
+| forma | unde apare | de unde iese pretul |
+|---|---|---|
+| `AggregateOffer` cu `lowPrice` | tezyo, f64 | minimul e publicat de magazin, il citim |
+| `ProductGroup.hasVariant` / `offers`-lista cu `size` | eobuwie, BSTN, **zooplus** | `_aggregate_variants` — minimul marimilor in stoc |
+| `offers`-lista **fara** `size` | sneakersnstuff, direct-running | **G2F-4: minimul ofertelor valide** |
+
+Pana la G2F-4, ultima linie lua **primul element cotat**. Ordinea unei liste de
+`Offer` in JSON-LD e insa **arbitrara** — niciun magazin n-o declara semnificativa —
+deci pretul produsului atarna de un accident de serializare: la o reordonare tacuta a
+feed-ului, acelasi produs isi schimba pretul fara ca magazinul sa fi schimbat ceva.
+
+Detaliu care nu e cosmetic: oferta **intoarsa** e acum cea care a castigat pretul, nu
+prima din lista. Moneda si `availability` se citesc din ea, deci altfel pretul ar fi al
+unei variante si moneda al alteia. La egalitate castiga prima intalnita, ca rezultatul
+sa ramana stabil.
+
+**Raza de actiune, masurata inainte de schimbare** pe toate cele 150 de dump-uri de
+sonda: doar **3 noduri** au lista cu >=2 preturi valide (tezyo pdp1, otter prod1,
+direct-running pdp2) si la toate primul era deja minimul. Tabelul de regresie a iesit
+**integral identic** dupa schimbare. Regula e asadar o **plasa pentru ordinea
+viitoare**, nu o corectie de valori de azi — singurul loc unde muta ceva e forma
+pinuita sneakersnstuff din teste (149,99 epuizat -> 99,99 in stoc), si acolo muta in
+bine. Fiindca niciun dump real nu deosebeste „minim" de „primul", dovada regulii sta
+intr-un fixture **explicit sintetic**
+(`tests/fixtures/zooplus/pdp2_offers_lista_SINTETIC.html`): preturile reale zooplus
+turnate in forma de lista, ordonate descrescator, cu minimul spre coada.
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in
