@@ -241,6 +241,7 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None, db=Non
             from app.services.facebook_session import resolve_facebook_session_path
             return search_facebook_real_estate(
                 query=kw.query or "", filters=filters,
+                keyword_id=kw.id,           # FBS-5b: cheia bazinului (FB_MOD=bazin)
                 session_path=resolve_facebook_session_path(db, kw.user_id))
     except Exception as exc:
         log_manager.emit("real_estate", "ERR",

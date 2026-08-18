@@ -222,10 +222,8 @@ def search_facebook_auto(query: str = "", filters: dict = {}, page: int = 1,
 def _search_bazin(query: str, filters: dict, keyword_id) -> list:
     """Citire din `fb_pool`, ZERO retea. Aceleasi filtre, prin acelasi formator."""
     if not keyword_id:
-        log_manager.emit("auto_listings", "WARN",
-            f"Facebook Auto bazin: fara `keyword_id` pentru \"{query}\" — bazinul e "
-            f"cheiat pe el. Apelantul trebuie sa-l paseze (vezi FBS-5).")
-        return []
+        from app.services.radar.facebook_scraper import _scutire_manuala
+        return _scutire_manuala("auto_listings", query, _search_logout, query, filters)
     max_price = filters.get("price_max")
     try:
         max_price_f = float(max_price) if max_price not in (None, "") else None

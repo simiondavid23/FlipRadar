@@ -483,20 +483,39 @@ def search_facebook(
                            session_path, min_price, category, page, max_scrolls)
 
 
+def _scutire_manuala(modul_log: str, termen: str, cale_nucleu, *args):
+    """SCUTIREA CAUTARILOR MANUALE de `FB_MOD=bazin` (FBS-5b, varianta 1).
+
+    Cele doua cautari manuale — `routers/radar.py` si `routers/auto.py` — n-au rand de
+    keyword, deci n-au `keyword_id`, deci n-au cu ce interoga bazinul. Sub
+    `FB_MOD=bazin` ar fi intors lista goala: pentru omul care tocmai a apasat „cauta
+    acum", asta inseamna ZERO rezultate Facebook fara nicio explicatie — exact clasa
+    de defect pe care seria o tot prinde.
+
+    Alegerea: cad pe NUCLEU, nu pe gol. O cautare manuala e o cerere initiata de un
+    om, adica exact traficul care seamana cel mai bine cu trafic uman; volumul e
+    marginit de cat apasa omul, iar clientul are deja pauze si zavor de blocaj.
+    Contra-argumentul, lasat explicit pe masa: apasari repetate produc trafic pe care
+    `FB_MOD=bazin` tocmai incerca sa-l elimine — marginirea vine din pauze si zavor,
+    NU dintr-un buget.
+
+    Semnalul e chiar ABSENTA lui `keyword_id`: dupa FBS-5b toti cei trei scanneri il
+    paseaza, deci un apel fara el e manual. Daca un apelant viitor uita sa-l paseze,
+    linia de mai jos apare oricum si e greppabila — nu se pierde in tacere.
+    """
+    log_manager.emit(modul_log, "INFO",
+        f"FBMANUAL FB_MOD=bazin dar cererea n-are `keyword_id` (cautare manuala) "
+        f"pentru {termen!r} — se foloseste NUCLEUL, nu bazinul")
+    return cale_nucleu(*args)
+
+
 def _search_bazin(keyword: str, keyword_id, max_price, exclude_words,
                   min_price, category) -> list[dict]:
     """Citire din `fb_pool`, ZERO retea. Filtrele se aplica CLIENT-SIDE, prin exact
     acelasi `_din_canonice` pe care il foloseste calea vie."""
     if not keyword_id:
-        # Esec ZGOMOTOS, nu tacut. O lista goala fara mesaj ar arata identic cu „n-am
-        # gasit nimic", si exact clasa asta de defect a costat runde intregi in seria
-        # asta. Nu se cade automat pe reteaua vie: `FB_MOD=bazin` e o cerere explicita
-        # de a NU scrapa.
-        log_manager.emit("radar", "WARN",
-            f"Facebook bazin: fara `keyword_id` pentru \"{keyword}\" — bazinul e "
-            f"cheiat pe el, deci nu se poate citi. Apelantul trebuie sa-l paseze "
-            f"(vezi FBS-5); pana atunci calea `bazin` intoarce gol pentru el.")
-        return []
+        return _scutire_manuala("radar", keyword, _search_logout,
+                                keyword, max_price, exclude_words, min_price, category)
     from app.database import SessionLocal
     from app.scrapers.facebook.bazin import citeste
     db = SessionLocal()

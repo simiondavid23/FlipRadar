@@ -128,18 +128,20 @@ def test_bazin_nu_atinge_reteaua(db, monkeypatch, clean_db=None):
     assert len(rez) == 1 and rez[0]["external_id"] == "fb_111"
 
 
-def test_bazin_fara_keyword_id_avertizeaza_zgomotos(monkeypatch, logs):
-    """Lista goala FARA mesaj ar arata identic cu «n-am gasit nimic» — exact clasa de
-    defect care a costat runde in seria asta. Si NU se cade pe reteaua vie:
-    `FB_MOD=bazin` e o cerere explicita de a nu scrapa."""
+def test_bazin_fara_keyword_id_cade_pe_nucleu_cu_marcaj_manual(monkeypatch, logs):
+    """FBS-5b, varianta 1: cererile FARA `keyword_id` sunt cele manuale (dupa cablarea
+    celor trei scanneri), iar pentru omul care a apasat «cauta acum» lista goala ar
+    fi zero rezultate fara explicatie. Cad pe NUCLEU, si linia de jurnal o marcheaza
+    ca manuala, ca traficul manual sa fie vizibil separat."""
     monkeypatch.setenv("FB_MOD", "bazin")
+    monkeypatch.setattr(rad, "_search_logout", lambda *a, **k: [{"marca": "nucleu"}])
     monkeypatch.setattr(rad, "_search_sesiune",
-                        lambda *a, **k: pytest.fail("nu se cade pe reteaua vie"))
+                        lambda *a, **k: pytest.fail("scutirea merge la NUCLEU, nu la sesiune"))
 
     rez = rad.search_facebook(keyword="canapea", max_price=0)
 
-    assert rez == []
-    assert any("keyword_id" in m and "bazin" in m for _n, m in logs)
+    assert rez == [{"marca": "nucleu"}]
+    assert any(m.startswith("FBMANUAL") and "cautare manuala" in m for _n, m in logs)
 
 
 def test_bazin_gol_intoarce_lista_goala_nu_exceptie(db, monkeypatch):
@@ -311,3 +313,78 @@ def test_jobul_de_retentie_e_implicit_pornit():
     assert 'id="fb_bazin_retentie"' in sursa
     assert "FB_BAZIN_RETENTIE_ZILE" in sursa
     assert "ultima_vedere_at" in sursa or "ultima_vedere" in sursa
+
+
+# ── 18-21. FBS-5b: cablarea `keyword_id` in cei trei scanneri ────────────────
+def _kw_radar(**kw):
+    from types import SimpleNamespace
+    baza = dict(id=101, name="canapea", platform="facebook", max_price=1000.0,
+                min_price=None, judet=None, oras=None, category=None,
+                exclude_words=None, condition=None)
+    baza.update(kw)
+    return SimpleNamespace(**baza)
+
+
+def test_radar_scanner_paseaza_keyword_id(monkeypatch):
+    """Valoarea pasata, nu doar prezenta parametrului."""
+    from app.utils import radar_scanner as rs
+    primite = {}
+    monkeypatch.setattr(rs, "search_facebook",
+                        lambda **k: (primite.update(k), [])[1])
+    settings = type("S", (), {"facebook_session_path": None})()
+
+    rs._run_scraper("facebook", _kw_radar(id=101), settings, [], page=1, db=None)
+
+    assert primite.get("keyword_id") == 101
+
+
+def test_auto_scanner_paseaza_keyword_id(monkeypatch):
+    from types import SimpleNamespace
+    from app.services import auto_listings_scanner as als
+    primite = {}
+    monkeypatch.setattr("app.scrapers.auto.listings.facebook_auto_scraper.search_facebook_auto",
+                        lambda **k: (primite.update(k), [])[1])
+    monkeypatch.setattr("app.services.facebook_session.resolve_facebook_session_path",
+                        lambda db, uid: "sesiune.json")
+    kw = SimpleNamespace(id=202, platform="facebook_auto", user_id=1, make="BMW",
+                         model="Seria 3", query=None, year_from=None, year_to=None,
+                         km_max=None, price_max=None, fuel_type=None,
+                         transmission=None, body_type=None, category=None,
+                         tech_filters=None)
+
+    als._call_scraper(kw, page=1, db=None)
+
+    assert primite.get("keyword_id") == 202
+
+
+def test_real_estate_scanner_paseaza_keyword_id(monkeypatch):
+    """Se foloseste MODELUL real, nu un namespace construit de mana: `_call_scraper`
+    citeste vreo douazeci de atribute, iar o dublura incompleta pica pe primul care
+    lipseste — nu pe ce vrem sa masuram."""
+    from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword
+    from app.services import real_estate_scanner as res
+    primite = {}
+    monkeypatch.setattr(
+        "app.scrapers.real_estate.facebook_real_estate.search_facebook_real_estate",
+        lambda **k: (primite.update(k), [])[1])
+    monkeypatch.setattr("app.services.facebook_session.resolve_facebook_session_path",
+                        lambda db, uid: "sesiune.json")
+    kw = RealEstateMonitorKeyword(id=303, user_id=1, query="garsoniera",
+                                  platform="facebook_marketplace")
+
+    res._call_scraper(kw, None, db=None)
+
+    assert primite.get("keyword_id") == 303
+
+
+def test_cablarea_nu_schimba_nimic_fara_fb_mod(monkeypatch):
+    """`keyword_id` e inert cat timp `FB_MOD` nu e `bazin`: dispecerul nici nu-l
+    citeste pe calea de sesiune."""
+    monkeypatch.delenv("FB_MOD", raising=False)
+    chemat = {"n": 0}
+    monkeypatch.setattr(rad, "_search_sesiune",
+                        lambda *a, **k: chemat.__setitem__("n", 1) or [])
+
+    rad.search_facebook(keyword="canapea", max_price=0, keyword_id=101)
+
+    assert chemat["n"] == 1

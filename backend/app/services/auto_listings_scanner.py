@@ -121,6 +121,7 @@ def _call_scraper(kw: AutoKeyword, page: int = 1, db=None) -> list:
             # din scraper le citesc de acolo. Fara asta ar fi ramas inerte.
             return search_facebook_auto(
                 query=query, page=page,
+                keyword_id=kw.id,           # FBS-5b: cheia bazinului (FB_MOD=bazin)
                 filters={**filters, "make": kw.make or "", "model": kw.model or ""},
                 session_path=resolve_facebook_session_path(db, kw.user_id))
 

@@ -441,7 +441,8 @@ def test_scanner_trimite_marca_in_filters_la_facebook_auto(monkeypatch):
                         lambda **k: (primite.update(k), [])[1])
     monkeypatch.setattr("app.services.facebook_session.resolve_facebook_session_path",
                         lambda db, uid: "sesiune.json")
-    kw = SimpleNamespace(platform="facebook_auto", user_id=1, make="BMW", model="Seria 3",
+    kw = SimpleNamespace(id=77, platform="facebook_auto", user_id=1, make="BMW",
+                         model="Seria 3",
                          query=None, year_from=None, year_to=None, km_max=None,
                          price_max=None, fuel_type=None, transmission=None,
                          body_type=None, category=None, tech_filters=None)
@@ -462,7 +463,8 @@ def test_scanner_trimite_modelul_in_filters_la_facebook_auto(monkeypatch):
                         lambda **k: (primite.update(k), [])[1])
     monkeypatch.setattr("app.services.facebook_session.resolve_facebook_session_path",
                         lambda db, uid: "sesiune.json")
-    kw = SimpleNamespace(platform="facebook_auto", user_id=1, make="BMW", model="Seria 3",
+    kw = SimpleNamespace(id=77, platform="facebook_auto", user_id=1, make="BMW",
+                         model="Seria 3",
                          query=None, year_from=None, year_to=None, km_max=None,
                          price_max=None, fuel_type=None, transmission=None,
                          body_type=None, category=None, tech_filters=None)

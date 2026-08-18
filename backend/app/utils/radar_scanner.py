@@ -1904,6 +1904,7 @@ def _run_scraper(
         if platform == "facebook":
             return search_facebook(
                 keyword=keyword.name,
+                keyword_id=keyword.id,      # FBS-5b: cheia bazinului (FB_MOD=bazin)
                 page=page,
                 max_price=keyword.max_price,
                 judet=keyword.judet,

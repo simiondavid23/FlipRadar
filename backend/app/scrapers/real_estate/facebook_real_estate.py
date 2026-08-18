@@ -365,10 +365,8 @@ def _search_bazin(query: str, filters: dict, keyword_id) -> list:
     # `log_manager` la nivel de modul.
     from app.services.log_manager import log_manager
     if not keyword_id:
-        log_manager.emit("real_estate", "WARN",
-            f"Facebook RE bazin: fara `keyword_id` pentru {query!r} — bazinul e "
-            f"cheiat pe el. Apelantul trebuie sa-l paseze (vezi FBS-5).")
-        return []
+        from app.services.radar.facebook_scraper import _scutire_manuala
+        return _scutire_manuala("real_estate", query, _search_logout, query, filters)
     categorii = _categorii_permise()
     from app.database import SessionLocal
     from app.scrapers.facebook.bazin import citeste
