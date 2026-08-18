@@ -293,7 +293,7 @@ def _search_logout(query: str, filters: dict) -> list:
 
     for termen in termeni:
         canonice = nucleu_search(termen, ancora.lat, ancora.lon, raza_km=65.0,
-                                 fb_slug=ancora.fb_slug) or []
+                                 city_page_id=ancora.city_page_id) or []
         log_manager.emit("real_estate", "INFO",
             f"Facebook RE logat-out: '{termen}' -> {len(canonice)} anunturi")
 

@@ -11,14 +11,44 @@ si page_info; anunturile se iau STRUCTURAL, ca sa nu depindem de forma raspunsul
 """
 import copy
 import json
+from dataclasses import dataclass
 from typing import Optional
 
 from app.services.log_manager import log_manager
 
-from .parse import walk_listing_objects
+from .parse import walk_listing_objects, looks_like_no_results
 
 URL_GRAPHQL = "https://www.facebook.com/api/graphql/"
 BASE = "https://www.facebook.com"
+
+# FBS-0 — corpul ANONIM (`av="0"`, `__user="0"`, fara `fb_dtsg`) trimis peste un jar
+# AUTENTIFICAT primeste HTTP 200 cu 249 de octeti si `"error":1357004` la RADACINA,
+# nu in `errors[]`:
+#     for (;;);{"__ar":1,"error":1357004,"errorSummary":"Sorry, something went wrong",
+#               "errorDescription":"Please try closing and re-opening your browser window."}
+# Codul NU inseamna refuz de acces (ala e 1675004) si nici sablon invechit (1675012),
+# ci IDENTITATE gresita: cookie-uri de cont peste un corp anonim. De-aia nu intra in
+# `_pare_blocat` — se repara schimband corpul, nu asteptand.
+COD_IDENTITATE_INVALIDA = 1357004
+
+
+@dataclass(frozen=True)
+class Identitate:
+    """Jetoanele de cont pentru corpul AUTENTIFICAT al POST-ului GraphQL."""
+    c_user: str
+    fb_dtsg: str
+
+
+def identitate_din(boot) -> Optional[Identitate]:
+    """`Identitate` din bootstrap, doar daca are AMBELE jetoane.
+
+    Regula „ambele sau niciunul" nu e cosmetica: un corp cu `av=<c_user>` dar fara
+    `fb_dtsg` (sau invers) e chiar reteta pentru 1357004. Bootstrap-ul logat-out are
+    ambele campuri `None`, deci functia intoarce `None` si corpul ramane cel de azi.
+    """
+    cu = getattr(boot, "c_user", None)
+    dtsg = getattr(boot, "fb_dtsg", None)
+    return Identitate(str(cu), str(dtsg)) if cu and dtsg else None
 
 
 def _cale_exista(d: dict, cale: str) -> bool:
@@ -122,13 +152,20 @@ def cauta(client, boot, variabile: dict) -> Optional[dict]:
     return cauta_cu_cod(client, boot, variabile)[0]
 
 
-def cauta_cu_cod(client, boot, variabile: dict) -> tuple:
+def cauta_cu_cod(client, boot, variabile: dict, *,
+                 identitate: Optional[Identitate] = None) -> tuple:
     """Ca `cauta`, dar intoarce si CODUL erorii de resolver: (json|None, cod|None).
 
     Codul distinge lucruri care arata la fel de la distanta: 1675004 ("Rate limit
     exceeded", masurat la FB-4a pe doc_id-ul de browse) e un refuz de ACCES, pe cand
     1675012 ("missing_required_variable_value") inseamna sablon invechit. Primul nu
     se repara reincercand; al doilea da. Pana acum codul se pierdea in `cauta`.
+
+    `identitate` lipsa (implicit) inseamna corpul ANONIM, byte cu byte cel de
+    dinainte de FBS-1 — calea logat-out nu se schimba cu nimic, si exista un test
+    care compara dictionarele. Cu identitate, `av` si `__user` iau valoarea
+    `c_user`, iar `fb_dtsg` intra si in corp si in antetul `x-fb-dtsg`; forma asta
+    a fost masurata la FBS-0 (25 de anunturi acolo unde corpul anonim dadea 0).
     """
     date = {
         "av": "0", "__user": "0", "__a": "1", "__req": "1", "dpr": "1",
@@ -146,6 +183,11 @@ def cauta_cu_cod(client, boot, variabile: dict) -> tuple:
         "origin": BASE,
         "referer": f"{BASE}/marketplace/bucharest/search",
     }
+    if identitate is not None:
+        date["av"] = identitate.c_user
+        date["__user"] = identitate.c_user
+        date["fb_dtsg"] = identitate.fb_dtsg
+        antete["x-fb-dtsg"] = identitate.fb_dtsg
 
     corp, status = client.post(URL_GRAPHQL, data=date, headers=antete)
     if status != 200 or not corp:
@@ -172,7 +214,28 @@ def cauta_cu_cod(client, boot, variabile: dict) -> tuple:
                 + (f" (code {cod})" if cod is not None else ""))
             return None, cod
 
-    return (payloads[0] if len(payloads) == 1 else {"payloads": payloads}), None
+        # AL DOILEA canal de eroare, pe care `errors[]` nu-l acopera deloc: codul
+        # sta la RADACINA, langa `errorSummary`. Fara verificarea asta, raspunsul
+        # de 249 de octeti al identitatii gresite trece drept succes, iar clientul
+        # urca toata scara si raporteaza BLOCKED degeaba (masurat la FBS-0).
+        cod_radacina = p.get("error")
+        if isinstance(cod_radacina, int) and cod_radacina != 0:
+            rezumat = str(p.get("errorSummary") or "")[:120]
+            log_manager.emit("radar", "WARN",
+                f"Facebook GraphQL: eroare la radacina — {rezumat or 'fara rezumat'} "
+                f"(error {cod_radacina})"
+                + (" — identitate invalida: cookie-uri de cont peste corp anonim, "
+                   "sau fb_dtsg de la alta sesiune"
+                   if cod_radacina == COD_IDENTITATE_INVALIDA else ""))
+            return None, cod_radacina
+
+    raspuns = payloads[0] if len(payloads) == 1 else {"payloads": payloads}
+    if looks_like_no_results(raspuns):
+        log_manager.emit("radar", "INFO",
+            "Facebook GraphQL: santinela de zero rezultate (SERP_NO_RESULTS) — "
+            "cautare VALIDA, Facebook spune explicit ca n-are ce intoarce; "
+            "nu e sablon invechit si nu e blocaj")
+    return raspuns, None
 
 
 def extrage_anunturi(json_raspuns: dict) -> list[dict]:

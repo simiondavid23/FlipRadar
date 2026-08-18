@@ -1,0 +1,12 @@
+{
+  "_nota": "CONSTRUIT, nu copiat. Forma e cea reala a unui storage_state Playwright (masurata la FBS-0: cookies + origins, cu name/value/domain/path/expires/httpOnly/secure/sameSite), dar TOATE valorile sunt sintetice. Un `xs` real e un jeton de sesiune viu si nu are ce cauta in repo. `wd` e expirat si `_GRECAPTCHA` e de pe alt domeniu, exact cele doua pe care sonda le-a sarit.",
+  "cookies": [
+    {"name": "datr", "value": "SINTETIC-datr-000000000", "domain": ".facebook.com", "path": "/", "expires": 4102444800, "httpOnly": true, "secure": true, "sameSite": "None"},
+    {"name": "sb", "value": "SINTETIC-sb-00000000000", "domain": ".facebook.com", "path": "/", "expires": 4102444800, "httpOnly": true, "secure": true, "sameSite": "None"},
+    {"name": "c_user", "value": "100000000000001", "domain": ".facebook.com", "path": "/", "expires": 4102444800, "httpOnly": false, "secure": true, "sameSite": "None"},
+    {"name": "xs", "value": "SINTETIC-xs-nu-e-un-jeton-real-000000000000", "domain": ".facebook.com", "path": "/", "expires": 4102444800, "httpOnly": true, "secure": true, "sameSite": "None"},
+    {"name": "wd", "value": "1920x1080", "domain": ".facebook.com", "path": "/", "expires": 1000000000, "httpOnly": false, "secure": true, "sameSite": "Lax"},
+    {"name": "_GRECAPTCHA", "value": "SINTETIC-grecaptcha-0000", "domain": "www.google.com", "path": "/recaptcha", "expires": 4102444800, "httpOnly": true, "secure": true, "sameSite": "None"}
+  ],
+  "origins": []
+}

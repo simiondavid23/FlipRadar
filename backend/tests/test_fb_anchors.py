@@ -111,16 +111,45 @@ def test_coordonatele_sunt_in_dreptunghiul_romaniei():
         assert LON_MIN <= a.lon <= LON_MAX, f"{a.slug} lon={a.lon}"
 
 
-def test_fb_slug_doar_pe_bucuresti():
-    cu_slug = {a.slug: a.fb_slug for a in ANCORE if a.fb_slug is not None}
-    assert cu_slug == {"bucuresti": "bucharest"}
+def test_slugurile_au_disparut_din_registru():
+    """FBS-0b a masurat ca slugurile textuale sunt moarte si AUTENTIFICAT (toate trei
+    cele testate au dat acelasi set, Jaccard 1.000 intre ele). Campul a fost STERS, nu
+    lasat pe None: un camp care arata utilizabil si nu e costa o runda intreaga."""
+    assert not hasattr(ANCORE[0], "fb_slug")
 
 
-def test_alexandria_nu_are_fb_slug_desi_slugul_exista_pe_facebook():
-    """Coliziune internationala masurata la FB-0: `alexandria` e slug VALID pe
-    Facebook, dar rezolva spre alta Alexandria (0 rezultate la termen romanesc).
-    Testul exista ca sa nu-l 'redescopere' cineva si sa-l puna ca fb_slug."""
-    assert dupa_slug("alexandria").fb_slug is None
+def test_optsprezece_ancore_au_city_page_id():
+    cu_id = {a.slug: a.city_page_id for a in ANCORE if a.city_page_id is not None}
+
+    assert len(cu_id) == 18, sorted(cu_id)
+    assert all(v.isdigit() for v in cu_id.values()), "ID-urile sunt NUMERICE"
+    assert len(set(cu_id.values())) == 18, "niciun ID duplicat intre ancore"
+    # cele patru masurate direct ca ancoreaza corect, plus Constanta din bucla
+    assert cu_id["cluj-napoca"] == "109529709065736"
+    assert cu_id["iasi"] == "101882609853782"
+    assert cu_id["timisoara"] == "107982459236366"
+    assert cu_id["brasov"] == "114791928537378"
+    assert cu_id["constanta"] == "110967512261687"
+
+
+def test_restul_ancorelor_raman_fara_id():
+    """Cele 33 fara ID nu sunt un bug: descoperirea lor e FBS-2b, o runda de DATE.
+    Pentru ele scara incepe direct de la GraphQL, exact ca inainte de FBS-2."""
+    fara = [a.slug for a in ANCORE if a.city_page_id is None]
+
+    assert len(fara) == 33
+    assert "alexandria" in fara
+
+
+def test_alexandria_nu_are_slug_dar_poate_primi_id():
+    """Coliziune internationala masurata la FB-0: `alexandria` era slug VALID pe
+    Facebook, dar rezolva spre alta Alexandria (0 rezultate la termen romanesc). Un
+    `city_page_id` NUMERIC nu poate avea coliziunea asta, deci ancora intra normal in
+    descoperirea de la FBS-2b — testul fixeaza distinctia, ca sa nu se piarda."""
+    a = dupa_slug("alexandria")
+
+    assert not hasattr(a, "fb_slug")
+    assert a.city_page_id is None
 
 
 def test_dupa_slug():

@@ -114,7 +114,7 @@ def _search_logout(query: str, filters: dict) -> list:
     model_tok = fold_auto(model_raw).strip()
 
     canonice = nucleu_search(query, ancora.lat, ancora.lon, raza_km=65.0,
-                             fb_slug=ancora.fb_slug) or []
+                             city_page_id=ancora.city_page_id) or []
 
     results = []
     vazute = set()

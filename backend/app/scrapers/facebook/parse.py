@@ -22,7 +22,7 @@ NIMIC specific unui consumator (fara filtre de pret, categorie, an, model).
 """
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in parse_price.
@@ -104,6 +104,66 @@ def looks_like_login_wall(html) -> bool:
     if _LOGIN_EMAIL_RE.search(low) and _LOGIN_PASS_RE.search(low):
         return True
     return bool(_LOGIN_ACTION_RE.search(low))
+
+
+# FBS-0/FBS-0d — santinela de ZERO REZULTATE. Facebook nu raspunde cu eroare cand o
+# cautare n-are ce intoarce: baga in `edges` o singura poveste-santinela cu
+# `__typename: MarketplaceSearchFeedNoResults` si `story_type: SERP_NO_RESULTS`.
+_SANTINELE_ZERO = ("serp_no_results", "marketplacesearchfeednoresults")
+
+
+def looks_like_no_results(payload) -> bool:
+    """True daca raspunsul poarta santinela de zero rezultate a lui Facebook.
+
+    Accepta si HTML de SSR, si structura JSON deja parsata de pe GraphQL: markerii
+    au fost masurati pe AMBELE cai — pe GraphQL la FBS-0 (`ctime_days=1` acceptat dar
+    fara rezultate), pe SSR la FBS-0d (`/search` fara `query`). La FBS-0b parusera
+    GraphQL-only; un detector care ar acoperi doar o cale ar rata jumatate din cazuri.
+
+    SEMANTICA, si de-aia conteaza: e SINGURUL caz in care un rezultat gol e o
+    INFORMATIE, nu o ambiguitate. Facebook spune explicit „n-am nimic". Fara
+    detectorul asta, cazul arata identic cu „sablon invechit" sau „zona chiar goala",
+    iar pe calea SSR ajunge chiar sa fie raportat drept BLOCKED (masurat la FBS-0d):
+    treapta 3 intoarce lista goala, treapta 4 cheama report_outcome(BLOCKED) si
+    murdareste watchdog-ul de sanatate pentru un raspuns perfect valid.
+    """
+    if not payload:
+        return False
+    text = payload if isinstance(payload, str) else json.dumps(
+        payload, ensure_ascii=False, default=str)
+    low = text.lower()
+    return any(s in low for s in _SANTINELE_ZERO)
+
+
+def filtreaza_dupa_varsta(canonice, ore_max: float, *, acum=None) -> list[dict]:
+    """Anunturile mai noi de `ore_max`. Helper PUR: fara mediu, fara jurnal, fara ceas
+    ascuns (`acum` e injectabil), ca sa fie testabil izolat.
+
+    DE CE EXISTA: `daysSinceListed=1` NU inseamna 24 h. Masurat la FBS-0c, varsta
+    maxima lasata sa treaca a fost 38.03 h, iar 7 din 11 anunturi depaseau 24 h.
+    Filtrul serverului e un PREfiltru grosier; taierea fina se face aici.
+
+    ANUNTURILE FARA `listed_at` SE PASTREAZA, deliberat. Masurat, `creation_time` e
+    populat 100% pe toate orasele, deci cazul e teoretic — dar un filtru care arunca
+    TACIT ce nu poate data e exact defectul care se prezinta mai tarziu drept „gol"
+    si costa o runda de diagnostic. Preferam un anunt nedatat afisat unuia pierdut in
+    tacere; apelantul poate numara diferenta si o poate raporta.
+    """
+    if ore_max is None or ore_max <= 0:
+        return list(canonice)
+    referinta = acum or datetime.now(timezone.utc)
+    prag = referinta - timedelta(hours=float(ore_max))
+    out = []
+    for c in canonice:
+        la = c.get("listed_at")
+        if la is None:
+            out.append(c)                     # nedatat: se pastreaza, vezi docstring
+            continue
+        if la.tzinfo is None:                 # aware/naiv nu se compara direct
+            la = la.replace(tzinfo=timezone.utc)
+        if la >= prag:
+            out.append(c)
+    return out
 
 
 def deep_first(obj, key: str, _depth: int = 0):

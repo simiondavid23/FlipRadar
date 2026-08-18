@@ -43,9 +43,9 @@ def logs(monkeypatch):
 def nucleu(monkeypatch):
     apeluri, raspuns = [], []
 
-    def fals(query, lat, lon, *, raza_km=65, fb_slug=None):
+    def fals(query, lat, lon, *, raza_km=65, city_page_id=None):
         apeluri.append({"query": query, "lat": lat, "lon": lon, "raza_km": raza_km,
-                        "fb_slug": fb_slug})
+                        "city_page_id": city_page_id})
         return list(raspuns)
 
     monkeypatch.setattr(fb, "nucleu_search", fals)
@@ -258,12 +258,12 @@ def test_ancora_implicita_si_configurabila(monkeypatch, nucleu, logs):
     monkeypatch.setenv("FB_MOD", "logout")
     fb.search_facebook("geaca", max_price=1000)
     a = nucleu.apeluri[0]
-    assert (a["lat"], a["lon"], a["fb_slug"]) == (44.4325, 26.1025, "bucharest")
+    assert (a["lat"], a["lon"], a["city_page_id"]) == (44.4325, 26.1025, "114304211920174")
 
     monkeypatch.setenv("FB_RADAR_ANCORA", "iasi")
     fb.search_facebook("geaca", max_price=1000)
     b = nucleu.apeluri[1]
-    assert (b["lat"], b["lon"]) == (47.1585, 27.6014) and b["fb_slug"] is None
+    assert (b["lat"], b["lon"]) == (47.1585, 27.6014) and b["city_page_id"] == "101882609853782"
 
     monkeypatch.setenv("FB_RADAR_ANCORA", "atlantida")
     fb.search_facebook("geaca", max_price=1000)

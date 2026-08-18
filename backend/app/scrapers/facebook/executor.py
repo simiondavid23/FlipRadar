@@ -30,12 +30,100 @@ from .client import search_cu_stare
 from .planner import Planificator, config_din_env
 
 _TTL_IMPLICIT_ORE = 48
-_PRAG_ESEC_TOTAL = 3        # tick-uri consecutive numai cu esec -> WARN zgomotos
+# Tick-uri consecutive fara NICIUN `ok` -> WARN zgomotos SI frana pe anomalie.
+# Acelasi prag pentru amandoua, deliberat: avertismentul explica, frana actioneaza.
+_PRAG_ESEC_TOTAL = 3
+_COOLDOWN_ORE_IMPLICIT = 6.0
 
 _lock = threading.Lock()
 _planificator = None
 _ultimul_tick = None
-_tickuri_numai_esec = 0
+# Numara tick-urile in care NIMIC n-a reusit, nu doar cele „numai cu esec": o sesiune
+# moarta produce `sesiune_invalida`, nu `esec`, si ar fi trecut in tacere (gaura
+# gasita la finalul FBS-1).
+_tickuri_fara_ok = 0
+_cooldown_pana_la = None
+_cooldown_amprenta = None       # amprenta sesiunii la momentul intrarii in cooldown
+
+
+def _cooldown_ore() -> float:
+    try:
+        return float(os.getenv("FB_COOLDOWN_ORE") or _COOLDOWN_ORE_IMPLICIT)
+    except (TypeError, ValueError):
+        return _COOLDOWN_ORE_IMPLICIT
+
+
+def _amprenta_sesiune():
+    """Ce anume identifica sesiunea curenta, pentru ridicarea cooldown-ului.
+
+    Calea PLUS mtime si marime: o reconectare din UI rescrie fisierul la aceeasi
+    cale, deci o amprenta doar pe cale n-ar observa nimic si utilizatorul ar astepta
+    ore fara sa inteleaga de ce.
+    """
+    cale = (os.getenv("FB_SESIUNE_PATH") or "").strip() or None
+    if not cale:
+        return None
+    try:
+        st = os.stat(cale)
+        return (cale, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (cale, None, None)
+
+
+def _intra_in_cooldown(db=None) -> None:
+    global _cooldown_pana_la, _cooldown_amprenta
+    ore = _cooldown_ore()
+    _cooldown_pana_la = _acum() + timedelta(hours=ore)
+    _cooldown_amprenta = _amprenta_sesiune()
+    _alerteaza(db,
+        f"Facebook executor: sesiune invalida — pauza {ore:g} h, pana la "
+        f"{_cooldown_pana_la.isoformat()}. O sesiune moarta nu se repara insistand; "
+        f"reconecteaza contul, iar pauza cade singura la rescrierea fisierului.")
+
+
+def _reseteaza_cooldown() -> None:
+    global _cooldown_pana_la, _cooldown_amprenta
+    _cooldown_pana_la = None
+    _cooldown_amprenta = None
+
+
+def _cooldown_activ() -> dict:
+    """`{}` daca se poate rula. Altfel motivul saririi. Ridica singur pauza expirata
+    sau invalidata de o sesiune noua."""
+    if _cooldown_pana_la is None:
+        return {}
+    if _amprenta_sesiune() != _cooldown_amprenta:
+        log_manager.emit("radar", "INFO",
+            "Facebook executor: sesiunea s-a schimbat — pauza de cooldown cade")
+        _reseteaza_cooldown()
+        return {}
+    if _acum() >= _cooldown_pana_la:
+        log_manager.emit("radar", "INFO",
+            "Facebook executor: pauza de cooldown a expirat, se reia")
+        _reseteaza_cooldown()
+        return {}
+    return {"sarit": "cooldown sesiune", "pana_la": _cooldown_pana_la.isoformat()}
+
+
+def _alerteaza(db, text: str) -> None:
+    """WARN in jurnal si, daca avem `db`, alerta Discord pe tiparul EXISTENT.
+
+    Nu se inventeaza o ruta noua: `health_watchdog._dispatch_alert` e deja exact
+    „job global care alerteaza fara context de utilizator" — aduna webhook-urile
+    userilor activi si trimite best-effort. Importul e lenes ca sa nu legam
+    executorul de watchdog la nivel de modul.
+    """
+    if db is None:
+        log_manager.emit("radar", "WARN", text)
+        return
+    try:
+        # `_dispatch_alert` logheaza SI trimite — de-aia nu logam si noi inainte.
+        from app.services.radar.health_watchdog import _dispatch_alert
+        _dispatch_alert(db, text, "WARN")
+    except Exception as exc:      # telemetria nu are voie sa opreasca un tick
+        log_manager.emit("radar", "WARN", text)
+        log_manager.emit("radar", "WARN",
+            f"Facebook executor: alerta Discord a esuat ({type(exc).__name__})")
 
 
 def _acum():
@@ -181,7 +269,13 @@ def _curata_bazinul(db) -> int:
 
 def tick(db) -> dict:
     """Un ciclu al executorului. Intoarce sumarul (si il pastreaza pentru diagnostic)."""
-    global _ultimul_tick, _tickuri_numai_esec
+    global _ultimul_tick, _tickuri_fara_ok
+
+    # PRIMUL lucru, inaintea zavorului si a planificatorului: o pauza de cooldown nu
+    # are voie sa consume nici macar o interogare de DB.
+    sarit = _cooldown_activ()
+    if sarit:
+        return sarit
 
     if not _lock.acquire(blocking=False):
         log_manager.emit("radar", "WARN",
@@ -194,6 +288,7 @@ def tick(db) -> dict:
         sumar = {"perechi_alese": 0, "executate": 0, "sarite": 0, "cereri": 0,
                  "anunturi_noi": 0, "blocaj": False,
                  "etichete": {"ok": 0, "gol": 0, "blocat": 0, "esec": 0},
+                 "zero_confirmate": 0, "sesiune_invalida": False,
                  "sterse_ttl": 0}
 
         # ── 1. sincronizarea perechilor ──────────────────────────────────────
@@ -249,15 +344,23 @@ def tick(db) -> dict:
             for termen in k["termeni"]:
                 canonice, stare = search_cu_stare(
                     termen, ancora.lat, ancora.lon, raza_km=65.0,
-                    fb_slug=ancora.fb_slug)
+                    city_page_id=ancora.city_page_id)
                 sumar["cereri"] += 1
                 sumar["etichete"][stare.eticheta] = \
                     sumar["etichete"].get(stare.eticheta, 0) + 1
+                if getattr(stare, "zero_confirmat", False):
+                    sumar["zero_confirmate"] += 1
                 intoarse += len(canonice)
                 canonice_toate.extend(canonice)
                 if stare.eticheta == "blocat":
                     blocaj = True
                     break      # abandonam si termenii ramasi ai perechii
+                if stare.eticheta == "sesiune_invalida":
+                    # Ca la `blocat`: se rupe tick-ul. Diferenta e reactia — un 403
+                    # trece, o sesiune moarta nu trece de la sine, deci urmeaza pauza.
+                    sumar["sesiune_invalida"] = True
+                    blocaj = True
+                    break
 
             noi = _scrie_in_bazin(db, pereche.modul, pereche.keyword_id,
                                   pereche.ancora, canonice_toate)
@@ -275,13 +378,46 @@ def tick(db) -> dict:
         sumar["sterse_ttl"] = _curata_bazinul(db)
 
         executate = sumar["executate"]
-        numai_esec = executate > 0 and sumar["etichete"].get("esec", 0) == sumar["cereri"]
-        _tickuri_numai_esec = _tickuri_numai_esec + 1 if numai_esec else 0
-        if _tickuri_numai_esec >= _PRAG_ESEC_TOTAL:
+        cereri = sumar["cereri"]
+
+        # Criteriul e „niciuna n-a REUSIT", nu „toate au ESUAT". Vechea forma numara
+        # doar eticheta `esec`, deci o sesiune moarta (care da `sesiune_invalida`) sau
+        # un sir de `blocat` treceau in tacere — exact gaura gasita la finalul FBS-1.
+        fara_ok = executate > 0 and cereri > 0 and sumar["etichete"].get("ok", 0) == 0
+
+        # ...dar un tick in care Facebook a CONFIRMAT zero pe fiecare cerere e sanatos,
+        # nu suspect. De cand exista santinela (FBS-1), un zero confirmat iese tot
+        # `gol`; fara distinctia asta, o noapte linistita ar declansa frana.
+        toate_confirmate = fara_ok and sumar["zero_confirmate"] == cereri
+        anomalie = fara_ok and not toate_confirmate
+        sumar["anomalie"] = anomalie
+
+        _tickuri_fara_ok = _tickuri_fara_ok + 1 if anomalie else 0
+        sumar["tickuri_fara_ok"] = _tickuri_fara_ok
+
+        if _tickuri_fara_ok >= _PRAG_ESEC_TOTAL:
             log_manager.emit("radar", "WARN",
-                f"Facebook executor: {_tickuri_numai_esec} tick-uri consecutive in care "
-                f"TOATE cererile au esuat — acoperirea logat-out e cazuta. Verifica "
-                f"bootstrap-ul (sablonul din pagina) inainte sa te bazezi pe bazin.")
+                f"Facebook executor: {_tickuri_fara_ok} tick-uri consecutive fara "
+                f"NICIUN rezultat reusit (etichete {sumar['etichete']}) — acoperirea e "
+                f"cazuta. Verifica sesiunea si bootstrap-ul (sablonul din pagina) "
+                f"inainte sa te bazezi pe bazin.")
+            # Frana pe ANOMALIE SUSTINUTA — aparare in adancime, nu certitudine.
+            # Motivul e direct din FBS-1: lista de markeri de checkpoint e validata
+            # doar NEGATIV (zero fals-pozitive pe cunoscut-bun), fara nicio mostra
+            # reala de checkpoint. Un fals negativ e plauzibil, si costul lui ar fi sa
+            # ciocanim mai departe un cont deja provocat. Raspunsul e proportionat:
+            # bugetul se injumatateste, revenirea e cea existenta. La fiecare alt
+            # multiplu al pragului se mai coboara o treapta, cu podeaua de 1 din
+            # `semnal_blocaj`.
+            if _tickuri_fara_ok % _PRAG_ESEC_TOTAL == 0 and _planificator is not None:
+                _planificator.semnal_blocaj()
+                _alerteaza(db,
+                    f"Facebook executor: {_tickuri_fara_ok} tick-uri consecutive fara "
+                    f"niciun rezultat — se strange frana (buget injumatatit). Nu e o "
+                    f"dovada de blocaj, e o anomalie sustinuta.")
+
+        if sumar["sesiune_invalida"]:
+            _intra_in_cooldown(db)
 
         log_manager.emit("radar", "INFO",
             f"Facebook executor: {executate}/{sumar['perechi_alese']} perechi, "
@@ -304,6 +440,16 @@ def stare_executor(db) -> dict:
     total_bazin = db.query(func.count(FbPoolListing.id)).scalar() or 0
     cea_mai_recenta = db.query(func.max(FbPoolListing.prima_vedere_at)).scalar()
 
+    # Regimul se raporteaza din configuratie, nu din ultimul client construit:
+    # endpointul poate fi interogat inainte de primul tick.
+    from .client import _cale_sesiune
+    from app.services.radar.facebook_scraper import is_facebook_session_valid
+    cale = _cale_sesiune()
+    try:
+        sesiune_valida = bool(cale) and is_facebook_session_valid(cale)
+    except Exception:
+        sesiune_valida = False
+
     return {
         "frana": (_planificator.stare_frana() if _planificator is not None else {}),
         "activ": _planificator is not None,
@@ -312,4 +458,15 @@ def stare_executor(db) -> dict:
                   "cea_mai_recenta_prima_vedere": (cea_mai_recenta.isoformat()
                                                    if cea_mai_recenta else None)},
         "ultimul_tick": _ultimul_tick,
+        "sesiune": {
+            "regim": "autentificat" if cale else "logat-out",
+            "cale": cale,
+            "valida": sesiune_valida,
+        },
+        "cooldown": {
+            "activ": _cooldown_pana_la is not None,
+            "pana_la": (_cooldown_pana_la.isoformat()
+                        if _cooldown_pana_la is not None else None),
+        },
+        "tickuri_fara_ok": _tickuri_fara_ok,
     }

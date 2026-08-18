@@ -349,7 +349,7 @@ def _search_logout(keyword: str, max_price, exclude_words, min_price, category) 
     log_manager.emit("radar", "SCAN", f'Facebook logat-out "{keyword}"')
 
     canonice = nucleu_search(keyword, ancora.lat, ancora.lon, raza_km=65.0,
-                             fb_slug=ancora.fb_slug) or []
+                             city_page_id=ancora.city_page_id) or []
 
     known_ids = _known_facebook_category_ids() if category else None
     results: list[dict] = []

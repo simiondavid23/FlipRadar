@@ -245,31 +245,43 @@ def test_canonic_identic_din_ssr_si_din_graphql():
 
 
 # ── 7. scara de robustete ────────────────────────────────────────────────────
-def test_scara_coboara_treapta_cu_treapta_pana_la_ssr(warns):
-    eroare = _fix("fb_graphql_eroare.json")
+def test_scara_incepe_cu_ssr_pe_id(monkeypatch, warns):
+    """FBS-2 a INVERSAT scara: cu `city_page_id`, treapta 1 e SSR, nu GraphQL.
+    Testul numara cererile — un verdict corect obtinut pe calea gresita n-ar spune
+    nimic. Pragul de varsta se ridica, ca testul sa fie despre SCARA, nu despre
+    vechimea fixture-ului."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
+    cl = ClientFals(rute={"/marketplace/109529709065736/search":
+                          (_fix("fb_ssr_search.html"), 200)})
+
+    rez = search("canapea", 46.7712, 23.6236,
+                 city_page_id="109529709065736", client=cl)
+
+    assert rez, "treapta 1 (SSR pe ID) trebuia sa intoarca anunturi"
+    metode = [m for m, _ in cl.cereri]
+    assert metode == ["get"], f"o singura cerere, zero GraphQL: {cl.cereri}"
+    assert "sortBy=creation_time_descend" in cl.cereri[0][1]
+
+
+def test_scara_cade_la_graphql_pe_esec_ambiguu_al_ssr(warns):
+    """Caderea ramane pentru esecul AMBIGUU — fara anunturi si fara santinela."""
     cl = ClientFals(
-        rute={
-            URL_SEARCH: (_fix("fb_ssr_search.html"), 200),
-            "/marketplace/cluj-napoca/search": (_fix("fb_ssr_search.html"), 200),
-        },
-        post_rezultate=[(eroare, 200), (eroare, 200)],   # esueaza si dupa re-bootstrap
+        rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200),
+              "/marketplace/109529709065736/search": ("<html></html>", 200)},
+        post_rezultate=[(_fix("fb_graphql_ok.json"), 200)],
     )
 
-    rez = search("canapea", 46.7712, 23.6236, fb_slug="cluj-napoca", client=cl)
+    rez = search("canapea", 46.7712, 23.6236,
+                 city_page_id="109529709065736", client=cl)
 
-    assert rez, "treapta 3 (SSR) trebuia sa intoarca anunturi"
-    assert all(r["external_id"] for r in rez)
-
+    assert rez, "GraphQL de pe treapta 2 trebuia sa salveze cautarea"
     metode = [m for m, _ in cl.cereri]
-    assert metode == ["get", "post", "get", "post", "get"], cl.cereri
-    assert cl.cereri[-1][1].startswith("https://www.facebook.com/marketplace/cluj-napoca/")
-
-    w = _warn_uri(warns)
-    assert any("treapta 1->2" in m for m in w), w
-    assert any("treapta 2->3" in m for m in w), w
+    assert metode == ["get", "get", "post"], cl.cereri
+    assert any("treapta 1->2" in m for m in _warn_uri(warns))
 
 
-def test_scara_fara_slug_ajunge_la_blocked_si_lista_goala(warns, blocari):
+def test_scara_fara_id_incepe_de_la_graphql(warns, blocari):
+    """Ancorele fara `city_page_id` (33 din 51) se comporta exact ca inainte de FBS-2."""
     eroare = _fix("fb_graphql_eroare.json")
     cl = ClientFals(rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200)},
                     post_rezultate=[(eroare, 200), (eroare, 200)])
@@ -278,9 +290,11 @@ def test_scara_fara_slug_ajunge_la_blocked_si_lista_goala(warns, blocari):
 
     assert rez == []
     assert ("facebook", fb_client.Outcome.BLOCKED) in blocari
+    metode = [m for m, _ in cl.cereri]
+    assert metode == ["get", "post", "get", "post"], "nicio cerere SSR fara ID"
     w = _warn_uri(warns)
-    assert any("treapta 1->2" in m for m in w)
-    assert any("fara fb_slug" in m for m in w), w
+    assert any("treapta 2->3" in m for m in w), w
+    assert any("n-are `city_page_id`" in m for m in w), w
 
 
 def test_scara_treapta_1_reusita_nu_coboara(warns):
@@ -435,7 +449,8 @@ def test_search_cu_429_face_o_singura_cerere(monkeypatch, blocari):
     falsa = _SesiuneFalsa(429)
     cl._sesiune = falsa
 
-    rez = search("canapea", 44.4325, 26.1025, fb_slug="bucharest", client=cl)
+    rez = search("canapea", 44.4325, 26.1025,
+                 city_page_id="114304211920174", client=cl)
 
     assert rez == []
     assert falsa.apeluri == 1, "scara nu are voie sa insiste pe un server care ne limiteaza"

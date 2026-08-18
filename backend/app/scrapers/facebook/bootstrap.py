@@ -24,7 +24,7 @@ import json
 import os
 import re
 import tempfile
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -41,6 +41,9 @@ URL_CATEGORIE = f"{BASE}/marketplace/category/propertyrentals/"
 _TTL_IMPLICIT_H = 6
 _NUME_CACHE = "fb_bootstrap.json"
 
+# FBS-1 — acelasi tipar cu care se scoate LSD-ul, pe cheia jetonului de sesiune.
+_DTSG_RE = re.compile(r'"DTSGInitialData".{0,120}?"token"\s*:\s*"([^"]+)"', re.DOTALL)
+
 _memo: Optional["Bootstrap"] = None
 
 
@@ -53,6 +56,10 @@ class Bootstrap:
     captured_at: datetime
     sursa: str               # "search" sau "categorie"
     sursa_html_len: int
+    # FBS-1 — identitatea, optionala. Ambele raman None logat-out, deci bootstrap-ul
+    # de azi ramane valid neschimbat si `identitate_din()` intoarce None.
+    fb_dtsg: Optional[str] = None    # din PAGINA, acelasi tipar ca LSD
+    c_user: Optional[str] = None     # din JAR-ul clientului, nu din pagina
 
 
 def obiect_echilibrat(text: str, start: int) -> Optional[str]:
@@ -137,6 +144,10 @@ def extrage_bootstrap(html: str, sursa: str) -> Optional[Bootstrap]:
     if not lsd:
         return None
 
+    # `fb_dtsg` sta in pagina exact cu forma LSD-ului, doar sub alta cheie. Lipsa lui
+    # NU e un esec: pe pagina logat-out nu exista, si acolo nici n-avem nevoie de el.
+    dtsg = _DTSG_RE.search(html)
+
     for m in re.finditer("RelayPreloader", html):
         i = m.start()
         vi = html.find('"variables"', i)
@@ -163,6 +174,7 @@ def extrage_bootstrap(html: str, sursa: str) -> Optional[Bootstrap]:
             doc_id=qid.group(1), variables=variables, lsd=lsd.group(1),
             friendly_name=nume, captured_at=datetime.now(timezone.utc),
             sursa=sursa, sursa_html_len=len(html),
+            fb_dtsg=dtsg.group(1) if dtsg else None,
         )
     return None
 
@@ -182,6 +194,17 @@ def _ttl_ore() -> float:
         return _TTL_IMPLICIT_H
 
 
+def acelasi_cont(a, b) -> bool:
+    """Doua identitati sunt ale ACELUIASI cont?
+
+    `None` (logat-out) si un `c_user` sunt identitati DIFERITE, nu una lipsa. De-aia
+    comparatia e stricta in ambele sensuri: un cache scris logat-out nu se refoloseste
+    logat-in (n-are `fb_dtsg`), iar unul scris cu un cont nu se refoloseste cu altul
+    (`fb_dtsg` e legat de sesiune, si un jeton strain produce EXACT 1357004).
+    """
+    return (a or None) == (b or None)
+
+
 def _citeste_cache() -> Optional[Bootstrap]:
     cale = _cale_cache()
     try:
@@ -197,6 +220,7 @@ def _citeste_cache() -> Optional[Bootstrap]:
             friendly_name=brut["friendly_name"], captured_at=captat,
             sursa=brut.get("sursa", "search"),
             sursa_html_len=brut.get("sursa_html_len", 0),
+            fb_dtsg=brut.get("fb_dtsg"), c_user=brut.get("c_user"),
         )
     except Exception:
         return None          # lipsa, corupt sau cu alta forma: se re-bootstrapeaza
@@ -245,18 +269,30 @@ def incarca_sau_bootstrapeaza(client, *, forteaza: bool = False) -> Optional[Boo
     depinde acoperirea nationala, nu o treapta noua in scara de robustete.
     """
     global _memo
+    # Identitatea CURENTA a clientului decide daca un bootstrap salvat mai e bun.
+    # `getattr` cu implicit: dublurile de test n-au proprietatea, si atunci se
+    # comporta exact ca un client logat-out — comportamentul de dinainte de FBS-1.
+    c_user = getattr(client, "c_user", None)
+
     if not forteaza:
-        if _memo is not None:
+        if _memo is not None and acelasi_cont(_memo.c_user, c_user):
             return _memo
         din_disc = _citeste_cache()
-        if din_disc is not None:
+        if din_disc is not None and acelasi_cont(din_disc.c_user, c_user):
             _memo = din_disc
             return _memo
+        if din_disc is not None:
+            log_manager.emit("radar", "WARN",
+                "Facebook bootstrap: cache-ul e al altui cont (sau al caii "
+                "logat-out) — se ignora si se re-bootstrapeaza, altfel fb_dtsg-ul "
+                "strain ar produce eroarea de identitate 1357004")
 
     for url, sursa in ((URL_SEARCH, "search"), (URL_CATEGORIE, "categorie")):
         corp, status = client.get(url)
         boot = extrage_bootstrap(corp or "", sursa)
         if boot is not None:
+            if c_user:
+                boot = replace(boot, c_user=str(c_user))
             if sursa != "search":
                 log_manager.emit("radar", "WARN",
                     "Facebook bootstrap: pagina de search nu a dat sablon, "

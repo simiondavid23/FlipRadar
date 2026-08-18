@@ -60,13 +60,16 @@ def _izolare(monkeypatch, tmp_path):
     fb_bootstrap._memo = None
     ex._planificator = None
     ex._ultimul_tick = None
-    ex._tickuri_numai_esec = 0
-    for v in ("FB_POOL_TTL_ORE", "FB_BUGET_PER_TICK", "FB_FRANA"):
+    ex._tickuri_fara_ok = 0
+    ex._reseteaza_cooldown()
+    for v in ("FB_POOL_TTL_ORE", "FB_BUGET_PER_TICK", "FB_FRANA",
+              "FB_SESIUNE_PATH", "FB_COOLDOWN_ORE"):
         monkeypatch.delenv(v, raising=False)
     yield
     ex._planificator = None
     ex._ultimul_tick = None
-    ex._tickuri_numai_esec = 0
+    ex._tickuri_fara_ok = 0
+    ex._reseteaza_cooldown()
 
 
 @pytest.fixture(autouse=True)
@@ -143,7 +146,9 @@ def test_stare_ok_pe_raspuns_valid():
     canonice, stare = search_cu_stare("canapea", 44.43, 26.10, client=cl)
 
     assert len(canonice) == 24
-    assert stare.eticheta == "ok" and stare.cod is None and stare.trepte_incercate == 1
+    assert stare.eticheta == "ok" and stare.cod is None
+    # FBS-2: GraphQL e treapta 2, fiindca ancora asta n-are `city_page_id`
+    assert stare.trepte_incercate == 2
 
 
 def test_stare_gol_pe_raspuns_valid_fara_anunturi():
@@ -153,7 +158,7 @@ def test_stare_gol_pe_raspuns_valid_fara_anunturi():
     canonice, stare = search_cu_stare("cevacenuexista", 44.43, 26.10, client=cl)
 
     assert canonice == []
-    assert stare.eticheta == "gol" and stare.trepte_incercate == 1
+    assert stare.eticheta == "gol" and stare.trepte_incercate == 2
 
 
 def test_stare_blocat_pe_403(monkeypatch):
@@ -257,7 +262,7 @@ def _mock_nucleu(monkeypatch, per_termen=None, implicit=None, blocat_la=None):
     """Inlocuieste `search_cu_stare` in executor. `blocat_la` = termenul care da blocat."""
     apeluri = []
 
-    def fals(termen, lat, lon, *, raza_km=65, fb_slug=None):
+    def fals(termen, lat, lon, *, raza_km=65, city_page_id=None):
         apeluri.append(termen)
         if blocat_la is not None and termen == blocat_la:
             return [], StareCautare("blocat", 1675004, 1)

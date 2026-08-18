@@ -55,9 +55,9 @@ def nucleu(monkeypatch):
     apeluri = []
     raspunsuri = {}
 
-    def fals(query, lat, lon, *, raza_km=65, fb_slug=None):
+    def fals(query, lat, lon, *, raza_km=65, city_page_id=None):
         apeluri.append({"query": query, "lat": lat, "lon": lon, "raza_km": raza_km,
-                        "fb_slug": fb_slug})
+                        "city_page_id": city_page_id})
         return raspunsuri.get(query, [])
 
     monkeypatch.setattr(fb, "nucleu_search", fals)
@@ -265,7 +265,7 @@ def test_ancora_implicita_e_bucuresti(nucleu):
 
     a = nucleu.apeluri[0]
     assert (a["lat"], a["lon"]) == (44.4325, 26.1025)
-    assert a["fb_slug"] == "bucharest"
+    assert a["city_page_id"] == "114304211920174"
     assert a["raza_km"] == 65.0
 
 
@@ -276,7 +276,8 @@ def test_ancora_se_poate_schimba_din_env(monkeypatch, nucleu):
 
     a = nucleu.apeluri[0]
     assert (a["lat"], a["lon"]) == (46.7712, 23.6236)
-    assert a["fb_slug"] is None, "doar Bucurestiul are slug FB validat (FB-0: 1 din 51)"
+    assert a["city_page_id"] == "109529709065736", \
+        "Cluj are ID masurat ca ancoreaza corect (FBS-0b)"
 
 
 def test_ancora_necunoscuta_cade_pe_bucuresti_cu_warn(monkeypatch, nucleu, warns):
