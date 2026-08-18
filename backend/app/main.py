@@ -441,15 +441,28 @@ async def lifespan(app: FastAPI):
                     _db.close()
 
             _fb_tick_min = int(os.getenv("FB_EXECUTOR_TICK_MIN") or 5)
+            # JITTER pe tick: un job care porneste la fix, la fiecare 5 minute, e un
+            # tipar de ceas — exact ce se distinge cel mai usor de partea cealalta.
+            #
+            # ATENTIE la semantica: APScheduler NU face `±jitter`. Sursa
+            # (`BaseTrigger._apply_jitter`) e `next_fire_time + uniform(0, jitter)` —
+            # o INTARZIERE, mereu pozitiva, in SECUNDE. Deci 40% din interval nu
+            # inseamna „±40%", ci „+0..40%", cu media +20%: perioada efectiva devine
+            # ~6 min la un interval de 5. E acceptabil (mai putin trafic, nu mai mult),
+            # dar trebuie stiut cand se citesc cererile pe ora din baseline.
+            _fb_jitter = int(os.getenv("FB_TICK_JITTER_S")
+                             or round(_fb_tick_min * 60 * 0.40))
             scheduler.add_job(
                 _run_fb_executor,
                 "interval",
                 minutes=_fb_tick_min,
+                jitter=_fb_jitter,
                 id="fb_executor",
                 replace_existing=True,
                 next_run_time=datetime.now() + timedelta(minutes=2),
             )
-            print(f"[Scheduler] FB executor logat-out ({_fb_tick_min}m) inregistrat.")
+            print(f"[Scheduler] FB executor logat-out ({_fb_tick_min}m, "
+                  f"jitter +0..{_fb_jitter}s) inregistrat.")
         else:
             print("[Scheduler] FB executor dezactivat (FB_EXECUTOR absent).")
     except Exception as exc:

@@ -211,8 +211,14 @@ def test_un_blocaj_nou_reporneste_ceasul_de_revenire(db, ceas):
 
 def test_stare_frana_reflecta_contoarele(db, ceas):
     p = _planificator(db, ceas, buget_per_tick=12)
-    assert p.stare_frana() == {"buget_configurat": 12, "buget_efectiv": 12,
-                               "ultimul_incident_at": None, "incidente_total": 0}
+    st0 = p.stare_frana()
+    assert {k: st0[k] for k in ("buget_configurat", "buget_efectiv",
+                                "ultimul_incident_at", "incidente_total")} == {
+        "buget_configurat": 12, "buget_efectiv": 12,
+        "ultimul_incident_at": None, "incidente_total": 0}
+    # FBS-3 a adaugat forma orara; ceasul de test e la 12:00 UTC = 15:00 local, deci
+    # multiplicatorul e 1.0 si bugetul ramane cel configurat.
+    assert st0["ora_locala"] == 15 and st0["multiplicator_orar"] == 1.0
 
     p.semnal_blocaj()
     p.semnal_blocaj()

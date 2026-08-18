@@ -33,6 +33,7 @@ import math
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Callable, Optional
 
 from app.services.log_manager import log_manager
@@ -41,6 +42,36 @@ from app.models.fb_scan_state import FbScanState
 from .anchors import ANCORE, selecteaza
 
 _TIER_IMPLICIT = {1: 30, 2: 180, 3: 480}
+
+# FUSUL PE CARE SE CITESTE ORA. NU e UTC, si nu e ceasul masinii.
+# `main.py` programeaza scheduler-ul cu `timezone="Europe/Bucharest"`, iar oferta pe
+# care o cautam e romaneasca. `_acum()` din executor si planificator e insa UTC aware,
+# deci o forma orara calculata pe el ar fi decalata cu 2-3 ore (vara 3, iarna 2) si ar
+# produce exact inversul intentiei: „noapte" la ora 21 si „zi" la 4 dimineata.
+# Fusul e FIXAT explicit, nu luat din ceasul local: un server in alt fus n-are voie sa
+# schimbe forma traficului catre Facebook.
+FUS_LOCAL = "Europe/Bucharest"
+
+# Multiplicatorul orar peste bugetul de cereri, pe ora LOCALA (0-23).
+#
+# ASTA E O PRESUPUNERE DE CALIBRAT, nu o masuratoare. Argumentul e dublu: (a) un cont
+# care cere la fel de mult la 4 dimineata ca la 8 seara are un tipar care nu seamana cu
+# niciun om, (b) noaptea oferta e oricum mai mica, deci aceleasi cereri produc mai
+# putin. Ambele arata in aceeasi directie.
+#
+# CE AR SCHIMBA VALORILE, dupa 24 h de baseline (vezi instrumentarea din executor):
+#   · daca rata de `ok` la 02:00-06:00 e comparabila cu cea de zi, treapta de noapte e
+#     prea agresiva si se poate urca — oferta nu scade cat presupunem;
+#   · daca `anunturi_noi` per cerere noaptea e sub ~1/3 din cea de zi, treapta e bine
+#     dimensionata sau chiar prea generoasa;
+#   · daca apar semnale (cooldown, frana) grupate intr-un interval orar, ala e primul
+#     care trebuie coborat, indiferent de randament.
+_FORMA_ORARA_IMPLICITA = {
+    **{h: 1.00 for h in range(8, 22)},    # 08:00-21:59 — plin
+    **{h: 0.33 for h in range(0, 6)},     # 00:00-05:59 — o treime
+    6: 0.50, 7: 0.75,                     # tranzitie de dimineata
+    22: 0.75, 23: 0.50,                   # tranzitie de seara
+}
 
 
 @dataclass
@@ -52,6 +83,10 @@ class ConfigPlanificator:
     frana_activa: bool = True              # FB_FRANA (0/1)
     frana_revenire_min: int = 30           # FB_FRANA_REVENIRE_MIN
     ancore_dezactivate: tuple = ()         # FB_ANCORE_DEZACTIVATE (lista cu virgula)
+    # FB_FORMA_ORARA: "0" / "off" o opreste. Valorile in sine nu sunt configurabile
+    # din env — sunt o decizie de dimensionare, ca `interval_start_tier`.
+    forma_orara_activa: bool = True
+    forma_orara: dict = field(default_factory=lambda: dict(_FORMA_ORARA_IMPLICITA))
 
 
 def config_din_env() -> ConfigPlanificator:
@@ -83,6 +118,8 @@ def config_din_env() -> ConfigPlanificator:
         frana_activa=frana,
         frana_revenire_min=_int("FB_FRANA_REVENIRE_MIN", 30),
         ancore_dezactivate=dezactivate,
+        forma_orara_activa=(os.getenv("FB_FORMA_ORARA") or "").strip().lower()
+        not in ("0", "false", "no", "off"),
     )
 
 
@@ -242,26 +279,47 @@ class Planificator:
             f"buget redus la {nou} din {self.config.buget_per_tick}")
         return nou
 
-    def buget_efectiv(self) -> int:
-        """Bugetul de cereri pentru tick-ul asta.
+    def ora_locala(self, acum=None) -> int:
+        """Ora (0-23) pe fusul romanesc, din `_acum()` care e UTC aware.
+
+        `acum` e injectabil: un test care s-ar baza pe ceasul masinii ar trece sau ar
+        pica in functie de cand e rulat.
+        """
+        t = acum if acum is not None else self._acum()
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return t.astimezone(ZoneInfo(FUS_LOCAL)).hour
+
+    def multiplicator_orar(self, acum=None) -> float:
+        if not self.config.forma_orara_activa:
+            return 1.0
+        return float(self.config.forma_orara.get(self.ora_locala(acum), 1.0))
+
+    def buget_efectiv(self, acum=None) -> int:
+        """Bugetul de CERERI pentru tick-ul asta.
+
+        Doua efecte se COMPUN, nu se suprascriu: frana (reactiva, la anomalie) si
+        forma orara (proactiva, pe ceas). Se aplica multiplicativ, cu podeaua 1 —
+        forma orara nu are voie sa opreasca de tot acoperirea, altfel un keyword ar
+        putea ramane nescanat toata noaptea.
 
         Singurul efect secundar: un WARN cand se urca o treapta de revenire (altfel
         revenirea ar fi invizibila in jurnale).
         """
-        if not self.config.frana_activa or self._ultimul_incident_at is None:
-            return self.config.buget_per_tick
+        baza = self.config.buget_per_tick
+        if self.config.frana_activa and self._ultimul_incident_at is not None:
+            fereastra = max(int(self.config.frana_revenire_min), 1)
+            scurs_min = (self._acum() - self._ultimul_incident_at).total_seconds() / 60.0
+            trepte = max(int(scurs_min // fereastra), 0)
+            baza = min(baza, self._buget_redus + trepte)
 
-        fereastra = max(int(self.config.frana_revenire_min), 1)
-        scurs_min = (self._acum() - self._ultimul_incident_at).total_seconds() / 60.0
-        trepte = max(int(scurs_min // fereastra), 0)
-        buget = min(self.config.buget_per_tick, self._buget_redus + trepte)
+            if trepte > self._trepte_raportate:
+                self._trepte_raportate = trepte
+                log_manager.emit("radar", "WARN",
+                    f"Facebook frana: revenire, treapta {trepte} — buget {baza} "
+                    f"din {self.config.buget_per_tick}")
 
-        if trepte > self._trepte_raportate:
-            self._trepte_raportate = trepte
-            log_manager.emit("radar", "WARN",
-                f"Facebook frana: revenire, treapta {trepte} — buget {buget} "
-                f"din {self.config.buget_per_tick}")
-        return buget
+        return max(int(baza * self.multiplicator_orar(acum)), 1)
 
     def stare_frana(self) -> dict:
         """Sursa pentru guard_status / Jurnale la FB-6."""
@@ -270,4 +328,7 @@ class Planificator:
             "buget_efectiv": self.buget_efectiv(),
             "ultimul_incident_at": self._ultimul_incident_at,
             "incidente_total": self._incidente,
+            "ora_locala": self.ora_locala(),
+            "multiplicator_orar": self.multiplicator_orar(),
+            "forma_orara_activa": self.config.forma_orara_activa,
         }

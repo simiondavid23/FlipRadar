@@ -17,6 +17,8 @@ numara perechi, un tick de 12 ar trimite pana la 96 de cereri.
 """
 import os
 import threading
+import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func
@@ -34,6 +36,27 @@ _TTL_IMPLICIT_ORE = 48
 # Acelasi prag pentru amandoua, deliberat: avertismentul explica, frana actioneaza.
 _PRAG_ESEC_TOTAL = 3
 _COOLDOWN_ORE_IMPLICIT = 6.0
+
+# Fereastra rulanta de tick-uri, IN MEMORIE. Fara tabel, fara migrare — daca procesul
+# reporneste, se pierde, si de-aia fiecare tick scrie SI o linie structurata in jurnal
+# (vezi `_logheaza_tick`). Jurnalul e sursa de adevar pentru baseline; fereastra e doar
+# comoditatea de a nu face grep.
+_FEREASTRA_IMPLICITA_H = 24
+
+
+def _n_ferestre() -> int:
+    """Cate tick-uri incap in fereastra ceruta, la intervalul curent."""
+    def _i(nume, implicit):
+        try:
+            return int(os.getenv(nume) or implicit)
+        except (TypeError, ValueError):
+            return implicit
+    ore = _i("FB_FEREASTRA_ORE", _FEREASTRA_IMPLICITA_H)
+    tick_min = max(_i("FB_EXECUTOR_TICK_MIN", 5), 1)
+    return max(int(ore * 60 / tick_min), 1)
+
+
+_fereastra = deque(maxlen=_n_ferestre())
 
 _lock = threading.Lock()
 _planificator = None
@@ -128,6 +151,63 @@ def _alerteaza(db, text: str) -> None:
 
 def _acum():
     return datetime.now(timezone.utc)
+
+
+def _inregistreaza_in_fereastra(intrare: dict) -> None:
+    """Un tick in fereastra rulanta SI o linie structurata in jurnal.
+
+    Linia e sursa de adevar pentru baseline: fereastra moare la repornire, jurnalul nu.
+    Forma e `cheie=valoare`, cu chei STABILE, ca sa se poata extrage cu un grep — nu
+    proza, fiindca proza se reformuleaza si strica orice parsare de peste doua luni.
+    """
+    _fereastra.append(intrare)
+    parti = " ".join(f"{k}={intrare[k]}" for k in _CHEI_TICK if k in intrare)
+    log_manager.emit("radar", "INFO", f"FBTICK {parti}")
+
+
+# Ordinea si numele cheilor din linia de jurnal. Se ADAUGA la coada, nu se redenumesc:
+# o cheie redenumita invalideaza tot istoricul deja scris pe disc.
+_CHEI_TICK = (
+    "la", "sarit", "perechi_alese", "executate", "sarite", "cereri", "anunturi_noi",
+    "zero_confirmate", "anomalie", "tickuri_fara_ok", "blocaj", "sesiune_invalida",
+    "buget_efectiv", "frana_stransa", "multiplicator_orar", "ora_locala",
+    "durata_s", "etichete",
+)
+
+
+def _agregate(fereastra) -> dict:
+    """Ce se citeste DE FAPT dupa 24 h. Fereastra bruta e prea mare ca s-o parcurgi."""
+    tickuri = list(fereastra)
+    if not tickuri:
+        return {"n_tickuri": 0}
+    rulate = [t for t in tickuri if not t.get("sarit")]
+    cereri = sum(t.get("cereri", 0) for t in rulate)
+    etichete = {}
+    for t in rulate:
+        for k, v in (t.get("etichete") or {}).items():
+            etichete[k] = etichete.get(k, 0) + v
+    total_et = sum(etichete.values())
+    prima = min((t["la"] for t in tickuri), default=None)
+    ultima = max((t["la"] for t in tickuri), default=None)
+    ore = 0.0
+    if prima and ultima:
+        ore = (datetime.fromisoformat(ultima)
+               - datetime.fromisoformat(prima)).total_seconds() / 3600.0
+    return {
+        "n_tickuri": len(tickuri),
+        "n_tickuri_rulate": len(rulate),
+        "n_tickuri_sarite": len(tickuri) - len(rulate),
+        "sarite_pe_cooldown": sum(1 for t in tickuri
+                                  if str(t.get("sarit", "")).startswith("cooldown")),
+        "cereri_total": cereri,
+        "anunturi_noi_total": sum(t.get("anunturi_noi", 0) for t in rulate),
+        "etichete_total": etichete,
+        "rata_ok": (round(etichete.get("ok", 0) / total_et, 3) if total_et else None),
+        "zero_confirmate_total": sum(t.get("zero_confirmate", 0) for t in rulate),
+        "ore_acoperite": round(ore, 2),
+        "cereri_pe_ora": round(cereri / ore, 2) if ore > 0 else None,
+        "prima": prima, "ultima": ultima,
+    }
 
 
 def _ttl_ore() -> float:
@@ -273,14 +353,21 @@ def tick(db) -> dict:
 
     # PRIMUL lucru, inaintea zavorului si a planificatorului: o pauza de cooldown nu
     # are voie sa consume nici macar o interogare de DB.
+    t_start = time.time()
     sarit = _cooldown_activ()
     if sarit:
+        # Un tick sarit APARE in fereastra, nu lipseste din ea: altfel „24 h de
+        # rulare" ar arata ca 24 h de activitate, cand de fapt jumatate a fost pauza.
+        _inregistreaza_in_fereastra({"la": _acum().isoformat(), **sarit,
+                                     "durata_s": 0.0})
         return sarit
 
     if not _lock.acquire(blocking=False):
         log_manager.emit("radar", "WARN",
             "Facebook executor: tick-ul precedent inca ruleaza — il sar pe acesta "
             "(nu se pune la coada)")
+        _inregistreaza_in_fereastra({"la": _acum().isoformat(),
+                                     "sarit": "tick suprapus", "durata_s": 0.0})
         return {"sarit": "tick suprapus"}
 
     try:
@@ -307,6 +394,10 @@ def tick(db) -> dict:
         scadente = planificator.alege_scadente()
         sumar["perechi_alese"] = len(scadente)
         buget = planificator.buget_efectiv()
+        sumar["buget_efectiv"] = buget
+        sumar["frana_stransa"] = bool(planificator._ultimul_incident_at is not None)
+        sumar["multiplicator_orar"] = planificator.multiplicator_orar()
+        sumar["ora_locala"] = planificator.ora_locala()
 
         de_executat = []
         for pereche in scadente:
@@ -427,6 +518,8 @@ def tick(db) -> dict:
 
         sumar["buget"] = buget
         sumar["la"] = _acum().isoformat()
+        sumar["durata_s"] = round(time.time() - t_start, 2)
+        _inregistreaza_in_fereastra(dict(sumar))
         _ultimul_tick = sumar
         return sumar
     finally:
@@ -469,4 +562,8 @@ def stare_executor(db) -> dict:
                         if _cooldown_pana_la is not None else None),
         },
         "tickuri_fara_ok": _tickuri_fara_ok,
+        # Instrumentarea pentru baseline. `agregate` e ce se citeste de fapt;
+        # `fereastra` e bruta, pentru cand vrei sa vezi un tick anume.
+        "agregate": _agregate(_fereastra),
+        "fereastra": list(_fereastra),
     }
