@@ -18,6 +18,7 @@ numara perechi, un tick de 12 ar trimite pana la 96 de cereri.
 import os
 import threading
 import time
+from contextlib import contextmanager
 from collections import deque
 from datetime import datetime, timedelta, timezone
 
@@ -147,6 +148,27 @@ def _alerteaza(db, text: str) -> None:
         log_manager.emit("radar", "WARN", text)
         log_manager.emit("radar", "WARN",
             f"Facebook executor: alerta Discord a esuat ({type(exc).__name__})")
+
+
+@contextmanager
+def zavor_executor(blocking: bool = False):
+    """Zavorul tick-ului, expus ca CONTEXT MANAGER, nu ca obiect.
+
+    FBS-4 are nevoie sa se coordoneze cu executorul: doua sesiuni concurente ale
+    aceluiasi cont sunt un declansator de checkpoint de sine statator, deci atingerea
+    si tick-ul nu au voie sa ruleze simultan.
+
+    Se expune COMPORTAMENTUL, nu `_lock`: un `Lock` public poate fi tinut, eliberat de
+    altcineva sau uitat neeliberat. Aici eliberarea e garantata de `finally`, iar
+    apelantul primeste doar un bool — „l-am obtinut sau nu". Suprafata noua e o
+    functie, nu o primitiva de sincronizare.
+    """
+    obtinut = _lock.acquire(blocking=blocking)
+    try:
+        yield obtinut
+    finally:
+        if obtinut:
+            _lock.release()
 
 
 def _acum():
@@ -526,6 +548,24 @@ def tick(db) -> dict:
         _lock.release()
 
 
+def _ultima_atingere():
+    """Rezumatul ultimei atingeri, fara valori de cookie-uri. `None` daca n-a rulat."""
+    try:
+        from .atingere import ultima_atingere
+        u = ultima_atingere()
+    except Exception:
+        return None
+    if not u:
+        return None
+    s = u.get("schimbari") or {}
+    return {
+        "la": u.get("la"), "reusit": u.get("reusit"), "motiv": u.get("motiv"),
+        "ceva_schimbat": s.get("ceva_schimbat"),
+        "xs_schimbat": s.get("xs_schimbat"),
+        "cookieuri_schimbate": s.get("schimbate"),
+    }
+
+
 def stare_executor(db) -> dict:
     """Diagnostic pentru endpointul din routerul Radar."""
     perechi = dict(db.query(FbScanState.stare, func.count(FbScanState.id))
@@ -566,4 +606,7 @@ def stare_executor(db) -> dict:
         # `fereastra` e bruta, pentru cand vrei sa vezi un tick anume.
         "agregate": _agregate(_fereastra),
         "fereastra": list(_fereastra),
+        # Import LENES: `atingere` importa la randul lui `zavor_executor` de aici,
+        # deci un import la nivel de modul ar inchide un ciclu.
+        "atingere": _ultima_atingere(),
     }

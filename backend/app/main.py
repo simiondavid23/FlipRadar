@@ -468,6 +468,48 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] FB executor setup failed: {exc}")
 
+    # FBS-4 — atingerea sesiunii. NU e re-login (R5 ramane in vigoare): incarca o
+    # sesiune deja valida, o foloseste cateva zeci de secunde si o re-salveaza.
+    # Garda proprie, implicit OPRITA, separata de cea a executorului: atingerea
+    # deschide un browser real, deci nu porneste fara ca David s-o ceara.
+    try:
+        if (os.getenv("FB_ATINGERE") or "").strip().lower() in ("1", "true"):
+            from app.scrapers.facebook.atingere import atinge as _fb_atinge
+
+            def _run_fb_atingere():
+                try:
+                    _fb_atinge()
+                except Exception as exc:
+                    print(f"[FBAtingere] eroare: {exc}")
+
+            # CELE 12 ORE SUNT O PRESUPUNERE, ca forma orara de la FBS-3. Nimeni nu
+            # stie cat de des se roteste `xs`. Ce o calibreaza, din liniile
+            # FBATINGERE din jurnal:
+            #   · `xs_schimbat=1` la FIECARE atingere -> intervalul e prea mare,
+            #     coboara-l;
+            #   · `ceva_schimbat=0` dupa cateva zile -> mecanismul nu rezolva nimic,
+            #     opreste-l cu FB_ATINGERE=0 in loc sa-l rarefiezi.
+            _fb_at_ore = int(os.getenv("FB_ATINGERE_ORE") or 12)
+            # Acelasi jitter unilateral ca la FBS-3: APScheduler face
+            # `+uniform(0, jitter)`, nu `±`.
+            _fb_at_jitter = int(os.getenv("FB_ATINGERE_JITTER_S")
+                                or round(_fb_at_ore * 3600 * 0.20))
+            scheduler.add_job(
+                _run_fb_atingere,
+                "interval",
+                hours=_fb_at_ore,
+                jitter=_fb_at_jitter,
+                id="fb_atingere",
+                replace_existing=True,
+                next_run_time=datetime.now() + timedelta(minutes=7),
+            )
+            print(f"[Scheduler] FB atingere sesiune ({_fb_at_ore}h, "
+                  f"jitter +0..{_fb_at_jitter}s) inregistrata.")
+        else:
+            print("[Scheduler] FB atingere dezactivata (FB_ATINGERE absent).")
+    except Exception as exc:
+        print(f"[Scheduler] FB atingere setup failed: {exc}")
+
     # MODIFICARE 7 — cleanup zilnic (03:30) al cozii Discord: sterge itemele
     # trimise mai vechi de 7 zile (istoricul nu trebuie pastrat la nesfarsit).
     def _cleanup_discord_queue():
