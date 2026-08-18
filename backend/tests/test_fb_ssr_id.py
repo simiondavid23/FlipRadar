@@ -233,8 +233,11 @@ def test_toate_ancorele_cu_id_trec_prin_ssr(monkeypatch):
 
 
 def test_ancora_fara_id_nu_atinge_ssr():
-    a = dupa_slug("galati")
-    assert a.city_page_id is None
+    # `galati` avea rolul asta pana la FBS-2c, cand a primit ID. Se foloseste una
+    # dintre cele 4 ramase FARA ID, si testul verifica intai premisa — altfel ar
+    # trece degeaba in ziua in care si asta primeste ID.
+    a = dupa_slug("miercurea-ciuc")
+    assert a.city_page_id is None, "premisa testului: ancora asta n-are ID"
     cl = ClientFals(rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200)},
                     post_rezultate=[(_fix("fb_graphql_ok.json"), 200)])
 

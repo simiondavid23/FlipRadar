@@ -118,12 +118,27 @@ def test_slugurile_au_disparut_din_registru():
     assert not hasattr(ANCORE[0], "fb_slug")
 
 
-def test_optsprezece_ancore_au_city_page_id():
+# ID-urile masurate INAINTE de FBS-2c. Testul de mai jos le fixeaza pe toate 18:
+# prinde o rescriere accidentala a registrului existent, nu doar numaratoarea.
+_ID_URI_DE_DINAINTE_DE_FBS2C = {
+    "bucuresti": "114304211920174", "cluj-napoca": "109529709065736",
+    "timisoara": "107982459236366", "iasi": "101882609853782",
+    "constanta": "110967512261687", "craiova": "109365729090108",
+    "brasov": "114791928537378", "ploiesti": "114992985184906",
+    "bacau": "111819922169363", "targu-mures": "114955601850928",
+    "baia-mare": "107823719245239", "botosani": "108107975889775",
+    "ramnicu-valcea": "109401689086893", "suceava": "104058669632145",
+    "zalau": "110614302293305", "calarasi": "110489242312814",
+    "bistrita": "106530449382782", "alba-iulia": "106088726089413",
+}
+
+
+def test_patruzecisisapte_ancore_au_city_page_id():
     cu_id = {a.slug: a.city_page_id for a in ANCORE if a.city_page_id is not None}
 
-    assert len(cu_id) == 18, sorted(cu_id)
+    assert len(cu_id) == 47, sorted(cu_id)
     assert all(v.isdigit() for v in cu_id.values()), "ID-urile sunt NUMERICE"
-    assert len(set(cu_id.values())) == 18, "niciun ID duplicat intre ancore"
+    assert len(set(cu_id.values())) == 47, "niciun ID duplicat intre ancore"
     # cele patru masurate direct ca ancoreaza corect, plus Constanta din bucla
     assert cu_id["cluj-napoca"] == "109529709065736"
     assert cu_id["iasi"] == "101882609853782"
@@ -132,24 +147,43 @@ def test_optsprezece_ancore_au_city_page_id():
     assert cu_id["constanta"] == "110967512261687"
 
 
-def test_restul_ancorelor_raman_fara_id():
-    """Cele 33 fara ID nu sunt un bug: descoperirea lor e FBS-2b, o runda de DATE.
-    Pentru ele scara incepe direct de la GraphQL, exact ca inainte de FBS-2."""
-    fara = [a.slug for a in ANCORE if a.city_page_id is None]
+def test_id_urile_de_dinainte_de_fbs2c_sunt_neschimbate():
+    """FBS-2c a ADAUGAT 29 de ID-uri; n-avea voie sa atinga niciunul din cele 18
+    existente. Un script care rescrie registrul in bloc ar putea sa le mute tacit."""
+    cu_id = {a.slug: a.city_page_id for a in ANCORE if a.city_page_id is not None}
 
-    assert len(fara) == 33
-    assert "alexandria" in fara
+    for slug, idn in _ID_URI_DE_DINAINTE_DE_FBS2C.items():
+        assert cu_id.get(slug) == idn, f"{slug} s-a schimbat"
 
 
-def test_alexandria_nu_are_slug_dar_poate_primi_id():
+def test_patru_ancore_raman_fara_id():
+    """Nu e rest de lucru, e rezultat MASURAT. Primele trei au fost interogate direct
+    pe lat/lon-ul propriu la FBS-2b si tot nu si-au gasit `city_page`-ul. A patra,
+    `satu-mare`, e omonimie: Romania are DOUA localitati cu numele asta, recolta le-a
+    produs pe amandoua, si niciuna nu s-a scris fara o masuratoare care sa le separe."""
+    fara = sorted(a.slug for a in ANCORE if a.city_page_id is None)
+
+    assert fara == ["campeni", "miercurea-ciuc", "moldova-noua", "satu-mare"]
+
+
+def test_satu_mare_nu_primeste_niciunul_din_cele_doua_id_uri_omonime():
+    """Garda impotriva unui `git revert` partial sau a unei reintroduceri din
+    memorie. `104009386303557` e comuna din Harghita, la 272 km de ancora."""
+    a = dupa_slug("satu-mare")
+
+    assert a.city_page_id is None
+    assert a.judet == "SM"
+
+
+def test_alexandria_a_primit_id_desi_slugul_era_coliziune():
     """Coliziune internationala masurata la FB-0: `alexandria` era slug VALID pe
-    Facebook, dar rezolva spre alta Alexandria (0 rezultate la termen romanesc). Un
-    `city_page_id` NUMERIC nu poate avea coliziunea asta, deci ancora intra normal in
-    descoperirea de la FBS-2b — testul fixeaza distinctia, ca sa nu se piarda."""
+    Facebook, dar rezolva spre alta Alexandria. Un `city_page_id` NUMERIC nu are cum
+    sa aiba coliziunea aia — si chiar asa a fost: ID-ul recoltat la FBS-2b poarta
+    judetul Teleorman, verificat incrucisat la scriere."""
     a = dupa_slug("alexandria")
 
     assert not hasattr(a, "fb_slug")
-    assert a.city_page_id is None
+    assert a.city_page_id == "106314682740651"
 
 
 def test_dupa_slug():
