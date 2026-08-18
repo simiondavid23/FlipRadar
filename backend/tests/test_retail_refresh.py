@@ -186,6 +186,8 @@ def test_validated_domains_santinela():
         "tezyo.ro",                                   # G1-2
         "powerup.ro",                                 # G2A-2
         "cyberport.at",                               # G2B-2
+        "sportvision.ro",                             # G2C-2
+        "sizeer.ro",                                  # G2C-2
     }
 
 

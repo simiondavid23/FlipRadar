@@ -680,6 +680,60 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "anti-profil-hardcodat face grep pe app/**) — "
                  "vezi docs/catalog_domain_log.md",
     },
+    # ── G2C — outlet incaltaminte/sport RO (sonde 2026-08-18) ─────────────────
+    # Din patru domenii sondate au intrat DOUA. Celelalte, cu motivele masurate, in
+    # docs/catalog_domain_log.md: ccc.ro e domeniu PARCAT (nu magazin), ccc.eu are
+    # selector de tara randat client-side, iar hervis.ro redirectioneaza la
+    # sportsdirect.ro, care isi randeaza listarile client-side (val de browser).
+    "sportvision.ro": {
+        "label": "Sport Vision",
+        "category": "incaltaminte",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2C-1/G2C-2; platforma NBSHOP (server 'Custom Server', cookies "
+                 "NBIDSN/NBPHPSESSIONSECURE). IPOTEZA, nu fapt: aceeasi platforma cu "
+                 "buzzsneakers.ro, care e tot jsonld — markerul NBSHOP si verdictul "
+                 "coincid, dar inrudirea n-a fost dovedita cu fragmente verbatim din "
+                 "AMBELE parti, fiindca nu exista dump buzzsneakers. ld+json: Product "
+                 "+ Offer cu price / priceCurrency RON / availability, plus sku, "
+                 "brand, productID, aggregateRating, hasMerchantReturnPolicy, "
+                 "priceValidUntil, shippingDetails. Moneda incrucisata: RON in date "
+                 "structurate SI in afisaj. Omnibus ABSENT pe PDP-urile masurate, "
+                 "niciun <del>/<s>. Axa D e val ULTERIOR: categoria "
+                 "/produse/noua-colectie are 2.312 produse, dar paginarea nu e "
+                 "clasica — `a[rel='next']` cu textul 'Arata mai multe', deci "
+                 "incarcare client-side, nemasurata — vezi docs/catalog_domain_log.md",
+    },
+    "sizeer.ro": {
+        "label": "Sizeer",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2C-1/G2C-1b/G2C-2; Akamai in fata, dar NU blocaj: cookie-urile "
+                 "`_abck`/`ak_bmsc`/`bm_sz` sunt infrastructura, puse pe ORICE raspuns "
+                 "care trece prin Akamai — exact ca `cf-ray` la Cloudflare. Verdictul "
+                 "de blocaj se da pe status, pe interstitiul din corp si pe ABSENTA "
+                 "semnalelor pozitive; aici raspunsurile aveau 1,8-2,1 MB si ld+json "
+                 "complet. ld+json: Product + Offer cu price / priceCurrency RON / "
+                 "availability, plus sku, mpn, brand, color, category, "
+                 "aggregateRating, seller, shippingDetails. Moneda incrucisata. "
+                 "OMNIBUS `min30` EXPLICIT — primul din catalog: referinta e 'Cel mai "
+                 "mic pret din ultimele 30 de zile inainte de reducere', ca ETICHETA "
+                 "TEXTUALA, fara <del>/<s> (taiat_in_dom iese gol). Verbatim de pe "
+                 "PDP: '239,99 RON cu TVA 259,99 RON -8% (Cel mai mic pret din "
+                 "ultimele 30 de zile inainte de reducere)'. TREI componente "
+                 "partajate masurate pe ambele PDP-uri — 18 RON (livrare), 219,99 RON "
+                 "(promotie din megamenu), 400 RON (prag de livrare gratuita) — pe "
+                 "care ld+json le ocoleste, fiindca da exact pretul propriu al "
+                 "paginii. Axa D e val ULTERIOR: /outlet n-are produse server-side "
+                 "utile (din 92 de carduri candidate, 87 poarta cele doua componente "
+                 "partajate) si n-are paginare server-side — "
+                 "vezi docs/catalog_domain_log.md",
+    },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",
         "category": "foto",

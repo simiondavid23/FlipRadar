@@ -1683,8 +1683,102 @@ trece prin reteaua lui.
 
 ---
 
+## G2C-1/1b/2 — outlet incaltaminte/sport RO: 4 sondate, 2 intrate
+
+Intrarea #42 din lista master, patru domenii intr-o singura pozitie. Doua sonde
+(16 + 6 cereri) si o implementare. Dump-urile in `scripts/diagnostics/dumps_g2c/` si
+`dumps_g2c_sizeer/` (gitignorate).
+
+| domeniu | verdict | profil | moneda |
+|---|---|---|---|
+| **sportvision.ro** | **`jsonld` — INTRAT** | implicit al productiei | **RON** |
+| **sizeer.ro** | **`jsonld` — INTRAT** | implicit al productiei | **RON** |
+| ccc.ro | domeniu PARCAT — nu e magazin | implicit | — |
+| hervis.ro | redirect -> sportsdirect.ro, listari client-side | implicit | — |
+
+Ambele ipoteze de grup din briefing au fost INFIRMATE: `ccc.ro` nu apartine grupului
+CCC (nu e nici magazin), iar sizeer si sportvision nu au nimic comun — sizeer e in
+spatele Akamai fara markeri de platforma, sportvision e NBSHOP.
+
+### sportvision.ro — `method: jsonld` (FACUT)
+
+`Product` + `Offer` cu `price` / `priceCurrency: RON` / `availability`, plus `sku`,
+`brand`, `productID`, `aggregateRating`, `hasMerchantReturnPolicy`, `priceValidUntil`,
+`shippingDetails`. Moneda incrucisata: RON in date structurate SI in afisaj. Omnibus
+ABSENT pe PDP-urile masurate; niciun `<del>`/`<s>`.
+
+Platforma e **NBSHOP** (`server: Custom Server`, cookies `NBIDSN` /
+`NBPHPSESSIONSECURE`) — aceeasi cu `buzzsneakers.ro` (LOT3), care e tot `jsonld`.
+Consemnat ca IPOTEZA, nu ca fapt: markerul si verdictul coincid, dar inrudirea n-a
+fost dovedita cu fragmente verbatim din ambele parti, fiindca nu exista dump
+buzzsneakers.
+
+Axa D e val ULTERIOR: `/produse/noua-colectie` are **2.312 produse**, dar paginarea
+nu e clasica — `a[rel='next']` cu textul „Arata mai multe", deci incarcare
+client-side, nemasurata.
+
+### sizeer.ro — `method: jsonld`, FARA override de amprenta (FACUT)
+
+`Product` + `Offer` cu `price` / `priceCurrency: RON` / `availability`, plus `sku`,
+`mpn`, `brand`, `color`, `category`, `aggregateRating`, `seller`, `shippingDetails`.
+
+**OMNIBUS `min30` EXPLICIT — primul din tot catalogul.** Celelalte domenii au dat
+„prp" (bergfreunde, cyberport, f64) sau „nemarcat". Aici referinta e chiar minimul
+legal pe 30 de zile, ca ETICHETA TEXTUALA, fara `<del>`/`<s>` — `taiat_in_dom` iese
+gol. Verbatim de pe PDP-ul Nike:
+
+    239,99 RON cu TVA 259,99 RON -8%
+    (Cel mai mic pret din ultimele 30 de zile inainte de reducere)
+
+**Trei componente partajate**, masurate pe ambele PDP-uri: `18 RON` (livrare),
+`219,99 RON` (promotie din megamenu, „2 tricouri la 219,99 RON") si `400 RON` (prag
+de livrare gratuita). ld+json le ocoleste — da exact pretul propriu al paginii
+(239.99, respectiv 349.99). Un extractor pe text vizibil ar fi luat 219,99 pe orice
+produs.
+
+**Misterul amprentei, inchis.** Sonda G2C-1 raportase „challenge pe profilul de
+productie", ceea ce ar fi cerut un `impersonate`. Verdictul era ARTEFACT: detectorul
+sondei trata cookie-ul `_abck` drept blocaj, iar Akamai il pune pe ORICE raspuns care
+trece prin el — exact ca `cf-ray` la Cloudflare. Raspunsurile asa-zis blocate aveau
+1,8-2,1 MB, ld+json complet si preturi reale. Controlul de la G2C-2 a extras live pe
+profilul IMPLICIT al productiei, cu succes (239.99 RON, `jsonld`), deci intrarea NU
+are camp `impersonate` si harta pinuita ramane pe 5 domenii.
+
+Regula generalizata pentru sonde: un cookie de infrastructura anti-bot (`_abck`,
+`ak_bmsc`, `bm_sz`, `cf-ray`) arata ca traficul TRECE prin acel furnizor, nu ca a
+fost blocat. Verdictul de blocaj se da pe status, pe interstitiul din corp si pe
+ABSENTA semnalelor pozitive.
+
+Axa D e val ULTERIOR: `/outlet` n-are produse server-side utile — din 92 de carduri
+candidate, 87 poarta cele doua componente partajate si doar 5 au pret propriu — si
+n-are paginare server-side.
+
+### Celelalte doua — de ce n-au intrat
+
+* **ccc.ro — domeniu PARCAT, nu magazin.** `server: Caddy`, `<title>ccc.ro</title>`,
+  `robots: noindex`, descriere „Find the best information and most relevant links on
+  all topics related to", **6 caractere** de text vizibil, zero linkuri interne.
+* **ccc.eu — poarta de tara CLIENT-SIDE.** `https://ccc.eu/` redirectioneaza masurat
+  la `/start/`: **853 de octeti**, 23 de caractere vizibile, „SELECT YOUR COUNTRY",
+  iar `<div class="countries-list">` e GOL. In corpul brut nu exista niciun `/ro/`,
+  `ccc.ro` sau `hreflang="ro"` — deci calea RO nu se poate obtine fara JS, iar a o
+  construi ar fi fost ghicit. Al doilea domeniu cu poarta de tara, dupa reichelt.
+* **hervis.ro — redirectioneaza la `sportsdirect.ro`** (Frasers Group, vizibil in
+  `frasers.group` printre gazdele de asset). Next.js + Akamai. Listarea `/sale` da
+  200 dar are 39 de linkuri, toate de CONT, si zero preturi: client-side complet.
+  Candidat pentru valul de BROWSER, alaturi de conrad.com.
+
+---
+
 ## Domenii neintrate
 
+> ccc.ro — DOMENIU PARCAT (masurat in G2C-1): `server: Caddy`, `robots: noindex`,
+> 6 caractere de text vizibil. Magazinul CCC nu e acolo. ccc.eu, domeniul real, are
+> selector de tara randat client-side, deci calea RO nu e obtenabila fara JS.
+>
+> hervis.ro — redirectioneaza la sportsdirect.ro (Frasers Group), care isi randeaza
+> listarile client-side. Candidat pentru valul de browser, nu pentru fluxul HTTP.
+>
 > badabum.ro — NU exista site: domeniul n-are inregistrare A sau AAAA (masurat in
 > G2A-1, si prin resolver public, cu powerup.ro drept control). Zona e la Cloudflare
 > si MX-ul e activ pe Microsoft 365, deci domeniul e detinut si folosit pentru email,
