@@ -1946,6 +1946,144 @@ turnate in forma de lista, ordonate descrescator, cu minimul spre coada.
 
 ---
 
+## G2F-5/G2F-6 — sub-lotul home&deco: 4 sondate, 4 intrate
+
+| domeniu | metoda | moneda incrucisata | anti-bot | particularitate |
+|---|---|---|---|---|
+| hornbach.ro | jsonld | ✓ pe text vizibil | niciunul | doua `Offer` cu pret identic |
+| bonami.ro | jsonld | slaba (prag partajat) | niciunul | forma PDP CONSTRUITA; listarea n-are ld+json |
+| action.com | jsonld | ✓ (`11.95` ↔ `11,95 lei`) | **Cloudflare pe RATA** | pret spart in DOM |
+| ro.vivre.eu | jsonld | ✗ neincrucisabila | niciunul | **`availability` = constanta de sablon** |
+
+Primul lot din 2f in care intra TOATE domeniile sondate. Ordinea sondei a fost
+hornbach → vivre → bonami → action, iar doua dintre ele au cerut o pasa de corectie
+(5 cereri autorizate, 4 folosite).
+
+### hornbach.ro — `method: jsonld`, pe categoria `bricolaj` (FACUT)
+
+ld+json are **doar** `Product`: zero microdata, iar OG poarta `og:type=og:product`
+fara `product:price:*`. Datele structurate sunt asadar singura sursa — dar una
+completa. Moneda se incruciseaza curat: ld+json `RON` vs afisaj `2333,00 lei` si
+`1829,24 lei`. Omnibus **absent**, niciun pret taiat in DOM.
+
+**Forma ofertelor merita atentie:** generatorul publica **doua `Offer` cu ACELASI
+pret** (2333.00), care difera doar prin cheile de livrare (`availableAtOrFrom`,
+`deliveryLeadTime`, `potentialAction`). E prima ramura lista-de-oferte intalnita pe
+un domeniu romanesc dupa G2F-4, iar regula minimului o traverseaza inofensiv:
+`min(2333.00, 2333.00) = 2333.00`. Daca maine cele doua livrari ar avea preturi
+diferite, regula ar alege-o pe cea mai ieftina — semantica dorita.
+
+PDP-ul are forma `/p/<slug>/<ID_numeric>/`, categoriile `/c/<slug>/S<ID>/`.
+
+**Doua lectii de navigare, ambele costisitoare la sonda:**
+1. Home-ul e un shell randat client-side (raport text/HTML **0,0037**, zero preturi
+   vizibile) — dar poarta **9 PDP-uri complete**. Home-ul poate fi o sursa de URL-uri
+   mai buna decat o listare, contrar ordinii „home → listare → produse".
+2. Singurul link din home care se potriveste tiparelor de reduceri e un **articol
+   editorial** — `/noutati/campanie-promotionala-curatenie-tip-top-premii-dirt-devil/`,
+   prins pe `promo` din „campanie-promotionala". Un tipar de reduceri fara filtru
+   negativ pe `/noutati/` si `/stiri/` alege gresit. Aceeasi clasa de defect ca
+   `/info/about/shippingcosts` la zooplus (G2F-3).
+
+### bonami.ro — `method: jsonld`, forma PDP CONSTRUITA si confirmata (FACUT)
+
+Next.js. Forma URL-ului de produs **nu exista in niciun dump**: catalogul e hidratat,
+listarea are zero ancore de produs, iar rutele din home sunt doar `c`, `cos`,
+`inspiratii`, `lista-mea-de-comparare`. URL-ul a fost deci **construit** din primul
+`slug` din `__NEXT_DATA__`, prin simetrie cu ruta de categorie masurata `/c/<slug>` —
+constructie admisa pe precedentul elefant (ViewProduct-Start), fiindca era singura
+cale si fiindca **forma insasi era masuratoarea**. A raspuns: `/p/<slug>`, 200, fara
+redirect.
+
+Pe PDP exista ld+json `Product` obisnuit, cu `price` **NUMERIC** (572.9, nu sir) si
+`shippingDetails`. Valoarea se confirma incrucisat cu `__NEXT_DATA__`:
+`customerPrice.amount.units` 57290 / 10^`scale` 2 = 572,90. Doua surse independente
+ale aceleiasi pagini, de acord.
+
+**Listarea, in schimb, n-are ld+json deloc** — si de aici o lectie: un verdict de
+domeniu dat pe listare ar fi clasat bonami drept „val de browser", fals. Pentru axa D
+datele stau in `initialCataloguePageState.blocks[].products[]` din `__NEXT_DATA__`:
+48 de produse, pret ca `units`/10^`scale`, `availability.usableStock` **numeric**
+(stoc cu cantitate!), `retailPrice` ca pret de referinta. Val ULTERIOR.
+
+Pretul de referinta **nu** e in ld+json (oferta are doar `price`), deci reducerea nu
+se poate calcula din PDP. Zgomot de vitrina: pragul partajat `40 Lei`. `og:type` e
+`website`, nu `product`.
+
+### action.com — `method: jsonld`; intrebarea de existenta, INCHISA AFIRMATIV (FACUT)
+
+Domeniul purta in lista master marcajul „verifica daca expune preturi online", deci
+s-a tratat ca bipa (G2D-1): prima cerere decide ramura. **Are magazin online**, cu
+probe tari — `Offer` cu `price` 3.98 si 11.95 RON, `InStock`, plus `priceSpecification`
+si `seller`. Ramura „vitrina" nu s-a declansat.
+
+**Anti-bot pe RATA, nu pe ruta si nu pe profil.** A 4-a cerere intr-un minut a primit
+403 cu interstitiul Cloudflare „Just a moment...". Pasa de corectie a separat cele trei
+ipoteze in doua trepte (tiparul sephora): **acelasi URL, acelasi profil `chrome131`,
+dupa o pauza de 95s → 200**. Escaladarea de profil n-a mai fost necesara.
+
+> **Deschis pentru implementare:** domeniul are nevoie de un interval minim intre
+> cereri. Campul `min_fetch_interval_s` EXISTA in registru, dar contractul lui il
+> limiteaza explicit la `method: "browser"` (e consumat doar de
+> `browser_fetch.fetch_browser_html`, iar suita de registru il si respinge pe alte
+> metode). Pe calea HTTP — cea pe care merge action, ca domeniu `jsonld` — nu exista
+> azi niciun mecanism echivalent. Intrarea a fost facuta FARA camp, ca sa nu existe
+> o protectie doar aparenta; masuratoarea e consemnata aici si in `notes`.
+
+Pretul e **spart in DOM** (`11 95`), deci extractia pe text vizibil e nesigura si
+ld+json e sursa. Cifrele mici din pagina (`0,07`–`8,98 lei`) sunt preturi **pe bucata**,
+nu ale produsului. PDP `/ro-ro/p/<ID_numeric>/<slug>/`. Ruta `/ro-ro/promocie-saptamanii/`,
+linkata din home, da **404 masurat**. Omnibus absent, niciun pret taiat.
+
+### ro.vivre.eu — `method: jsonld` + `ldjson_availability: "untrusted"` (FACUT)
+
+Cheia e pe **subdomeniu**, fiindca acolo duce redirectul MASURAT
+`www.vivre.ro` → `ro.vivre.eu` (precedent de cheie cu subdomeniu: `en.afew-store.com`).
+PDP-ul are forma `/p-<ID>/<slug>`.
+
+**`availability` din ld+json e o constanta de sablon — dovada:**
+
+| sursa | ce spune despre 8831337 si 1977409 |
+|---|---|
+| ld+json de pe PDP-ul fiecaruia | `https://schema.org/OutOfStock`, amandoua |
+| datele de listare ale ACELUIASI site | `"inStock":true`, amandoua |
+| pe tot lotul masurat | `"inStock":true` x24, `"inStock":false` x0 |
+| sirul `schema.org/InStock` | **nu apare NICIODATA**, in niciunul din cele 3 dump-uri |
+
+Contradictie pe ACELEASI doua produse, intre doua surse ale aceleiasi pagini de
+magazin. Fara flag, extractorul ar fi scris `in_stock=False` pe toate cele **46.536**
+de produse: nu o necunoastere, ci o afirmatie falsa si activa, care ar fi ascuns din
+feed exact marfa cumparabila. Cu flagul, campul devine `None` — necunoscut, care e
+adevarul.
+
+> **Atentie la o capcana de masurare din care era sa iasa concluzia inversa:** o
+> numaratoare case-INSENSITIVE dadea „`InStock` x25" pe listare si parea sa infirme
+> ipoteza. Case-sensitive, `InStock` apare de **zero** ori; cele 25 erau `"inStock"`
+> (camelCase), campul din datele de flux — alt vocabular, alta sursa. „Masurarea
+> gresita e prima ipoteza" a functionat exact aici.
+
+PDP-ul e randat client-side la extrem: raport text/HTML **0,0004**, adica ~280 de
+octeti de text vizibil (titlu + footer legal). Pretul si stocul nu apar deloc in text.
+ld+json e deci SINGURA sursa server-side, iar moneda `RON` **nu e incrucisabila** pe
+text — acceptata pe ld+json, 2/2 PDP-uri. Listarea `/products?discount=yes` are
+**46.536** de produse — val ULTERIOR.
+
+### Flagul `ldjson_availability: "untrusted"` (G2F-6)
+
+Camp OPTIONAL de registru, o singura valoare admisa. Cand e prezent, extractorul
+ignora `availability` din ld+json si lasa `in_stock=None`, in loc sa creada sablonul.
+
+Neutralizarea sta imediat dupa override si **inaintea** microdata, deliberat: flagul
+spune ca `availability` DIN LD+JSON nu e de incredere, nu ca domeniul n-are stoc, deci
+o sursa independenta (microdata) ramane libera sa completeze campul. Pe vivre cele
+doua citiri coincid — pagina n-are microdata — dar distinctia pastreaza flagul cinstit
+daca ajunge candva pe un domeniu cu doua surse. Variantele se neutralizeaza odata cu
+produsul: stocul lor vine din exact aceeasi `availability`. Pretul si restul extractiei
+raman NEATINSE — masurat pe 166 de dump-uri, singura diferenta din tot tabelul de
+regresie e stocul celor doua PDP-uri vivre, `False` → `None`.
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in

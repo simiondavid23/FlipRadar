@@ -2421,3 +2421,122 @@ def test_g2f4_nu_atinge_minimul_pe_marimi_cand_cel_mai_ieftin_e_epuizat():
     assert res["in_stock"] is True
     assert [v["variant"] for v in res["variants"]] == ["42", "43", "44"]
     assert [v["price"] for v in res["variants"]] == [79.99, 119.99, 149.99]
+
+
+# ── G2F-6: flagul de registru `ldjson_availability: "untrusted"` (vivre) ──────
+
+_VIVRE_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "vivre")
+
+# URL-uri reale, din meta-urile dump-urilor sondei G2F-5. Domeniul e pe SUBDOMENIU
+# fiindca acolo duce redirectul masurat www.vivre.ro -> ro.vivre.eu.
+VIVRE_URL_1 = ("https://ro.vivre.eu/p-8831337/masa-de-dining-rotunda-si-moderna-"
+               "pentru-2-persoane-din-otel-neagra")
+VIVRE_URL_2 = ("https://ro.vivre.eu/p-1977409/homcom-canapea-chesterfiel-doua-"
+               "locuri-matlasat-in-catifea-gri")
+# Domeniu FARA flag, folosit ca martor pe ACELASI fixture.
+URL_FARA_FLAG = "https://www.magazin-test.ro/p/produs-1"
+
+
+def _vivre_fixture(nume: str) -> str:
+    with open(os.path.join(_VIVRE_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("fisier,url,pret", [
+    ("pdp_8831337.html", VIVRE_URL_1, 288.99),
+    ("pdp_1977409.html", VIVRE_URL_2, 1151.99),
+])
+def test_vivre_flagul_face_stocul_necunoscut_nu_epuizat(fisier, url, pret):
+    """Pe ro.vivre.eu `availability` din ld+json e o CONSTANTA de sablon.
+
+    Ambele PDP-uri masurate emit `OutOfStock`, desi datele proprii de listare ale
+    aceluiasi site dau `"inStock":true` pentru EXACT aceste doua produse. Flagul
+    `ldjson_availability: "untrusted"` transforma minciuna in NECUNOSCUT: `None`,
+    nu `False`. Distinctia nu e cosmetica — pe 46.536 de produse, `False` ar
+    ascunde din feed exact marfa cumparabila, si ar face-o tacut.
+    """
+    res = parse_product_html(_vivre_fixture(fisier), url)
+
+    assert res["in_stock"] is None          # NU False
+    assert res["price"] == pret
+    assert res["currency"] == "RON"
+    assert res["method"] == "jsonld"
+
+
+@pytest.mark.parametrize("fisier,pret", [
+    ("pdp_8831337.html", 288.99),
+    ("pdp_1977409.html", 1151.99),
+])
+def test_vivre_acelasi_fixture_fara_flag_da_stocul_din_sablon(fisier, pret):
+    """MARTORUL care face testul de mai sus sa insemne ceva.
+
+    ACELASI fixture, cerut ca de pe un domeniu fara flag, da `False` — adica exact
+    comportamentul de dinainte de G2F-6. Deci `None`-ul de mai sus vine din FLAG,
+    nu din vreo particularitate a fixture-ului, si nu din faptul ca l-am redus.
+    """
+    res = parse_product_html(_vivre_fixture(fisier), URL_FARA_FLAG)
+
+    assert res["in_stock"] is False
+    assert res["price"] == pret
+
+
+def test_flagul_nu_atinge_nimic_in_afara_stocului():
+    """Restul extractiei ramane bit cu bit aceeasi cu si fara flag."""
+    html = _vivre_fixture("pdp_8831337.html")
+
+    cu = parse_product_html(html, VIVRE_URL_1)
+    fara = parse_product_html(html, URL_FARA_FLAG)
+
+    assert cu["in_stock"] is None and fara["in_stock"] is False
+    for cheie in ("name", "price", "currency", "is_aggregate", "method",
+                  "image_url", "variants"):
+        assert cu[cheie] == fara[cheie], f"flagul a atins {cheie}"
+
+
+def test_flagul_neutralizeaza_si_stocul_variantelor():
+    """Variantele se neutralizeaza odata cu produsul.
+
+    Stocul lor vine din exact aceeasi `availability` de sablon, deci a lasa
+    `in_stock` pe variante ar contrazice produsul care tocmai a spus „nu stiu".
+    Pretul ramane insa cel agregat — flagul e despre stoc, nu despre pret.
+    (Sintetic: PDP-urile vivre masurate n-au variante.)
+    """
+    html = _group_page([
+        _variant("40", 100.0, "OutOfStock"),
+        _variant("41", 120.0, "InStock"),
+    ])
+
+    cu = parse_product_html(html, VIVRE_URL_1)
+    fara = parse_product_html(html, URL_FARA_FLAG)
+
+    assert [v["in_stock"] for v in cu["variants"]] == [None, None]
+    assert cu["in_stock"] is None
+    # Martorul: fara flag, aceleasi variante isi pastreaza stocul.
+    assert [v["in_stock"] for v in fara["variants"]] == [False, True]
+    # Pretul e neatins de flag pe ambele cai.
+    assert cu["price"] == fara["price"] == 120.0
+
+
+def test_flagul_nu_se_scurge_pe_domeniul_parinte():
+    """Cheia e `ro.vivre.eu`, deci NU acopera `vivre.ro`.
+
+    Nu e o scapare, ci consecinta cinstita a masuratorii: redirectul duce mereu pe
+    ro.vivre.eu, deci acolo ajunge si productia. Un URL pe vechiul domeniu ramane
+    tratat ca orice domeniu fara flag — si testul asta o pinuieste, ca sa nu para
+    mai tarziu ca flagul „nu merge".
+    """
+    html = _vivre_fixture("pdp_8831337.html")
+
+    res = parse_product_html(html, "https://www.vivre.ro/p-8831337/x")
+
+    assert res["in_stock"] is False
+
+
+def test_registrul_pune_flagul_doar_unde_e_dovedit():
+    """G2F-6 a intrat cu 4 domenii, dar DOAR unul are contradictia masurata."""
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    assert SHOP_REGISTRY["ro.vivre.eu"]["ldjson_availability"] == "untrusted"
+    for domeniu in ("hornbach.ro", "bonami.ro", "action.com"):
+        assert "ldjson_availability" not in SHOP_REGISTRY[domeniu], \
+            f"{domeniu}: flagul s-a pus fara dovada"

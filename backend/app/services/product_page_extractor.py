@@ -868,6 +868,36 @@ def parse_product_html(html: str, url: str) -> dict:
     override_key = match_shop_domain(domain, DOMAIN_OVERRIDES)
     override_applied = _apply_override(soup, html or "", result, DOMAIN_OVERRIDES.get(override_key) or {})
 
+    # G2F-6 — flagul de registru `ldjson_availability: "untrusted"`.
+    #
+    # Pe unele magazine `availability` din ld+json nu e o masuratoare, ci o
+    # CONSTANTA de sablon. Masurat pe ro.vivre.eu (sonda G2F-5): PDP-urile emit
+    # `schema.org/OutOfStock` pentru produse pe care datele proprii de listare ale
+    # ACELUIASI site le marcheaza `"inStock":true` — contradictie pe aceleasi doua
+    # produse (8831337 si 1977409), iar pe tot lotul masurat `"inStock":true` apare
+    # de 24 de ori, `false` niciodata, iar sirul `schema.org/InStock` NICIODATA.
+    # Cu 46.536 de produse in catalog, a crede sablonul ar insemna `in_stock=False`
+    # pe tot magazinul: nu o necunoastere, ci o afirmatie FALSA si activa, care ar
+    # ascunde din feed exact produsele cumparabile.
+    #
+    # Neutralizarea sta AICI, imediat dupa override si INAINTE de microdata,
+    # deliberat: flagul spune ca `availability` DIN LD+JSON nu e de incredere, nu ca
+    # domeniul n-are stoc. O eventuala sursa independenta (microdata) ramane libera
+    # sa completeze campul mai jos. Pe vivre cele doua citiri coincid — pagina n-are
+    # microdata — deci alegerea nu schimba nimic azi, dar pastreaza flagul cinstit
+    # daca maine il pune cineva pe un domeniu cu doua surse.
+    #
+    # Variantele se neutralizeaza odata cu produsul: stocul lor vine din exact
+    # aceeasi `availability`, deci a lasa `in_stock` pe variante ar contrazice
+    # produsul. Pretul si restul extractiei raman NEATINSE.
+    if (method == "jsonld"
+            and (SHOP_REGISTRY.get(match_shop_domain(domain, SHOP_REGISTRY)) or {}
+                 ).get("ldjson_availability") == "untrusted"):
+        result["in_stock"] = None
+        for _v in (result.get("variants") or []):
+            if isinstance(_v, dict):
+                _v["in_stock"] = None
+
     # CONTENT-2: microdata completeaza DOAR campurile ramase goale dupa override,
     # JSON-LD si OG. Fallback marginit prin constructie — pe un domeniu unde
     # sursele de dinainte au dat un camp, microdata nu are ce suprascrie, deci nu

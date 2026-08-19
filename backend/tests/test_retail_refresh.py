@@ -192,6 +192,10 @@ def test_validated_domains_santinela():
         "toolnation.nl",                              # G2F-2
         "direct-running.com",                         # G2F-2
         "zooplus.ro",                                 # G2F-4
+        "hornbach.ro",                                # G2F-6
+        "bonami.ro",                                  # G2F-6
+        "action.com",                                 # G2F-6
+        "ro.vivre.eu",                                # G2F-6
     }
 
 

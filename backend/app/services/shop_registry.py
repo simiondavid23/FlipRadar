@@ -50,6 +50,14 @@ Campurile unei intrari:
                 headless cu ERR_CONNECTION_RESET si sephora.ro cu 403, iar headed
                 trec amandoua (G4/G4b). Costa mai mult — pe server cere xvfb — deci
                 se pune doar unde s-a dovedit necesar. Implicit: headless.
+  ldjson_availability
+              — OPTIONAL, valoarea admisa: "untrusted". Spune ca `availability` din
+                ld+json e o CONSTANTA de sablon pe acest domeniu, nu o masuratoare,
+                deci extractorul o ignora si lasa `in_stock=None` (necunoscut) in
+                loc sa creada sablonul. Aparut pentru ro.vivre.eu (G2F-6), unde
+                PDP-urile dau `OutOfStock` pe produse pe care datele proprii de
+                listare le marcheaza `"inStock":true`. Absent = availability se
+                citeste normal.
   min_fetch_interval_s
               — OPTIONAL, DOAR pe method == "browser": secunde minime intre doua
                 vizite ale harness-ului pe domeniu. Sub prag, fetch-ul e refuzat
@@ -837,6 +845,99 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "— ID-ul numeric final e ancora, calea de categorii variaza. "
                  "Axa D: /shop/oameni_animale/promotii cu 817 produse si selector "
                  "stabil — val ULTERIOR — vezi docs/catalog_domain_log.md",
+    },
+    "hornbach.ro": {
+        "label": "Hornbach",
+        "category": "bricolaj",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-5/G2F-6; ld+json are DOAR `Product` — zero microdata, iar OG "
+                 "poarta `og:type=og:product` fara `product:price:*`, deci datele "
+                 "structurate sunt singura sursa. Moneda incrucisata: ld+json RON "
+                 "vs afisaj `2333,00 lei` / `1829,24 lei`. ATENTIE la forma "
+                 "ofertelor: un produs poate publica DOUA `Offer` cu ACELASI pret, "
+                 "diferite doar prin livrare (`availableAtOrFrom`, "
+                 "`deliveryLeadTime`) — regula minimului de la G2F-4 le traverseaza "
+                 "inofensiv (min(x, x) = x), si e primul caz romanesc masurat pe "
+                 "ramura aceea. Omnibus ABSENT, niciun pret taiat in DOM. "
+                 "PDP-ul are forma /p/<slug>/<ID_numeric>/, categoriile "
+                 "/c/<slug>/S<ID>/. Home-ul e un shell randat client-side (raport "
+                 "text/HTML 0,0037, zero preturi vizibile) DAR poarta 9 PDP-uri "
+                 "complete: e sursa buna de URL-uri, spre deosebire de listari. "
+                 "CAPCANA de navigare: linkul de reduceri din home e un ARTICOL "
+                 "editorial (/noutati/campanie-promotionala-...), nu o listare — "
+                 "un tipar pe `promo` il alege gresit. Axa D nemasurata.",
+    },
+    "bonami.ro": {
+        "label": "Bonami",
+        "category": "general",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-5/G2F-6; Next.js. PDP-ul are forma /p/<slug> — forma NU exista "
+                 "in niciun dump (catalogul e hidratat, zero ancore de produs), a "
+                 "fost CONSTRUITA prin simetrie cu ruta de categorie masurata "
+                 "/c/<slug> si confirmata pe viu (200, fara redirect). PDP-ul poarta "
+                 "ld+json `Product` obisnuit, cu `price` NUMERIC (572.9, nu sir) si "
+                 "`shippingDetails`; valoarea se confirma incrucisat cu "
+                 "`__NEXT_DATA__` (customerPrice 57290 / 10^2). ATENTIE: LISTAREA nu "
+                 "are ld+json deloc — pentru axa D datele stau in "
+                 "`initialCataloguePageState.blocks[].products[]` din __NEXT_DATA__ "
+                 "(48 produse, pret ca `units`/10^`scale`, `availability.usableStock` "
+                 "numeric, `retailPrice` ca pret de referinta) — val ULTERIOR. "
+                 "Pretul de referinta NU e in ld+json (oferta are doar `price`), deci "
+                 "reducerea nu se poate calcula din PDP. Zgomot de vitrina: pragul "
+                 "partajat `40 Lei`. `og:type` e `website`, nu `product`.",
+    },
+    "action.com": {
+        "label": "Action",
+        "category": "general",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-5/G2F-6; Next.js + Cloudflare. Intrebarea de existenta (lista "
+                 "master: „verifica daca expune preturi online\") e INCHISA AFIRMATIV: "
+                 "are magazin online cu preturi reale — `Offer` cu `price` 3.98 si "
+                 "11.95 RON, `InStock`, `priceSpecification` si `seller`. "
+                 "ANTI-BOT PE RATA, nu pe ruta si nu pe profil: a 4-a cerere intr-un "
+                 "minut a dat 403 „Just a moment...\", iar ACELASI URL pe ACELASI "
+                 "profil de PRODUCTIE a trecut cu 200 dupa o pauza de 95s (masurat, "
+                 "G2F-5 corectie). Domeniul are deci nevoie de un interval minim "
+                 "intre cereri — vezi nota din docs: mecanismul `min_fetch_interval_s` "
+                 "exista azi DOAR pe method=browser, deci pe calea HTTP nu e inca "
+                 "aplicabil. Pretul e SPART in DOM (`11 95`), deci extractia pe text "
+                 "vizibil e nesigura si ld+json e sursa; cifrele mici (0,07-8,98 lei) "
+                 "sunt preturi PE BUCATA, nu ale produsului. PDP "
+                 "/ro-ro/p/<ID_numeric>/<slug>/; /ro-ro/promocie-saptamanii/ da 404 "
+                 "MASURAT. Omnibus absent, niciun pret taiat.",
+    },
+    "ro.vivre.eu": {
+        "label": "Vivre",
+        "category": "general",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "ldjson_availability": "untrusted",
+        "notes": "G2F-5/G2F-6; Next.js. Cheia e pe SUBDOMENIU fiindca acolo duce "
+                 "redirectul MASURAT: www.vivre.ro -> ro.vivre.eu (precedent de cheie "
+                 "cu subdomeniu: en.afew-store.com). PDP-ul are forma /p-<ID>/<slug>. "
+                 "`availability` din ld+json e CONSTANTA DE SABLON, de unde flagul "
+                 "`ldjson_availability: untrusted`: PDP-urile emit `OutOfStock` pe "
+                 "produse pe care datele proprii de listare ale aceluiasi site le dau "
+                 "`\"inStock\":true` — contradictie pe ACELEASI doua produse "
+                 "(8831337, 1977409); pe tot lotul `\"inStock\":true` x24, `false` "
+                 "x0, iar `schema.org/InStock` nu apare NICIODATA. Fara flag, "
+                 "extractorul ar scrie `in_stock=False` pe toate cele 46.536 de "
+                 "produse. PDP-ul e randat client-side la extrem (raport text/HTML "
+                 "0,0004 — 280 de octeti de text vizibil, doar titlu si footer legal), "
+                 "deci ld+json e SINGURA sursa server-side, iar moneda RON NU e "
+                 "incrucisabila pe text: acceptata pe ld+json, 2/2 PDP-uri. "
+                 "Listarea /products?discount=yes, 46.536 produse — val ULTERIOR.",
     },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",

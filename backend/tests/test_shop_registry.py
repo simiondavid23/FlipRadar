@@ -78,6 +78,13 @@ def test_registru_intrari_valide():
                 and not isinstance(meta["min_fetch_interval_s"], bool) \
                 and meta["min_fetch_interval_s"] > 0, \
                 f"{domain}: min_fetch_interval_s trebuie sa fie int pozitiv"
+        # G2F-6 — spre deosebire de cele doua de mai sus, flagul asta NU se
+        # restrange la o metoda: e consumat de `parse_product_html`, care ruleaza
+        # pe orice cale (inclusiv pe HTML-ul randat al unui domeniu "browser").
+        # Se valideaza deci doar valoarea, ca sa nu intre scrieri gresite tacute.
+        if "ldjson_availability" in meta:
+            assert meta["ldjson_availability"] == "untrusted",                 (f"{domain}: ldjson_availability accepta doar \"untrusted\" "
+                 f"(are {meta['ldjson_availability']!r})")
 
 
 def test_derivarile_intorc_obiecte_proaspete():
