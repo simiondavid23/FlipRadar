@@ -259,11 +259,19 @@ def test_curatenia_ttl_sterge_doar_expiratele(db, monkeypatch):
 
 # ── 10-15. executorul ────────────────────────────────────────────────────────
 def _mock_nucleu(monkeypatch, per_termen=None, implicit=None, blocat_la=None):
-    """Inlocuieste `search_cu_stare` in executor. `blocat_la` = termenul care da blocat."""
-    apeluri = []
+    """Inlocuieste `search_cu_stare` in executor. `blocat_la` = termenul care da blocat.
 
-    def fals(termen, lat, lon, *, raza_km=65, city_page_id=None):
+    FBS-7: dublul poarta si `pret_min`, ca semnatura reala. Pragurile se strang in
+    `praguri`, o lista PARALELA cu `apeluri` (acelasi indice = acelasi apel), nu in
+    `apeluri` sub forma de tupluri: asa asserturile existente pe `apeluri` raman
+    neatinse, iar pragul ramane verificabil.
+    """
+    apeluri = []
+    praguri = []
+
+    def fals(termen, lat, lon, *, raza_km=65, city_page_id=None, pret_min=None):
         apeluri.append(termen)
+        praguri.append(pret_min)
         if blocat_la is not None and termen == blocat_la:
             return [], StareCautare("blocat", 1675004, 1)
         canonice = (per_termen or {}).get(termen, implicit or [])
@@ -271,13 +279,15 @@ def _mock_nucleu(monkeypatch, per_termen=None, implicit=None, blocat_la=None):
 
     monkeypatch.setattr(ex, "search_cu_stare", fals)
     fals.apeluri = apeluri
+    fals.praguri = praguri
     return fals
 
 
-def _keyword_radar(db, uid, nume="geaca", platform="facebook", platforms=None, activ=True):
+def _keyword_radar(db, uid, nume="geaca", platform="facebook", platforms=None,
+                   activ=True, min_price=None):
     kw = RadarKeyword(name=nume, user_id=uid, is_active=activ, platform=platform,
                       platforms=platforms or '["olx"]',
-                      max_price=1000.0, resale_price=1500.0)
+                      max_price=1000.0, resale_price=1500.0, min_price=min_price)
     db.add(kw)
     db.commit()
     return kw
@@ -492,3 +502,74 @@ def test_tickurile_suprapuse_se_sar(db):
         ex._lock.release()
 
     assert sumar == {"sarit": "tick suprapus"}
+
+
+# ── FBS-7: pragul de pret al keyword-ului, pana la treapta 1 ─────────────────
+@pytest.mark.parametrize("min_price,asteptat", [
+    (3000.0, 3000),      # cazul normal
+    (2999.9, 2999),      # trunchiere prin `int`, ca la FBS-6
+    (None, None),        # necompletat
+    (0, None),           # zero inseamna „fara prag", nu „prag zero"
+    (-5, None),          # negativ, la fel
+])
+def test_pragul_radar_se_normalizeaza_ca_la_fbs6(db, uid, min_price, asteptat):
+    _keyword_radar(db, uid, "geaca", platform="facebook", min_price=min_price)
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [i["pret_min"] for i in intrari] == [asteptat]
+
+
+def test_imobiliarele_nu_trimit_prag_desi_au_price_min(db, uid):
+    """D3 — AMANAT pe moneda, si asta e comportament TESTAT, nu doar comentat:
+    `price_min` e in EUR pe `price_currency`, iar `minPrice` e RON. O regresie care
+    l-ar cabla „ca la Radar" ar taia la ~5x pragul real, tacut."""
+    _keyword_re(db, uid, platform="facebook_marketplace", query="apartament",
+                is_active=True, price_min=250, price_currency="EUR")
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [i["modul"] for i in intrari] == ["real_estate"]
+    assert intrari[0]["pret_min"] is None
+
+
+def test_autoul_nu_trimite_prag(db, uid):
+    """D2 — `AutoKeyword` n-are camp de pret minim; cheia exista si e `None`."""
+    _keyword_auto(db, uid, platform="facebook_auto", make="BMW", model="320d",
+                  is_active=True)
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [(i["modul"], i["pret_min"]) for i in intrari] == [("auto", None)]
+
+
+def test_pragul_ajunge_in_apelul_nucleului(db, uid, monkeypatch):
+    """Contra-proba de capat: pragul din keyword chiar ajunge la `search_cu_stare`.
+    Fara asta, cablarea ar putea fi corecta pana la dictul de keyword si pierduta
+    exact in bucla care conteaza."""
+    nucleu = _mock_nucleu(monkeypatch, implicit=[])
+    k = _keyword_radar(db, uid, "iphone", platform="facebook", min_price=1500.0)
+    db.commit()
+
+    _pregateste(db, [("radar", k.id)], buget=1, scadente=[("radar", k.id)])
+    ex.tick(db)
+
+    assert nucleu.apeluri == ["iphone"]
+    assert nucleu.praguri == [1500]
+
+
+def test_keywordul_fara_prag_cheama_nucleul_cu_none(db, uid, monkeypatch):
+    """Contra-proba: fara prag NU se trimite un prag inventat (0 ar fi ajuns in URL
+    daca normalizarea ar fi lipsit)."""
+    nucleu = _mock_nucleu(monkeypatch, implicit=[])
+    k = _keyword_radar(db, uid, "geaca", platform="facebook", min_price=None)
+    db.commit()
+
+    _pregateste(db, [("radar", k.id)], buget=1, scadente=[("radar", k.id)])
+    ex.tick(db)
+
+    assert nucleu.apeluri == ["geaca"]
+    assert nucleu.praguri == [None]
