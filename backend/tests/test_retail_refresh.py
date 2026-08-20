@@ -202,6 +202,10 @@ def test_validated_domains_santinela():
         "conrad.com",                                 # G4-V0b
         "forit.ro",                                   # G4-V0b
         "istyle.ro",                                  # WL-3
+        "snipes.com",                                 # G4-V2b
+        "solebox.com",                                # G4-V2b
+        "lego.com",                                   # G4-V2b
+        "cardmarket.com",                             # G4-V2b
     }
 
 

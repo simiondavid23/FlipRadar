@@ -2632,6 +2632,118 @@ vindecat cu trei cereri.
 
 ---
 
+## G4-V2/G4-V2b — reziduul Valului 2: 6 sondate, 4 intrate
+
+Ultima runda mare de registru a axei L. Sase tinte cu anti-bot cunoscut sau prezumat,
+masurate in doua trepte (HTTP intai, browser doar pe goluri — designul EMAG-1).
+
+| domeniu | verdict | metoda |
+|---|---|---|
+| snipes.com | **intrat** | jsonld (HTTP, 200 din prima) |
+| lego.com | **intrat** | jsonld (HTTP) |
+| solebox.com | **intrat** | browser |
+| cardmarket.com | **intrat** | custom, `cardmarket_oferte` (peste browser) |
+| watchshop.ro | **NEINTRAT** — challenge nerezolvat nici in browser | Val 3 |
+| footlocker.ro | **NEINTRAT** — randare pe client, PDP nemasurat | Val 3 |
+
+### Perechea solebox/snipes — acelasi magazin tehnic, anti-bot DIFERIT
+
+Identitatea de platforma e dovedita direct, nu dedusa din asemanare:
+
+* pagina **solebox isi incarca asset-urile de pe `api.snipes.com` si
+  `asset.snipes.com`** — infrastructura e literalmente a lui snipes
+* prefixul distinctiv de clase **`hydra-`** apare pe amandoua (plus `img-`,
+  `product-`, `icon-`, `sr-`, `no-`)
+* tiparul de PDP e identic: `/<locale>/p/<slug>`
+* amandoua servesc prin `static.cloudflareinsights.com`
+
+**Si totusi intra pe metode diferite**, si asta e lectia: `snipes.com` raspunde 200
+la PRIMA cerere pe profilul de productie, in timp ce `solebox.com` da 403 cu „just a
+moment" pe TOATE cele trei profiluri ale lantului si cere browser (unde challenge-ul
+se rezolva tacit in 5,19s, 1,07MB, 108 carduri cu pret).
+
+**Identitatea de platforma NU se transfera la stratul de acces.** Anti-botul e
+configurat per domeniu. Consecinta practica: acelasi magazin costa o cerere curl pe un
+domeniu si un Chromium pe celalalt. Daca solebox se relaxeaza vreodata la nivelul lui
+snipes, poate cobori ieftin pe `jsonld` — structura de date e deja aceeasi.
+
+### lego.com — prins la limita: „viabil prin browser" nu inseamna „are nevoie de browser"
+
+Sonda G4-V2 l-a masurat prin browser si iesise viabil acolo. Motivul era insa
+accidental: plafonul HTTP se epuizase pe escaladarile irosite la solebox si watchshop
+(cate 3 cereri fiecare, toate 403), asa ca PDP-ul lego n-a mai apucat o cerere curl.
+
+Re-masurat explicit inainte de intrare: **200 pe profilul de productie, fara
+challenge**, ld+json `Product`, `899,99 RON`, fara override. Deci `jsonld`.
+
+E a doua oara cand tiparul asta apare, dupa forit.ro (G4-V0b). Regula, acum
+generalizata: **verdictul de metoda se da pe cea mai IEFTINA cale care functioneaza,
+nu pe calea pe care s-a nimerit sa fie masurat domeniul.** Cand o tinta iese viabila
+prin browser, se verifica INTOTDEAUNA si HTTP-ul inainte de a o pune pe harness.
+
+### cardmarket.com — marketplace, si o decizie de semantica
+
+Nu e magazin: o carte n-are „un pret", are un tabel de oferte de la vanzatori
+diferiti. Masurat pe un PDP: **50 de randuri `.article-row`** (`id="articleRow<N>"`),
+fiecare cu pretul in `.price-container` in format `2,98 €`, intre **2,98 € si 4,50 €**.
+
+**Decizia lui David: cel mai mic pret public.** E a patra aplicare a conventiei
+minimului din catalog — dupa `lowPrice`, variantele G2F-4 si listele de oferte
+FASHION-1 — si singura care face „reducere" sa insemne ceva, fiindca e analogul
+pretului de raft.
+
+Implementarea ia `min()`, **nu primul rand**, desi pagina masurata venea deja sortata
+crescator: minimul nu trebuie sa depinda de o sortare pe care magazinul o poate
+schimba oricand. Garda de test inverseaza randurile fixture-ului si cere acelasi
+rezultat.
+
+**Zero date structurate** — nici ld+json, nici microdata, nici `itemprop=price` — deci
+genericul ridica `no_product_data` (pinuit de test) si nu exista rezerva pe el.
+
+**ACCESUL: challenge pe RUTA, nu pe profil.** `/en/Magic` trece pe un profil al
+lantului (masurat la G3-1), dar `/Products/*` da 403 pe TOATE profilurile, inclusiv pe
+acela. In Chrome real, ruta de produs trece si serveste 284KB de continut real.
+Intrarea de registru e `method: "browser"` desi extractorul custom are prioritate in
+`extract_product`: campul nu alege calea aici, dar E lista de destinatii pe care
+harness-ul are voie sa navigheze, si fara el `_verifica_destinatia` refuza URL-ul.
+
+**De consemnat pentru axa D:** livrarea e **per vanzator** (fiecare rand e alt
+vanzator, cu costul lui), deci „pretul final" nu e derivabil din pagina de produs.
+Orice comparatie serioasa pe cardmarket trebuie sa trateze asta.
+
+### watchshop.ro — Val 3, si un bug de productie gasit pe drum
+
+Challenge Cloudflare **nerezolvat nici in browser**: dupa 36,5s de poll, pagina ramane
+27.584 octeti, **2 ancore**, 351 de caractere de text vizibil, cu titlul **„Doar un
+moment..."**. Lichidarile 60-75% (valoarea declarata a domeniului) raman NEMASURATE —
+n-am ajuns niciodata la continut.
+
+Pe drum s-a gasit insa un bug real in productie: **`browser_fetch._MARKERE_BLOCARE`
+e integral EN/DE** (`"just a moment"`, `"checking your browser"`, `"attention
+required"`, `"access denied"`, `"zugriff verweigert"`, `"captcha"`, `"verifying you
+are human"`). Challenge-ul ROMANESC „Doar un moment" NU e prins, deci
+`_detecteaza_blocare` nu-l vede: harness-ul raporteaza `RANDAT_NEVALIDAT` in loc de
+`BrowserFetchBlocked`, dupa ce a ars plafonul intreg de poll. Pe orice magazin RO cu
+challenge, productia clasifica gresit motivul si pierde 20s. Fixul e o linie, dar e in
+afara whitelist-ului acestei runde — runda proprie.
+
+### footlocker.ro — Val 3, randare pe client
+
+Home-ul raspunde **200 pe HTTP** dar poarta **ZERO linkuri de produs**; randat, da
+167.549 octeti cu 8 carduri, `ld=[]` si un singur pret vizibil (`199.99 LEI`). Nu e
+blocat — pur si simplu nu serveste produse server-side. PDP-ul n-a fost masurat, deci
+domeniul ramane NEDETERMINAT, nu „neviabil": ~2 incarcari ar inchide intrebarea.
+
+### Durate de browser masurate (calibrare)
+
+Aceeasi bimodalitate ca la G4-V0, confirmata pe alt lot: **succes 1,79-5,19s**
+(cardmarket listare 1,79s; lego PDP 4,93s; solebox home 5,19s), **esec 35,8-37,2s**
+(cardmarket PDP pe validator de produs 35,82s; watchshop 36,54s; footlocker 37,16s).
+Esecul e dominat de plafonul de poll (20s) plus cautarea de selectori de refuz
+cookie-uri (7 selectori x 2s).
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in

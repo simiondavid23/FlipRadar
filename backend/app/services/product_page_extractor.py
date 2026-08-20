@@ -1951,8 +1951,116 @@ def _extract_cellini(url: str) -> dict:
     }
 
 
+# ── G4-V2b: cardmarket.com — MARKETPLACE, nu magazin ─────────────────────────
+
+# „2,98 €" / „1.234,56 €" — mie cu punct, zecimale cu virgula. Formatul e cel
+# masurat pe toate cele 50 de randuri ale PDP-ului dumpuit; un `_parse_price_any`
+# generic ar merge si el, dar aici vrem STRICT: orice alt format inseamna ca pagina
+# s-a schimbat, si atunci e mai bine sa cada zgomotos decat sa ghiceasca.
+_RE_CARDMARKET_PRET = re.compile(r"(\d{1,3}(?:\.\d{3})*),(\d{2})\s*€")
+
+
+def _cardmarket_oferte(html: str) -> list[float]:
+    """Preturile TUTUROR ofertelor de pe pagina, in EUR. PURA: fara retea.
+
+    Fiecare oferta e un `.article-row` (masurat: 50 pe PDP-ul dumpuit, cu
+    `id="articleRow<N>"`), iar pretul ei sta in `.price-container`. Se sar randurile
+    fara pret parsabil — un rand corupt nu invalideaza restul listei, aceeasi regula
+    ca la listele de oferte din FASHION-1.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    preturi = []
+    for rand in soup.select(".article-row"):
+        container = rand.select_one(".price-container")
+        if container is None:
+            continue
+        potrivire = _RE_CARDMARKET_PRET.search(container.get_text(" ", strip=True))
+        if potrivire is None:
+            continue
+        valoare = float(potrivire.group(1).replace(".", "") + "." + potrivire.group(2))
+        if valoare > 0:
+            preturi.append(valoare)
+    return preturi
+
+
+def _extract_cardmarket(url: str) -> dict:
+    """cardmarket.com — pretul e MINIMUL ofertelor publice (G4-V2b).
+
+    Cardmarket nu e magazin, e marketplace: o carte n-are „un pret", are un tabel de
+    oferte de la vanzatori diferiti. Sonda G4-V2 a masurat 50 de randuri pe un singur
+    PDP, intre 2,98 € si 4,50 €. Conventia aleasa de David e MINIMUL public — a patra
+    aplicare a conventiei minimului din catalog (dupa `lowPrice`, variantele G2F-4 si
+    listele de oferte FASHION-1), si singura care face „reducere" sa insemne ceva:
+    e analogul pretului de raft.
+
+    Se ia `min()`, NU primul rand, desi pagina masurata era deja sortata crescator:
+    minimul nu depinde de o sortare pe care magazinul o poate schimba oricand.
+
+    ACCESUL cere browser. Pe HTTP, ruta de produs da 403 pe toate profilurile
+    lantului — inclusiv pe cel care trece home-ul (masurat la G3-1 si re-confirmat la
+    G4-V2) — deci fetch-ul merge prin harness-ul BR-1, nu prin poarta HTTP. De aceea
+    intrarea de registru e `method: "browser"`: campul nu alege calea aici (custom are
+    prioritate in `extract_product`), dar E lista de destinatii pe care harness-ul are
+    voie sa navigheze, si fara el `_verifica_destinatia` ar refuza URL-ul.
+
+    Datele NU sunt structurate deloc: zero ld+json, zero microdata, zero
+    `itemprop=price` pe PDP-ul randat (masurat) — de aceea genericul nu poate fi
+    folosit nici macar ca rezerva, si de aceea exista extractorul asta.
+    """
+    from app.services import browser_fetch as bf
+
+    def _valideaza(text):
+        if not _cardmarket_oferte(text):
+            raise ProductExtractionError(
+                "no_product_data", "inca niciun rand de oferta randat")
+
+    try:
+        html = bf.fetch_browser_html(url, "cardmarket.com", _valideaza)
+    except bf.BrowserFetchBlocked as exc:
+        raise ProductExtractionError("challenge", str(exc)[:200]) from exc
+    except (bf.BrowserFetchTooSoon, bf.BrowserFetchUnavailable) as exc:
+        raise ProductExtractionError("fetch_failed", str(exc)[:200]) from exc
+
+    preturi = _cardmarket_oferte(html)
+    if not preturi:
+        # Zero oferte nu e o eroare de parsare, e o stare reala a marketplace-ului:
+        # cartea exista, dar nu o vinde nimeni. `no_product_data` e onest — nu se
+        # inventeaza un pret si nu se raporteaza `in_stock: False` pe un produs
+        # despre care pagina nu spune nimic cotabil.
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Pagina cardmarket fara nicio oferta cotata: {(url or '')[:120]}")
+
+    soup = BeautifulSoup(html, "html.parser")
+    titlu = soup.find("h1")
+    name = _clean_text(titlu.get_text(" ", strip=True)) if titlu else None
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina cardmarket fara <h1>: {(url or '')[:120]}")
+
+    return {
+        "name": name,
+        "price": min(preturi),
+        # Moneda se AFIRMA pe masuratoare: `€` e singurul simbol gasit in cele 50 de
+        # randuri. Daca regexul strict de mai sus nu mai potriveste (alta moneda),
+        # `preturi` iese gol si functia cade inainte de a ajunge aici.
+        "currency": "EUR",
+        # Exista cel putin o oferta cotata, deci cartea e cumparabila. Forma negativa
+        # (pagina fara oferte) e tratata mai sus si NU raporteaza stoc fals.
+        "in_stock": True,
+        "is_aggregate": False,
+        "variants": None,
+        "image_url": _meta(soup, "og:image"),
+        "canonical_url": urllib.parse.urldefrag(url or "")[0] or (url or ""),
+        "domain": _domain_of(url),
+        "method": "cardmarket_oferte",
+        "override_applied": False,
+    }
+
+
 CUSTOM_EXTRACTORS: dict[str, callable] = {
     "asos.com": _extract_asos,
+    "cardmarket.com": _extract_cardmarket,
     "elefant.ro": _extract_elefant,
     "powerup.ro": _extract_powerup,
     "intersport.ro": _extract_intersport,

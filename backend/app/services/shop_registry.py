@@ -1501,6 +1501,111 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "lei`), iar `500 lei` / `200 lei` sunt praguri de livrare — ld+json "
                  "le ocoleste pe toate.",
     },
+
+    # ── G4-V2b — reziduul Valului 2 ───────────────────────────────────────────
+    # Sonda G4-V2 a masurat sase tinte cu anti-bot cunoscut sau prezumat. Intra
+    # TREI. watchshop.ro ramane BLOCAT (challenge Cloudflare nerezolvat nici in
+    # browser) si footlocker.ro NEDETERMINAT (randare pe client, PDP nemasurat) —
+    # amandoua documentate in docs pentru Valul 3.
+    #
+    # solebox.com si snipes.com sunt ACELASI MAGAZIN TEHNIC: pagina solebox isi
+    # incarca asset-urile de pe `api.snipes.com` / `asset.snipes.com`, ambele
+    # domenii impart prefixul distinctiv de clase `hydra-` si acelasi tipar de PDP
+    # `/<locale>/p/<slug>`. Dar identitatea de platforma NU implica identitate de
+    # acces: snipes trece pe HTTP din prima, solebox da 403 pe toate cele trei
+    # profiluri ale lantului si cere browser. Anti-botul e configurat per domeniu.
+    "snipes.com": {
+        "label": "SNIPES",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "unconfirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G4-V2b; cea mai ieftina tinta din val — 200 din PRIMA cerere pe "
+                 "profilul de productie, fara escaladare. PDP `/<locale>/p/<slug>` cu "
+                 "ld+json [WebSite, Organization, Product]; genericul extrage fara "
+                 "override (masurat 74,99 EUR). Acelasi magazin tehnic ca "
+                 "solebox.com — vezi nota de acolo — dar aici anti-botul nu cere "
+                 "browser, deci NU se pune pe harness: ar fi un Chromium per pagina "
+                 "degeaba. Locala masurata `/de-de/`, moneda EUR. LIVRAREA IN RO nu "
+                 "s-a masurat (zero semnale in corp): `unconfirmed` pana la verdictul "
+                 "de checkout al lui David.",
+    },
+    "solebox.com": {
+        "label": "solebox",
+        "category": "sneakers",
+        "country": "DE",
+        "delivery": "unconfirmed",
+        "method": "browser",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4-V2b; ruleaza pe INFRASTRUCTURA SNIPES — pagina isi incarca "
+                 "asset-urile de pe `api.snipes.com` si `asset.snipes.com`, prefixul "
+                 "de clase `hydra-` e comun, iar tiparul de PDP e identic "
+                 "`/<locale>/p/<slug>`. Cu toate astea intra pe BROWSER, nu pe "
+                 "jsonld ca snipes: pe HTTP da 403 cu „just a moment\" pe TOATE cele "
+                 "trei profiluri ale lantului, in timp ce snipes trece din prima. "
+                 "Lectia: identitatea de platforma nu se transfera la stratul de "
+                 "acces. In Chrome real challenge-ul se rezolva TACIT — home 1,07MB "
+                 "in 5,19s, cu 108 carduri cu pret. PDP-ul randat poarta ld+json "
+                 "[WebSite, Organization, Product, BreadcrumbList] si genericul "
+                 "extrage fara override (masurat 118,99 EUR). Locala masurata "
+                 "`/en-eu/`, moneda EUR. LIVRAREA IN RO nu s-a masurat: "
+                 "`unconfirmed`. headless NEMASURAT. Daca vreodata anti-botul lui "
+                 "solebox se relaxeaza la nivelul lui snipes, domeniul poate cobori "
+                 "ieftin pe `jsonld` — structura de date e deja aceeasi.",
+    },
+    "lego.com": {
+        "label": "LEGO",
+        "category": "jucarii",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G4-V2b; vitrina romaneasca `/ro-ro`, preturi in RON. PDP "
+                 "`/ro-ro/product/<slug>-<cod>` cu ld+json [Organization, WebPage, "
+                 "Product, BreadcrumbList]; genericul extrage fara override (masurat "
+                 "899,99 RON). ATENTIE la istoricul deciziei: sonda G4-V2 l-a masurat "
+                 "prin BROWSER si iesise viabil acolo, dar numai fiindca plafonul HTTP "
+                 "se epuizase pe escaladarile irosite la solebox si watchshop. "
+                 "Re-masurat explicit pe HTTP inainte de intrare: 200 pe profilul de "
+                 "productie, fara challenge — deci `jsonld`, nu `browser` (aceeasi "
+                 "lectie ca la forit.ro: „viabil prin browser\" nu inseamna „are "
+                 "nevoie de browser\"). CAPCANA la orice citire pe text: pagina "
+                 "poarta pragurile de livrare `100 lei` / `300 lei` / `500 lei` / "
+                 "`1000 lei` alaturi de pretul real — ld+json le ocoleste.",
+    },
+    "cardmarket.com": {
+        "label": "Cardmarket",
+        "category": "tcg",
+        "country": "DE",
+        "delivery": "unconfirmed",
+        "method": "browser",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4-V2b; MARKETPLACE, nu magazin — extractor dedicat "
+                 "`cardmarket_oferte`. Pretul e MINIMUL ofertelor publice, decizia lui "
+                 "David: a patra aplicare a conventiei minimului din catalog (dupa "
+                 "lowPrice, variantele G2F-4 si listele de oferte FASHION-1). PDP-ul "
+                 "randat are 50 de randuri `.article-row` (`id=\"articleRow<N>\"`), "
+                 "fiecare cu pretul in `.price-container`, format `2,98 €` — masurat "
+                 "2,98..4,50 € pe un singur produs. Se ia `min()`, NU primul rand: "
+                 "pagina masurata era deja sortata crescator, dar minimul nu trebuie "
+                 "sa depinda de o sortare pe care magazinul o poate schimba. ZERO date "
+                 "structurate — nici ld+json, nici microdata, nici itemprop=price — "
+                 "deci genericul ridica `no_product_data` (pinuit de test), si nu "
+                 "exista rezerva pe el. `method: \"browser\"` NU alege calea aici "
+                 "(extractorul custom are prioritate in `extract_product`), dar E "
+                 "lista de destinatii pe care harness-ul are voie sa navigheze — fara "
+                 "el `_verifica_destinatia` ar refuza URL-ul. ACCESUL: challenge pe "
+                 "RUTA, nu pe profil — `/en/Magic` trece pe un profil al lantului "
+                 "(masurat la G3-1), dar `/Products/*` da 403 pe TOATE profilurile, "
+                 "inclusiv pe acela; in Chrome real ruta de produs trece si da 284KB "
+                 "de continut real. DE CONSEMNAT pentru axa D: livrarea e PER "
+                 "VANZATOR (fiecare rand e alt vanzator, cu costul lui), deci „pretul "
+                 "final\" nu e derivabil din pagina de produs. LIVRARE IN RO "
+                 "nemasurata: `unconfirmed`. headless NEMASURAT.",
+    },
 }
 
 

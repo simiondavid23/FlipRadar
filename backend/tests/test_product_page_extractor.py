@@ -2722,3 +2722,160 @@ def test_cellini_canonicul_e_al_produsului_nu_al_categoriei(fetch_mock):
     assert a["canonical_url"] != b["canonical_url"]
     for c in (a["canonical_url"], b["canonical_url"]):
         assert c.rstrip("/") != "https://www.cellini.ro/bijuterii"
+
+
+# ── G4-V2b: cardmarket.com — marketplace, minimul ofertelor (`cardmarket_oferte`) ─
+
+_CARDMARKET_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "cardmarket")
+
+# URL real, din meta-ul dump-ului sondei G4-V2 (treapta 2, incarcarea de browser).
+CARDMARKET_URL = ("https://www.cardmarket.com/en/Magic/Products/Singles/"
+                  "The-Hobbit/Wizards-Staff")
+
+
+def _cardmarket_fixture(nume: str = "pdp_wizards_staff.html") -> str:
+    with open(os.path.join(_CARDMARKET_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture
+def browser_mock(monkeypatch):
+    """Inlocuieste harness-ul de browser cu un HTML fix si numara apelurile.
+
+    Se maimutareste `fetch_browser_html` pe modulul `browser_fetch`, nu pe extractor:
+    acolo il cauta `_extract_cardmarket` (import LENES, in corpul functiei), deci un
+    patch pe extractor n-ar fi vazut.
+    """
+    from app.services import browser_fetch
+
+    def _install(html):
+        state = {"calls": 0, "domenii": [], "validari": 0}
+
+        def _fake(url, domain, valideaza=None):
+            state["calls"] += 1
+            state["domenii"].append(domain)
+            if valideaza is not None:
+                valideaza(html)          # exact ca harness-ul real: valideaza intai
+                state["validari"] += 1
+            return html
+
+        monkeypatch.setattr(browser_fetch, "fetch_browser_html", _fake)
+        return state
+
+    return _install
+
+
+def test_cardmarket_ia_MINIMUL_ofertelor_publice(browser_mock):
+    """Conventia minimului, a patra aplicare din catalog.
+
+    Fixture-ul poarta 20 de randuri de oferta cu 10 preturi distincte; rezultatul
+    trebuie sa fie cel mai mic dintre ele, nu primul intalnit si nu o medie.
+    """
+    state = browser_mock(_cardmarket_fixture())
+
+    data = ppe.extract_product(CARDMARKET_URL)
+
+    assert data["price"] == 2.98
+    assert data["currency"] == "EUR"
+    assert data["method"] == "cardmarket_oferte"
+    assert data["in_stock"] is True
+    assert data["override_applied"] is False
+    assert data["is_aggregate"] is False
+    assert data["variants"] is None
+    assert data["name"] == "Wizard's Staff The Hobbit - Singles"
+    assert state["calls"] == 1, "un singur fetch"
+    assert state["domenii"] == ["cardmarket.com"], \
+        "harness-ul primeste domeniul de registru, nu gazda URL-ului"
+    assert state["validari"] == 1, "validatorul de continut chiar se aplica"
+
+
+def test_cardmarket_minimul_NU_e_pozitia_din_pagina(browser_mock):
+    """GARDA de semantica: `min()`, nu „primul rand".
+
+    Pagina reala vine sortata crescator, deci primul rand ESTE minimul — o
+    implementare „ia primul" ar trece testul de mai sus fara sa fie corecta. Aici
+    randurile se INVERSEAZA, si rezultatul trebuie sa ramana acelasi. Inversarea e
+    facuta pe fixture-ul real, in memorie: nu se inventeaza preturi.
+    """
+    html = _cardmarket_fixture()
+    soup = ppe.BeautifulSoup(html, "html.parser")
+    randuri = soup.select(".article-row")
+    parinte = randuri[0].parent
+    for rand in reversed(randuri):
+        parinte.append(rand.extract())
+    inversat = str(soup)
+
+    # Controlul inversarii: primul rand chiar NU mai e cel mai ieftin.
+    preturi_inversate = ppe._cardmarket_oferte(inversat)
+    assert preturi_inversate[0] != min(preturi_inversate), \
+        "inversarea n-a schimbat ordinea — garda ar fi tacut inutila"
+
+    state = browser_mock(inversat)
+    data = ppe.extract_product(CARDMARKET_URL)
+
+    assert data["price"] == 2.98
+    assert state["calls"] == 1
+
+
+def test_cardmarket_genericul_NU_poate_pagina_asta():
+    """Pinuieste MOTIVUL pentru care exista extractorul dedicat.
+
+    Daca cineva „repara" candva genericul si el incepe sa scoata un pret de aici,
+    testul cade si obliga la o decizie constienta — in loc sa lase doua cai care pot
+    da raspunsuri diferite pe acelasi domeniu.
+    """
+    with pytest.raises(ppe.ProductExtractionError) as exc:
+        ppe.parse_product_html(_cardmarket_fixture(), CARDMARKET_URL)
+
+    assert exc.value.reason == "no_product_data"
+
+
+def test_cardmarket_patologia_e_CHIAR_in_fixture():
+    """Fixture-ul poarta patologia masurata — altfel garzile de mai sus nu dovedesc nimic.
+
+    Lectia G2F-2: un fixture „curatat" poate face un test-garda sa treaca degeaba.
+    Aici se verifica explicit ca pagina are multe oferte, cu preturi DIFERITE, si zero
+    date structurate.
+    """
+    html = _cardmarket_fixture()
+    soup = ppe.BeautifulSoup(html, "html.parser")
+
+    preturi = ppe._cardmarket_oferte(html)
+    assert len(preturi) >= 15, "prea putine oferte ca selectia minimului sa fie reala"
+    assert len(set(preturi)) >= 5, "preturi prea uniforme ca minimul sa insemne ceva"
+    assert min(preturi) < max(preturi)
+
+    assert soup.find_all("script", type="application/ld+json") == []
+    assert soup.select('[itemtype*="schema.org/Product"]') == []
+    assert soup.select("[itemprop=price]") == []
+
+
+def test_cardmarket_fara_oferte_cade_ONEST(browser_mock):
+    """Zero oferte NU e pret zero si nu e `in_stock: False`.
+
+    O carte fara nicio oferta exista, dar n-o vinde nimeni — pagina nu spune nimic
+    cotabil, deci extractorul cade cu `no_product_data` in loc sa inventeze.
+    """
+    html = _cardmarket_fixture()
+    soup = ppe.BeautifulSoup(html, "html.parser")
+    for rand in soup.select(".article-row"):
+        rand.decompose()
+    browser_mock(str(soup))
+
+    with pytest.raises(ppe.ProductExtractionError) as exc:
+        ppe.extract_product(CARDMARKET_URL)
+
+    assert exc.value.reason == "no_product_data"
+
+
+def test_cardmarket_e_in_lista_de_destinatii_a_harnessului():
+    """`method: "browser"` in registru nu e decorativ pe un domeniu custom.
+
+    Extractorul custom are prioritate in `extract_product`, deci campul nu alege
+    calea — dar `browser_fetch._verifica_destinatia` refuza sa navigheze pe orice
+    domeniu care nu e in `browser_domains()`. Fara intrarea de registru, extractorul
+    ar cadea cu `fetch_failed` pe fiecare apel.
+    """
+    from app.services.shop_registry import browser_domains
+
+    assert "cardmarket.com" in browser_domains()
