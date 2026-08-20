@@ -2528,6 +2528,110 @@ pe ce se sprijini.
 
 ---
 
+## WL-1/WL-4/WL-3 — watchlist-ul conditionat: 6 sondate, 1 intrat
+
+Watchlist-ul a fost sondat la WL-1 (2026-08-20) si implementat abia la WL-3
+(2026-08-21), dupa o sonda CORECTIVA (WL-4) care a rasturnat unul dintre verdictele
+initiale. Traseul merita consemnat, fiindca lectia e despre metoda.
+
+| domeniu | verdict | metoda |
+|---|---|---|
+| istyle.ro | **intrat** | jsonld |
+| forit.ro | **intrat** (la G4-V0b) | jsonld |
+| quickmobile.ro | **NEINTRAT** — 503 persistent | — |
+| skinmobile.ro | **NEINTRAT** — domeniul nu exista | — |
+| sneakerindustry.ro | **INCHIS** la 2026-08-20 | — |
+| toychamp.nl | **ELIMINAT** | — |
+
+### Lectia WL-4: un verdict de sonda descrie PAGINILE masurate, nu magazinul
+
+WL-1 a dat lui istyle.ro verdictul „custom pe stare structurata". Pe baza lui, trei
+runde succesive (WL-2, WL-2r, WL-3 in forma initiala) au incercat sa scrie
+`method: "jsonld"` si au fost oprite de clauza de coerenta — corect, fiindca
+dump-urile chiar contraziceau promptul.
+
+Verdictul era insa GRESIT, si abia sonda corectiva l-a aratat: **WL-1 nu masurase
+niciodata un PDP istyle**. Euristica ei de carduri alesese trei pagini `/pages/*` —
+„Back to School 2026", „Modele Mac", „Modele Apple Watch" — care pe Shopify sunt
+pagini CMS si n-au ld+json de produs. In dump-urile ei existau, netinse, **52 de
+linkuri `/products/` distincte**.
+
+Doua reguli de retinut:
+
+* **„Masurarea gresita e prima ipoteza" se aplica si verdictelor VECHI**, nu doar
+  masuratorii curente. Un verdict din banca nu e mai adevarat fiindca e scris.
+* Clauza de coerenta si-a facut treaba de trei ori: a oprit scrierea unei afirmatii
+  pe care dovada n-o sustinea. Solutia n-a fost sa fie slabita, ci sa fie masurata
+  cauza. Cand promptul si dump-urile se bat cap in cap, uneori promptul are dreptate
+  — dar asta se DEMONSTREAZA cu o masuratoare noua, nu se presupune.
+
+### istyle.ro — `method: jsonld`, categoria `electronice` (FACUT)
+
+PDP-urile reale sunt `/products/<handle>` si poarta `Product` + `ProductGroup`;
+genericul extrage **fara override**, masurat 2/2: resigilat 4.699,99 RON, normal
+4.999,99 RON, ambele `priceCurrency: RON`.
+
+Magazin Shopify, dar intrat pe **ld+json, NU pe fluxul `shopify`**: enumerarea
+(`/products.json`, `/cart.js`) nu s-a masurat, deci nu se afirma.
+
+`Offer` NU are `availability` — cheile masurate sunt `[@type, itemCondition, price,
+priceCurrency, priceValidUntil, shippingDetails, url]` — deci `in_stock` iese `None`,
+si e ONEST (acelasi tipar ca biciclop.eu).
+
+**Sectiunea de RESIGILATE, si de ce WL-1 n-a gasit-o.** Nota ei spunea „RESIGILATE:
+niciun link in home — cad pe reduceri". Corect ca observatie despre `<a href>`,
+gresit ca verdict: produsele resigilate stau in **STAREA Shopify** a home-ului, ca
+handle-uri `resigilat-<slug>`, unele purtand chiar starea in handle
+(`stare-bun-63-23feb`, `stare-perfect-66-23feb`). PDP-ul de resigilat e deci adresabil
+ca `/products/resigilat-...`, iar numele lui prefixeaza „Resigilat: ".
+
+**Semantica starii:** `itemCondition` e `NewCondition` CHIAR SI pe resigilate — al
+treilea magazin din catalog cu acest tipar, dupa forit.ro si eMAG. Concluzia se
+generalizeaza: **`itemCondition` nu e un semnal utilizabil pentru resigilate in
+magazinele romanesti.** Starea reala se citeste din nume/handle. Pe axa L se ignora
+(decizia resigilate), pe axa D se consemneaza.
+
+Fara Omnibus si fara taiat semantic (zero `<del>/<s>/<strike>`). Capcane la orice
+citire pe text: pretul apare si concatenat cu gtin-ul (`195950609745 4 699,99 lei`),
+iar `500 lei` / `200 lei` sunt praguri de livrare — ld+json le ocoleste pe toate.
+
+### quickmobile.ro — NEINTRAT, 503 persistent
+
+Home-ul da **503 pe toate profilele** la WL-1 si **503 din nou** la re-masuratoarea
+WL-4, o zi mai tarziu. Nu e tranzitoriu si nu e challenge (`challenge=None`, deci nu
+e nici anti-bot). Domeniul rezolva in DNS (`138.201.252.227`), deci exista — dar
+serverul nu serveste. De re-verificat DOAR daca cineva confirma ca magazinul a
+revenit.
+
+### skinmobile.ro — NEINTRAT, domeniul nu exista
+
+`Non-existent domain`, verificat de doua ori (apex si `www`), la o zi distanta.
+Nu e o chestiune de anti-bot si nu e re-verificabil util. **De scos din watchlist.**
+
+### sneakerindustry.ro — INCHIS la 2026-08-20
+
+`products.json` da 403 pe toate cele trei profiluri ale lantului. Enumerarea Shopify
+ramane **inchisa**; domeniul nu intra pe fluxul Grupului 1. Se re-verifica doar la o
+runda de watchlist viitoare, nu ad-hoc.
+
+### toychamp.nl — ELIMINAT
+
+403 pe toate profilele, cu marker `enable javascript and cookies`. Tehnicul ar fi
+masurabil printr-un val de browser, dar **intrarea era oricum conditionata de
+verdictul de livrare RO la checkout, care e al lui David** — si nu s-a dat. Iese din
+watchlist; se re-deschide doar daca David confirma livrarea.
+
+### Post-scriptum la post-mortem-ul WL-2
+
+Lucrarea watchlist-ului a fost implementata efectiv abia in **WL-3** (2026-08-21),
+dupa doua runde raportate dar necomise (WL-2) si o runda oprita pe dovezi (WL-2r).
+Cauza reala n-a fost pierderea de fisiere — verificat si infirmat la G4-V0b — ci
+faptul ca **lucrarea nu putea fi facuta corect pe masuratoarea existenta**. Trei
+opriri succesive au fost simptomul, nu boala; boala a fost un PDP nemasurat, si s-a
+vindecat cu trei cereri.
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in

@@ -201,6 +201,7 @@ def test_validated_domains_santinela():
         "bb-shop.ro",                                 # G4-V0b
         "conrad.com",                                 # G4-V0b
         "forit.ro",                                   # G4-V0b
+        "istyle.ro",                                  # WL-3
     }
 
 

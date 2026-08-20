@@ -1463,6 +1463,44 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "citire pe text: `21.99 Lei` (Curier Romania) si `300 lei` (pragul de "
                  "livrare gratuita) — ld+json le ocoleste. PDP `/<slug>-bp<id>`.",
     },
+
+    # ── WL-3 — watchlist-ul conditionat, dupa sonda corectiva WL-4 ────────────
+    # Din cele trei domenii de watchlist a intrat UNUL. quickmobile.ro raspunde
+    # 503 pe home si la WL-1, si la re-masuratoarea WL-4 (nu era tranzitoriu), iar
+    # skinmobile.ro nu se rezolva in DNS (`Non-existent domain`, verificat pe apex
+    # si pe www) — niciunul nu poate fi validat.
+    "istyle.ro": {
+        "label": "iSTYLE",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "WL-3, masurat la WL-4. ATENTIE la istoric: sonda WL-1 daduse "
+                 "verdictul „custom pe stare structurata\", si era GRESIT — masurase "
+                 "trei pagini `/pages/*` („Back to School\", „Modele Mac\", „Modele "
+                 "Apple Watch\"), care pe Shopify sunt pagini CMS si n-au ld+json de "
+                 "produs. PDP-urile reale sunt `/products/<handle>` si poarta "
+                 "`Product` + `ProductGroup`; genericul extrage FARA override, "
+                 "masurat 2/2 (resigilat 4.699,99 RON, normal 4.999,99 RON). "
+                 "Shopify, dar NU pe fluxul `shopify`: enumerarea nu s-a masurat, "
+                 "deci ramane pe ld+json. `Offer` NU are `availability` — cheile "
+                 "masurate sunt [@type, itemCondition, price, priceCurrency, "
+                 "priceValidUntil, shippingDetails, url] — deci `in_stock` iese None, "
+                 "si e ONEST (ca la biciclop.eu). Valoarea declarata e sectiunea de "
+                 "RESIGILATE: produsele resigilate NU sunt linkuri in home, stau in "
+                 "STAREA Shopify ca handle-uri `resigilat-<slug>`, unele purtand "
+                 "starea in handle (`stare-bun-63-23feb`, `stare-perfect-66-23feb`) — "
+                 "de aceea WL-1 a raportat „niciun link in home\". Numele PDP-ului "
+                 "prefixeaza „Resigilat: \". SEMANTICA STARII: `itemCondition` e "
+                 "`NewCondition` CHIAR SI pe resigilate — nefolosibil ca semnal; pe "
+                 "axa L se ignora (decizia resigilate), pe axa D se citeste din "
+                 "handle/nume. Fara Omnibus si fara taiat semantic (zero "
+                 "<del>/<s>/<strike>). CAPCANA la orice citire pe text: pretul "
+                 "vizibil apare si concatenat cu gtin-ul (`195950609745 4 699,99 "
+                 "lei`), iar `500 lei` / `200 lei` sunt praguri de livrare — ld+json "
+                 "le ocoleste pe toate.",
+    },
 }
 
 
