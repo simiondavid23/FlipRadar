@@ -1758,11 +1758,205 @@ def _extract_intersport(url: str) -> dict:
     }
 
 
+def _obiect_json_incadrator(text: str, poz: int) -> str | None:
+    """Obiectul JSON complet care CONTINE pozitia `poz`, prin potrivire de acolade.
+
+    Starea cellini nu e un `<script type="application/json">` pe care sa-l putem
+    incarca intreg: e cod JS cu obiecte inserate. Se decupeaza deci obiectul din
+    jurul unei potriviri si se parseaza doar el.
+    """
+    i, adanc = poz, 0
+    while i >= 0:
+        c = text[i]
+        if c == "}":
+            adanc += 1
+        elif c == "{":
+            if adanc == 0:
+                break
+            adanc -= 1
+        i -= 1
+    if i < 0:
+        return None
+    j, adanc = poz, 0
+    n = len(text)
+    while j < n:
+        c = text[j]
+        if c == "{":
+            adanc += 1
+        elif c == "}":
+            if adanc == 0:
+                break
+            adanc -= 1
+        j += 1
+    if j >= n:
+        return None
+    return text[i:j + 1]
+
+
+def _cellini_obiect_propriu(html: str, url: str) -> dict | None:
+    """Obiectul de produs AL PAGINII din starea cellini, sau None.
+
+    De ce nu „primul obiect cu pret": pagina poarta 48 de obiecte cu `price` (48 pe
+    fiecare din cele doua PDP-uri masurate la G2F-7) — restul sunt carusele de
+    recomandari. Si de ce nu DOM-ul: textul vizibil are ~70 de preturi distincte,
+    dintre care 8 IDENTICE intre cele doua pagini de produse diferite; o extractie
+    pe text ar da, sistematic, pretul altui produs.
+
+    Legarea de pagina se face pe cheia `url` a obiectului, care poarta EXACT numele
+    de fisier al PDP-ului (masurat pe ambele dump-uri:
+    `cercei-...-au-yk18ce26286.html` si `colier-...-ad-yk18co26296.html`), si se
+    incruciseaza cu `code` (`AU_YK18CE26286` / `AD_YK18CO26296`). Pe ambele pagini
+    EXACT UNUL dintre cele 48 de obiecte poarta codul paginii — identificarea e
+    neambigua, nu o alegere din 48.
+    """
+    fisier = urllib.parse.urlparse(url or "").path.rsplit("/", 1)[-1]
+    if not fisier:
+        return None
+    gasite, vazute = [], set()
+    # `\/` apare cand starea e serializata cu slash-uri escapate; ambele forme se cauta.
+    for varianta in {fisier, fisier.replace("/", r"\/")}:
+        for m in re.finditer(re.escape(varianta), html or ""):
+            brut = _obiect_json_incadrator(html, m.start())
+            if not brut or len(brut) > 200_000:
+                continue
+            cheie = (brut[:80], len(brut))
+            if cheie in vazute:
+                continue
+            vazute.add(cheie)
+            try:
+                obiect = json.loads(brut)
+            except Exception:                                   # noqa: BLE001
+                continue
+            if not isinstance(obiect, dict) or "price" not in obiect:
+                continue
+            if str(obiect.get("url") or "").rsplit("/", 1)[-1] != fisier:
+                continue
+            gasite.append(obiect)
+    if not gasite:
+        return None
+    # Ambiguitatea nu se rezolva prin „ia-l pe primul": daca doua obiecte pretind
+    # aceeasi pagina cu preturi DIFERITE, nu stim care e produsul, deci nu ghicim.
+    preturi = {repr(o.get("price")) for o in gasite}
+    if len(preturi) > 1:
+        return None
+    return gasite[0]
+
+
+def _cellini_pret(obiect: dict):
+    """Pretul in lei din obiectul de stare, fara nicio parsare de text vizibil.
+
+    `price` e INTREGUL de lei (masurat: 6930 si 27990, int), iar banii stau separat
+    in `decimalprice` ("00" pe ambele masuratori), cu `beautifulprice` = "6.930,00"
+    ca forma afisata. Le combinam DELIBERAT: daca `price` ar fi luat singur, un
+    produs de 6930,50 lei ar fi raportat 6930 — o pierdere tacuta de bani, si exact
+    genul de eroare pe care n-o prinde niciun test scris pe preturi rotunde.
+    Combinatia e corecta si daca `price` s-ar dovedi cindva a purta deja zecimalele:
+    partea intreaga plus banii da acelasi numar.
+
+    Tipul e verificat STRICT: `price` trebuie sa fie int/float real (nu bool, nu
+    sir). Un sir ar insemna ca magazinul a schimbat forma starii, si atunci vrem sa
+    cada zgomotos, nu sa ghicim printr-un parser de text.
+    """
+    brut = obiect.get("price")
+    if isinstance(brut, bool) or not isinstance(brut, (int, float)):
+        return None
+    lei = int(brut)
+    bani = obiect.get("decimalprice")
+    if isinstance(bani, str) and re.fullmatch(r"\d{2}", bani.strip()):
+        return round(lei + int(bani) / 100.0, 2)
+    return float(brut)
+
+
+def _extract_cellini(url: str) -> dict:
+    """cellini.ro — datele de produs traiesc DOAR in starea paginii (G2F-7/G2F-8).
+
+    Masurat pe doua PDP-uri reale (sonda G2F-7, pasa de corectie): ld+json are doar
+    `Organization`, `WebSite` si `BreadcrumbList` — niciun `Product` —, microdata
+    lipseste, iar genericul ridica `no_product_data` (pinuit de test). Tot ce
+    descrie produsul sta in obiectele de stare ale paginii: `price`, `oldprice`,
+    `vat`, `stock`, `code`, `url`.
+
+    UN singur fetch, prin poarta guarded C-14.
+    """
+    html = _fetch_text_guarded(url)
+    obiect = _cellini_obiect_propriu(html, url)
+    if obiect is None:
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Pagina cellini fara obiect de produs propriu in stare: "
+            f"{(url or '')[:120]}")
+
+    # NUMELE sta in cheia `product`, nu in `name`: masurat pe ambele PDP-uri,
+    # `name` e None, iar `metatitle` si `subtitle` sunt siruri goale.
+    # NU exista rezerva pe DOM, si asta e deliberat: `<h1>`-ul paginii scrie
+    # „Bijuterii" — titlul CATEGORIEI, nu al produsului — deci o rezerva pe el ar
+    # produce un nume gresit-dar-plauzibil pe TOT magazinul (prins la verificarea
+    # live a G2F-8, unde exact asta s-a intamplat). Mai bine cade zgomotos.
+    name = (_clean_text(obiect.get("product"))
+            or _clean_text(obiect.get("name"))
+            or _clean_text(obiect.get("metatitle")))
+    price = _cellini_pret(obiect)
+
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Produs cellini fara nume: {(url or '')[:120]}")
+    if price is None:
+        raise ProductExtractionError(
+            "no_product_data",
+            f"Produs cellini fara `price` numeric in stare: {(url or '')[:120]}")
+    if price <= 0:
+        raise ProductExtractionError(
+            "invalid_price", f"Pret invalid ({price!r}) la '{name[:60]}'")
+
+    # MONEDA se CITESTE, nu se pune din cod: obiectul poarta `currencyname` ("Lei"
+    # pe ambele masuratori), plus `currencyid: "1"` si `ronvalue: "1.0000"`. Unde
+    # moneda e masurabila o citim, fiindca o constanta ar ascunde exact momentul in
+    # care magazinul ar incepe sa afiseze alta. `RON` ramane doar plasa de siguranta.
+    currency = _normalize_currency(obiect.get("currencyname")) or "RON"
+
+    # STOC: `stock` e un sir in limba romana — masurat „in stoc" pe AMBELE PDP-uri.
+    # Forma NEGATIVA n-a fost masurata (n-am intalnit niciun produs epuizat), deci
+    # afirmam DOAR pozitivul: orice altceva ramane None (necunoscut), niciodata
+    # False. A inventa un vocabular de epuizare nemasurat ar ascunde produse
+    # cumparabile — exact greseala pe care flagul de la vivre a corectat-o.
+    stoc_brut = obiect.get("stock")
+    in_stock = True if (isinstance(stoc_brut, str)
+                        and "in stoc" in stoc_brut.strip().lower()) else None
+
+    soup = BeautifulSoup(html, "html.parser")
+    # CANONICUL nu se ia din pagina, si nici din `obiect["canonical"]` (masurat gol
+    # pe ambele PDP-uri): `<link rel=canonical>` al paginii arata spre CATEGORIE
+    # (`/bijuterii`), identic pe produse diferite. Folosit ca atare, ar da tuturor
+    # produselor cellini aceeasi identitate — adica orice deduplicare pe canonic
+    # le-ar contopi intr-unul singur. Se reconstruieste din `obiect["url"]`, care e
+    # numele de fisier al PDP-ului, rezolvat fata de URL-ul cerut.
+    tinta = _clean_text(obiect.get("url"))
+    canonical = (urllib.parse.urljoin(url, tinta) if tinta
+                 else urllib.parse.urldefrag(url or "")[0] or (url or ""))
+    return {
+        "name": name,
+        "price": price,
+        "currency": currency,
+        "in_stock": in_stock,
+        "is_aggregate": False,
+        # `oldprice` ("9240.00" / "37320.00") si `save_percent` EXISTA in stare, dar
+        # NU intra in contractul de rezultat: referinta se documenteaza pentru axa D
+        # (listarea promo poarta price+oldprice per card) — vezi docs.
+        "variants": None,
+        "image_url": _meta(soup, "og:image"),
+        "canonical_url": canonical,
+        "domain": _domain_of(url),
+        "method": "cellini_datalayer",
+        "override_applied": False,
+    }
+
+
 CUSTOM_EXTRACTORS: dict[str, callable] = {
     "asos.com": _extract_asos,
     "elefant.ro": _extract_elefant,
     "powerup.ro": _extract_powerup,
     "intersport.ro": _extract_intersport,
+    "cellini.ro": _extract_cellini,
 }
 
 

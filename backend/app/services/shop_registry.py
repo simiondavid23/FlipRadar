@@ -939,6 +939,61 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "incrucisabila pe text: acceptata pe ld+json, 2/2 PDP-uri. "
                  "Listarea /products?discount=yes, 46.536 produse — val ULTERIOR.",
     },
+    "biciclop.eu": {
+        "label": "Biciclop",
+        "category": "biciclete",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G2F-7/G2F-8; WordPress + LiteSpeed. Cheia e FARA `www` — redirect "
+                 "MASURAT www.biciclop.eu -> biciclop.eu. ld+json `Product` cu "
+                 "`price` / `priceCurrency: RON`, incrucisat cu afisajul "
+                 "(`199,99 lei` / `189,99 lei`). ATENTIE, `Offer` n-are "
+                 "`availability` — cheile masurate sunt doar [@type, url, price, "
+                 "priceCurrency] — deci `in_stock` iese None, si e ONEST: magazinul "
+                 "chiar nu publica stoc, pagina spune „Contacteaza-ne pentru "
+                 "confirmare stoc\". Referinta taiata (`<del>257 lei</del>`) exista "
+                 "DOAR in DOM si e etichetata „Pret recomandat\" — adica RRP, NU "
+                 "Omnibus (minimul pe 30 de zile); a nu se confunda intr-un calcul "
+                 "de reducere. Ce vinde ONLINE sunt PIESE si accesorii: paginile "
+                 "`/biciclete*` sunt editoriale (`/biciclete/` e „catalog istoric\", "
+                 "`/biciclete-mtb/` e „informatii utile\"), iar categoria "
+                 "`/biciclete-mtb/` masurata are 1 card si zero produse. "
+                 "Componente partajate de footer, de ignorat: `200.200,00 RON` "
+                 "(capital social) si `400 lei` (pragul de livrare gratuita). "
+                 "PDP `/prod/<slug>/`.",
+    },
+    "cellini.ro": {
+        "label": "Cellini",
+        "category": "bijuterii-ceasuri",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "custom",
+        "status": "validated",
+        "notes": "G2F-7/G2F-8; PHP propriu (cookie `csCurrencyId`). Datele de produs "
+                 "exista EXCLUSIV in starea paginii — ld+json are doar "
+                 "`Organization`/`WebSite`/`BreadcrumbList`, microdata lipseste, iar "
+                 "genericul ridica `no_product_data` (pinuit de test). Extractor "
+                 "dedicat `cellini_datalayer`: obiectul de produs AL PAGINII se "
+                 "identifica pe cheia `url` (numele de fisier al PDP-ului) si se "
+                 "incruciseaza cu `code`. Identificarea NU e optionala: pagina are "
+                 "48 de obiecte cu `price` (carusele), iar DOM-ul e si mai rau — "
+                 "~70 de preturi vizibile, dintre care 8 IDENTICE intre doua PDP-uri "
+                 "diferite, deci o extractie pe text ar da sistematic pretul altui "
+                 "produs. Pretul: `price` e INTREGUL de lei, banii stau in "
+                 "`decimalprice` — se combina, ca sa nu se piarda tacut. Moneda se "
+                 "CITESTE din `currencyname` (\"Lei\"), cu `currencyid: \"1\"` si "
+                 "`ronvalue: \"1.0000\"` ca semnale suplimentare. Stocul: `stock` e "
+                 "sir romanesc, masurat „in stoc\" pe ambele PDP-uri; forma NEGATIVA "
+                 "e NEMASURATA, deci se afirma doar pozitivul, restul None. "
+                 "`oldprice` + `save_percent` exista in stare dar NU intra in "
+                 "contract — referinta ramane pentru axa D. PDP "
+                 "`/bijuterii/filtre/<slug>-<COD>.html` (200, fara redirect). "
+                 "Segment de lux: preturi masurate pana la 27.990 lei. Listarea "
+                 "promo are 539 de produse si 179 de carduri pe pagina, cu "
+                 "price+oldprice per card in stare — val ULTERIOR.",
+    },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",
         "category": "foto",

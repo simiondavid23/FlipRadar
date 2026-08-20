@@ -73,6 +73,8 @@ const CATEGORY_LABEL = {
   general: "General",
   bricolaj: "Bricolaj",
   pet: "Pet Shop",
+  biciclete: "Biciclete & piese",
+  "bijuterii-ceasuri": "Bijuterii & ceasuri",
 };
 
 const round1 = (n) => (n == null ? null : Math.round(n * 10) / 10);

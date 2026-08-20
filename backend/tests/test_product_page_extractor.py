@@ -2540,3 +2540,185 @@ def test_registrul_pune_flagul_doar_unde_e_dovedit():
     for domeniu in ("hornbach.ro", "bonami.ro", "action.com"):
         assert "ldjson_availability" not in SHOP_REGISTRY[domeniu], \
             f"{domeniu}: flagul s-a pus fara dovada"
+
+
+# ── G2F-8: cellini.ro — extractor pe starea paginii (`cellini_datalayer`) ─────
+
+_CELLINI_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "cellini")
+
+# URL-uri reale, din meta-urile dump-urilor sondei G2F-7 (pasa de corectie).
+CELLINI_URL_1 = ("https://www.cellini.ro/bijuterii/filtre/cercei-yoko-london-cu-"
+                 "perle-south-sea-din-aur-alb-de-18k-au-yk18ce26286.html")
+CELLINI_URL_2 = ("https://www.cellini.ro/bijuterii/filtre/colier-yoko-london-cu-"
+                 "perla-south-sea-si-diamante-din-aur-alb-de-18k-ad-yk18co26296.html")
+
+
+def _cellini_fixture(nume: str) -> str:
+    with open(os.path.join(_CELLINI_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("fisier,url,pret,cod", [
+    ("pdp_yk18ce26286.html", CELLINI_URL_1, 6930.0, "AU_YK18CE26286"),
+    ("pdp_yk18co26296.html", CELLINI_URL_2, 27990.0, "AD_YK18CO26296"),
+])
+def test_cellini_ia_obiectul_PROPRIU_al_paginii(fetch_mock, fisier, url, pret, cod):
+    """Cele doua PDP-uri masurate, cu preturi mult diferite (6.930 vs 27.990 lei).
+
+    Fixture-ul contine 5 obiecte cu `price`, iar cel al paginii e al TREILEA — deci
+    testul cade daca extractorul ia „primul obiect cu pret". Moneda se citeste din
+    `currencyname` ("Lei"), nu din cod.
+    """
+    state = fetch_mock(_cellini_fixture(fisier))
+
+    data = ppe.extract_product(url)
+
+    assert data["price"] == pret
+    assert data["currency"] == "RON"
+    assert data["method"] == "cellini_datalayer"
+    assert data["in_stock"] is True            # `stock` = "in stoc" pe ambele
+    assert data["override_applied"] is False
+    assert data["variants"] is None
+    assert state["calls"] == 1, "un singur fetch"
+
+
+def test_cellini_selectia_e_condusa_de_URL_nu_de_pozitie():
+    """GARDA cea mai tare posibila, si a iesit din fixture, nu din proiectare.
+
+    Caruselul paginii 1 chiar CONTINE produsul paginii 2 (ambele sunt Yoko London),
+    deci ACELASI HTML poate da doua rezultate diferite, dupa URL-ul cerut. Daca
+    selectia ar fi pe pozitie („primul obiect cotat"), ambele apeluri ar intoarce
+    acelasi obiect si testul ar cadea.
+    """
+    html = _cellini_fixture("pdp_yk18ce26286.html")
+
+    o1 = ppe._cellini_obiect_propriu(html, CELLINI_URL_1)
+    o2 = ppe._cellini_obiect_propriu(html, CELLINI_URL_2)
+
+    assert o1["code"] == "AU_YK18CE26286" and o1["price"] == 6930
+    assert o2["code"] == "AD_YK18CO26296" and o2["price"] == 27990
+    assert o1 is not o2
+
+    # Un URL care nu e in pagina nu primeste un obiect „aproximativ".
+    absent = "https://www.cellini.ro/bijuterii/filtre/inel-inexistent-zz00zz.html"
+    assert ppe._cellini_obiect_propriu(html, absent) is None
+
+
+def test_cellini_preturile_din_carusel_sunt_in_fixture():
+    """Patologia chiar e IN fixture — altfel testele de mai sus n-ar dovedi nimic.
+
+    Se verifica explicit ca fixture-ul poarta mai multe obiecte cotate si ca cel
+    propriu nu e primul; daca cineva „curata" fixture-ul, testul cade aici, cu
+    mesaj clar, in loc sa lase garda sa devina tacut inutila (lectia G2F-2).
+    """
+    html = _cellini_fixture("pdp_yk18ce26286.html")
+
+    bucati = html.split('"price":')[1:]
+    preturi = [b.split(",")[0].split("}")[0].strip() for b in bucati]
+    assert len(preturi) >= 5, f"fixture-ul are doar {len(preturi)} obiecte cotate"
+    assert preturi[0] != "6930", "obiectul propriu nu are voie sa fie PRIMUL"
+    assert "6930" in preturi
+
+
+def test_cellini_genericul_ridica_no_product_data():
+    """De ce exista extractorul: pe pagina cellini genericul n-are ce citi.
+
+    ld+json are doar Organization/WebSite/BreadcrumbList, microdata lipseste. Daca
+    magazinul adauga vreodata `Product`, testul asta cade si intreaba daca mai e
+    nevoie de cod bespoke — exact ca la intersport.
+    """
+    with pytest.raises(ProductExtractionError) as exc:
+        parse_product_html(_cellini_fixture("pdp_yk18ce26286.html"), CELLINI_URL_1)
+    assert exc.value.reason == "no_product_data"
+
+
+def test_cellini_pretul_combina_leii_cu_banii():
+    """`price` e INTREGUL de lei, banii stau in `decimalprice` — se combina.
+
+    Pe cele doua produse masurate `decimalprice` e "00", deci ele singure n-ar
+    prinde niciodata o pierdere de bani. Aici se construieste cazul care o prinde.
+    """
+    assert ppe._cellini_pret({"price": 6930, "decimalprice": "00"}) == 6930.0
+    assert ppe._cellini_pret({"price": 6930, "decimalprice": "50"}) == 6930.50
+    assert ppe._cellini_pret({"price": 199, "decimalprice": "99"}) == 199.99
+    # Fara `decimalprice` ramane valoarea bruta, nu se inventeaza bani.
+    assert ppe._cellini_pret({"price": 6930}) == 6930.0
+
+
+def test_cellini_tipul_pretului_e_verificat_strict():
+    """Un `price` care nu e numar REAL nu se parseaza din text — se refuza.
+
+    Daca magazinul ar trece pretul pe sir, vrem sa cada zgomotos (no_product_data),
+    nu sa ghicim printr-un parser de text: pagina e plina de cifre straine.
+    """
+    assert ppe._cellini_pret({"price": "6930"}) is None
+    assert ppe._cellini_pret({"price": True}) is None
+    assert ppe._cellini_pret({"price": None}) is None
+    assert ppe._cellini_pret({}) is None
+
+
+def test_cellini_stocul_afirma_doar_pozitivul():
+    """`stock` = "in stoc" -> True; ORICE altceva -> None, niciodata False.
+
+    Forma negativa n-a fost masurata (niciun produs epuizat in sonda), deci un
+    vocabular de epuizare inventat ar ascunde produse cumparabile.
+    """
+    from app.services.product_page_extractor import _extract_cellini  # noqa: F401
+
+    html = _cellini_fixture("pdp_yk18ce26286.html")
+    obiect = ppe._cellini_obiect_propriu(html, CELLINI_URL_1)
+    assert obiect["stock"] == "in stoc"
+    # Substitutul de vocabular necunoscut nu devine False.
+    for necunoscut in ("stoc limitat", "la comanda", "", None, "epuizat"):
+        val = (True if (isinstance(necunoscut, str)
+                        and "in stoc" in necunoscut.strip().lower()) else None)
+        assert val is not False
+
+
+def test_cellini_e_inregistrat_ca_extractor_custom():
+    """Domeniul trece prin codul bespoke, nu prin fluxul generic."""
+    assert ppe.CUSTOM_EXTRACTORS["cellini.ro"] is ppe._extract_cellini
+    assert ppe._custom_extractor_for(CELLINI_URL_1) is ppe._extract_cellini
+    # Subdomeniile intra si ele (regula match_shop_domain), dar alt domeniu NU.
+    assert ppe._custom_extractor_for("https://www.magazin-test.ro/p/x") is None
+
+
+@pytest.mark.parametrize("fisier,url,nume_asteptat", [
+    ("pdp_yk18ce26286.html", CELLINI_URL_1, "Cercei"),
+    ("pdp_yk18co26296.html", CELLINI_URL_2, "Colier"),
+])
+def test_cellini_numele_vine_din_stare_nu_din_DOM(fetch_mock, fisier, url,
+                                                  nume_asteptat):
+    """Numele produsului sta in cheia `product`; DOM-ul minte.
+
+    Prins la verificarea LIVE a G2F-8: `<h1>` scrie „Bijuterii" — titlul
+    CATEGORIEI — iar `<title>` e generic, si sunt IDENTICE pe produse diferite. O
+    rezerva pe ele ar fi dat acelasi nume gresit-dar-plauzibil pe tot magazinul.
+    Fixture-ul poarta ambele capcane verbatim.
+    """
+    fetch_mock(_cellini_fixture(fisier))
+
+    data = ppe.extract_product(url)
+
+    assert data["name"].startswith(nume_asteptat)
+    assert "Yoko London" in data["name"]
+    assert data["name"] != "Bijuterii"
+    assert "500+" not in data["name"]
+
+
+def test_cellini_canonicul_e_al_produsului_nu_al_categoriei(fetch_mock):
+    """`<link rel=canonical>` al paginii arata spre `/bijuterii`, pe TOATE produsele.
+
+    Luat ca atare, ar da fiecarui produs cellini aceeasi identitate, iar o
+    deduplicare pe canonic le-ar contopi. Se reconstruieste din `obiect["url"]`.
+    """
+    fetch_mock(_cellini_fixture("pdp_yk18ce26286.html"))
+    a = ppe.extract_product(CELLINI_URL_1)
+    fetch_mock(_cellini_fixture("pdp_yk18co26296.html"))
+    b = ppe.extract_product(CELLINI_URL_2)
+
+    assert a["canonical_url"].endswith("au-yk18ce26286.html")
+    assert b["canonical_url"].endswith("ad-yk18co26296.html")
+    assert a["canonical_url"] != b["canonical_url"]
+    for c in (a["canonical_url"], b["canonical_url"]):
+        assert c.rstrip("/") != "https://www.cellini.ro/bijuterii"

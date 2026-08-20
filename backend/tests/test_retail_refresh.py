@@ -196,6 +196,8 @@ def test_validated_domains_santinela():
         "bonami.ro",                                  # G2F-6
         "action.com",                                 # G2F-6
         "ro.vivre.eu",                                # G2F-6
+        "biciclop.eu",                                # G2F-8
+        "cellini.ro",                                 # G2F-8
     }
 
 

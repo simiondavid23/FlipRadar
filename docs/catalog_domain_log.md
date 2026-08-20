@@ -2084,6 +2084,157 @@ regresie e stocul celor doua PDP-uri vivre, `False` → `None`.
 
 ---
 
+## G2F-7/G2F-8 — biciclete si ceasuri: inchiderea lotului 2f
+
+| domeniu | verdict | metoda |
+|---|---|---|
+| biciclop.eu | **intrat** | jsonld |
+| cellini.ro | **intrat** | custom, `cellini_datalayer` |
+| bbcollection.ro | **PARCAT** (masurat integral) | ar fi custom pe DOM |
+| veloteca.ro | **inaccesibil de pe IP-ul curent** | — |
+
+Categoriile noi introduse aici: `biciclete` („Biciclete & piese") si
+`bijuterii-ceasuri` („Bijuterii & ceasuri").
+
+### biciclop.eu — `method: jsonld`, categoria `biciclete` (FACUT)
+
+WordPress + LiteSpeed. Cheia e **fara `www`**: redirect masurat
+`www.biciclop.eu` -> `biciclop.eu`. ld+json `Product` cu `price` / `priceCurrency:
+RON`, incrucisat cu afisajul (`199,99 lei` / `189,99 lei`).
+
+**`Offer` n-are `availability`** — cheile masurate sunt exact
+`[@type, url, price, priceCurrency]` — deci `in_stock` iese `None`. E o lipsa
+ONESTA, nu o scapare: magazinul chiar nu publica stoc, pagina scrie
+*„Contacteaza-ne pentru confirmare stoc. Verifica disponibilitatea"*.
+
+Referinta taiata (`<del>257 lei</del>`) exista **doar in DOM** si e etichetata
+explicit *„Pret recomandat: 257 lei -22% 199,99 lei"* — adica **RRP, nu Omnibus**.
+Diferenta e materiala: Omnibus cere minimul din ultimele 30 de zile, RRP e pretul
+recomandat de producator. A le confunda intr-un calcul de reducere umfla artificial
+„chilipirul".
+
+**Ce vinde ONLINE sunt piese si accesorii**, nu biciclete. Paginile `/biciclete*`
+sunt editoriale: `/biciclete/` se intituleaza „catalog **istoric**", iar
+`/biciclete-mtb/` „**informatii utile**" — categoria masurata are 1 card si zero
+produse, iar navigatia laterala listeaza doar componente (Angrenaj, Antifurt,
+Butuc pedalier, Frane, Ghidon, Pedale, Pinioane). De aici si numele categoriei:
+`biciclete` acopera „biciclete **& piese**", cu accentul azi pe piese.
+
+Componente partajate de footer, de ignorat la orice extractie pe text:
+`200.200,00 RON` (capitalul social din datele firmei) si `400 lei` (pragul de
+livrare gratuita). Ambele au fost prinse de triajul de preturi partajate.
+
+### cellini.ro — `method: custom` (`cellini_datalayer`), categoria `bijuterii-ceasuri` (FACUT)
+
+PHP propriu (cookie `csCurrencyId`). **Datele de produs exista EXCLUSIV in starea
+paginii.** ld+json are doar `Organization` / `WebSite` / `BreadcrumbList`, microdata
+lipseste, iar extractorul generic ridica `no_product_data` — pinuit de test, ca sa
+aflam daca magazinul adauga vreodata `Product` si codul bespoke devine inutil.
+
+**Identificarea obiectului propriu e miezul extractorului, si e neambigua.** Pagina
+poarta **48 de obiecte cu `price`** (carusele de recomandari). Obiectul paginii se
+recunoaste dupa cheia `url`, care contine EXACT numele de fisier al PDP-ului, si se
+incruciseaza cu `code`:
+
+| PDP | `url` din obiect | `code` | `price` |
+|---|---|---|---|
+| `...-au-yk18ce26286.html` | `cercei-yoko-london-…-au-yk18ce26286.html` | `AU_YK18CE26286` | 6930 |
+| `...-ad-yk18co26296.html` | `colier-yoko-london-…-ad-yk18co26296.html` | `AD_YK18CO26296` | 27990 |
+
+Pe ambele pagini **exact UNUL** din cele 48 de obiecte poarta codul paginii.
+
+**DOM-ul e interzis ca sursa, si nu din preferinta:** textul vizibil are ~**70 de
+preturi distincte**, dintre care **8 sunt IDENTICE** intre doua pagini de produse
+diferite (carusele partajate). O extractie pe text ar da sistematic pretul altui
+produs. Garda din teste foloseste chiar aceasta patologie: fixture-ul contine si
+produsul celeilalte pagini, deci acelasi HTML da doua rezultate diferite dupa URL.
+
+Alte masuratori intrate in contract:
+* **Pretul**: `price` e INTREGUL de lei (6930, 27990 — `int`), iar banii stau separat
+  in `decimalprice` (`"00"` pe ambele), cu `beautifulprice` = `"6.930,00"` ca forma
+  afisata. Extractorul le COMBINA: luat singur, `price` ar raporta 6930 pentru un
+  produs de 6930,50 — o pierdere tacuta de bani, invizibila pentru orice test scris
+  pe preturi rotunde. Tipul e verificat strict: un `price` pe sir e refuzat, nu
+  parsat din text.
+* **Moneda se CITESTE**, nu se pune din cod: `currencyname` = `"Lei"`, cu
+  `currencyid: "1"` si `ronvalue: "1.0000"` ca semnale suplimentare. `RON` ramane
+  doar plasa de siguranta.
+* **Stocul**: `stock` e sir romanesc, masurat `"in stoc"` pe ambele PDP-uri. Forma
+  NEGATIVA e nemasurata (niciun produs epuizat in sonda), deci se afirma doar
+  pozitivul — orice altceva ramane `None`, niciodata `False`. Un vocabular de
+  epuizare inventat ar ascunde produse cumparabile.
+* `oldprice` (`"9240.00"` / `"37320.00"`) si `save_percent` EXISTA in stare dar **nu
+  intra in contract** — referinta ramane pentru axa D.
+
+PDP `/bijuterii/filtre/<slug>-<COD>.html` (200, fara redirect). Segment de lux:
+preturi masurate pana la 27.990 lei. Listarea promo are **539 de produse** si 179 de
+carduri pe pagina, cu `price` + `oldprice` per card in stare — val ULTERIOR.
+
+### bbcollection.ro — PARCAT, cu masuratorile complete
+
+Nu se implementeaza, dar masuratorile se pastreaza, ca sa nu fie refacute.
+
+* **Zero date structurate, pe 2 din 2 produse**: 0 blocuri ld+json, 0 microdata,
+  0 `itemprop=price`, `og:type: "website"` cu titlul global al site-ului, iar
+  `dataLayer` (x7) fara nicio cheie de pret. Singura sursa ar fi DOM-ul vizibil.
+* Conventia proprie de afisare: *„Pret vechi\* 295 , 00 lei / Pret de vanzare\*
+  206 , 50 lei"*, cu `Cod: 35000513` si marimile alaturi.
+* **Lichidarile sunt uniforme, nu variabile**: 25 din 27 de carduri la exact
+  **-30%** (206,50 = 295 x 0,7; 311,50 = 445 x 0,7).
+* **Domeniul-sora `bb-shop.ro`**: listarea trimite catre el de **28 de ori** (home
+  x7, PDP x5), cu `utm_medium=referral`, iar maparea e sistematica pe **25 de
+  perechi** de produse: codul `pb<ID>` din URL-ul bbcollection devine ID-ul de pe
+  bb-shop. Exemplu masurat:
+  `bbcollection.ro/bijuterie-inel-…-35000513-pb175484.html`
+  -> `bb-shop.ro/bijuterie-…-175484.html`.
+
+De ce PARCAT si nu implementat: un extractor pe DOM ar fi cel mai fragil din tot
+catalogul, iar `bb-shop.ro` — daca se dovedeste magazinul real al aceluiasi
+comerciant — l-ar face inutil din start.
+
+### bb-shop.ro — pe lista valului de browser
+
+Sondat cu 2 cereri (G2F-7): **home-ul raspunde 200** („B&B SHOP - Magazin Online de
+Bijuterii, Ceasuri si Accesorii"), dar **ruta de produs da 403 cu challenge
+Cloudflare** (`cf-mitigated: challenge`, corp „Just a moment…"). Ordinea cererilor a
+fost controlata deliberat: PDP-ul a fost PRIMA atingere a domeniului si a fost
+provocat, iar home-ul a doua, pe acelasi profil, la cateva secunde, si a trecut —
+deci nu e rata si nu e profil, e **ruta**.
+
+Prima verificare la valul de browser, in ordinea asta:
+1. e acelasi comerciant (acelasi produs pe perechea `pb175484`)?
+2. acelasi pret ca pe bbcollection (295,00 -> 206,50 lei)?
+3. poarta ld+json `Product`?
+
+Daca DA la toate trei, domeniul de exploatare devine bb-shop.ro (clasa vivre) si
+extractorul-pe-DOM al lui bbcollection nu se mai scrie niciodata.
+
+### veloteca.ro — inaccesibil de pe IP-ul curent
+
+403 pe **toate cele trei profiluri**, la home. Corpul e un **403 nginx simplu**
+(535 / 535 / 139 octeti), fara niciun marker de challenge, servit prin Cloudflare
+(`server: cloudflare`, `cf-ray` prezent). Cloudflare doar transporta; originea
+refuza. Un browser NU ajuta la un refuz de origine — deci **nu e Grup 4**.
+Re-testarea are sens doar **de pe alt IP**, si se leaga de discutia de proxy.
+
+### Taxonomia 403-urilor din lot (referinta)
+
+Lotul asta a produs, intamplator, cate un exemplar din fiecare fel de 403. Merita
+tinute separat, fiindca fiecare cere alt raspuns:
+
+| fel | cum se recunoaste | exemplar | ce rezolva |
+|---|---|---|---|
+| **la ORIGINE** | 403 al serverului de aplicatie (nginx), corp mic, ZERO markeri de challenge, identic pe toate profilurile | veloteca.ro | alt IP / proxy — **nu** browser, **nu** alt profil |
+| **pe RUTA** | home 2xx, ruta de produs 403; prima atingere a domeniului e deja provocata | bb-shop.ro (`cf-mitigated: challenge`) | browser (valul de browser) |
+| **pe RATA** | acelasi URL, acelasi profil, trece dupa pauza; apare dupa cateva cereri rapide | action.com (403 la a 4-a cerere/minut, 200 dupa 95s) | interval minim intre cereri |
+| **pe PROFIL** | un profil e refuzat, altul trece pe aceeasi ruta | (niciunul in acest lot; vezi ELF-2) | escaladarea amprentei |
+
+Regula practica desprinsa: **ordinea cererilor e un instrument de masura**. Punand
+ruta suspecta PRIMA si home-ul dupa, „rata" se exclude din constructie; punand
+acelasi URL de doua ori la distanta, se exclude „ruta".
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in
