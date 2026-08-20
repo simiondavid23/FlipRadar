@@ -27,7 +27,7 @@ def _canonic(ext_id="111", *, title="Geaca de piele", price=250.0, currency="RON
 
 @pytest.fixture(autouse=True)
 def _env_curat(monkeypatch):
-    for v in ("FB_MOD", "FB_RADAR_ANCORA"):
+    for v in ("FB_MOD", "FB_RADAR_ANCORA", "FB_FERMA"):
         monkeypatch.delenv(v, raising=False)
 
 
@@ -120,9 +120,14 @@ def test_exclude_words_exclude(monkeypatch, nucleu):
 
 def test_marginile_de_pret(monkeypatch, nucleu):
     monkeypatch.setenv("FB_MOD", "logout")
-    nucleu.raspuns.extend([_canonic("1", price=50.0), _canonic("2", price=250.0),
-                           _canonic("3", price=900.0), _canonic("4", price=None),
-                           _canonic("5", price=0.0)])
+    # Titluri DISTINCTE, deliberat (FBS-9b): cinci anunturi cu acelasi titlu postate in
+    # aceeasi clipa sunt o amprenta de ferma si s-ar arunca INAINTEA filtrului de pret,
+    # care e chiar variabila masurata aici. Doar datele s-au schimbat, nu asertiunea.
+    nucleu.raspuns.extend([_canonic("1", price=50.0, title="Geaca piele neagra"),
+                           _canonic("2", price=250.0, title="Geaca piele maro"),
+                           _canonic("3", price=900.0, title="Geaca piele vintage"),
+                           _canonic("4", price=None, title="Geaca fara pret"),
+                           _canonic("5", price=0.0, title="Geaca cu pret zero")])
 
     rez = fb.search_facebook("geaca", max_price=500, min_price=100)
 
@@ -209,9 +214,143 @@ def test_keyword_fara_cifre_lasa_totul_neatins(monkeypatch, nucleu, logs):
     assert not [m for niv, m in logs if niv == "INFO" and "sarite" in m]
 
 
+# ── 2c. FBS-9b: amprenta de ferma, cablata in `_search_logout` ───────────────
+def _feed_cu_ferma():
+    """Trei anunturi cu titlu identic intr-o rafala de 4 minute (agravant: rafala) plus
+    doua genuine distincte. Forma e cea masurata la FBS-V2 pe clusterul B: titlu
+    IDENTIC, fara decoratie, postate una dupa alta."""
+    rafala = [_canonic(str(i), title="iPhone15 Pro Max GB", price=300.0,
+                       listed_at=_AWARE + timedelta(minutes=2 * i)) for i in (1, 2, 3)]
+    genuine = [_canonic("10", title="iPhone 15 Pro Max 256GB impecabil", price=4800.0,
+                        listed_at=_AWARE - timedelta(hours=5)),
+               _canonic("11", title="iPhone 15 Pro Max sigilat garantie", price=5200.0,
+                        listed_at=_AWARE - timedelta(hours=9))]
+    return rafala + genuine
+
+
+def test_ferma_e_aruncata_raman_doar_genuinele(monkeypatch, nucleu):
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.extend(_feed_cu_ferma())
+
+    rez = fb.search_facebook("iphone 15 pro max", max_price=100000)
+
+    assert {r["external_id"] for r in rez} == {"fb_10", "fb_11"}
+
+
+def test_garda_fb_ferma_zero_opreste_detectorul(monkeypatch, nucleu):
+    """Intrerupatorul de avarie (D3): rollback fara cod si fara commit."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    monkeypatch.setenv("FB_FERMA", "0")
+    nucleu.raspuns.extend(_feed_cu_ferma())
+
+    rez = fb.search_facebook("iphone 15 pro max", max_price=100000)
+
+    assert len(rez) == 5, "cu garda stinsa trec toate, inclusiv rafala"
+
+
+@pytest.mark.parametrize("valoare", ["1", "", "  ", "fals", "off"])
+def test_garda_stinge_doar_pe_zero(monkeypatch, nucleu, valoare):
+    """Orice ALTCEVA decat `0` lasa apararea PORNITA: o valoare gresit scrisa nu are
+    voie sa stinga tacut filtrul."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    monkeypatch.setenv("FB_FERMA", valoare)
+    nucleu.raspuns.extend(_feed_cu_ferma())
+
+    assert len(fb.search_facebook("iphone 15 pro max", max_price=100000)) == 2
+
+
+def test_clusterul_singur_nu_condamna_pe_calea_reala(monkeypatch, nucleu):
+    """Regula in doua jumatati, verificata cap-coada: trei titluri identice DAR la ore
+    distanta, fara decoratie si la pret normal, nu sunt o ferma."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.extend([
+        _canonic(str(i), title="Canapea extensibila bej", price=1000.0,
+                 listed_at=_AWARE - timedelta(hours=5 * i)) for i in (1, 2, 3)])
+
+    rez = fb.search_facebook("canapea", max_price=100000)
+
+    assert len(rez) == 3
+
+
+def test_jurnalul_de_ferma_da_cheia_numarul_motivele_si_intervalul(monkeypatch, nucleu, logs):
+    """D2 — aruncam anunturi, deci trebuie sa ramana urma din care se reconstituie CE
+    s-a aruncat si DE CE. Un contor singur n-ar fi de ajuns."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.extend(_feed_cu_ferma())
+
+    fb.search_facebook("iphone 15 pro max", max_price=100000)
+
+    linii = [m for niv, m in logs if niv == "INFO" and "amprenta de ferma" in m]
+    assert len(linii) == 1, f"un singur emit de sinteza per apel, nu {len(linii)}"
+    linie = linii[0]
+    assert "3 anunturi aruncate" in linie
+    assert '"iphone15 pro max gb" x3' in linie
+    assert "cluster+rafala" in linie
+    assert "300-300" in linie, "intervalul de pret al clusterului"
+
+    # Contorul intra in sinteza existenta, o singura data — nu o a doua linie.
+    assert any("2 rezultate" in m and "3 sarite ca ferma" in m
+               for niv, m in logs if niv == "OK"), [m for _n, m in logs]
+
+
+def test_fara_ferme_jurnalul_tace(monkeypatch, nucleu, logs):
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.append(_canonic("1", title="Geaca de piele"))
+
+    fb.search_facebook("geaca", max_price=1000)
+
+    assert not [m for _n, m in logs if "amprenta de ferma" in m]
+    assert not [m for _n, m in logs if "sarite ca ferma" in m]
+
+
+def test_din_canonice_taie_exact_idurile_din_ferme_si_doar_pe_ele():
+    """`_din_canonice` direct: `ferme` e o lista de condamnari, nu o euristica pe care
+    functia s-o reevalueze."""
+    canonice = [_canonic("1", title="Acelasi titlu"), _canonic("2", title="Acelasi titlu"),
+                _canonic("3", title="Alt titlu")]
+
+    rez = fb._din_canonice(canonice, "geaca", None, [], None, None,
+                           ferme={"2": ["cluster+rafala"]})
+
+    assert [r["external_id"] for r in rez] == ["fb_1", "fb_3"]
+
+
+def test_din_canonice_cu_ferme_none_e_identic_cu_azi():
+    """Garantia pentru bazin: fara `ferme`, acelasi input da acelasi output — inclusiv
+    pe un feed care ESTE o ferma. `_search_bazin` nu paseaza nimic, deci trece pe aici."""
+    canonice = _feed_cu_ferma()
+
+    implicit = fb._din_canonice(canonice, "iphone 15 pro max", None, [], None, None)
+    explicit = fb._din_canonice(canonice, "iphone 15 pro max", None, [], None, None,
+                                ferme=None)
+
+    assert implicit == explicit
+    assert len(implicit) == 5, "fara `ferme`, nimic nu se arunca — nici macar rafala"
+
+
+def test_bazinul_nu_paseaza_ferme(monkeypatch, nucleu):
+    """Cablarea e in `_search_logout`, nu in `_din_canonice`: calea de bazin trebuie sa
+    ajunga la formator FARA verdict de ferma, fiindca domeniul ei (acumulare peste
+    tick-uri) nu e un feed."""
+    apeluri = []
+    monkeypatch.setenv("FB_MOD", "bazin")
+    monkeypatch.setattr(fb, "_din_canonice", lambda *a, **k: apeluri.append(k) or [])
+
+    fb.search_facebook("iphone 15 pro max", max_price=0, keyword_id=1234)
+
+    # AMBELE asertiuni sunt necesare. Fara prima, testul ar trece si daca formatorul
+    # n-ar fi chemat deloc — „niciun kwarg" si „niciun apel" arata identic altfel.
+    assert len(apeluri) == 1, "calea de bazin trebuie sa ajunga la formator"
+    assert "ferme" not in apeluri[0], apeluri
+
+
 def test_dedup_pe_external_id(monkeypatch, nucleu):
     monkeypatch.setenv("FB_MOD", "logout")
-    nucleu.raspuns.extend([_canonic("7"), _canonic("7"), _canonic("8")])
+    # Al treilea anunt e distantat in timp (FBS-9b): trei titluri identice in aceeasi
+    # clipa ar fi o rafala si s-ar arunca, iar variabila masurata aici e dedup-ul pe id.
+    # Duplicatul lui „7" ramane la aceeasi clipa — el CHIAR e acelasi anunt de doua ori.
+    nucleu.raspuns.extend([_canonic("7"), _canonic("7"),
+                           _canonic("8", listed_at=_AWARE + timedelta(hours=3))])
 
     rez = fb.search_facebook("geaca", max_price=1000)
 

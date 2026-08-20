@@ -46,6 +46,10 @@ from app.services.radar.base_scraper import (
 # FBS-8 — helper PUR (fara DB, fara mediu); sta langa celelalte reguli de potrivire
 # pe titlu, nu in scraper, ca sa fie testabil table-driven ca restul motorului.
 from app.services.radar.exclusion_engine import keyword_digits_match
+# FBS-9b — detectorul de amprenta de ferma (FBS-9a), tot pur. `titlu_cheie` se importa
+# ca sa se poata reconstrui cheia de cluster pentru jurnal: detectorul intoarce doar
+# `{id: motive}`, si NU se modifica pentru nevoia de logare a apelantului.
+from app.services.radar.amprenta_ferma import detecteaza_ferme, titlu_cheie
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
 from app.utils.number_format import parse_number
 from app.utils.http_profile import DEFAULT_IMPERSONATE
@@ -340,6 +344,49 @@ def _naiv_local(dt):
     return dt.astimezone().replace(tzinfo=None) if dt else None
 
 
+def _ferma_activa() -> bool:
+    """`FB_FERMA`, citita LA APEL — intrerupatorul de avarie (D3).
+
+    Absenta sau orice altceva decat `0` inseamna ACTIVA. Doar `0` opreste detectorul,
+    deliberat: o valoare gresit scrisa („fals", „off", un spatiu in plus) lasa apararea
+    PORNITA, nu o stinge tacut. Citirea la apel, nu la import, e acelasi motiv ca la
+    `_cale_sesiune` si `_varsta_max_ore` — testele trebuie s-o poata schimba, iar un
+    build PyInstaller ar fixa-o altfel la valoarea de la pornire.
+    """
+    return (os.getenv("FB_FERMA") or "1").strip() != "0"
+
+
+def _sinteza_ferme(canonice, ferme) -> list[str]:
+    """Rezumatul per CLUSTER al aruncarilor, pentru jurnal (D2).
+
+    Aruncam anunturi, deci trebuie sa ramana urma din care se poate reconstitui CE s-a
+    aruncat si DE CE — nu doar un contor. Pentru fiecare cluster semnalat: cheia de
+    titlu, cate anunturi, motivele si intervalul de pret.
+
+    Cheia se RECONSTRUIESTE cu `titlu_cheie`, fiindca detectorul intoarce `{id: motive}`
+    si nu expune grupurile. Alternativa ar fi fost sa-i schimbam forma de retur pentru
+    nevoia de logare a unui apelant — detectorul e pur si calibrat, ramane asa.
+    """
+    grupuri: dict[str, dict] = {}
+    for c in canonice:
+        motive = ferme.get(str(c.get("external_id") or ""))
+        if not motive:
+            continue
+        g = grupuri.setdefault(titlu_cheie(c.get("title")),
+                               {"n": 0, "motive": motive, "preturi": []})
+        g["n"] += 1
+        pret = c.get("price")
+        if isinstance(pret, (int, float)) and pret > 0:
+            g["preturi"].append(float(pret))
+
+    linii = []
+    for cheie, g in sorted(grupuri.items(), key=lambda kv: -kv[1]["n"]):
+        interval = (f"{min(g['preturi']):g}-{max(g['preturi']):g}" if g["preturi"]
+                    else "fara pret")
+        linii.append(f'"{cheie}" x{g["n"]} [{", ".join(g["motive"])}] {interval}')
+    return linii
+
+
 def _search_logout(keyword: str, max_price, exclude_words, min_price, category) -> list[dict]:
     """Calea LOGAT-OUT (FB_MOD=logout): search prin nucleul FB-1, fara sesiune.
 
@@ -361,24 +408,56 @@ def _search_logout(keyword: str, max_price, exclude_words, min_price, category) 
     canonice = nucleu_search(keyword, ancora.lat, ancora.lon, raza_km=65.0,
                              city_page_id=ancora.city_page_id,
                              pret_min=pret_min) or []
+
+    # FBS-9b — amprenta de ferma se calculeaza AICI, si numai aici, fiindca asta e
+    # singurul loc de pe calea nucleu care are feed-ul UNEI cereri. Detectorul e definit
+    # pe un feed, iar domeniul nu e un detaliu: acelasi titlu-cheie a fost ferma la
+    # FBS-V1b (24 de anunturi in rafala) si genuin in FBS-V2/Cluj (1622 RON). Pe seturi
+    # amestecate l-ar condamna pe cel genuin.
+    #
+    # LIMITA ASUMATA (D4): un vanzator legitim cu stoc — mai multe bucati identice
+    # postate una dupa alta — arata exact ca o ferma si va fi aruncat. Logat-out NU
+    # exista `seller_name` cu care sa-l deosebim (lipsa la SURSA, nu esec de parsare),
+    # cazul e rar, iar jurnalul de mai jos il face recuperabil manual.
+    ferme = detecteaza_ferme(canonice) if _ferma_activa() else None
+    if ferme:
+        log_manager.emit("radar", "INFO",
+            f'Facebook: {len(ferme)} anunturi aruncate ca amprenta de ferma pentru '
+            f'"{keyword}" — ' + "; ".join(_sinteza_ferme(canonice, ferme)))
+
     return _din_canonice(canonice, keyword, max_price, exclude_words,
-                         min_price, category)
+                         min_price, category, ferme=ferme)
 
 
 def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
-                  category) -> list[dict]:
+                  category, *, ferme=None) -> list[dict]:
     """Dicturi CANONICE -> forma pe care o asteapta Radar.
 
     Extras din `_search_logout` la FBS-5 si folosit IDENTIC de calea de bazin. Asta e
     ce garanteaza ca forma intoarsa e aceeasi indiferent de unde vin datele: nu prin
     doua implementari tinute sincronizate cu atentie, ci prin una singura.
+
+    `ferme` (FBS-9b) — `{external_id: motive}` de la `detecteaza_ferme`, sau None.
+    IMPLICITUL `None` NU e comoditate, e ce tine bazinul neatins: detectorul e definit
+    pe UN feed, iar `_search_bazin` citeste acumularea peste multe tick-uri, adica un
+    domeniu in care detectorul n-are voie sa decida. Cine are feed-ul unei cereri
+    (`_search_logout`) calculeaza si paseaza; cine nu are, nu paseaza si primeste
+    exact comportamentul de dinainte de FBS-9b.
     """
     known_ids = _known_facebook_category_ids() if category else None
     results: list[dict] = []
     vazute = set()
     fara_categorie = 0
     cifre_lipsa = 0
+    ferma_taiate = 0
     for c in canonice:
+        # FBS-9b — prima poarta, INAINTEA tuturor celorlalte: verdictul de ferma e pe
+        # feed, nu pe anunt, deci nu depinde de niciun filtru de mai jos. Se citeste
+        # `c.get("external_id")` direct, NU variabila `ext` — aceea se calculeaza abia
+        # dupa poarta de categorie, prea tarziu si doar pentru anunturile ramase.
+        if ferme and str(c.get("external_id") or "") in ferme:
+            ferma_taiate += 1
+            continue
         title = (c.get("title") or "").strip()
         if not title:
             continue
@@ -446,8 +525,12 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
         log_manager.emit("radar", "INFO",
             f"Facebook: {fara_categorie} anunturi pastrate fara categorie pe card "
             f"(nu se poate verifica filtrul de categorie)")
+    # Contorul intra in sinteza existenta, nu intr-o linie proprie: detaliul per cluster
+    # e deja jurnalizat de `_search_logout`, iar o a doua linie ar fi aceeasi stire spusa
+    # de doua ori.
+    coada = f" ({ferma_taiate} sarite ca ferma)" if ferma_taiate else ""
     log_manager.emit("radar", "OK",
-        f'Facebook nucleu/bazin: {len(results)} rezultate pentru "{keyword}"')
+        f'Facebook nucleu/bazin: {len(results)} rezultate pentru "{keyword}"{coada}')
     return results
 
 
