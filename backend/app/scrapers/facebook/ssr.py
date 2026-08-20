@@ -29,6 +29,7 @@ runda viitoare primeste gunoi fara niciun semnal de eroare.
 anunturi si santinela `SERP_NO_RESULTS` (FBS-0d). Un baleiaj fara termen nu exista,
 deci costul ramane ORASE x CUVINTE.
 """
+from typing import Optional
 from urllib.parse import urlencode
 
 from app.services.log_manager import log_manager
@@ -44,7 +45,8 @@ _SORTARE = "creation_time_descend"
 _ZILE = "1"
 
 
-def construieste_url(city_page_id: str, query: str, *, recenta: bool = True) -> str:
+def construieste_url(city_page_id: str, query: str, *, recenta: bool = True,
+                     pret_min: Optional[int] = None) -> str:
     """URL-ul de cautare SSR pentru un ID de locatie.
 
     Termenul se CODIFICA (`urlencode`). Pana la FBS-2 se interpola brut intr-un
@@ -53,16 +55,39 @@ def construieste_url(city_page_id: str, query: str, *, recenta: bool = True) -> 
     „canapea extensibila", „masina de spalat" — producea un URL malformat. Nu s-a
     vazut pana acum doar fiindca sondele au rulat pe „canapea", un cuvant fara
     spatii si fara diacritice.
+
+    `pret_min` (FBS-6) e MASURAT ca respectat de server, la FBS-V1b: doua praguri
+    discriminante (1500 si 3000), Jaccard 0.000 fata de referinta la amandoua, zero
+    scapari sub prag dintr-o referinta care avea 24 din 24 sub el, iar seturile
+    difereau strict pe axa de pret (setul cu pragul mare era submultime a celui cu
+    pragul mic, fara exact anunturile din banda dintre praguri). Sortarea
+    `creation_time_descend` a ramas intacta, 0 inversiuni. E PRIMUL parametru din
+    serie care nu e ignorat tacit, spre deosebire de raza (FB-PROBE-2), slugurile de
+    oras (FBS-0b) si `category_id` (FBS-V1).
+
+    REZERVA MASURATA, scrisa aici ca sa nu fie citita mai tarziu drept defect de
+    cablare: fereastra `daysSinceListed=1` e ELASTICA — se intinde cat ii trebuie
+    serverului ca sa umple sloturile si variaza de la o cerere la alta. O rulare cu
+    prag s-a oprit la 17.79 h si a omis doua anunturi eligibile de 32-41 h pe care o
+    rulare fara prag le avea. Filtrul deci NU lasa nimic SUB prag sa treaca, dar nici
+    nu garanteaza tot ce e PESTE prag. Un prag pus prea sus poate infometa feed-ul.
     """
     params = {"query": query}
     if recenta:
         params["sortBy"] = _SORTARE
         params["daysSinceListed"] = _ZILE
+    # Zero sau negativ inseamna semantic „fara prag" — aceeasi conventie ca in
+    # `_build_search_url` din radar/facebook_scraper.py, ca sa nu existe doua
+    # intelesuri ale aceleiasi valori pe cai diferite. Cheia se adauga ULTIMA,
+    # deliberat: in absenta parametrului URL-ul ramane BYTE-IDENTIC cu cel de
+    # dinainte de FBS-6, deci fixture-urile si testele de URL existente raman valide.
+    if pret_min is not None and pret_min > 0:
+        params["minPrice"] = pret_min
     return f"{BASE}/marketplace/{city_page_id}/search?{urlencode(params)}"
 
 
 def cauta_ssr(client, city_page_id: str, query: str, *,
-              recenta: bool = True) -> list[dict]:
+              recenta: bool = True, pret_min: Optional[int] = None) -> list[dict]:
     """Obiectele brute de anunt din pagina SSR. Lista goala la orice esec.
 
     `city_page_id` e ID-ul NUMERIC de locatie, nu un slug — slugurile sunt moarte pe
@@ -70,7 +95,7 @@ def cauta_ssr(client, city_page_id: str, query: str, *,
     """
     if not city_page_id:
         return []
-    url = construieste_url(city_page_id, query, recenta=recenta)
+    url = construieste_url(city_page_id, query, recenta=recenta, pret_min=pret_min)
     corp, status = client.get(url)
     if status != 200 or not corp:
         log_manager.emit("radar", "WARN",

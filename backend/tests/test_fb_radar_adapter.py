@@ -43,9 +43,11 @@ def logs(monkeypatch):
 def nucleu(monkeypatch):
     apeluri, raspuns = [], []
 
-    def fals(query, lat, lon, *, raza_km=65, city_page_id=None):
+    # `pret_min` adaugat la FBS-6: dublul trebuie sa poarte ACEEASI semnatura ca
+    # `nucleu_search`-ul real, altfel calea logout ridica TypeError la fiecare apel.
+    def fals(query, lat, lon, *, raza_km=65, city_page_id=None, pret_min=None):
         apeluri.append({"query": query, "lat": lat, "lon": lon, "raza_km": raza_km,
-                        "city_page_id": city_page_id})
+                        "city_page_id": city_page_id, "pret_min": pret_min})
         return list(raspuns)
 
     monkeypatch.setattr(fb, "nucleu_search", fals)

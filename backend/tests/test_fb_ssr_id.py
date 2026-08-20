@@ -282,3 +282,81 @@ def test_ok_ul_nu_e_marcat_ca_zero_confirmat(monkeypatch):
     assert canonice
     assert stare.eticheta == "ok"
     assert stare.zero_confirmat is False
+
+
+# ── 14-19. FBS-6: pragul de pret, trimis server-side pe treapta 1 ────────────
+def test_absenta_pragului_lasa_urlul_byte_identic():
+    """Garda cea mai importanta a rundei. Daca adaugarea parametrului ar schimba
+    URL-ul si cand nu e cerut, toate fixture-urile SSR si toate testele de URL de
+    mai sus ar deveni invalide TACIT — exact modul de esec pe care FBS-2 l-a platit
+    o data cu interpolarea bruta a termenului."""
+    assert (construieste_url(_ID_CLUJ, "canapea")
+            == construieste_url(_ID_CLUJ, "canapea", pret_min=None))
+
+
+def test_pragul_ajunge_in_url_langa_recenta():
+    u = construieste_url(_ID_CLUJ, "iphone 15 pro max", pret_min=1500)
+
+    assert "minPrice=1500" in u
+    assert "sortBy=creation_time_descend" in u
+    assert "daysSinceListed=1" in u
+    assert " " not in u, f"termenul ramane codificat: {u}"
+
+
+@pytest.mark.parametrize("prag", [0, -5])
+def test_pragul_zero_sau_negativ_nu_ajunge_in_url(prag):
+    """Aceeasi conventie ca in `_build_search_url`: doar strict pozitiv inseamna
+    prag. Un `minPrice=0` trimis degeaba ar fi si zgomot, si o a doua semantica."""
+    u = construieste_url(_ID_CLUJ, "canapea", pret_min=prag)
+
+    assert "minPrice" not in u
+    assert u == construieste_url(_ID_CLUJ, "canapea")
+
+
+def test_pragul_se_propaga_pe_scara_pana_la_treapta_1(monkeypatch):
+    """Contra-proba de capat: pragul dat lui `search` chiar ajunge in GET-ul SSR."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
+    cl = ClientFals(rute={f"/marketplace/{_ID_CLUJ}/search":
+                          (_fix("fb_ssr_search.html"), 200)})
+
+    canonice = search("canapea", 46.77, 23.62, city_page_id=_ID_CLUJ,
+                      client=cl, pret_min=3000)
+
+    assert canonice
+    assert [m for m, _ in cl.cereri] == ["get"], "treapta 1, fara cadere la GraphQL"
+    assert "minPrice=3000" in cl.cereri[0][1]
+
+
+def _captureaza_nucleul(monkeypatch):
+    """Dublu peste `nucleu_search` care retine kwargs-urile primite."""
+    from app.services.radar import facebook_scraper as fb
+
+    captat = {}
+
+    def fals(query, lat, lon, **kw):
+        captat.update(kw)
+        return []
+
+    monkeypatch.delenv("FB_RADAR_ANCORA", raising=False)
+    monkeypatch.setattr(fb, "nucleu_search", fals)
+    monkeypatch.setattr(fb.log_manager, "emit", lambda *a, **k: None)
+    return fb, captat
+
+
+def test_radarul_trunchiaza_pragul_ca_build_search_url(monkeypatch):
+    """`2999.9 -> 2999`, prin `int`, exact ca pe calea de sesiune. Daca cele doua cai
+    ar rotunji diferit, acelasi keyword ar cere praguri diferite dupa `FB_MOD`."""
+    fb, captat = _captureaza_nucleul(monkeypatch)
+
+    fb._search_logout("iphone", None, None, 2999.9, None)
+
+    assert captat["pret_min"] == 2999
+
+
+@pytest.mark.parametrize("min_price", [None, 0])
+def test_radarul_fara_prag_nu_trimite_niciun_prag(monkeypatch, min_price):
+    fb, captat = _captureaza_nucleul(monkeypatch)
+
+    fb._search_logout("iphone", None, None, min_price, None)
+
+    assert captat["pret_min"] is None

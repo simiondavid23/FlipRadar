@@ -348,8 +348,16 @@ def _search_logout(keyword: str, max_price, exclude_words, min_price, category) 
     ancora = _ancora_configurata("FB_RADAR_ANCORA", "radar")
     log_manager.emit("radar", "SCAN", f'Facebook nucleu "{keyword}"')
 
+    # FBS-6 — pragul pleaca SERVER-SIDE pe treapta 1 (SSR), unde e MASURAT ca
+    # respectat (FBS-V1b). Normalizarea e EXACT cea din `_build_search_url`: strict
+    # pozitiv inseamna prag, orice altceva inseamna „fara prag" — doua semantici ale
+    # aceleiasi valori pe cai diferite ar fi o divergenta tacuta.
+    # Filtrul local din `_din_canonice` ramane NEATINS, deliberat (D1): el e plasa
+    # care prinde si treapta 2 (GraphQL nu poarta filtrul) si orice degradare.
+    pret_min = int(min_price) if (min_price and min_price > 0) else None
     canonice = nucleu_search(keyword, ancora.lat, ancora.lon, raza_km=65.0,
-                             city_page_id=ancora.city_page_id) or []
+                             city_page_id=ancora.city_page_id,
+                             pret_min=pret_min) or []
     return _din_canonice(canonice, keyword, max_price, exclude_words,
                          min_price, category)
 

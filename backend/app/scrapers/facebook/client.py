@@ -394,6 +394,7 @@ def _varsta_max_ore() -> float:
 
 def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
                    city_page_id: Optional[str] = None,
+                   pret_min: Optional[int] = None,
                    client: Optional[FacebookClient] = None) -> tuple:
     """Scara de robustete, cu verdict. Intoarce (canonice, StareCautare)."""
     cl = client if client is not None else _client_implicit()
@@ -421,7 +422,7 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
     # Ancorele fara ID sar treapta asta si incep de la GraphQL, exact ca inainte.
     if city_page_id:
         trepte = 1
-        brute = cauta_ssr(cl, city_page_id, query)
+        brute = cauta_ssr(cl, city_page_id, query, pret_min=pret_min)
         if _oprit_de_sesiune():
             return [], StareCautare("sesiune_invalida", cod, trepte)
         if brute:
@@ -455,6 +456,8 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
             f"anunturi si nici santinela — esec ambiguu, incerc GraphQL")
 
     # ── treapta 2: GraphQL cu bootstrap din cache ────────────────────────────
+    # FBS-6, D3: `pret_min` NU se trimite pe GraphQL — degradarea intoarce feed
+    # NEFILTRAT, iar filtrele locale ale apelantilor raman plasa de siguranta.
     trepte = 2
     boot = incarca_sau_bootstrapeaza(cl)
     obiecte = None
@@ -527,6 +530,7 @@ def _pare_blocat(cl, cod) -> bool:
 
 def search(query: str, lat: float, lon: float, *, raza_km: float = 65,
            city_page_id: Optional[str] = None,
+           pret_min: Optional[int] = None,
            client: Optional[FacebookClient] = None) -> list[dict]:
     """Anunturi CANONICE pentru o ancora geografica. Lista goala = nimic obtinut.
 
@@ -536,14 +540,20 @@ def search(query: str, lat: float, lon: float, *, raza_km: float = 65,
     FBS-2: `fb_slug` a fost INLOCUIT cu `city_page_id`. Parametrii sunt keyword-only,
     deci un apel vechi cu `fb_slug=` ridica TypeError — zgomotos, nu tacut. Alegerea
     e deliberata: un slug acceptat si ignorat ar ancora in alt oras fara niciun semnal.
+
+    `pret_min` (FBS-6) pleaca SERVER-SIDE, dar numai pe treapta 1 — vezi `ssr.py`
+    pentru masuratoare si pentru rezerva de recall.
     """
     return _search_intern(query, lat, lon, raza_km=raza_km,
-                          city_page_id=city_page_id, client=client)[0]
+                          city_page_id=city_page_id, pret_min=pret_min,
+                          client=client)[0]
 
 
 def search_cu_stare(query: str, lat: float, lon: float, *, raza_km: float = 65,
                     city_page_id: Optional[str] = None,
+                    pret_min: Optional[int] = None,
                     client: Optional[FacebookClient] = None) -> tuple:
     """Ca `search`, dar intoarce (canonice, StareCautare)."""
     return _search_intern(query, lat, lon, raza_km=raza_km,
-                          city_page_id=city_page_id, client=client)
+                          city_page_id=city_page_id, pret_min=pret_min,
+                          client=client)
