@@ -360,3 +360,97 @@ def test_radarul_fara_prag_nu_trimite_niciun_prag(monkeypatch, min_price):
     fb._search_logout("iphone", None, None, min_price, None)
 
     assert captat["pret_min"] is None
+
+
+# ── 20-26. FBS-10: plafonul de pret, simetricul pragului ─────────────────────
+def test_absenta_plafonului_lasa_urlul_byte_identic():
+    """Aceeasi garda ca la FBS-6, acum pe a doua margine — si inca o data PESTE prag:
+    un URL care avea deja `minPrice` nu are voie sa se schimbe cand plafonul lipseste,
+    altfel fixture-urile si testele scrise dupa FBS-6 ar deveni invalide TACIT."""
+    assert (construieste_url(_ID_CLUJ, "canapea")
+            == construieste_url(_ID_CLUJ, "canapea", pret_max=None))
+    assert (construieste_url(_ID_CLUJ, "canapea", pret_min=1500)
+            == construieste_url(_ID_CLUJ, "canapea", pret_min=1500, pret_max=None))
+
+
+def test_plafonul_ajunge_in_url_langa_recenta():
+    u = construieste_url(_ID_CLUJ, "iphone 15 pro max", pret_max=1500)
+
+    assert "maxPrice=1500" in u
+    assert "sortBy=creation_time_descend" in u
+    assert "daysSinceListed=1" in u
+    assert " " not in u, f"termenul ramane codificat: {u}"
+
+
+def test_ordinea_marginilor_e_cea_masurata_la_v3():
+    """`minPrice` INAINTEA lui `maxPrice`. Ordinea nu e cosmetica: forma asta e cea pe
+    care sonda FBS-V3 a masurat-o ca respectata, si tot ea pastreaza URL-ul cu prag dar
+    fara plafon byte-identic cu forma post-FBS-6."""
+    u = construieste_url(_ID_CLUJ, "iphone 15 pro max", pret_min=1245, pret_max=1588)
+
+    assert "minPrice=1245" in u and "maxPrice=1588" in u
+    assert u.index("minPrice") < u.index("maxPrice")
+
+
+@pytest.mark.parametrize("plafon", [0, -5])
+def test_plafonul_zero_sau_negativ_nu_ajunge_in_url(plafon):
+    """Aceeasi conventie ca pentru prag si ca in `_build_search_url`: doar strict
+    pozitiv inseamna plafon."""
+    u = construieste_url(_ID_CLUJ, "canapea", pret_max=plafon)
+
+    assert "maxPrice" not in u
+    assert u == construieste_url(_ID_CLUJ, "canapea")
+
+
+def test_plafonul_se_propaga_pe_scara_pana_la_treapta_1(monkeypatch):
+    """Contra-proba de capat: plafonul dat lui `search` chiar ajunge in GET-ul SSR,
+    si NU se cade la GraphQL — treapta 2 nu poarta marginile de pret (D3)."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
+    cl = ClientFals(rute={f"/marketplace/{_ID_CLUJ}/search":
+                          (_fix("fb_ssr_search.html"), 200)})
+
+    canonice = search("canapea", 46.77, 23.62, city_page_id=_ID_CLUJ,
+                      client=cl, pret_max=1200)
+
+    assert canonice
+    assert [m for m, _ in cl.cereri] == ["get"], "treapta 1, fara cadere la GraphQL"
+    assert "maxPrice=1200" in cl.cereri[0][1]
+
+
+def test_ambele_margini_se_propaga_impreuna(monkeypatch):
+    """Forma pe care o trimite productia dupa FBS-10, si cea masurata la FBS-V3."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
+    cl = ClientFals(rute={f"/marketplace/{_ID_CLUJ}/search":
+                          (_fix("fb_ssr_search.html"), 200)})
+
+    search("canapea", 46.77, 23.62, city_page_id=_ID_CLUJ, client=cl,
+           pret_min=1245, pret_max=1588)
+
+    url = cl.cereri[0][1]
+    assert "minPrice=1245" in url and "maxPrice=1588" in url
+
+
+def test_radarul_trunchiaza_plafonul_ca_build_search_url(monkeypatch):
+    """`2999.9 -> 2999`, prin `int`, EXACT ca pragul si ca pe calea de sesiune."""
+    fb, captat = _captureaza_nucleul(monkeypatch)
+
+    fb._search_logout("iphone", 2999.9, None, None, None)
+
+    assert captat["pret_max"] == 2999
+
+
+@pytest.mark.parametrize("max_price", [None, 0])
+def test_radarul_fara_plafon_nu_trimite_niciun_plafon(monkeypatch, max_price):
+    fb, captat = _captureaza_nucleul(monkeypatch)
+
+    fb._search_logout("iphone", max_price, None, None, None)
+
+    assert captat["pret_max"] is None
+
+
+def test_radarul_trimite_ambele_margini_deodata(monkeypatch):
+    fb, captat = _captureaza_nucleul(monkeypatch)
+
+    fb._search_logout("iphone", 6000.0, None, 1500.0, None)
+
+    assert (captat["pret_min"], captat["pret_max"]) == (1500, 6000)

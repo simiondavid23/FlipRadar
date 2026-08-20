@@ -404,10 +404,16 @@ def _search_logout(keyword: str, max_price, exclude_words, min_price, category) 
     # aceleiasi valori pe cai diferite ar fi o divergenta tacuta.
     # Filtrul local din `_din_canonice` ramane NEATINS, deliberat (D1): el e plasa
     # care prinde si treapta 2 (GraphQL nu poarta filtrul) si orice degradare.
+    # FBS-10 — plafonul pleaca pe ACEEASI cale si cu EXACT aceeasi normalizare, fiindca
+    # e masurat la fel de strict respectat (FBS-V3: zero scapari, iar combinatia a
+    # intors un superset al benzii de referinta). Doua semantici ale aceleiasi valori
+    # pe cai diferite ar fi o divergenta tacuta — de-aia forma e identica, nu doar
+    # asemanatoare.
     pret_min = int(min_price) if (min_price and min_price > 0) else None
+    pret_max = int(max_price) if (max_price and max_price > 0) else None
     canonice = nucleu_search(keyword, ancora.lat, ancora.lon, raza_km=65.0,
                              city_page_id=ancora.city_page_id,
-                             pret_min=pret_min) or []
+                             pret_min=pret_min, pret_max=pret_max) or []
 
     # FBS-9b — amprenta de ferma se calculeaza AICI, si numai aici, fiindca asta e
     # singurul loc de pe calea nucleu care are feed-ul UNEI cereri. Detectorul e definit

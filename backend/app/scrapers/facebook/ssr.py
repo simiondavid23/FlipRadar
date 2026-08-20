@@ -46,7 +46,8 @@ _ZILE = "1"
 
 
 def construieste_url(city_page_id: str, query: str, *, recenta: bool = True,
-                     pret_min: Optional[int] = None) -> str:
+                     pret_min: Optional[int] = None,
+                     pret_max: Optional[int] = None) -> str:
     """URL-ul de cautare SSR pentru un ID de locatie.
 
     Termenul se CODIFICA (`urlencode`). Pana la FBS-2 se interpola brut intr-un
@@ -71,6 +72,20 @@ def construieste_url(city_page_id: str, query: str, *, recenta: bool = True,
     prag s-a oprit la 17.79 h si a omis doua anunturi eligibile de 32-41 h pe care o
     rulare fara prag le avea. Filtrul deci NU lasa nimic SUB prag sa treaca, dar nici
     nu garanteaza tot ce e PESTE prag. Un prag pus prea sus poate infometa feed-ul.
+
+    `pret_max` (FBS-10) e MASURAT la fel de strict respectat, la FBS-V3: cu plafon 1000
+    au iesit ZERO scapari peste el dintr-o referinta care avea 23 din 24 deasupra, iar
+    combinatia `minPrice=1245` + `maxPrice=1588` a intors 24 din 24 in interval si a
+    fost SUPRASET al benzii de referinta — a pastrat toate cele 11 anunturi pe care
+    referinta le avea in banda si a mai scos la iveala inca 13, invizibile fara filtru.
+    Superset-ul e dovada mai tare decat Jaccard-ul: rotatia de inventar nu adauga
+    anunturi FIX in banda ceruta, doar filtrarea la sursa elibereaza sloturi asa.
+    Ordinea cheilor (`minPrice` inaintea lui `maxPrice`) e cea masurata acolo.
+
+    Aceeasi rezerva se aplica si aici, mai apasat: pe COMBINATIE fereastra elastica
+    s-a intins pana la ~35 h, cu mediana 20.9 h. Cu `FB_VARSTA_MAX_ORE` la 24 h
+    jumatate din recolta ar fi fost taiata de filtrul de varsta al treptei 1; la 48 h,
+    cat e configurat, incape.
     """
     params = {"query": query}
     if recenta:
@@ -78,16 +93,21 @@ def construieste_url(city_page_id: str, query: str, *, recenta: bool = True,
         params["daysSinceListed"] = _ZILE
     # Zero sau negativ inseamna semantic „fara prag" — aceeasi conventie ca in
     # `_build_search_url` din radar/facebook_scraper.py, ca sa nu existe doua
-    # intelesuri ale aceleiasi valori pe cai diferite. Cheia se adauga ULTIMA,
-    # deliberat: in absenta parametrului URL-ul ramane BYTE-IDENTIC cu cel de
-    # dinainte de FBS-6, deci fixture-urile si testele de URL existente raman valide.
+    # intelesuri ale aceleiasi valori pe cai diferite. Cheile se adauga ULTIMELE,
+    # deliberat: in absenta lor URL-ul ramane BYTE-IDENTIC cu cel de dinainte, deci
+    # fixture-urile si testele de URL existente raman valide. `maxPrice` intra DUPA
+    # `minPrice`, ca forma trimisa sa fie exact cea masurata la FBS-V3 — si ca URL-ul
+    # cu prag dar fara plafon sa ramana byte-identic cu forma post-FBS-6.
     if pret_min is not None and pret_min > 0:
         params["minPrice"] = pret_min
+    if pret_max is not None and pret_max > 0:
+        params["maxPrice"] = pret_max
     return f"{BASE}/marketplace/{city_page_id}/search?{urlencode(params)}"
 
 
 def cauta_ssr(client, city_page_id: str, query: str, *,
-              recenta: bool = True, pret_min: Optional[int] = None) -> list[dict]:
+              recenta: bool = True, pret_min: Optional[int] = None,
+              pret_max: Optional[int] = None) -> list[dict]:
     """Obiectele brute de anunt din pagina SSR. Lista goala la orice esec.
 
     `city_page_id` e ID-ul NUMERIC de locatie, nu un slug — slugurile sunt moarte pe
@@ -95,7 +115,8 @@ def cauta_ssr(client, city_page_id: str, query: str, *,
     """
     if not city_page_id:
         return []
-    url = construieste_url(city_page_id, query, recenta=recenta, pret_min=pret_min)
+    url = construieste_url(city_page_id, query, recenta=recenta, pret_min=pret_min,
+                           pret_max=pret_max)
     corp, status = client.get(url)
     if status != 200 or not corp:
         log_manager.emit("radar", "WARN",

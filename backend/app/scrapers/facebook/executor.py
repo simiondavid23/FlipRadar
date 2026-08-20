@@ -284,13 +284,13 @@ def _platforme_radar(kw) -> list:
 def _keywords_facebook(db) -> list:
     """Keyword-urile ACTIVE care au Facebook ca platforma, din toate trei modulele.
 
-    Intoarce dicturi: modul, keyword_id, termeni, in_ore_active, pret_min.
+    Intoarce dicturi: modul, keyword_id, termeni, in_ore_active, pret_min, pret_max.
 
-    `pret_min` (FBS-7) e pragul care pleaca SERVER-SIDE pe treapta 1, masurat ca
-    respectat la FBS-V1b. Cheia exista pe TOATE cele trei ramuri, chiar daca doar
-    Radar o alimenteaza: o forma uniforma de dict inseamna ca `tick` citeste direct,
-    fara `get` cu implicit, deci un modul adaugat mai tarziu si uitat aici crapa
-    zgomotos in loc sa scaneze tacit fara prag.
+    `pret_min` (FBS-7) si `pret_max` (FBS-10) sunt marginile care pleaca SERVER-SIDE
+    pe treapta 1, masurate ca respectate la FBS-V1b si FBS-V3. Cheile exista pe TOATE
+    cele trei ramuri, chiar daca doar Radar le alimenteaza: o forma uniforma de dict
+    inseamna ca `tick` citeste direct, fara `get` cu implicit, deci un modul adaugat
+    mai tarziu si uitat aici crapa zgomotos in loc sa scaneze tacit fara margini.
     """
     from app.models.auto_keyword import AutoKeyword
     from app.models.radar_keyword import RadarKeyword
@@ -313,7 +313,10 @@ def _keywords_facebook(db) -> list:
                     # ar fi o divergenta tacuta. `min_price` e de facto RON — filtrul
                     # local il compara direct cu preturile parsate RON.
                     "pret_min": (int(kw.min_price)
-                                 if (kw.min_price and kw.min_price > 0) else None)})
+                                 if (kw.min_price and kw.min_price > 0) else None),
+                    # FBS-10 — simetric, si `max_price` e de facto RON, ca `min_price`.
+                    "pret_max": (int(kw.max_price)
+                                 if (kw.max_price and kw.max_price > 0) else None)})
 
     for kw in db.query(AutoKeyword).filter(AutoKeyword.is_active.is_(True)).all():
         if (kw.platform or "") != "facebook_auto":
@@ -328,7 +331,13 @@ def _keywords_facebook(db) -> list:
                     "in_ore_active": _in_ore_active(kw),
                     # D2 — `AutoKeyword` n-are camp de pret minim (doar `price_max`
                     # si `resale_price`), deci nu exista ce alimenta.
-                    "pret_min": None})
+                    "pret_min": None,
+                    # FBS-10, D4 — plafonul EXISTA (`price_max`), dar e AMANAT pe
+                    # MONEDA, exact ca la Imobiliare: `price_currency` e implicit EUR,
+                    # iar piata auto chiar se listeaza frecvent in EUR. Trimis ca atare
+                    # intr-un `maxPrice` care e RON ar taia la ~5x sub plafonul real,
+                    # tacut. Conversia prin BNR e o runda separata.
+                    "pret_max": None})
 
     for kw in db.query(RealEstateMonitorKeyword).filter(
             RealEstateMonitorKeyword.is_active.is_(True)).all():
@@ -346,7 +355,9 @@ def _keywords_facebook(db) -> list:
                     # `price_currency` (implicit EUR), iar `minPrice` e RON. Trimis ca
                     # atare ar taia la ~5x pragul real, tacut. Conversia prin BNR e o
                     # runda separata.
-                    "pret_min": None})
+                    "pret_min": None,
+                    # FBS-10 — plafonul, acelasi motiv si aceeasi amanare.
+                    "pret_max": None})
 
     return out
 
@@ -479,7 +490,8 @@ def tick(db) -> dict:
             for termen in k["termeni"]:
                 canonice, stare = search_cu_stare(
                     termen, ancora.lat, ancora.lon, raza_km=65.0,
-                    city_page_id=ancora.city_page_id, pret_min=k["pret_min"])
+                    city_page_id=ancora.city_page_id, pret_min=k["pret_min"],
+                    pret_max=k["pret_max"])
                 sumar["cereri"] += 1
                 sumar["etichete"][stare.eticheta] = \
                     sumar["etichete"].get(stare.eticheta, 0) + 1

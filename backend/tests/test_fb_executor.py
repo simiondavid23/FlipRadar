@@ -291,17 +291,21 @@ def test_curatenia_ttl_sterge_doar_expiratele(db, monkeypatch):
 def _mock_nucleu(monkeypatch, per_termen=None, implicit=None, blocat_la=None):
     """Inlocuieste `search_cu_stare` in executor. `blocat_la` = termenul care da blocat.
 
-    FBS-7: dublul poarta si `pret_min`, ca semnatura reala. Pragurile se strang in
-    `praguri`, o lista PARALELA cu `apeluri` (acelasi indice = acelasi apel), nu in
-    `apeluri` sub forma de tupluri: asa asserturile existente pe `apeluri` raman
-    neatinse, iar pragul ramane verificabil.
+    FBS-7: dublul poarta si `pret_min`, FBS-10 si `pret_max`, ca semnatura reala.
+    Marginile se strang in `praguri` si `plafoane`, liste PARALELE cu `apeluri`
+    (acelasi indice = acelasi apel), nu in `apeluri` sub forma de tupluri: asa
+    asserturile existente pe `apeluri` raman neatinse, iar marginile raman
+    verificabile.
     """
     apeluri = []
     praguri = []
+    plafoane = []
 
-    def fals(termen, lat, lon, *, raza_km=65, city_page_id=None, pret_min=None):
+    def fals(termen, lat, lon, *, raza_km=65, city_page_id=None, pret_min=None,
+             pret_max=None):
         apeluri.append(termen)
         praguri.append(pret_min)
+        plafoane.append(pret_max)
         if blocat_la is not None and termen == blocat_la:
             return [], StareCautare("blocat", 1675004, 1)
         canonice = (per_termen or {}).get(termen, implicit or [])
@@ -310,14 +314,19 @@ def _mock_nucleu(monkeypatch, per_termen=None, implicit=None, blocat_la=None):
     monkeypatch.setattr(ex, "search_cu_stare", fals)
     fals.apeluri = apeluri
     fals.praguri = praguri
+    fals.plafoane = plafoane
     return fals
 
 
 def _keyword_radar(db, uid, nume="geaca", platform="facebook", platforms=None,
-                   activ=True, min_price=None):
+                   activ=True, min_price=None, max_price=1000.0):
+    # `max_price` a devenit parametru la FBS-10 (era fixat la 1000.0): coloana e
+    # `nullable=False`, deci trebuie sa aiba mereu o valoare, dar acum plafonul chiar
+    # pleaca server-side si testele au nevoie sa-l poata varia. Implicitul e cel de
+    # dinainte, deci toate apelurile existente raman neschimbate.
     kw = RadarKeyword(name=nume, user_id=uid, is_active=activ, platform=platform,
                       platforms=platforms or '["olx"]',
-                      max_price=1000.0, resale_price=1500.0, min_price=min_price)
+                      max_price=max_price, resale_price=1500.0, min_price=min_price)
     db.add(kw)
     db.commit()
     return kw
@@ -677,3 +686,107 @@ def test_keywordul_fara_prag_cheama_nucleul_cu_none(db, uid, monkeypatch):
 
     assert nucleu.apeluri == ["geaca"]
     assert nucleu.praguri == [None]
+
+
+# ── FBS-10: plafonul, simetricul pragului ────────────────────────────────────
+# ASIMETRIE REALA fata de prag, de stiut: `RadarKeyword.min_price` e nullable, dar
+# `max_price` e `nullable=False` — deci pe Radar plafonul NU poate fi NULL, iar cazul
+# „necompletat" se exprima prin 0, nu prin None. Normalizarea trateaza si None (poate
+# veni pe alte cai, si garda `kw.max_price and ...` nu are voie sa presupuna), dar acolo
+# se testeaza: `test_radarul_fara_plafon_nu_trimite_niciun_plafon` din test_fb_ssr_id.py
+# il acopera direct pe `_search_logout`, unde chiar e accesibil.
+@pytest.mark.parametrize("max_price,asteptat", [
+    (8000.0, 8000),      # normal
+    (2999.9, 2999),      # trunchiere prin `int`, ca la prag
+    (0, None),           # zero inseamna „fara plafon", nu „plafon zero"
+    (-5, None),          # negativ, la fel
+])
+def test_plafonul_radar_se_normalizeaza_ca_pragul(db, uid, max_price, asteptat):
+    _keyword_radar(db, uid, "geaca", platform="facebook", max_price=max_price)
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [i["pret_max"] for i in intrari] == [asteptat]
+
+
+def test_autoul_nu_trimite_plafon_desi_ARE_price_max(db, uid):
+    """D4 — amanare pe MONEDA, si e comportament TESTAT, nu doar comentat.
+
+    Spre deosebire de prag (unde Auto pur si simplu n-are camp), plafonul EXISTA:
+    `price_max`. Dar exista si `price_currency`, implicit EUR, iar piata auto chiar se
+    listeaza frecvent in EUR. Un `maxPrice` care e RON, alimentat dintr-o valoare EUR,
+    ar taia la ~5x sub plafonul real — tacut. De-aia keyword-ul de aici ARE `price_max`
+    setat: testul ar trece si daca ramura ar fi goala, dar atunci n-ar dovedi nimic."""
+    _keyword_auto(db, uid, platform="facebook_auto", make="BMW", model="320d",
+                  is_active=True, price_max=25000, price_currency="EUR")
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [(i["modul"], i["pret_max"]) for i in intrari] == [("auto", None)]
+
+
+def test_imobiliarele_nu_trimit_plafon(db, uid):
+    _keyword_re(db, uid, platform="facebook_marketplace", query="apartament",
+                is_active=True, price_max=800, price_currency="EUR")
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [(i["modul"], i["pret_max"]) for i in intrari] == [("real_estate", None)]
+
+
+def test_cheia_pret_max_exista_pe_toate_ramurile(db, uid):
+    """Forma uniforma de dict: `tick` citeste `k["pret_max"]` DIRECT, fara `get` cu
+    implicit. Un modul adaugat mai tarziu si uitat aici trebuie sa crape zgomotos, nu
+    sa scaneze tacit fara plafon."""
+    _keyword_radar(db, uid, "geaca", platform="facebook")
+    _keyword_auto(db, uid, platform="facebook_auto", make="BMW", is_active=True)
+    _keyword_re(db, uid, platform="facebook_marketplace", query="apartament",
+                is_active=True)
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert len(intrari) == 3
+    assert all("pret_max" in i for i in intrari), intrari
+
+
+def test_plafonul_ajunge_in_apelul_nucleului(db, uid, monkeypatch):
+    """Contra-proba de capat, ca la prag: plafonul din keyword chiar ajunge la
+    `search_cu_stare`, nu se pierde in bucla care conteaza."""
+    nucleu = _mock_nucleu(monkeypatch, implicit=[])
+    k = _keyword_radar(db, uid, "iphone", platform="facebook", max_price=6000.0)
+    db.commit()
+
+    _pregateste(db, [("radar", k.id)], buget=1, scadente=[("radar", k.id)])
+    ex.tick(db)
+
+    assert nucleu.apeluri == ["iphone"]
+    assert nucleu.plafoane == [6000]
+
+
+def test_keywordul_fara_plafon_cheama_nucleul_cu_none(db, uid, monkeypatch):
+    """„Fara plafon" pe Radar inseamna 0, nu NULL — coloana e `nullable=False`."""
+    nucleu = _mock_nucleu(monkeypatch, implicit=[])
+    k = _keyword_radar(db, uid, "geaca", platform="facebook", max_price=0)
+    db.commit()
+
+    _pregateste(db, [("radar", k.id)], buget=1, scadente=[("radar", k.id)])
+    ex.tick(db)
+
+    assert nucleu.plafoane == [None]
+
+
+def test_ambele_margini_ajung_impreuna_la_nucleu(db, uid, monkeypatch):
+    """Forma completa pe care o trimite productia dupa FBS-10 — cea masurata la FBS-V3."""
+    nucleu = _mock_nucleu(monkeypatch, implicit=[])
+    k = _keyword_radar(db, uid, "iphone", platform="facebook",
+                       min_price=1245.0, max_price=1588.0)
+    db.commit()
+
+    _pregateste(db, [("radar", k.id)], buget=1, scadente=[("radar", k.id)])
+    ex.tick(db)
+
+    assert (nucleu.praguri, nucleu.plafoane) == ([1245], [1588])
