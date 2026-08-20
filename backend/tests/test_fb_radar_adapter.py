@@ -177,6 +177,38 @@ def test_anunturile_fara_categorie_se_numara(monkeypatch, nucleu, logs):
     assert any("2 anunturi pastrate fara categorie" in m for niv, m in logs if niv == "INFO")
 
 
+# ── 2b. FBS-8: cifrele keyword-ului trebuie sa apara in titlu ────────────────
+def test_cifrele_keywordului_taie_modelul_gresit(monkeypatch, nucleu, logs):
+    """Cautarea FB e FUZZY pe model (masurat la FBS-V2: „iphone 15 pro max" intoarce
+    14 si 17 Pro Max, relevanta 0%). Poarta noua taie ce nu poarta grupul cerut."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.extend([
+        _canonic("1", title="iPhone15 Pro Max GB"),        # lipit de litere -> ramane
+        _canonic("2", title="Iphone 17 Pro max nou"),      # alt model -> cade
+        _canonic("3", title="iphone 1500 lei super"),      # 15 inghitit de 1500 -> cade
+    ])
+
+    rez = fb.search_facebook("iphone 15 pro max", max_price=100000)
+
+    assert {r["external_id"] for r in rez} == {"fb_1"}
+    assert any("2 anunturi sarite" in m and "iphone 15 pro max" in m
+               for niv, m in logs if niv == "INFO"), [m for _, m in logs]
+
+
+def test_keyword_fara_cifre_lasa_totul_neatins(monkeypatch, nucleu, logs):
+    """No-op complet: pe termeni fara cifre comportamentul e identic cu cel de dinainte
+    de FBS-8, inclusiv absenta liniei de jurnal."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.extend([_canonic("1", title="Geaca de piele"),
+                           _canonic("2", title="Iphone 17 Pro max nou"),
+                           _canonic("3", title="canapea 1500 lei")])
+
+    rez = fb.search_facebook("geaca", max_price=100000)
+
+    assert {r["external_id"] for r in rez} == {"fb_1", "fb_2", "fb_3"}
+    assert not [m for niv, m in logs if niv == "INFO" and "sarite" in m]
+
+
 def test_dedup_pe_external_id(monkeypatch, nucleu):
     monkeypatch.setenv("FB_MOD", "logout")
     nucleu.raspuns.extend([_canonic("7"), _canonic("7"), _canonic("8")])

@@ -43,6 +43,9 @@ from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
     report_outcome, Outcome,
 )
+# FBS-8 — helper PUR (fara DB, fara mediu); sta langa celelalte reguli de potrivire
+# pe titlu, nu in scraper, ca sa fie testabil table-driven ca restul motorului.
+from app.services.radar.exclusion_engine import keyword_digits_match
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
 from app.utils.number_format import parse_number
 from app.utils.http_profile import DEFAULT_IMPERSONATE
@@ -374,11 +377,19 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
     results: list[dict] = []
     vazute = set()
     fara_categorie = 0
+    cifre_lipsa = 0
     for c in canonice:
         title = (c.get("title") or "").strip()
         if not title:
             continue
         if is_excluded(title, exclude_words):
+            continue
+        # FBS-8 — a doua poarta pe titlu: cifrele keyword-ului trebuie sa apara in el.
+        # Cautarea Facebook e fuzzy pe model (masurat la FBS-V2: „iphone 15 pro max"
+        # intoarce 14 si 17 Pro Max, relevanta 0%), iar pragul de pret taie gunoiul
+        # grosier dar NU separa modelele. Pe keyword-uri fara cifre regula e no-op.
+        if not keyword_digits_match(keyword, title):
+            cifre_lipsa += 1
             continue
 
         price = c.get("price")
@@ -427,6 +438,10 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
             "listed_at": _naiv_local(c.get("listed_at")),
         })
 
+    if cifre_lipsa:
+        log_manager.emit("radar", "INFO",
+            f"Facebook: {cifre_lipsa} anunturi sarite — cifrele din "
+            f'"{keyword}" nu apar in titlu (model gresit)')
     if fara_categorie:
         log_manager.emit("radar", "INFO",
             f"Facebook: {fara_categorie} anunturi pastrate fara categorie pe card "

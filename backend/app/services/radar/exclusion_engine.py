@@ -49,6 +49,42 @@ def _term_matches(term: str, text: str) -> bool:
     return re.search(r"\b" + re.escape(term) + r"\b", text) is not None
 
 
+_DIGIT_GROUP = re.compile(r"\d+")
+
+
+def keyword_digits_match(keyword, title) -> bool:
+    """True daca FIECARE grup de cifre din keyword apare in titlu, pe granita de cifre.
+
+    FBS-8. Motivul e masurat, nu presupus: la FBS-V2, cautarea Facebook s-a dovedit
+    FUZZY pe model — cererea „iphone 15 pro max" a intors aproape numai 14 si 17 Pro
+    Max, iar relevanta setului final a iesit 0%. Keyword-ul singur nu fixeaza modelul,
+    deci cifrele lui devin filtrul.
+
+    GRANITA E PE CIFRE, nu pe cuvant (spre deosebire de `_term_matches`): un grup nu
+    poate fi inghitit de un numar mai lung, dar literele lipite sunt valide. Ambele
+    jumatati sunt cerute de datele reale — „iPhone15 Pro Max GB" e un anunt legitim
+    (deci lipirea de litere trebuie sa treaca), iar „iphone 1500 lei" nu e un iPhone 15
+    (deci 15 inghitit de 1500 trebuie sa cada).
+
+    Keyword FARA cifre -> True neconditionat: regula e un no-op complet pe termeni ca
+    „canapea extensibila", exact ca inainte de FBS-8.
+
+    LIMITA ASUMATA, documentata deliberat: regula fixeaza CIFRELE, nu sufixele de gama.
+    „iPhone 15 Plus" trece la o cautare de „iphone 15 pro max", fiindca poarta grupul
+    15. Rafinarea pe sufixe e o runda viitoare — aici se opreste domeniul functiei.
+    """
+    groups = _DIGIT_GROUP.findall(normalize(keyword))
+    if not groups:
+        return True
+    text = normalize(title)
+    if not text:
+        return False
+    return all(
+        re.search(r"(?<!\d)" + re.escape(g) + r"(?!\d)", text) is not None
+        for g in groups
+    )
+
+
 def check_exclusion(title, description, exclude_words, exclude_description_words,
                     exceptions=None) -> tuple[bool, str | None]:
     """(excluded, matched_rule). `exclude_words` se aplica pe titlu, iar
