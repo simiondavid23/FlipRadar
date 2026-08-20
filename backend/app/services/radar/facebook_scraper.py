@@ -41,7 +41,7 @@ from curl_cffi import requests as curl_requests
 from app.services.log_manager import log_manager
 from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
-    report_outcome, Outcome,
+    report_outcome, Outcome, moneda_convertibila, pret_comparabil_ron,
 )
 # FBS-8 — helper PUR (fara DB, fara mediu); sta langa celelalte reguli de potrivire
 # pe titlu, nu in scraper, ca sa fie testabil table-driven ca restul motorului.
@@ -456,6 +456,8 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
     fara_categorie = 0
     cifre_lipsa = 0
     ferma_taiate = 0
+    moneda_necunoscuta = 0
+    curs_indisponibil = 0
     for c in canonice:
         # FBS-9b — prima poarta, INAINTEA tuturor celorlalte: verdictul de ferma e pe
         # feed, nu pe anunt, deci nu depinde de niciun filtru de mai jos. Se citeste
@@ -480,10 +482,21 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
         price = c.get("price")
         if price is None or price <= 0:
             continue
-        if max_price and max_price > 0 and price is not None and price > max_price:
-            continue
-        if min_price and min_price > 0 and price is not None and price < min_price:
-            continue
+        # FBS-11 — pragurile sunt RON, deci comparatia se face in RON. Cand pretul NU
+        # se poate aduce in RON, portile de pret se SAR si anuntul trece: decizia lui
+        # David (D2) e permisiva — mai bine un anunt in plus de verificat decat un deal
+        # pierdut tacut. Nimic nu trece nenumarat, vezi emit-urile de la final.
+        pret_ron = pret_comparabil_ron(price, c.get("currency"))
+        if pret_ron is None:
+            if moneda_convertibila(c.get("currency")):
+                curs_indisponibil += 1        # D3 — cursul n-a raspuns
+            else:
+                moneda_necunoscuta += 1       # D2 — moneda pe care n-o stim
+        else:
+            if max_price and max_price > 0 and pret_ron > max_price:
+                continue
+            if min_price and min_price > 0 and pret_ron < min_price:
+                continue
 
         cat_id = c.get("category_id")
         cat_id = str(cat_id) if cat_id is not None else None
@@ -523,6 +536,15 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
             "listed_at": _naiv_local(c.get("listed_at")),
         })
 
+    if moneda_necunoscuta:
+        log_manager.emit("radar", "INFO",
+            f"Facebook: {moneda_necunoscuta} anunturi au trecut de filtrele de pret "
+            f"fara verificare — moneda lor nu se poate aduce in RON")
+    if curs_indisponibil:
+        # UN singur WARN per apel de formator, nu unul per anunt (D3).
+        log_manager.emit("radar", "WARN",
+            f"Facebook: cursul BNR indisponibil — {curs_indisponibil} anunturi in EUR "
+            f"au trecut de filtrele de pret fara verificare")
     if cifre_lipsa:
         log_manager.emit("radar", "INFO",
             f"Facebook: {cifre_lipsa} anunturi sarite — cifrele din "
@@ -707,6 +729,8 @@ def _search_sesiune(
             known_ids = _known_facebook_category_ids() if category else None
             excluded_sold = 0
             fara_categorie = 0      # A6/A7 — pastrate desi cardul nu poarta categorie
+            moneda_necunoscuta = 0  # FBS-11 — trecute fara verificare de pret
+            curs_indisponibil = 0
             for oid, o in by_id.items():
                 if not _is_active(o):
                     excluded_sold += 1
@@ -723,10 +747,21 @@ def _search_sesiune(
                 # sar deja listingurile fara pret; Facebook era singurul care nu.
                 if price is None or price <= 0:
                     continue
-                if max_price and max_price > 0 and price is not None and price > max_price:
-                    continue
-                if min_price and min_price > 0 and price is not None and price < min_price:
-                    continue
+                # FBS-11 — aceeasi regula ca pe calea nucleu, prin ACELASI helper:
+                # pragurile sunt RON, iar cand pretul nu se poate aduce in RON portile
+                # de pret se sar (D2, permisiv), numarat. Moneda EXISTA si aici —
+                # `_parse_price` o intoarce langa pret — deci cele doua cai nu diverg.
+                pret_ron = pret_comparabil_ron(price, currency)
+                if pret_ron is None:
+                    if moneda_convertibila(currency):
+                        curs_indisponibil += 1
+                    else:
+                        moneda_necunoscuta += 1
+                else:
+                    if max_price and max_price > 0 and pret_ron > max_price:
+                        continue
+                    if min_price and min_price > 0 and pret_ron < min_price:
+                        continue
 
                 cat_id = o.get("marketplace_listing_category_id")
                 cat_id = str(cat_id) if cat_id is not None else None
@@ -782,6 +817,15 @@ def _search_sesiune(
             if excluded_sold:
                 log_manager.emit("radar", "INFO",
                     f"Facebook: {excluded_sold} anunturi excluse (sold/not-live/pending/hidden)")
+            if moneda_necunoscuta:
+                log_manager.emit("radar", "INFO",
+                    f"Facebook: {moneda_necunoscuta} anunturi au trecut de filtrele de "
+                    f"pret fara verificare — moneda lor nu se poate aduce in RON")
+            if curs_indisponibil:
+                # UN singur WARN per apel, nu unul per anunt (D3).
+                log_manager.emit("radar", "WARN",
+                    f"Facebook: cursul BNR indisponibil — {curs_indisponibil} anunturi "
+                    f"in EUR au trecut de filtrele de pret fara verificare")
             if fara_categorie:
                 # Vizibilitate pentru user: de ce vede si anunturi in afara categoriei alese.
                 log_manager.emit("radar", "INFO",

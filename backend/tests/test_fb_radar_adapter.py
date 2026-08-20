@@ -32,6 +32,22 @@ def _env_curat(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def curs_fix(monkeypatch):
+    """Cursul BNR PINUIT la 5.0, pentru TOATE testele din fisier.
+
+    Doua motive, amandoua necesare de la FBS-11 incolo:
+      * fara el, orice anunt in EUR care trece prin `_din_canonice` ar chema
+        `get_eur_ron()` real, iar lantul din `currency_service` incepe cu un FETCH la
+        BNR — adica un test offline ar atinge reteaua. Suita NU are o garda autouse
+        globala pentru asta (fiecare fisier si-o pune singur), deci se pune aici;
+      * cursul real se misca, deci un prag ales azi ar putea cadea de partea cealalta
+        maine. 5.0 e rotund si e valoarea folosita deja in test_radar_currency_score.
+    """
+    from app.services import bnr_exchange
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron", lambda: 5.0)
+
+
+@pytest.fixture(autouse=True)
 def logs(monkeypatch):
     capturate = []
     monkeypatch.setattr(fb.log_manager, "emit",
@@ -347,6 +363,122 @@ def test_bazinul_nu_paseaza_ferme(monkeypatch, nucleu):
     assert "ferme" not in apeluri[0], apeluri
 
 
+# ── 2d. FBS-11: filtrele de pret devin constiente de moneda ──────────────────
+def test_helperul_converteste_ron_si_eur_si_normalizeaza_moneda(monkeypatch):
+    """Unitatile helper-ului. Cursul e cel pinuit de fixture (5.0)."""
+    from app.services.radar import base_scraper as bs
+
+    assert bs.pret_comparabil_ron(1000, "RON") == 1000.0      # identitate
+    assert bs.pret_comparabil_ron(500, "EUR") == 2500.0       # D1
+    assert bs.pret_comparabil_ron(500, "eur ") == 2500.0      # normalizare
+    assert bs.pret_comparabil_ron(200, "GBP") is None          # D2
+    assert bs.pret_comparabil_ron(None, "RON") is None
+    assert bs.moneda_convertibila("RON") and bs.moneda_convertibila(" eur")
+    assert not bs.moneda_convertibila("GBP")
+
+
+def test_helperul_da_none_daca_cursul_ridica(monkeypatch):
+    """D3 — filtrarea nu are voie sa pice fiindca BNR-ul nu raspunde."""
+    from app.services import bnr_exchange
+    from app.services.radar import base_scraper as bs
+
+    def explodeaza():
+        raise RuntimeError("BNR indisponibil")
+
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron", explodeaza)
+
+    assert bs.pret_comparabil_ron(500, "EUR") is None
+    # ...dar moneda ramane una pe care O STIM, deci apelantul poate deosebi D3 de D2.
+    assert bs.moneda_convertibila("EUR") is True
+
+
+def test_eur_se_compara_convertit_nu_numeric(monkeypatch, nucleu):
+    """Chiar bugul reparat: 500 EUR NU e „sub 3000" doar fiindca 500 < 3000.
+
+    La cursul pinuit, 500 EUR = 2500 RON (cade sub prag) iar 700 EUR = 3500 RON (trece).
+    Inainte de FBS-11 amandoua ar fi cazut, fiind comparate ca numere fara unitate."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.extend([_canonic("1", price=500.0, currency="EUR"),
+                           _canonic("2", price=700.0, currency="EUR")])
+
+    rez = fb.search_facebook("geaca", max_price=0, min_price=3000)
+
+    assert {r["external_id"] for r in rez} == {"fb_2"}
+    assert rez[0]["price"] == 700.0 and rez[0]["currency"] == "EUR", \
+        "pretul AFISAT ramane in moneda lui — conversia e doar pentru comparatie"
+
+
+def test_moneda_necunoscuta_trece_si_se_numara(monkeypatch, nucleu, logs):
+    """D2 — permisiv, dar numarat: anuntul trece de praguri care l-ar fi taiat daca ar
+    fi fost citit ca RON.
+
+    GBP e ales ca sa exercite CONTRACTUL formatorului pe o moneda oarecare. De stiut ca
+    azi el n-ar veni asa din parser: si `parse.parse_price`, si `_parse_price` eticheteaza
+    RON orice nu recunosc (masurat: GBP si CHF ies amandoua „RON"), deci singura moneda
+    care ajunge REAL pe calea asta e USD — vezi testul urmator. Poarta permisiva ramane
+    corecta indiferent, si devine efectiva in clipa in care parserele vor spune adevarul
+    despre moneda."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.append(_canonic("1", price=200.0, currency="GBP"))
+
+    rez = fb.search_facebook("geaca", max_price=0, min_price=3000)
+
+    assert [r["external_id"] for r in rez] == ["fb_1"]
+    assert any("1 anunturi au trecut de filtrele de pret fara verificare" in m
+               for niv, m in logs if niv == "INFO"), [m for _n, m in logs]
+
+
+def test_usd_intra_pe_calea_permisiva(monkeypatch, nucleu):
+    """USD e emis chiar de `parse_price`/`_parse_price`, dar helper-ul nu-l converteste
+    (FBS-11 acopera doar EUR). Deci cade pe D2 — trece, numarat. De stiut cand se
+    extinde conversia."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    nucleu.raspuns.append(_canonic("1", price=50.0, currency="USD"))
+
+    assert len(fb.search_facebook("geaca", max_price=0, min_price=3000)) == 1
+
+
+def test_cursul_indisponibil_lasa_eur_sa_treaca_cu_warn(monkeypatch, nucleu, logs):
+    """D3 — cursul cade, dar filtrarea nu. Anuntul EUR trece, si UN singur WARN per
+    apel de formator, nu unul per anunt."""
+    from app.services import bnr_exchange
+
+    def explodeaza():
+        raise RuntimeError("BNR indisponibil")
+
+    monkeypatch.setenv("FB_MOD", "logout")
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron", explodeaza)
+    nucleu.raspuns.extend([_canonic("1", price=500.0, currency="EUR"),
+                           _canonic("2", price=600.0, currency="EUR")])
+
+    rez = fb.search_facebook("geaca", max_price=0, min_price=3000)
+
+    assert {r["external_id"] for r in rez} == {"fb_1", "fb_2"}
+    warn = [m for niv, m in logs if niv == "WARN" and "cursul BNR indisponibil" in m]
+    assert len(warn) == 1, f"UN singur WARN per apel, nu {len(warn)}"
+    assert "2 anunturi in EUR" in warn[0]
+    # NU se numara si ca moneda necunoscuta: cele doua motive raman deosebite.
+    assert not [m for niv, m in logs
+                if niv == "INFO" and "moneda lor nu se poate aduce" in m]
+
+
+def test_feed_integral_ron_e_neutru(monkeypatch, nucleu, logs):
+    """Regresie de neutralitate: acolo unde nu exista moneda straina, FBS-11 nu schimba
+    NIMIC — nici rezultatele, nici jurnalul."""
+    monkeypatch.setenv("FB_MOD", "logout")
+    # Titluri DISTINCTE: trei anunturi identice in aceeasi clipa ar fi o amprenta de
+    # ferma (FBS-9b) si s-ar arunca inainte de filtrul de pret, care e ce se masoara aici.
+    nucleu.raspuns.extend([_canonic("1", price=50.0, title="Geaca piele neagra"),
+                           _canonic("2", price=2500.0, title="Geaca piele maro"),
+                           _canonic("3", price=9000.0, title="Geaca piele vintage")])
+
+    rez = fb.search_facebook("geaca", max_price=5000, min_price=100)
+
+    assert {r["external_id"] for r in rez} == {"fb_2"}
+    assert not [m for _n, m in logs if "fara verificare" in m]
+    assert not [m for _n, m in logs if "cursul BNR" in m]
+
+
 def test_dedup_pe_external_id(monkeypatch, nucleu):
     monkeypatch.setenv("FB_MOD", "logout")
     # Al treilea anunt e distantat in timp (FBS-9b): trei titluri identice in aceeasi
@@ -366,7 +498,12 @@ def test_maparea_are_aceleasi_chei_ca_pe_sesiune(monkeypatch, nucleu):
     nucleu.raspuns.append(_canonic("42", title="Geaca piele", price=300.0,
                                    currency="EUR", location="Cluj-Napoca"))
 
-    r = fb.search_facebook("geaca", max_price=1000)[0]
+    # `max_price` urcat de la 1000 la 10000 la FBS-11: anuntul e in EUR, iar 300 EUR
+    # inseamna 1500 RON la cursul pinuit, deci vechiul plafon l-ar taia acum — corect,
+    # dar testul asta masoara MAPAREA cheilor, nu filtrul. Datele s-au schimbat, nu
+    # asertiunile; iar `r["price"] == 300.0` de mai jos e chiar garantia FBS-11 ca
+    # pretul AFISAT ramane in moneda lui, conversia fiind doar pentru comparatie.
+    r = fb.search_facebook("geaca", max_price=10000)[0]
 
     assert set(r) == {"external_id", "platform", "title", "price", "currency",
                       "condition", "location", "url", "images", "description",
