@@ -2340,6 +2340,194 @@ asteapta cel putin 90s intre doua cereri.
 
 ---
 
+## G4-V0/G4-V0b — valul zero de browser: 8 sondate, 3 intrate
+
+Prima sonda care a masurat prin BROWSER (patchright + Chrome real pe configuratia de
+productie BR-1), nu prin curl_cffi. Pariul: mai multe „tinte grele" ale Grupului 4
+sunt de fapt intrari banale, ca sephora.ro si hhv.de.
+
+**Rezultatul central: ZERO challenge INTERACTIV pe toate cele opt.** 403-urile pe
+care le vedea poarta HTTP nu erau ziduri anti-bot care cer verificare umana — erau
+doar „lipseste un browser real". Cloudflare managed challenge
+(`cf-mitigated: challenge`) trece TACIT in Chrome real headed, fara nicio
+interactiune. Nicio captura de blocaj n-a trebuit facuta.
+
+| domeniu | verdict | metoda |
+|---|---|---|
+| bb-shop.ro | **intrat** | browser (HTTP da 403) |
+| conrad.com | **intrat** | browser (HTTP da 403) |
+| forit.ro | **intrat** | **jsonld** — browserul s-a dovedit INUTIL |
+| decathlon.ro | viabil, dar amanat | cere aplatizarea `offers` imbricate |
+| ccc.eu, reichelt.de, sportsdirect.ro, fressnapf.ro | nedeterminate | val 2 |
+
+### Duratele masurate — calibrarea asteptarilor de productie
+
+Bimodale, si diferenta conteaza la planificare:
+
+* **succes: 1,78–6,71s** (mediana 3,9s) — continutul e gata practic imediat
+* **esec: 27,2–39,9s** — dominat de plafonul de poll (20s) PLUS cautarea de selectori
+  de refuz cookie-uri (7 selectori x 2s timeout fiecare)
+* `goto` e uniform rapid, 1,35–4,56s, indiferent de verdict
+
+Adica: pe un domeniu care merge, harness-ul costa secunde; pe unul care nu merge,
+costa jumatate de minut. Daca un val viitor loveste multe tinte moarte, scurtarea
+plafonului sau a listei de selectori taie ~2/3 din timp.
+
+### bb-shop.ro — `method: browser`, categoria `bijuterii-ceasuri` (FACUT)
+
+Raspunde la cele trei intrebari puse la G2F-8, in ordine, cu **DA la toate trei**:
+
+1. **acelasi comerciant?** DA — codul `35000513` (29 ocurente in PDP-ul randat) si
+   id-ul intern `175484` (34 ocurente) apar pe ambele; canonical-ul bbcollection
+   `...-35000513-pb175484.html` corespunde lui bb-shop `...-175484.html`.
+2. **acelasi pret?** DA — `295,00` -> `206,50` lei, aceeasi pereche, acelasi -30%.
+3. **ld+json `Product`?** DA — Offer [price `"206.5"`, priceCurrency RON,
+   availability `OnlineOnly`, itemCondition NewCondition]. Genericul extrage FARA
+   override: `206.5 RON`, `in_stock=True`, `method: jsonld`.
+
+`OnlineOnly` NU e `InStock`; genericul il citeste totusi ca disponibil, si e corect —
+inseamna „doar online", nu „indisponibil".
+
+Pentru axa D, pretul vechi are **doua** surse masinabile, desi afisajul e ostil
+(fragmentat in markup ca `295 , 00 lei`, NEtaiat semantic — zero `<del>/<s>/<strike>`
+— si cu Omnibus NEMARCAT, tiparul elefant.ro):
+
+* selectorul `.old .a-price-whole` + `.a-price-fraction` (nume de clase in stil Amazon)
+* starea `var date_js = {"arti":175484,"art":"35000513","pret_inmag":"295.00",...}`
+
+CAPCANA la verificare: `295` da fals pozitiv in datele de path SVG ale paginii. Si
+atentie, `295,00`/`206,50` NU apar literal in dump-urile bbcollection — un grep simplu
+ar concluziona gresit „pereche gresita".
+
+### bbcollection.ro — PENSIONAT OFICIAL
+
+Criteriul scris chiar aici la G2F-8 („Daca DA la toate trei, domeniul de exploatare
+devine bb-shop.ro si extractorul-pe-DOM al lui bbcollection nu se mai scrie
+niciodata") e **indeplinit**. bbcollection ramane PARCAT, iar **extractorul-pe-DOM nu
+se mai implementeaza niciodata** — bb-shop livreaza acelasi inventar, la acelasi pret,
+prin ld+json curat.
+
+Motivul masurat ramane ca referinta, ca sa nu fie re-derivat: bbcollection are zero
+date structurate pe 2 din 2 produse, iar pretul exista doar in DOM, spart in noduri
+separate. Ar fi fost cel mai fragil extractor din tot catalogul.
+
+### conrad.com — `method: browser`, categoria `electronice` (FACUT)
+
+Grup 4 la G2B-1b: 403 `cf-mitigated: challenge` si pe home, si pe listare, pe profilul
+de productie. In Chrome real: **200 in 4,48s**, DOM randat de 1.156.723 octeti cu
+ld+json `Product`.
+
+**Doua capcane, amandoua importante:**
+
+1. Pretul NU e in `offers.price` — acela e `null`. Sta in
+   `offers.priceSpecification.price` = `36.97` / EUR. Genericul il citeste corect
+   (`method: jsonld`, fara override), dar o analiza care se uita doar la `offers.price`
+   ar conchide gresit „fara pret public".
+2. **`"valueAddedTaxIncluded": false`** — pretul e **NET, fara TVA**. O comparatie
+   directa cu preturi brute romanesti subestimeaza sistematic. Orice calcul de marja
+   pe conrad trebuie sa adauge TVA intai.
+
+`hasVariant` exista dar e GOL (n=0), deci nu e sursa de variante. Produsul poarta
+sku/gtin13/mpn (`1934286` / `5099206080263` / `910-005470`), utile la incrucisare.
+
+Listarea `/en/promotions/sale.html` se randeaza (828.541 octeti, preturi EUR vizibile)
+dar are **ZERO ld+json** — materie pentru axa D, val ULTERIOR.
+
+**LIVRAREA IN RO nu s-a masurat.** Intrarea e `delivery: "unconfirmed"` — prima din
+catalog care nu e `ro_confirmed`/`ro_storefront`. Verdictul de checkout e al lui David
+si poate urca campul cu o linie.
+
+### forit.ro — `method: jsonld`, categoria `electronice` (FACUT)
+
+**A intrat in valul de browser, dar NU e intrare de browser.** Sonda G4-V0 l-a masurat
+prin browser (1,78s, cea mai rapida incarcare din val) si a iesit viabil — dar
+dump-urile HTTP ale lui WL-1, pe profilul de productie `chrome131`, dau **200 pe
+AMBELE PDP-uri**, iar genericul extrage din ele `507,30 RON` si `644,99 RON`,
+`method: jsonld`, fara override.
+
+Harness-ul de browser costa un Chromium per pagina si, prin regula lui proprie, se
+pune doar unde sonda a dovedit ca **nu exista alta cale**. Aici exista. Un
+`method: "browser"` pe forit ar fi fost risipa pura, mai ales pe tinta Raspberry Pi.
+
+Lectia generala: „viabil prin browser" NU inseamna „are nevoie de browser". Verdictul
+de metoda se da pe cea mai IEFTINA cale care functioneaza, nu pe calea pe care s-a
+nimerit sa fie masurat domeniul.
+
+Valoarea declarata a domeniului e sectiunea de **RESIGILATE** (`/resigilate/`,
+masurata la WL-1). ATENTIE la semantica starii: `itemCondition` e `NewCondition`
+**chiar si pe produsele desigilate** — starea reala apare doar in titlu si in sku
+(`AT-150-RSO- desigilata`). Pe axa L se ignora (decizia resigilate), pe axa D se
+consemneaza.
+
+Componente partajate de ignorat in orice citire pe text: `21.99 Lei` (Curier Romania)
+si `300 lei` (pragul de livrare gratuita) — ld+json le ocoleste.
+
+### decathlon.ro — viabil, dar AMANAT (o reparatie mica il aduce)
+
+PDP-ul randat poarta ld+json `Product` cu **18 oferte, toate cu pret**
+(`159.99` / RON / `InStock`). Genericul pica totusi cu „Pret lipsa sau invalid (None)",
+si motivul e precis: **`offers` e o lista de DOUA liste** a cate 9 Offer-uri, iar
+`_collect_jsonld` nu aplatizeaza liste imbricate.
+
+Nu cere extractor custom, cere aplatizare — si e o reparatie GENERALA, nu specifica
+Decathlon. A fost lasata in afara valului fiindca atinge `product_page_extractor.py`,
+adica extractia partajata de tot catalogul; merita rundă proprie, cu regresia ei.
+
+Home-ul da 403 pe HTTP si 200 in 2,53s prin browser, deci accesul nu e problema.
+
+### GOTCHA metodologic — helperul de sonda si extractorul se contrazic in AMBELE sensuri
+
+La decathlon, helperul de analiza `_oferte_integral` raporteaza 18 oferte cu pret iar
+extractorul da `None`. La conrad, invers: helperul raporteaza **0** oferte cu pret
+(nu vede `priceSpecification`) iar extractorul extrage corect `36.97`.
+
+Concluzia de metoda: **autoritatea e `parse_product_html`, nu semnalele sondei.** De
+aceea sonda il ruleaza explicit ca verdict, in loc sa se bazeze pe numaratori.
+
+### Cele patru nedeterminate — val 2, si de ce
+
+Toate randeaza `200`. N-au fost ratate de site, ci de harness: euristica de recoltare
+de PDP („cardul cu path-ul cel mai adanc") a ales categorii, iar la sportsdirect chiar
+butonul de checkout, care a navigat spre pagina de login.
+
+* **ccc.eu** — poarta de tara FUNCTIONEAZA: `https://ccc.eu/` -> `https://ccc.eu/ro/ro/`
+  printr-un singur click, cu preturi RON vizibile (`118,99 lei`, `169,99 lei`). Doar
+  PDP-ul lipseste.
+* **reichelt.de** — poarta de sesiune trece NATURAL in browser: 200, ld+json
+  `[Organization, WebSite, BreadcrumbList, WebPage]`. Dar `/magazin/` e **revista**, nu
+  catalogul. (Nota: `lei` detectat in text e fals pozitiv — apare in cuvinte germane.)
+* **sportsdirect.ro** — home randeaza 436.781 octeti, dar ld+json e doar `WebSite` si
+  singurul pret vizibil e `0,00 €`, adica **cosul gol**.
+* **fressnapf.ro** — hidratarea ADAUGA `ItemList` (sonda HTTP vedea doar schelet), dar
+  `itemListElement` sunt **categorii**, nu produse:
+  `{"@type":"ListItem","url":"https://www.fressnapf.ro/Caine","name":"Câini"}`. `/sct/0/`
+  e indexul de categorii.
+
+Ce le trebuie tuturor patru: URL-uri de PDP REALE, plus o recoltare care exclude
+explicit `login`/`checkout`/`cart`. ~8 incarcari, val 2.
+
+### Post-scriptum la post-mortem-ul WL-2
+
+FAZA 0 a rundei G4-V0b (diagnosticul WL-2r) s-a inchis pe ramura **(c) — nimic
+nicaieri**, dar cu diagnosticul CORECTAT: nu e o a doua pierdere si nu e un defect de
+flux. **WL-2r n-a fost niciodata implementat** — runda s-a incheiat cu STOP pe clauza
+de coerenta, fiindca dump-urile `dumps_wl/` o contraziceau: istyle.ro are verdictul
+`"custom pe stare structurata"` (zero `Product` ld+json pe 4 din 4 pagini),
+quickmobile.ro a dat 503 pe toate profilele si skinmobile.ro nu se rezolva in DNS
+(`Non-existent domain`, re-verificat).
+
+Ipoteza „ceva sterge modificarile intre sesiuni" a fost testata si INFIRMATA: in
+aceeasi sesiune, artefactele sondei G4-V0 (40 de fisiere, 7,4MB) au supravietuit
+intacte, un push a tinut, iar modificarile FB din arbore au devenit commit normal.
+
+Poarta „WL-2r pe remote" a fost ridicata EXPLICIT de David, ca sa nu blocheze o
+lucrare independenta. Regula ramane valabila, dar cu o completare: daca schita unei
+runde e sursa de adevar pentru runda urmatoare, ea trebuie sa ajunga intr-un artefact
+COMIS (`docs/`), nu doar in raportul din chat — altfel „re-implementarea identica" n-are
+pe ce se sprijini.
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in

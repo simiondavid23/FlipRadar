@@ -1375,6 +1375,94 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "pagina cu ghilimea dublata in sursa site-ului ramane neparsabila "
                  "(refresh pastreaza pretul); spec de selector de rezerva in jurnal",
     },
+
+    # ── G4-V0b — valul zero de browser ────────────────────────────────────────
+    # Sonda G4-V0 a masurat opt tinte de Grup 4 prin patchright + Chrome real.
+    # Rezultatul central: ZERO challenge INTERACTIV pe toate opt — 403-urile pe care
+    # le vedea poarta HTTP nu erau ziduri anti-bot care cer verificare umana, ci doar
+    # „lipseste un browser real". Intra aici doar cele pe care sonda le-a dovedit
+    # VIABILE, iar `method: "browser"` doar unde HTTP-ul chiar NU raspunde: harness-ul
+    # costa un Chromium per pagina si nu se pune pe domenii care merg pe curl.
+    "bb-shop.ro": {
+        "label": "B&B SHOP",
+        "category": "bijuterii-ceasuri",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "browser",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4-V0b; INLOCUIESTE bbcollection.ro (parcat la G2F-8) — acelasi "
+                 "comerciant, dovedit pe TREI ancore: codul `35000513`, id-ul intern "
+                 "`175484` (canonical bbcollection `...-35000513-pb175484.html` -> "
+                 "bb-shop `...-175484.html`) si aceeasi pereche de preturi 295,00 -> "
+                 "206,50 (-30%). Pe HTTP PDP-ul da 403 cu `cf-mitigated: challenge` "
+                 "(corp 6.204 octeti, pe profilul de productie); in Chrome real trece TACIT, "
+                 "fara nicio interactiune, in 2,62s. DOM-ul randat (254.605 octeti) "
+                 "poarta ld+json `Product` curat: Offer [price \"206.5\", "
+                 "priceCurrency RON, availability `OnlineOnly` — NU InStock, dar "
+                 "genericul il citeste ca in_stock=True, itemCondition NewCondition]. "
+                 "Genericul extrage FARA override (method jsonld pe HTML-ul randat). "
+                 "Pentru axa D: pretul VECHI e fragmentat in markup (`295 , 00 lei`) "
+                 "si NU e taiat semantic (zero <del>/<s>/<strike>), Omnibus NEMARCAT "
+                 "(tiparul elefant.ro) — dar exista DOUA surse masinabile, selectorul "
+                 "`.old .a-price-whole` + `.a-price-fraction` si starea "
+                 "`var date_js = {\"arti\":175484,\"art\":\"35000513\","
+                 "\"pret_inmag\":\"295.00\",...}`. CAPCANA la verificare: `295` da "
+                 "fals pozitiv in datele de path SVG ale paginii. PDP "
+                 "`/bijuterie-<slug>-<id>.html`. headless NEMASURAT (sonda a rulat "
+                 "tot headed) — optimizare ieftina pentru un val ulterior.",
+    },
+    "conrad.com": {
+        "label": "Conrad",
+        "category": "electronice",
+        "country": "DE",
+        "delivery": "unconfirmed",
+        "method": "browser",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4-V0b; Grup 4 la G2B-1b (403 `cf-mitigated: challenge` si pe home, "
+                 "si pe listare, pe profilul de productie — zero date server-side). In Chrome "
+                 "real: 200 in 4,48s, DOM randat de 1.156.723 octeti cu ld+json "
+                 "`Product`. ATENTIE, pretul NU e in `offers.price` — acela e `null`; "
+                 "sta in `offers.priceSpecification.price` = 36.97 / EUR, iar genericul "
+                 "il citeste corect (method jsonld, FARA override). CAPCANA MAJORA: "
+                 "`\"valueAddedTaxIncluded\": false` — pretul e NET, fara TVA. O "
+                 "comparatie directa cu preturi brute romanesti subestimeaza "
+                 "sistematic; orice calcul de marja trebuie sa adauge TVA intai. Offer "
+                 "are cheile [@type, availability, priceSpecification, seller, "
+                 "shippingDetails, url]; `hasVariant` EXISTA dar e GOL (n=0), deci nu e "
+                 "sursa de variante. Produsul poarta sku/gtin13/mpn (1934286 / "
+                 "5099206080263 / 910-005470) — utile la incrucisare. Listarea "
+                 "`/en/promotions/sale.html` se randeaza (828.541 octeti, preturi EUR "
+                 "vizibile) dar are ZERO ld+json — materie pentru axa D, val ULTERIOR. "
+                 "PDP `/en/p/<slug>-<id>.html`. LIVRAREA IN RO nu s-a masurat: "
+                 "`unconfirmed` pana la verdictul de checkout al lui David (ar fi prima "
+                 "intrare care nu e ro_confirmed/ro_storefront). headless NEMASURAT.",
+    },
+    "forit.ro": {
+        "label": "Forit",
+        "category": "electronice",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G4-V0b, sondat la WL-1. NU e intrare de browser, desi a intrat in "
+                 "valul de browser: dump-urile HTTP ale lui WL-1 (pe profilul de "
+                 "productie) dau 200 pe AMBELE PDP-uri, iar genericul extrage din ele "
+                 "507,30 RON si 644,99 RON, method jsonld, fara override. Harness-ul "
+                 "de browser costa un Chromium per pagina si se pune doar unde nu "
+                 "exista alta cale — aici exista. (Prin browser s-a masurat oricum: "
+                 "1,78s, cea mai rapida incarcare din val, aceeasi valoare.) ld+json "
+                 "`Product` singur pe pagina, Offer [price \"507.30\", priceCurrency "
+                 "RON, availability InStock]. Valoarea declarata e sectiunea de "
+                 "RESIGILATE (`/resigilate/`, masurata la WL-1). ATENTIE la semantica "
+                 "starii: `itemCondition` e `NewCondition` CHIAR SI pe produsele "
+                 "desigilate — starea reala apare doar in titlu si in sku "
+                 "(`AT-150-RSO- desigilata`). Pe axa L se ignora (decizia resigilate), "
+                 "pe axa D se consemneaza. Componente partajate de ignorat in orice "
+                 "citire pe text: `21.99 Lei` (Curier Romania) si `300 lei` (pragul de "
+                 "livrare gratuita) — ld+json le ocoleste. PDP `/<slug>-bp<id>`.",
+    },
 }
 
 

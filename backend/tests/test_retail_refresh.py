@@ -198,6 +198,9 @@ def test_validated_domains_santinela():
         "ro.vivre.eu",                                # G2F-6
         "biciclop.eu",                                # G2F-8
         "cellini.ro",                                 # G2F-8
+        "bb-shop.ro",                                 # G4-V0b
+        "conrad.com",                                 # G4-V0b
+        "forit.ro",                                   # G4-V0b
     }
 
 
