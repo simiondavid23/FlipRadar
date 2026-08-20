@@ -1606,6 +1606,64 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "final\" nu e derivabil din pagina de produs. LIVRARE IN RO "
                  "nemasurata: `unconfirmed`. headless NEMASURAT.",
     },
+
+    # ── G4-V3b — inchiderea axei L ────────────────────────────────────────────
+    # Ultimele doua intrari ale axei. Celelalte doua tinte ale sondei G4-V3 —
+    # pccomponentes.com si watchshop.ro — sunt BLOCATE FINAL pe Cloudflare
+    # Turnstile (verificare interactiva): inaccesibile fara instrumente la care
+    # s-a renuntat (proxy platit, Scrapling, rotatie de modem). Vezi docs.
+    "notebooksbilliger.de": {
+        "label": "notebooksbilliger",
+        "category": "electronice",
+        "country": "DE",
+        "delivery": "unconfirmed",
+        "method": "browser",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4-V3b; ATENTIE la istoricul verdictului — banca G2B il avea drept "
+                 "„Akamai, blocat\", si era o MASURATOARE GRESITA: daduse 404, pe UN "
+                 "singur profil, fara escaladare (`escaladare_indice: 0`), fiindca "
+                 "regula `expected` trateaza 404 ca terminal, nu ca challenge de "
+                 "escaladat; corpul era o pagina de eroare Akamai reala („uups... Die "
+                 "Seite wurde nicht gefunden\"). In Chrome real trece imediat: 295KB "
+                 "cu 60 de carduri in 4,27s, PDP cu ld+json `Product` in 3,30s. "
+                 "Genericul extrage fara override (masurat 69,90 EUR). BROWSERUL E "
+                 "OBLIGATORIU, re-verificat explicit pe HTTP inainte de intrare: "
+                 "profilul de productie ia marker de challenge `sec-if-cpt-container` "
+                 "(Akamai bot manager), al doilea profil ia 404, iar al treilea da "
+                 "200 dar FARA nicio structura de produs — deci HTTP-ul nu e o "
+                 "alternativa, spre deosebire de footlocker. NU e `b2b_only`, masurat: "
+                 "`inkl. MwSt` x2 (pret BRUT, cu TVA — spre deosebire de conrad.com, "
+                 "care e net), `Geschaeftskunden` apare o singura data ca link de "
+                 "navigatie, zero cerinta de `USt-IdNr`. Decizia lui David: intra ca "
+                 "magazin obisnuit, livrarea in RO ramane `unconfirmed`. CAPCANA "
+                 "pentru axa D: referinta taiata e `UVP` (pret recomandat de "
+                 "producator), NU Omnibus — acelasi tipar ca nichiduta si biciclop; "
+                 "masurat „-39 % UVP: 115,00 € -> 69,90 €\". headless NEMASURAT.",
+    },
+    "footlocker.ro": {
+        "label": "Foot Locker",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "G4-V3b; a intrat prin valul de browser dar NU e intrare de browser — "
+                 "a treia oara cand se aplica regula, dupa forit.ro si lego.com. "
+                 "Sonda G4-V3 l-a masurat randat (PDP cu ld+json `Product` + "
+                 "`BreadcrumbList`, 549,99 RON), iar verificarea de HTTP dinainte de "
+                 "intrare a dat 200 pe profilul de productie, fara challenge, cu "
+                 "ACEEASI valoare — deci `jsonld`, si nu se plateste un Chromium per "
+                 "pagina. CAPCANA de recoltare, masurata: HOME-ul nu poarta NICIUN "
+                 "link de produs, nici macar dupa hidratare (241 de ancore, zero "
+                 "produse) — produsele apar pe CATEGORII, de ex. `/ro/barbati/pantofi/` "
+                 "(28 de carduri). Cine cauta PDP-uri pornind de la home nu gaseste "
+                 "nimic si trage concluzia gresita ca situl e gol. PDP "
+                 "`/ro/<sectiune>/<categorie>/<subcategorie>/<slug>`. Stocul se "
+                 "citeste din ld+json si POATE fi False pe produse afisate normal "
+                 "(masurat `in_stock: False` pe PDP-ul de proba, cu pagina servita "
+                 "fara eroare).",
+    },
 }
 
 

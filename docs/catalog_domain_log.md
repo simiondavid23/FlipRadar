@@ -2744,6 +2744,189 @@ cookie-uri (7 selectori x 2s).
 
 ---
 
+## G4-V3/G4-V3b — ULTIMA rundă a axei L, și capitolul de închidere
+
+### Cele patru ținte finale
+
+| domeniu | verdict | metoda |
+|---|---|---|
+| notebooksbilliger.de | **intrat** | browser |
+| footlocker.ro | **intrat** | **jsonld** — browserul s-a dovedit inutil |
+| pccomponentes.com | **BLOCAT FINAL** | Cloudflare Turnstile |
+| watchshop.ro | **BLOCAT FINAL** | Cloudflare Turnstile |
+
+**Doua verdicte vechi s-au dovedit masuratori gresite**, si amandoua au deblocat cate
+o intrare:
+
+* **notebooksbilliger.de** era in banca drept „Akamai, blocat". De fapt daduse **404**,
+  pe **UN singur profil**, fara escaladare (`escaladare_indice: 0`): regula `expected`
+  trateaza 404 ca terminal, nu ca challenge de escaladat. Corpul era o pagina de eroare
+  Akamai reala. In Chrome real trece imediat.
+* **footlocker.ro** parea gol: home-ul n-are **niciun** link de produs, nici macar dupa
+  hidratare (241 de ancore, zero produse). Produsele sunt pe CATEGORII
+  (`/ro/barbati/pantofi/`, 28 de carduri). „Home-ul nu poarta produse" NU inseamna
+  „situl nu poarta produse".
+
+Si **a treia aplicare a regulii de metoda**, dupa forit.ro si lego.com: footlocker a
+intrat prin valul de browser dar a fost verificat pe HTTP inainte de scriere — 200 pe
+profilul de productie, aceeasi valoare — deci `jsonld`. notebooksbilliger a fost
+verificat la fel si a ramas pe browser: HTTP-ul da marker de challenge
+`sec-if-cpt-container`, apoi 404, apoi 200 dar **fara nicio structura de produs**.
+Regula se verifica in ambele sensuri, si de-aia merita rulata de fiecare data.
+
+### Zidul final: Cloudflare Turnstile
+
+pccomponentes.com (`Just a moment...`, „Performing security verification") si
+watchshop.ro (`Doar un moment...`, „Efectuarea verificării de securitate") servesc
+amandoua acelasi shell: ~27KB, **2 ancore**, semnaturile `turnstile` + `cf-chl` +
+`challenge-platform`, dupa ~36,5s de asteptare. E **verificare interactiva**.
+
+watchshop a primit doua masuratori, la zile diferite, cu rezultat identic la ~150 de
+octeti — un verdict final pe n=1 ar fi fost slab.
+
+Formula de inchidere, pentru amandoua: **inaccesibile fara instrumente la care s-a
+renuntat** (proxy platit, Scrapling, rotatie de modem — decise definitiv). Nu e esec,
+e o granita cunoscuta.
+
+---
+
+# CAPITOLUL DE INCHIDERE A AXEI L
+
+## 1. Bilantul numeric
+
+**De la 65 de domenii (handover-ul de start) la 93.** Toate cu `status: "validated"` —
+registrul nu poarta intrari nevalidate.
+
+Valurile, cu datele din istoricul git al registrului:
+
+| val | data | ce a adus |
+|---|---|---|
+| LOT2 / LOT3 / LOT4 / BR-1 / BR-1b | 2026-08-13 | 6 straine, 6 fashion, 4 beauty, **harness-ul de browser** + 4 domenii Grup 4 |
+| LOT5 | 2026-08-14 | treapta laxa la ld+json, 5 domenii jucarii |
+| SHOP-3 | 2026-08-15 | migrare pe `shopify` cu moneda masurata |
+| DEAL-2 | 2026-08-16 | scanner de listari pe 4 domenii pilot (samburele axei D) |
+| VTX-2 / ELF-2 / G1-2 | 2026-08-17 | f64 (+ design API VTEX), extractor Intershop, sivasdescalzo + tezyo |
+| G2A-2 / G2B-2 / G2C-2 / G2F-2 / G2F-4 | 2026-08-18 | powerup, cyberport, sportvision+sizeer, intersport+2, zooplus |
+| G2F-6 | 2026-08-19 | hornbach, bonami, action, vivre |
+| G2F-8 / RATE-1 | 2026-08-20 | biciclop + cellini; interval minim per domeniu |
+| G4-V0b / WL-3 / G4-V2b / **G4-V3b** | 2026-08-21 | valul de browser, istyle, valul 2, **inchiderea** |
+
+## 2. Inventarul metodelor
+
+| metoda | n | ce inseamna |
+|---|---|---|
+| `jsonld` | 60 | fluxul generic, ld+json — coloana vertebrala |
+| `shopify` | 14 | endpoint-ul Ajax, moneda din registru |
+| `browser` | 9 | Grupul 4: accesul cere Chrome real |
+| `custom` | 5 | cod bespoke per magazin |
+| `microdata` | 4 | fara ld+json, dar cu microdata |
+| `og` | 1 | ultima rezerva |
+
+Doar **3 override-uri** de selector si **2 domenii** cu interval minim
+(`action.com` 90s, `sephora.ro` 180s) — semn ca fluxul generic acopera aproape tot.
+
+Domeniile de browser: bb-shop.ro, cardmarket.com, conrad.com, hhv.de, makeup.ro,
+notebooksbilliger.de, orange.ro, sephora.ro, solebox.com.
+
+**Cele SASE extractoare custom si motivul MASURAT al fiecaruia** (sase, nu cinci:
+cardmarket e `method: "browser"` cu extractor dedicat, deci nu apare in numaratoarea
+de mai sus):
+
+| extractor | motivul masurat |
+|---|---|
+| `asos.com` | pagina nu poarta datele; extractor bespoke de la DISCOVERY-2 |
+| `elefant.ro` | Intershop; stoc onest necunoscut |
+| `powerup.ro` | OpenCart cu tema proprie, SSR fara NICIO data structurata |
+| `intersport.ro` | zero ld+json Product, `itemprop=price` orfan, pret in `data-current-price` |
+| `cellini.ro` | datele exista EXCLUSIV in starea paginii; 48 de obiecte cu `price`, identificarea pe cheia `url` |
+| `cardmarket.com` | marketplace: 50 de oferte per pagina, zero date structurate, pretul = minimul public |
+
+## 3. Registrul absentelor — fiecare o decizie, nu o uitare
+
+**Eliminate de David** (livrare sau inexistenta): backmarket, alza, otrium,
+**toychamp.nl** (403 pe toate profilurile, dar intrarea era oricum conditionata de
+verdictul de livrare RO la checkout, care nu s-a dat), **hervis.ro** (redirectioneaza
+la sportsdirect.ro — nu e domeniu propriu), **badabum.ro** (domeniul n-are inregistrare
+A/AAAA: zona la Cloudflare si MX activ, deci detinut pentru email, dar nu serveste
+niciun magazin), **ccc.ro** (domeniu PARCAT, nu magazin).
+
+**Vitrine fara shop:** **bipa.ro** — zero semnale de cos in tot corpul, 0 din 54 de
+ancore poarta pret, ofertele intr-un pliant PDF. Intrebarea simetrica s-a inchis
+INVERS la **action.com**, care parea la fel dar s-a dovedit magazin real si a intrat.
+
+**Neintrabile masurate:** **quickmobile.ro** — 503 pe toate profilurile la WL-1 si 503
+din nou la re-masuratoarea WL-4, o zi mai tarziu; nu e tranzitoriu si nu e challenge
+(`challenge=None`). **skinmobile.ro** — `Non-existent domain`, verificat de doua ori
+(apex si `www`), la o zi distanta.
+
+**Parcate conditionat:**
+* **chrono24** — decizia lui David.
+* **qogita.com** — CONT_OBLIGATORIU: „Sign up to unlock all offers", `Offer` fara `price`.
+* **bbcollection.ro** — **PENSIONAT** in favoarea bb-shop.ro, care poarta acelasi
+  inventar la acelasi pret prin ld+json curat. Extractorul-pe-DOM nu se mai scrie
+  niciodata; motivul masurat ramane ca referinta.
+* **reichelt.de** — ATENTIE, nu e „poarta de sesiune neclarificata": la G4-V0 browserul
+  A TRECUT (200, 144.307 octeti, ld+json `[Organization, WebSite, BreadcrumbList,
+  WebPage]`). Domeniul e **NEMASURAT pe o pagina de produs**, fiindca sonda a incarcat
+  `/magazin/`, care e **revista**, nu catalogul. Vina harness-ului, nu a sitului.
+* **ccc.eu** — la fel: poarta de tara **FUNCTIONEAZA** (`https://ccc.eu/` ->
+  `https://ccc.eu/ro/ro/` printr-un singur click, 1.112.840 octeti, preturi RON
+  vizibile: `118,99 lei`, `169,99 lei`). Ce s-a incarcat ca „PDP" era o categorie
+  (`/c/promo/bestsellers`) — euristica de recoltare a gresit. Si el e NEMASURAT pe PDP.
+* **sportsdirect.ro**, **fressnapf.ro** — idem, nemasurate pe PDP din aceeasi cauza
+  (recoltarea a ales home/index de categorii). Toate patru cer URL-uri de PDP reale si
+  o recoltare care exclude `login`/`checkout`/`cart`.
+* **decathlon.ro** — VIABIL, amanat tehnic: ld+json `Product` cu 18 oferte cotate, dar
+  `offers` e **lista de DOUA liste**, iar `_collect_jsonld` nu aplatizeaza liste
+  imbricate. Reparatie generala, nu specifica Decathlon.
+
+**In repaus:** **veloteca.ro** — 403 inclusiv in browserul propriu al lui David, de pe
+IP-ul lui (2026-08-21). Nu e anti-bot fata de noi, e sit picat. De redeschis doar daca
+David confirma ca a revenit.
+
+**Blocate final** — *inaccesibile fara instrumente la care s-a renuntat*:
+**pccomponentes.com** si **watchshop.ro** (Cloudflare Turnstile, verificare
+interactiva); **cardmarket** a fost salvat de browser, dar ruta lui de produs ramane
+403 pe HTTP pe toate profilurile.
+
+**Verificare periodica:** **sneakerindustry.ro** — `products.json` da 403 pe toate cele
+trei profiluri (ultima verificare 2026-08-20). Enumerarea Shopify ramane inchisa; se
+re-verifica la o runda de watchlist viitoare, nu ad-hoc.
+
+**Degradate la sonda, nereluate:** sole.ro (502, si reclasificat — nu e magazin de
+fashion), farmaciatei.ro (cautare goala).
+
+## 4. Candidatii de val D adunati pe drum
+
+Fiecare cu stadiul temei lui, ca valul D sa nu porneasca de la zero:
+
+| candidat | stadiu |
+|---|---|
+| f64.ro | **design API VTEX copt**, documentat la VTX-2 |
+| eMAG Resigilate | **masurat integral la EMAG-1**: 25 de categorii, 1948 de produse doar pe Laptop/Tablete/Telefoane, cardul poarta AMBELE preturi, paginare pe `/pN/`. Axa L cere insa ajustare (vezi EMAG-1) |
+| cellini.ro | listarea promo: 539 de produse, 179 de carduri/pagina, `price`+`oldprice` per card in stare |
+| cardmarket.com | listarea `/en/Magic` randata; livrarea e PER VANZATOR — pretul final nu e derivabil din pagina |
+| bonami.ro | `__NEXT_DATA__` |
+| ro.vivre.eu | `?discount=yes`, 46.536 de produse |
+| intersport.ro | `/sale/` |
+| toolnation.nl | listarea poarta 24 de `Product` in ld+json |
+| elefant.ro | placa hidratata cu ambele preturi (5,7KB vs 133KB) |
+| powerup.ro | listarea refurbished-sh |
+| tezyo.ro | listarea de reduceri (deja in scannerul DEAL-2) |
+| booztlet.com, bstn.com | API-uri de listare |
+| footlocker.ro | `/ro/special-prices/` |
+| forit.ro, istyle.ro | sectiunile de resigilate |
+| conrad.com | `/en/promotions/sale.html` — se randeaza, dar ZERO ld+json |
+| DEAL-2c, DEAL-3 | sortarile, respectiv `lastmod` din sitemap |
+
+## 5. Gardul
+
+**Axa L se considera INCHISA.** Orice domeniu nou de-acum intra prin fluxul standard —
+sonda intai, implementare dupa — nu prin redeschiderea acestei liste. Absentele de mai
+sus nu sunt un backlog; sunt verdicte. Se redeschid punctual, cu motiv, nu ca lot.
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in

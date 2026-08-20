@@ -206,6 +206,8 @@ def test_validated_domains_santinela():
         "solebox.com",                                # G4-V2b
         "lego.com",                                   # G4-V2b
         "cardmarket.com",                             # G4-V2b
+        "notebooksbilliger.de",                       # G4-V3b
+        "footlocker.ro",                              # G4-V3b
     }
 
 
