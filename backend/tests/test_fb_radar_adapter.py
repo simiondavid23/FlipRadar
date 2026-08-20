@@ -45,6 +45,9 @@ def curs_fix(monkeypatch):
     """
     from app.services import bnr_exchange
     monkeypatch.setattr(bnr_exchange, "get_eur_ron", lambda: 5.0)
+    # FBS-12: si USD, din acelasi motiv — de cand helper-ul il converteste, un anunt
+    # in USD ar chema cursul REAL, al carui lant incepe cu un fetch la BNR.
+    monkeypatch.setattr(bnr_exchange, "get_usd_ron", lambda: 4.5)
 
 
 @pytest.fixture(autouse=True)
@@ -371,9 +374,11 @@ def test_helperul_converteste_ron_si_eur_si_normalizeaza_moneda(monkeypatch):
     assert bs.pret_comparabil_ron(1000, "RON") == 1000.0      # identitate
     assert bs.pret_comparabil_ron(500, "EUR") == 2500.0       # D1
     assert bs.pret_comparabil_ron(500, "eur ") == 2500.0      # normalizare
+    assert bs.pret_comparabil_ron(100, "USD") == 450.0        # D1, FBS-12
     assert bs.pret_comparabil_ron(200, "GBP") is None          # D2
     assert bs.pret_comparabil_ron(None, "RON") is None
     assert bs.moneda_convertibila("RON") and bs.moneda_convertibila(" eur")
+    assert bs.moneda_convertibila("usd ")                      # FBS-12
     assert not bs.moneda_convertibila("GBP")
 
 
@@ -428,14 +433,19 @@ def test_moneda_necunoscuta_trece_si_se_numara(monkeypatch, nucleu, logs):
                for niv, m in logs if niv == "INFO"), [m for _n, m in logs]
 
 
-def test_usd_intra_pe_calea_permisiva(monkeypatch, nucleu):
-    """USD e emis chiar de `parse_price`/`_parse_price`, dar helper-ul nu-l converteste
-    (FBS-11 acopera doar EUR). Deci cade pe D2 — trece, numarat. De stiut cand se
-    extinde conversia."""
+def test_usd_se_converteste_nu_mai_trece_permisiv(monkeypatch, nucleu):
+    """FBS-12 a schimbat exact asta. La FBS-11, USD cadea pe poarta permisiva (D2) si
+    trecea de orice prag. Acum se converteste ca EUR: 50 USD = 225 RON la cursul
+    pinuit, deci un `min_price` de 3000 chiar il taie."""
     monkeypatch.setenv("FB_MOD", "logout")
-    nucleu.raspuns.append(_canonic("1", price=50.0, currency="USD"))
+    nucleu.raspuns.extend([_canonic("1", price=50.0, currency="USD"),
+                           _canonic("2", price=1000.0, currency="USD",
+                                    title="Geaca scumpa")])
 
-    assert len(fb.search_facebook("geaca", max_price=0, min_price=3000)) == 1
+    rez = fb.search_facebook("geaca", max_price=0, min_price=3000)
+
+    # 50 USD = 225 RON (cade), 1000 USD = 4500 RON (trece).
+    assert {r["external_id"] for r in rez} == {"fb_2"}
 
 
 def test_cursul_indisponibil_lasa_eur_sa_treaca_cu_warn(monkeypatch, nucleu, logs):

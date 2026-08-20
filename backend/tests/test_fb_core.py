@@ -244,6 +244,40 @@ def test_canonic_identic_din_ssr_si_din_graphql():
     assert c["external_id"] and c["source_url"].endswith(f"/{c['external_id']}/")
 
 
+# ── FBS-12: parserul de NUCLEU eticheteaza moneda reala ──────────────────────────
+# Pana la FBS-12, `parse_price` eticheta „RON" orice nu recunostea, iar filtrele
+# comparau un anunt in GBP cu praguri RON. Pana aici parserul de nucleu n-avea niciun
+# test propriu — era acoperit doar transitiv, prin `canonic`.
+@pytest.mark.parametrize("formatted,moneda", [
+    ("RON800", "RON"),
+    ("€800", "EUR"),
+    ("$800", "USD"),
+    ("800 USD", "USD"),
+    ("USD800", "USD"),        # cod lipit de cifra: `\b` l-ar fi ratat
+    ("800 GBP", "GBP"),       # regresia masurata la FBS-11
+    ("800 CHF", "CHF"),       # idem
+    ("1.500 lei", "RON"),     # singurul cod tradus
+    ("Pret: 800 RON", "RON"), # cuvintele din jur nu produc coduri false
+    ("800", "RON"),           # nicio informatie de moneda
+    ("", "RON"),
+])
+def test_parse_price_eticheteaza_moneda_reala(formatted, moneda):
+    from app.scrapers.facebook.parse import parse_price
+
+    obj = {"listing_price": {"amount": "800", "formatted_amount": formatted}}
+    assert parse_price(obj) == (800.0, moneda)
+
+
+def test_moneda_ajunge_neschimbata_in_dictul_canonic():
+    """Contra-proba de capat: eticheta nu se pierde intre parser si `canonic`, care e
+    ce vad filtrele si ce se stocheaza pe anunt."""
+    brut = {"id": "77", "marketplace_listing_title": "Geaca",
+            "listing_price": {"amount": "800", "formatted_amount": "800 GBP"},
+            "is_live": True}
+
+    assert canonic(brut)["currency"] == "GBP"
+
+
 # ── 7. scara de robustete ────────────────────────────────────────────────────
 def test_scara_incepe_cu_ssr_pe_id(monkeypatch, warns):
     """FBS-2 a INVERSAT scara: cu `city_page_id`, treapta 1 e SSR, nu GraphQL.

@@ -43,6 +43,43 @@ def test_fallback_format_ro():
     assert _parse_price(_obj("12.500 RON")) == (12500.0, "RON")
 
 
+# ── FBS-12: eticheta de moneda spune adevarul ────────────────────────────────────
+# Tabelul e NORMATIV: exact formele masurate la FBS-11, cand „800 GBP" si „800 CHF"
+# ieseau amandoua „RON" si erau comparate cu praguri RON.
+_ETICHETE = [
+    ("RON800", "RON", "marcaj explicit, lipit de cifra"),
+    ("RON1,500", "RON", "aceeasi forma, cu virgula de mii"),
+    ("€800", "EUR", "simbol cunoscut"),
+    ("$800", "USD", "simbol cunoscut"),
+    ("800 USD", "USD", "cod alfabetic"),
+    ("USD800", "USD", "cod lipit de cifra — `\\b` l-ar fi ratat"),
+    ("800 GBP", "GBP", "REGRESIA FBS-11: iesea RON"),
+    ("800 CHF", "CHF", "REGRESIA FBS-11: iesea RON"),
+    ("1.500 lei", "RON", "codul `lei` e singurul tradus, catre RON"),
+    ("800 ron", "RON", "insensibil la caz"),
+    ("Pret: 800 RON", "RON", "cuvintele din jur nu produc coduri false"),
+    ("800", "RON", "cifre goale: nicio informatie de moneda -> implicit"),
+    ("", "RON", "formatted_amount gol -> implicit"),
+]
+
+
+@pytest.mark.parametrize("formatted,moneda,de_ce", _ETICHETE)
+def test_eticheta_de_moneda_pe_calea_de_sesiune(formatted, moneda, de_ce):
+    assert _parse_price(_obj(formatted, amount="800"))[1] == moneda, de_ce
+
+
+@pytest.mark.parametrize("formatted,moneda,de_ce", _ETICHETE)
+def test_paritate_de_moneda_intre_cele_doua_parsere(formatted, moneda, de_ce):
+    """Nucleul si calea de sesiune sunt copii una alteia (nucleul nu are voie sa depinda
+    de `app.services.radar`), deci regula e scrisa de doua ori. Testul asta face
+    divergenta VIZIBILA in loc s-o presupuna imposibila — la FBS-11 s-a masurat ca cele
+    doua vocabulare coincid, iar proprietatea trebuie sa se pastreze."""
+    from app.scrapers.facebook.parse import parse_price
+
+    obj = _obj(formatted, amount="800")
+    assert parse_price(obj)[1] == _parse_price(obj)[1] == moneda, de_ce
+
+
 def test_fallback_usd():
     assert _parse_price(_obj("$800")) == (800.0, "USD")
 

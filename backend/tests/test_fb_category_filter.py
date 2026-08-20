@@ -139,3 +139,88 @@ def test_paritate_cardul_cu_alta_categorie_e_exclus_de_ambele(monkeypatch):
                        category="1234")
     auto_out = _auto(monkeypatch, [_auto_obj("1", "Jante BMW", cat_id="9999")])
     assert radar_out == [] and auto_out == []
+
+
+# ── FBS-11/12: ramurile de moneda pe calea de SESIUNE ────────────────────────────
+# Golul raportat la FBS-11: filtrele de pret devenisera constiente de moneda pe AMBELE
+# cai, dar doar calea de nucleu avea teste — harness-ul care conduce calea de sesiune
+# cap-coada e chiar `_radar` de mai sus. FBS-12 il foloseste, ca ramurile sa nu mai fie
+# acoperite doar prin citire.
+
+@pytest.fixture
+def curs(monkeypatch):
+    """Cursuri PINUITE. Fisierul n-are autouse-ul din test_fb_radar_adapter.py, iar fara
+    fixare un anunt in EUR/USD ar chema cursul real, al carui lant incepe cu un fetch."""
+    from app.services import bnr_exchange
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron", lambda: 5.0)
+    monkeypatch.setattr(bnr_exchange, "get_usd_ron", lambda: 4.5)
+
+
+def _pret_obj(oid: str, titlu: str, suma: str, formatted: str) -> dict:
+    """Card cu `formatted_amount` controlat — de acolo isi ia parserul moneda."""
+    return {"id": oid, "marketplace_listing_title": titlu,
+            "listing_price": {"amount": suma, "formatted_amount": formatted}}
+
+
+def test_sesiune_eur_se_compara_convertit(monkeypatch, curs):
+    """500 EUR = 2500 RON (sub `max_price` 5000, deci ramane), 1200 EUR = 6000 RON
+    (peste, deci cade). Inainte de FBS-11 amandoua treceau, comparate ca numere."""
+    out = _radar(monkeypatch, [
+        _pret_obj("1", "Geaca ieftina", "500", "€500"),
+        _pret_obj("2", "Geaca scumpa", "1200", "€1200"),
+    ])
+
+    assert [r["external_id"] for r in out] == ["fb_1"]
+    assert out[0]["price"] == 500.0 and out[0]["currency"] == "EUR", \
+        "pretul afisat ramane in moneda lui"
+
+
+def test_sesiune_usd_se_converteste(monkeypatch, curs):
+    """FBS-12: 1200 USD = 5400 RON, peste `max_price` 5000 — cade. La FBS-11 ar fi
+    trecut permisiv, fiindca USD nu era convertibil."""
+    out = _radar(monkeypatch, [
+        _pret_obj("1", "Geaca ieftina", "500", "500 USD"),      # 2250 RON, ramane
+        _pret_obj("2", "Geaca scumpa", "1200", "1200 USD"),     # 5400 RON, cade
+    ])
+
+    assert [r["external_id"] for r in out] == ["fb_1"]
+
+
+def test_sesiune_moneda_necunoscuta_trece_cu_contor(monkeypatch, curs):
+    """D2 pe calea de sesiune, devenita EFECTIVA de cand parserul spune adevarul: pana
+    la FBS-12 un „9000 GBP" era etichetat RON si taiat de `max_price`."""
+    logs = []
+    out = _radar(monkeypatch, [_pret_obj("1", "Geaca", "9000", "9000 GBP")], logs=logs)
+
+    assert [r["external_id"] for r in out] == ["fb_1"]
+    assert out[0]["currency"] == "GBP"
+    assert any("moneda lor nu se poate aduce in RON" in m
+               for niv, m in logs if niv == "INFO"), logs
+
+
+def test_sesiune_cursul_picat_lasa_sa_treaca_cu_un_singur_warn(monkeypatch):
+    """D3 pe calea de sesiune: filtrarea nu pica fiindca BNR-ul tace, iar avertismentul
+    e unul per apel, nu unul per anunt."""
+    from app.services import bnr_exchange
+
+    def explodeaza():
+        raise RuntimeError("BNR indisponibil")
+
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron", explodeaza)
+    logs = []
+    out = _radar(monkeypatch, [_pret_obj("1", "Geaca A", "9000", "€9000"),
+                               _pret_obj("2", "Geaca B", "9500", "€9500")], logs=logs)
+
+    assert {r["external_id"] for r in out} == {"fb_1", "fb_2"}
+    warn = [m for niv, m in logs if niv == "WARN" and "cursul BNR indisponibil" in m]
+    assert len(warn) == 1, f"UN singur WARN per apel, nu {len(warn)}"
+
+
+def test_sesiune_ron_ramane_neutru(monkeypatch, curs):
+    """Regresie: acolo unde nu exista moneda straina, nimic nu se schimba si jurnalul tace."""
+    logs = []
+    out = _radar(monkeypatch, [_pret_obj("1", "Geaca A", "1000", "RON1000"),
+                               _pret_obj("2", "Geaca B", "9000", "RON9000")], logs=logs)
+
+    assert [r["external_id"] for r in out] == ["fb_1"], "9000 RON e peste max_price 5000"
+    assert not [m for _n, m in logs if "fara verificare" in m]

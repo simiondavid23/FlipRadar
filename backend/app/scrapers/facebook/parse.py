@@ -186,6 +186,45 @@ def deep_first(obj, key: str, _depth: int = 0):
     return None
 
 
+# FBS-12 — eticheta de moneda spune ADEVARUL.
+#
+# Pana aici, orice nu era recunoscut se eticheta „RON": masurat la FBS-11, „800 GBP" si
+# „800 CHF" ieseau amandoua RON si erau comparate cu praguri RON. Nu e o inexactitate de
+# afisare — e aceeasi clasa de bug pe care FBS-11 a reparat-o in filtre, doar cu un nivel
+# mai sus. Un cod de trei litere raportat onest lasa poarta permisiva sa-si faca treaba.
+#
+# Regula, in ordine:
+#   1. simbolurile CUNOSCUTE (maparea dinainte, nu se inventeaza altele noi);
+#   2. un cod alfabetic de trei litere, majusculizat — „lei" e singurul tradus, catre RON;
+#   3. RON, DOAR daca nu exista nicio informatie de moneda.
+#
+# Limitele codului NU sunt ``: intre „N" si „1" din „RON1,500" nu exista ``, deci
+# `RON` ar rata exact forma cea mai frecventa de pe Marketplace. Se cere doar ca cele
+# trei litere sa nu fie lipite de ALTE litere, ca sa nu prindem fragmente din cuvinte.
+_SIMBOLURI_MONEDA = (("€", "EUR"), ("$", "USD"))
+_COD_MONEDA_RE = re.compile(r"(?<![A-Z])([A-Z]{3})(?![A-Z])")
+
+
+def _eticheta_moneda(fmt: str) -> str:
+    """Codul de moneda din `formatted_amount`, sau „RON" daca nu scrie nicaieri.
+
+    Regula e DUPLICATA deliberat intre nucleu si calea de sesiune: cele doua parsere sunt
+    deja copii una alteia (nucleul nu are voie sa depinda de `app.services.radar`), iar un
+    test de PARITATE ruleaza acelasi set prin amandoua si cere etichete identice — asa
+    divergenta se vede, in loc sa fie presupusa ca nu apare.
+    """
+    if not fmt:
+        return "RON"
+    for simbol, cod in _SIMBOLURI_MONEDA:
+        if simbol in fmt:
+            return cod
+    m = _COD_MONEDA_RE.search(fmt.upper())
+    if m:
+        cod = m.group(1)
+        return "RON" if cod == "LEI" else cod
+    return "RON"
+
+
 def parse_price(obj: dict) -> tuple[Optional[float], str]:
     """Prioritate listing_price.amount (float); fallback regex pe formatted_amount
     ('RON800' -> 800.0/RON, '€800' -> 800.0/EUR).
@@ -199,13 +238,7 @@ def parse_price(obj: dict) -> tuple[Optional[float], str]:
     """
     lp = obj.get("listing_price") or {}
     fmt = lp.get("formatted_amount") or ""
-    currency = "RON"
-    if fmt:
-        up = fmt.upper()
-        if "€" in fmt or "EUR" in up:
-            currency = "EUR"
-        elif "$" in fmt or "USD" in up:
-            currency = "USD"
+    currency = _eticheta_moneda(fmt)
 
     price = None
     amount = lp.get("amount")

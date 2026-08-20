@@ -18,3 +18,18 @@ def get_eur_ron() -> float:
     (o schimbare in currency_service n-ar mai fi vazuta aici).
     """
     return currency_service.get_eur_ron_rate()
+
+
+def get_usd_ron() -> float:
+    """Cursul USD -> RON curent. Deleaga catre aceeasi implementare unica (FBS-12).
+
+    USD era deja emis de parserele Facebook si deja suportat de `currency_service`
+    (acelasi lant de rezerva, cu fallback static propriu); lipsea doar adaptorul, iar
+    filtrele de pret il lasau sa treaca neconvertit.
+
+    Merge prin `get_all_rates()`, nu prin `_get_rate("USD")`: nu exista un
+    `get_usd_ron_rate` public, iar un adaptor n-are ce cauta intr-un nume privat al
+    altui modul. Costul e o citire in plus pentru EUR, care vine din acelasi cache si
+    din acelasi fetch (feed-ul BNR aduce toate ratele deodata).
+    """
+    return currency_service.get_all_rates()["USD_RON"]

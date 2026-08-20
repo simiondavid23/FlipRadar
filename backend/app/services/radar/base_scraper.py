@@ -110,7 +110,9 @@ def is_excluded(title: str, exclude_words: list[str]) -> bool:
 # Pana aici, un anunt la 500 EUR era „sub" un prag de 3000 RON pur si simplu fiindca
 # 500 < 3000. Pragurile keyword-urilor Radar sunt de facto RON, deci comparatia trebuie
 # facuta in RON — nu in numere fara unitate.
-_MONEDE_CONVERTIBILE = {"RON", "EUR"}
+# FBS-12: USD a intrat aici odata cu `bnr_exchange.get_usd_ron` — era deja emis de
+# parsere si deja suportat de `currency_service`, lipsea doar adaptorul.
+_MONEDE_CONVERTIBILE = {"RON", "EUR", "USD"}
 
 
 def normalizeaza_moneda(currency) -> str:
@@ -119,7 +121,7 @@ def normalizeaza_moneda(currency) -> str:
 
 
 def moneda_convertibila(currency) -> bool:
-    """True daca stim sa aducem moneda in RON: RON prin identitate, EUR prin curs.
+    """True daca stim sa aducem moneda in RON: RON prin identitate, EUR si USD prin curs.
 
     Exista ca apelantul sa poata DEOSEBI cele doua motive pentru care
     `pret_comparabil_ron` intoarce None — moneda pe care n-o stim (D2) fata de cursul
@@ -132,11 +134,14 @@ def pret_comparabil_ron(price, currency):
     """Pretul in RON PENTRU COMPARATIE, sau None daca nu se poate compara.
 
     FBS-11. Trei decizii, toate ale lui David:
-      * D1 — EUR se converteste cu cursul BNR INAINTE de comparatia cu pragurile;
-        RON trece prin identitate. Pragurile raman semantic RON, cum sunt azi.
-      * D2 — o moneda pe care n-o stim (azi: USD, emis chiar de `parse_price`) da None,
-        iar apelantul lasa anuntul sa TREACA de portile de pret. „Prefer sa nu pierd
-        nimic daca exista sansa sa fie un deal bun" — permisiv, dar numarat.
+      * D1 — EUR si USD se convertesc cu cursul BNR INAINTE de comparatia cu
+        pragurile; RON trece prin identitate. Pragurile raman semantic RON, cum sunt
+        azi. (USD s-a adaugat la FBS-12, odata cu parserele care spun adevarul despre
+        moneda — pana atunci trecea permisiv.)
+      * D2 — o moneda pe care n-o stim (GBP, CHF, orice cod de trei litere pe care
+        parserele il raporteaza acum onest) da None, iar apelantul lasa anuntul sa
+        TREACA de portile de pret. „Prefer sa nu pierd nimic daca exista sansa sa fie
+        un deal bun" — permisiv, dar numarat.
       * D3 — daca cursul nu raspunde, tot None: filtrarea nu are voie sa pice fiindca
         BNR-ul e indisponibil. E o garda DEFENSIVA, nu reproducerea unui esec observat:
         lantul din `currency_service` se termina in fallback static si apoi in 1.0, deci
@@ -155,11 +160,12 @@ def pret_comparabil_ron(price, currency):
     moneda = normalizeaza_moneda(currency)
     if moneda == "RON":
         return float(price)
-    if moneda != "EUR":
+    if moneda not in _MONEDE_CONVERTIBILE:
         return None                                   # D2
     from app.services import bnr_exchange             # local: evita ciclul la import
     try:
-        curs = bnr_exchange.get_eur_ron()
+        curs = (bnr_exchange.get_eur_ron() if moneda == "EUR"
+                else bnr_exchange.get_usd_ron())
     except Exception:                                 # noqa: BLE001 — D3, orice esec
         return None
     if not isinstance(curs, (int, float)) or curs <= 0:
