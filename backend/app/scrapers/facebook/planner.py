@@ -268,15 +268,24 @@ class Planificator:
 
     # ── frana adaptiva ───────────────────────────────────────────────────────
     def semnal_blocaj(self) -> int:
-        """Injumatateste bugetul efectiv (podea 1) si reporneste ceasul de revenire."""
-        nou = max(self.buget_efectiv() // 2, 1)
+        """Injumatateste bugetul BRUT (podea 1) si reporneste ceasul de revenire.
+
+        BRUT, nu efectiv, si distinctia nu e cosmetica. `_buget_redus` traieste
+        exclusiv in spatiul ne-modelat orar, fiindca `buget_efectiv` il modeleaza la
+        FIECARE citire. Varianta veche injumatatea `buget_efectiv()` si depozita
+        rezultatul — adica o valoare deja modelata — pe care apoi o modela din nou:
+        forma orara se aplica de doua ori, iar frana taia sub jumatate si se agrava
+        la fiecare semnal. La buget 12 si multiplicator 0.75 dadea 3 in loc de 4, si
+        era invizibila ziua, cand multiplicatorul e 1.00.
+        """
+        nou = max(self._baza_bruta() // 2, 1)
         self._buget_redus = nou
         self._ultimul_incident_at = self._acum()
         self._incidente += 1
         self._trepte_raportate = 0
         log_manager.emit("radar", "WARN",
             f"Facebook frana: semnal de blocaj #{self._incidente} — "
-            f"buget redus la {nou} din {self.config.buget_per_tick}")
+            f"buget brut redus la {nou} din {self.config.buget_per_tick}")
         return nou
 
     def ora_locala(self, acum=None) -> int:
@@ -295,13 +304,16 @@ class Planificator:
             return 1.0
         return float(self.config.forma_orara.get(self.ora_locala(acum), 1.0))
 
-    def buget_efectiv(self, acum=None) -> int:
-        """Bugetul de CERERI pentru tick-ul asta.
+    def _baza_bruta(self) -> int:
+        """Bugetul in spatiul BRUT: frana plus treptele de revenire, FARA forma orara.
 
-        Doua efecte se COMPUN, nu se suprascriu: frana (reactiva, la anomalie) si
-        forma orara (proactiva, pe ceas). Se aplica multiplicativ, cu podeaua 1 —
-        forma orara nu are voie sa opreasca de tot acoperirea, altfel un keyword ar
-        putea ramane nescanat toata noaptea.
+        Exista ca sa fie UN SINGUR loc care stie ce inseamna „bugetul franei", si ca
+        distinctia brut/efectiv sa fie structurala, nu tinuta minte. `semnal_blocaj`
+        injumatateste de aici, iar `buget_efectiv` modeleaza orar tot de aici — deci
+        forma orara nu are cum sa se aplice de doua ori.
+
+        Treptele de revenire traiesc si ele in spatiul brut, consecvent cu
+        `_buget_redus`: se aduna peste el inainte de orice modelare.
 
         Singurul efect secundar: un WARN cand se urca o treapta de revenire (altfel
         revenirea ar fi invizibila in jurnale).
@@ -318,8 +330,20 @@ class Planificator:
                 log_manager.emit("radar", "WARN",
                     f"Facebook frana: revenire, treapta {trepte} — buget {baza} "
                     f"din {self.config.buget_per_tick}")
+        return baza
 
-        return max(int(baza * self.multiplicator_orar(acum)), 1)
+    def buget_efectiv(self, acum=None) -> int:
+        """Bugetul de CERERI pentru tick-ul asta.
+
+        Doua efecte se COMPUN, nu se suprascriu: frana (reactiva, la anomalie) si
+        forma orara (proactiva, pe ceas). Se aplica multiplicativ, cu podeaua 1 —
+        forma orara nu are voie sa opreasca de tot acoperirea, altfel un keyword ar
+        putea ramane nescanat toata noaptea.
+
+        Asta e SINGURUL loc care aplica forma orara, si o aplica O SINGURA data, peste
+        baza bruta. Vezi `semnal_blocaj` pentru ce se intampla cand nu e asa.
+        """
+        return max(int(self._baza_bruta() * self.multiplicator_orar(acum)), 1)
 
     def stare_frana(self) -> dict:
         """Sursa pentru guard_status / Jurnale la FB-6."""

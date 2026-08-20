@@ -6,6 +6,7 @@ prin dubluri cu get/post. Nicio cerere reala.
 import json
 import os
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -20,9 +21,38 @@ from app.scrapers.facebook import client as fb_client
 from app.scrapers.facebook import executor as ex
 from app.scrapers.facebook.client import StareCautare, search, search_cu_stare
 from app.scrapers.facebook.graphql import cauta, cauta_cu_cod
-from app.scrapers.facebook.planner import ConfigPlanificator, Planificator, _ca_utc
+from app.scrapers.facebook.planner import (
+    FUS_LOCAL, ConfigPlanificator, Planificator, _FORMA_ORARA_IMPLICITA, _ca_utc,
+)
 
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def _ceas_diurn() -> datetime:
+    """Un moment cu multiplicator orar 1.00, ca bugetele sa fie deterministe.
+
+    DE CE EXISTA: forma orara din `planner.py` taie bugetul in afara intervalului
+    08:00-21:59 Europe/Bucharest. Asertiunile de buget din fisierul asta sunt scrise
+    pentru multiplicatorul PLIN, deci fara fixare aceleasi teste treceau ziua si picau
+    dupa ora 22 — o suita care depinde de cand e rulata. (Asa s-a si descoperit
+    dublarea formei orare din frana, la FBS-9b.)
+
+    NU e o constanta, si asta e deliberat: momentul ales e primul instant diurn de la
+    `now()` INCOLO, deci ramane mereu la sau dupa ceasul real. Un ceas fixat in trecut
+    ar face randurile programate cu `datetime.now()` de catre teste (vezi
+    `test_anunturile_noi_numara_doar_inserturile`) sa para viitoare si le-ar scoate
+    din selectia perechilor scadente, care merge pe `_acum()`-ul planificatorului.
+
+    Ora se cauta prin CHIAR tabelul de forma orara al planificatorului, nu printr-un
+    interval copiat aici: daca dimensionarea se schimba, ceasul testelor o urmeaza.
+    """
+    t = datetime.now(timezone.utc)
+    for _ in range(24):
+        ora = t.astimezone(ZoneInfo(FUS_LOCAL)).hour
+        if _FORMA_ORARA_IMPLICITA.get(ora, 1.0) == 1.0:
+            return t
+        t += timedelta(hours=1)
+    raise AssertionError("forma orara nu are nicio ora cu multiplicator 1.00")
 
 
 def _fix(nume):
@@ -301,11 +331,15 @@ def _pregateste(db, keywords, buget, scadente):
     registru — testele trebuie sa fie deterministe, nu norocoase.
     `scadente` = lista de (modul, keyword_id) in ORDINEA dorita de executie.
     """
-    p = Planificator(db, ConfigPlanificator(buget_per_tick=buget))
+    # Ceas FIXAT (vezi `_ceas_diurn`): selectia perechilor scadente si forma orara
+    # merg amandoua pe `_acum()`-ul planificatorului, deci si scadentele de mai jos se
+    # ancoreaza in ACELASI moment — altfel ar fi doua ceasuri intr-un singur test.
+    acum = _ceas_diurn()
+    p = Planificator(db, ConfigPlanificator(buget_per_tick=buget), acum=lambda: acum)
     for modul, kid in keywords:
         p.asigura_perechi(modul, kid, "national")
 
-    viitor = datetime.now(timezone.utc) + timedelta(days=1)
+    viitor = acum + timedelta(days=1)
     db.query(FbScanState).update({FbScanState.next_due_at: viitor},
                                  synchronize_session=False)
     db.commit()
@@ -316,7 +350,7 @@ def _pregateste(db, keywords, buget, scadente):
              .filter(FbScanState.modul == modul, FbScanState.keyword_id == kid)
              .order_by(FbScanState.id).first())
         # intarziere descrescatoare -> ordinea din `scadente` e ordinea de executie
-        r.next_due_at = datetime.now(timezone.utc) - timedelta(minutes=100 - i)
+        r.next_due_at = acum - timedelta(minutes=100 - i)
         alese.append(r)
     db.commit()
     ex._planificator = p
@@ -425,6 +459,76 @@ def test_blocajul_opreste_tickul_si_trage_frana(db, uid, monkeypatch):
     assert p.stare_frana()["buget_efectiv"] == inainte // 2
     db.refresh(alese[0])
     assert alese[0].last_run_at is not None, "perechea blocata are rezultat inregistrat"
+
+
+# ── FB-FRANA-1: frana taie BRUT, forma orara se aplica o singura data ────────
+# Testele astea stau langa cele de executor fiindca aici e si ceasul fixat, si tot
+# aici a iesit la iveala defectul (doua picari dependente de ora, la FBS-9b).
+def _ceas_la_ora_locala(ora: int) -> datetime:
+    """Moment UTC care cade la `ora` pe fusul romanesc. Data e fixa, deci si DST-ul."""
+    return datetime(2026, 8, 20, ora, 0,
+                    tzinfo=ZoneInfo(FUS_LOCAL)).astimezone(timezone.utc)
+
+
+def _planificator_la(ora_locala: int, buget: int = 12):
+    """Planificator cu ceas fixat la o ora LOCALA data. Fara DB: nimic de aici nu
+    atinge perechile, doar aritmetica franei. Intoarce si ceasul, ca sa poata fi mutat."""
+    ceas = [_ceas_la_ora_locala(ora_locala)]
+    p = Planificator(None, ConfigPlanificator(buget_per_tick=buget),
+                     acum=lambda: ceas[0])
+    return p, ceas
+
+
+def test_frana_injumatateste_brutul_nu_valoarea_modelata_orar():
+    """Regresia rundei. La 22:00 local multiplicatorul e 0.75, deci brutul 12 devine 6
+    si abia apoi se modeleaza: int(6 x 0.75) = 4.
+
+    Varianta veche injumatatea EFECTIVUL (int(12 x 0.75) = 9 -> 4), depozita 4 ca si
+    cum ar fi brut si-l modela A DOUA oara la citire: int(4 x 0.75) = 3. Sub jumatate,
+    si invizibil ziua, cand multiplicatorul e 1.00."""
+    p, _ = _planificator_la(22)
+    assert p.multiplicator_orar() == pytest.approx(0.75)
+    assert p.buget_efectiv() == 9, "doar forma orara, inainte de orice semnal"
+
+    assert p.semnal_blocaj() == 6, "jumatate din BRUT, nu din efectiv"
+
+    assert p.buget_efectiv() == 4, "int(6 x 0.75) — forma orara aplicata O SINGURA data"
+
+
+def test_semnalele_succesive_se_compun_in_spatiul_brut():
+    """Compunerea ramane cea documentata: brut 12, doua semnale, 6 apoi 3."""
+    p, _ = _planificator_la(22)
+
+    assert [p.semnal_blocaj(), p.semnal_blocaj()] == [6, 3]
+    assert p.buget_efectiv() == 2, "int(3 x 0.75)"
+
+
+def test_revenirea_pe_trepte_lucreaza_tot_in_brut():
+    """Treptele se aduna peste `_buget_redus` INAINTE de modelare, consecvent cu el.
+
+    Ora aleasa e 03:00 local (x0.33), iar avansul de 60 min ramane in acelasi interval
+    (00:00-05:59), deci multiplicatorul NU se schimba si diferenta masurata e strict a
+    treptelor — nu a trecerii dintr-o treapta orara in alta."""
+    p, ceas = _planificator_la(3)
+    assert p.semnal_blocaj() == 6
+    assert p.buget_efectiv() == 1, "int(6 x 0.33) = 1"
+
+    ceas[0] += timedelta(minutes=60)          # doua ferestre de revenire a 30 min
+
+    assert p.multiplicator_orar() == pytest.approx(0.33), "acelasi interval orar"
+    assert p._baza_bruta() == 8, "6 + 2 trepte, in BRUT"
+    assert p.buget_efectiv() == 2, "int(8 x 0.33), o singura modelare"
+
+
+def test_ziua_reparatia_nu_schimba_nimic():
+    """Garda de non-regresie: la multiplicator 1.00 brut si efectiv coincid, deci
+    comportamentul de dinainte de runda ramane bit cu bit acelasi."""
+    p, _ = _planificator_la(12)
+
+    assert p.buget_efectiv() == 12
+    assert [p.semnal_blocaj(), p.semnal_blocaj(), p.semnal_blocaj()] == [6, 3, 1]
+    assert p.semnal_blocaj() == 1, "podeaua"
+    assert p.buget_efectiv() == 1
 
 
 def test_perechea_fara_keyword_activ_se_reprogrameaza_fara_adaptare(db, uid, monkeypatch):
