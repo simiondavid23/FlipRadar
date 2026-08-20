@@ -7,6 +7,8 @@ comutarea de la REG-2 ele ar compara derivarea cu ea insasi, deci s-au sters.
 """
 import re
 
+import pytest
+
 from app.services import product_page_extractor as ppe
 from app.services import scraper_service as ss
 from app.services.shop_registry import (
@@ -73,9 +75,19 @@ def test_registru_intrari_valide():
                 f"{domain}: headed e permis doar pe method=browser"
             assert isinstance(meta["headed"], bool), \
                 f"{domain}: headed trebuie sa fie boolean"
+        # RATE-1 — `min_fetch_interval_s` NU mai e limitat la browser, iar garda
+        # s-a schimbat ODATA cu mecanismul, in acelasi commit.
+        #
+        # Istoria conteaza, ca sa nu para o relaxare: la BR-1 campul a fost inchis
+        # pe method=browser fiindca ACOLO era singurul consumator
+        # (`browser_fetch.fetch_browser_html`), iar pe alte metode ar fi fost un
+        # camp MORT — prezenta lui ar fi sugerat fals o protectie inexistenta.
+        # Argumentul acela era despre CONSUM, nu despre semantica: „secunde minime
+        # intre cereri" are inteles pe orice cale. La RATE-1 consumatorul HTTP
+        # exista (poarta `_fetch_shop_url_guarded`), deci campul nu mai e mort
+        # nicaieri si restrictia si-a pierdut temeiul. `headed` ramane browser-only:
+        # el chiar n-are inteles fara browser.
         if "min_fetch_interval_s" in meta:
-            assert meta["method"] == "browser", \
-                f"{domain}: min_fetch_interval_s e permis doar pe method=browser"
             assert isinstance(meta["min_fetch_interval_s"], int) \
                 and not isinstance(meta["min_fetch_interval_s"], bool) \
                 and meta["min_fetch_interval_s"] > 0, \
@@ -165,3 +177,125 @@ def test_harta_de_impersonate_e_pinuita():
     # inclusiv pe subdomeniu. Fara asta, harta ar putea fi corecta si ocolita.
     assert ss._impersonate_for("https://www.elefant.ro/produs_abc") == "chrome"
     assert ss._impersonate_for("https://elefant.ro/produs_abc") == "chrome"
+
+
+# ── RATE-1: intervalul minim pe poarta HTTP ──────────────────────────────────
+#
+# Testele stau AICI, langa garda pe care o insotesc, ca perechea „mecanism +
+# contract" sa se citeasca dintr-o bucata. Ceasul si somnul sunt AMBELE
+# monkeypatch-uite: suita nu are voie sa doarma nici macar o secunda reala.
+
+
+@pytest.fixture
+def ceas_fals(monkeypatch):
+    """Ceas monoton controlat + `sleep` care doar avanseaza ceasul."""
+    from app.services import scraper_service as ss
+
+    stare = {"acum": 1_000.0, "dormit": []}
+
+    def _monotonic():
+        return stare["acum"]
+
+    def _sleep(secunde):
+        stare["dormit"].append(secunde)
+        stare["acum"] += secunde
+
+    monkeypatch.setattr(ss.time, "monotonic", _monotonic)
+    monkeypatch.setattr(ss.time, "sleep", _sleep)
+    monkeypatch.setattr(ss, "_ULTIMA_CERERE_PE_DOMENIU", {})
+    stare["modul"] = ss
+    return stare
+
+
+def test_rate_a_doua_cerere_pe_acelasi_domeniu_asteapta_diferenta(ceas_fals,
+                                                                  monkeypatch):
+    """Doua cereri consecutive pe un domeniu cu interval: a doua asteapta restul."""
+    ss = ceas_fals["modul"]
+    monkeypatch.setattr(ss, "_MIN_FETCH_INTERVALE", {"action.com": 90})
+
+    assert ss._asteapta_intervalul("https://www.action.com/ro-ro/p/1/x/") == 0.0
+    ceas_fals["acum"] += 10          # au trecut 10s din 90
+    asteptat = ss._asteapta_intervalul("https://www.action.com/ro-ro/p/2/y/")
+
+    assert asteptat == pytest.approx(80.0)
+    assert ceas_fals["dormit"] == [pytest.approx(80.0)]
+
+
+def test_rate_domeniul_fara_camp_nu_asteapta_niciodata(ceas_fals, monkeypatch):
+    """Zero cost pe restul catalogului — nici somn, nici stampila."""
+    ss = ceas_fals["modul"]
+    monkeypatch.setattr(ss, "_MIN_FETCH_INTERVALE", {"action.com": 90})
+
+    for _ in range(5):
+        assert ss._asteapta_intervalul("https://www.forit.ro/produs-x") == 0.0
+
+    assert ceas_fals["dormit"] == []
+    assert "forit.ro" not in ss._ULTIMA_CERERE_PE_DOMENIU
+
+
+def test_rate_domenii_diferite_sunt_independente(ceas_fals, monkeypatch):
+    """Intervalul e PER DOMENIU: unul care asteapta nu tine celalalt pe loc."""
+    ss = ceas_fals["modul"]
+    monkeypatch.setattr(ss, "_MIN_FETCH_INTERVALE",
+                        {"action.com": 90, "sephora.ro": 180})
+
+    assert ss._asteapta_intervalul("https://www.action.com/a") == 0.0
+    assert ss._asteapta_intervalul("https://www.sephora.ro/b") == 0.0
+    assert ceas_fals["dormit"] == []
+
+    assert ss._asteapta_intervalul("https://www.action.com/c") == pytest.approx(90.0)
+
+
+def test_rate_dupa_scurgerea_naturala_a_intervalului_nu_se_asteapta(ceas_fals,
+                                                                    monkeypatch):
+    """Daca timpul a trecut oricum (alte domenii, parsare, retea), nu se doarme."""
+    ss = ceas_fals["modul"]
+    monkeypatch.setattr(ss, "_MIN_FETCH_INTERVALE", {"action.com": 90})
+
+    ss._asteapta_intervalul("https://www.action.com/a")
+    ceas_fals["acum"] += 120         # mai mult decat intervalul
+
+    assert ss._asteapta_intervalul("https://www.action.com/b") == 0.0
+    assert ceas_fals["dormit"] == []
+
+
+def test_rate_subdomeniul_mosteneste_dar_sufixul_inselator_nu(ceas_fals,
+                                                              monkeypatch):
+    """Potrivire suffix-safe, ca la `_impersonate_for` si la allow-list-ul C-14."""
+    ss = ceas_fals["modul"]
+    monkeypatch.setattr(ss, "_MIN_FETCH_INTERVALE", {"action.com": 90})
+
+    assert ss._asteapta_intervalul("https://shop.action.com/x") == 0.0
+    # Acelasi domeniu de baza -> a doua cerere asteapta.
+    assert ss._asteapta_intervalul("https://www.action.com/y") == pytest.approx(90.0)
+    # Sufix inselator: alt domeniu, deci nicio asteptare mostenita.
+    ceas_fals["dormit"].clear()
+    assert ss._asteapta_intervalul("https://evil-action.com.attacker.net/z") == 0.0
+    assert ceas_fals["dormit"] == []
+
+
+def test_rate_harta_derivata_din_registru_contine_action():
+    """Legatura registru -> mecanism e reala, nu doar documentata."""
+    from app.services import scraper_service as ss
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    assert SHOP_REGISTRY["action.com"]["min_fetch_interval_s"] == 90
+    assert ss._MIN_FETCH_INTERVALE.get("action.com") == 90
+    # Derivarea ia TOATE intrarile cu camp, indiferent de metoda (contractul nou).
+    asteptat = {d: m["min_fetch_interval_s"] for d, m in SHOP_REGISTRY.items()
+                if m.get("min_fetch_interval_s")}
+    assert ss._MIN_FETCH_INTERVALE == asteptat
+
+
+def test_rate_calea_browser_ramane_neatinsa():
+    """Browser-ul isi citeste campul prin `browser_profile_of`, ca inainte.
+
+    Mecanismul HTTP e PARALEL, nu inlocuitor: sephora ramane pe refuz-sub-prag,
+    action pe asteapta-diferenta.
+    """
+    from app.services.shop_registry import browser_profile_of
+
+    assert browser_profile_of("sephora.ro") == {"headed": True,
+                                                "min_fetch_interval_s": 180}
+    # action nu e domeniu de browser: profilul lui de harness ramane cel implicit.
+    assert browser_profile_of("action.com")["headed"] is False

@@ -59,13 +59,23 @@ Campurile unei intrari:
                 listare le marcheaza `"inStock":true`. Absent = availability se
                 citeste normal.
   min_fetch_interval_s
-              — OPTIONAL, DOAR pe method == "browser": secunde minime intre doua
-                vizite ale harness-ului pe domeniu. Sub prag, fetch-ul e refuzat
-                FARA a lansa browser, iar refresh-ul pastreaza pretul anterior.
-                Aparut pentru sephora.ro, care limiteaza progresiv; pragul real nu
-                e masurat (sonda G4b si-a invalidat propria masuratoare), deci
-                valoarea e o estimare prudenta care se urca din registru daca apar
-                blocaje. Absent = fara limitare.
+              — OPTIONAL, pe ORICE metoda (int pozitiv): secunde minime intre doua
+                cereri catre domeniu. Cele doua cai il consuma DIFERIT, si asta e
+                deliberat:
+                  * BROWSER (`browser_fetch`): sub prag fetch-ul e REFUZAT fara a
+                    lansa browser, iar refresh-ul pastreaza pretul anterior —
+                    lansarea unui browser e prea scumpa ca sa astepti cu el pornit;
+                  * HTTP (poarta `_fetch_shop_url_guarded`, RATE-1): sub prag
+                    cererea ASTEAPTA diferenta si apoi pleaca — o cerere HTTP e
+                    ieftina, iar refuzul ar pierde inutil o extractie.
+                Aparut pentru sephora.ro (browser, 180s), care limiteaza progresiv
+                — acolo pragul real nu e masurat (sonda G4b si-a invalidat propria
+                masuratoare), deci valoarea e o estimare prudenta. Extins la calea
+                HTTP pentru action.com (90s), unde limitarea pe RATA e masurata
+                exact: a 4-a cerere intr-un minut ia 403, iar acelasi URL pe acelasi
+                profil trece dupa 95s (G2F-5). Absent = fara limitare, si niciun
+                cost — harta se deriva o data la import, iar domeniile care nu-s in
+                ea nu ating nici macar lacatul.
   notes       — valul/sonda de origine
 """
 import copy
@@ -899,6 +909,9 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # RATE-1: 90s intre cereri, pe poarta HTTP. Vezi masuratoarea din notes —
+        # 95s a fost pauza care a trecut, 90 e pragul ales sub ea, nu peste.
+        "min_fetch_interval_s": 90,
         "notes": "G2F-5/G2F-6; Next.js + Cloudflare. Intrebarea de existenta (lista "
                  "master: „verifica daca expune preturi online\") e INCHISA AFIRMATIV: "
                  "are magazin online cu preturi reale — `Offer` cu `price` 3.98 si "
@@ -906,10 +919,11 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "ANTI-BOT PE RATA, nu pe ruta si nu pe profil: a 4-a cerere intr-un "
                  "minut a dat 403 „Just a moment...\", iar ACELASI URL pe ACELASI "
                  "profil de PRODUCTIE a trecut cu 200 dupa o pauza de 95s (masurat, "
-                 "G2F-5 corectie). Domeniul are deci nevoie de un interval minim "
-                 "intre cereri — vezi nota din docs: mecanismul `min_fetch_interval_s` "
-                 "exista azi DOAR pe method=browser, deci pe calea HTTP nu e inca "
-                 "aplicabil. Pretul e SPART in DOM (`11 95`), deci extractia pe text "
+                 "G2F-5 corectie). De aici `min_fetch_interval_s: 90` — REZOLVAT la "
+                 "RATE-1, care a extins mecanismul de pe calea browser pe poarta HTTP "
+                 "(`_fetch_shop_url_guarded`), unde sub prag cererea asteapta "
+                 "diferenta in loc sa fie refuzata. 90 e ales SUB pauza de 95s care a "
+                 "trecut masurat, nu peste ea. Pretul e SPART in DOM (`11 95`), deci extractia pe text "
                  "vizibil e nesigura si ld+json e sursa; cifrele mici (0,07-8,98 lei) "
                  "sunt preturi PE BUCATA, nu ale produsului. PDP "
                  "/ro-ro/p/<ID_numeric>/<slug>/; /ro-ro/promocie-saptamanii/ da 404 "

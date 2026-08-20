@@ -2,6 +2,7 @@ import asyncio
 import json
 import random
 import re
+import threading
 import time
 import urllib.parse
 from typing import Optional
@@ -11,7 +12,7 @@ from curl_cffi import requests as curl_requests
 
 from app.utils.category_mapper import infer_category_from_name
 from app.services.log_manager import log_manager
-from app.services.shop_registry import impersonate_overrides
+from app.services.shop_registry import SHOP_REGISTRY, impersonate_overrides
 # Directia importurilor e sigura in acest sens: extractorul importa scraper_service
 # DOAR lenes (in corpul lui extract_product, pentru allow-list-ul SSRF), tocmai ca
 # importul asta top-level sa nu inchida un ciclu.
@@ -65,6 +66,36 @@ _IMPERSONATE = "chrome131"
 # deschide. Cheia e domeniul de baza; rezolvarea trece prin _impersonate_for,
 # cu matching suffix-safe identic cu allow-list-ul C-14.
 _IMPERSONATE_OVERRIDES: dict[str, str] = impersonate_overrides()
+
+# ── RATE-1: interval minim intre cereri, per domeniu ─────────────────────────
+#
+# Masuratoarea-sursa (G2F-5, pasa de corectie, pe action.com): a PATRA cerere
+# intr-un minut a primit 403 cu interstitiul Cloudflare „Just a moment...", iar
+# ACELASI URL pe ACELASI profil a trecut cu 200 dupa o pauza de 95s. Ordinea
+# cererilor a exclus celelalte doua explicatii: nu era ruta (aceeasi ruta trecuse)
+# si nu era profilul (acelasi profil a trecut imediat dupa). Deci limitarea e pe
+# RATA, iar raspunsul corect nu e alta amprenta, ci mai putine cereri pe minut.
+#
+# De ce AICI, pe poarta: `_fetch_shop_url_guarded` e punctul UNIC prin care trece
+# tot traficul HTTP catre magazine — deal_scanner, listing_scanner, ambele cai din
+# product_page_extractor (fluxul generic si extractoarele custom) si cele doua
+# apeluri din acest modul. Pus in poarta, mecanismul acopera si scannerele viitoare
+# fara ca cineva sa-si aminteasca sa-l cableze.
+#
+# Harta se deriva o SINGURA data, la import, exact ca `_IMPERSONATE_OVERRIDES`:
+# registrul e un literal Python, deci oricum cere repornire ca sa se schimbe.
+# Domeniile fara camp nu platesc nimic — pe registrul de azi harta are o singura
+# intrare, iar cand e goala verificarea iese la prima linie, fara sa atinga lacatul.
+_MIN_FETCH_INTERVALE: dict[str, int] = {
+    domain: meta["min_fetch_interval_s"]
+    for domain, meta in SHOP_REGISTRY.items()
+    if meta.get("min_fetch_interval_s")
+}
+
+# Ultima cerere pe domeniu, in ceas MONOTON (nu wall-clock: o ajustare de ceas de
+# sistem ar putea altfel sa para ca au trecut ore, sau sa blocheze o ora).
+_ULTIMA_CERERE_PE_DOMENIU: dict[str, float] = {}
+_LOCK_INTERVAL = threading.Lock()
 
 # Pagination safety caps (per-site) so a runaway query can't hammer a shop.
 _MAX_PAGES_EMAG = 10         # eMAG serves ~72-78 cards per page
@@ -881,6 +912,63 @@ def _impersonate_for(url: str) -> str:
     return _IMPERSONATE
 
 
+def _asteapta_intervalul(url: str) -> float:
+    """Doarme diferenta pana la intervalul minim al domeniului. Intoarce secundele.
+
+    Zero cost pe domeniile fara camp: harta e goala sau nu contine domeniul, si se
+    iese inainte de lacat. Matching-ul e suffix-safe, IDENTIC cu `_impersonate_for`
+    si cu allow-list-ul C-14 — un subdomeniu legitim mosteneste intervalul
+    domeniului de baza, dar `evil-action.com.attacker.com` nu.
+
+    Asteptarea sta SUB lacat, nu inaintea lui, si nu din neglijenta: daca doua fire
+    ar verifica in paralel, amandoua ar vedea „a trecut destul" si ar pleca
+    spate-in-spate catre exact magazinul pe care incercam sa-l menajam. Sub lacat,
+    firele se serializeaza si fiecare isi asteapta randul. Costul e ca un al doilea
+    fir catre ACELASI domeniu sta blocat — dar asta E protectia, nu un efect
+    secundar. Restul jobului nu sufera: alte domenii nu ating lacatul asta decat
+    daca au si ele interval, iar pe registrul de azi doar unul are.
+
+    Momentul se stampileaza la PLECAREA cererii, nu la intoarcerea ei: masuratoarea
+    care a dat regula numara cereri pe minut, iar durata raspunsului nu e sub
+    controlul nostru. Ar fi si nepractic — ar cere tinerea lacatului peste apelul
+    de retea, adica serializarea completa a fetch-urilor.
+
+    Se aplica o data pe FETCH LOGIC, nu pe fiecare hop de redirect: un lant de
+    redirecturi e o singura vizita, iar o pauza de 90s intre hop-uri ar rupe
+    fetch-ul in loc sa-l menajeze.
+    """
+    if not _MIN_FETCH_INTERVALE:
+        return 0.0
+    try:
+        hostname = (urllib.parse.urlparse(url).hostname or "").lower()
+    except Exception:                                           # noqa: BLE001
+        return 0.0
+    if not hostname:
+        return 0.0
+    cheie = None
+    for domain in _MIN_FETCH_INTERVALE:
+        if hostname == domain or hostname.endswith("." + domain):
+            cheie = domain
+            break
+    if cheie is None:
+        return 0.0
+
+    interval = _MIN_FETCH_INTERVALE[cheie]
+    with _LOCK_INTERVAL:
+        trecut = time.monotonic() - _ULTIMA_CERERE_PE_DOMENIU.get(cheie, float("-inf"))
+        de_asteptat = interval - trecut
+        if de_asteptat > 0:
+            log_manager.emit(
+                "retail", "INFO",
+                f"Interval minim {cheie}: astept {de_asteptat:.0f}s "
+                f"(minim {interval}s intre cereri)")
+            time.sleep(de_asteptat)
+        else:
+            de_asteptat = 0.0
+        _ULTIMA_CERERE_PE_DOMENIU[cheie] = time.monotonic()
+    return de_asteptat
+
+
 def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: int = 3):
     """C-14b/C-14c: fetch cu allow-list per-hop, partajat de toate fetch-urile pe
     URL-uri controlate de user.
@@ -897,6 +985,8 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
     plece cu amprenta TINTEI, nu a sursei — altfel un redirect catre 43einhalb.com
     ar cere pagina cu chrome131 si ar lua 403, exact ce evita override-ul.
     """
+    # RATE-1: menajarea domeniului se face INAINTE de primul hop, o data pe fetch.
+    _asteapta_intervalul(url)
     current_url = url
     for _hop in range(max_hops + 1):  # 1 request initial + max_hops redirecturi
         if not _is_allowed_shop_url(current_url):

@@ -2235,6 +2235,111 @@ acelasi URL de doua ori la distanta, se exclude „ruta".
 
 ---
 
+## RATE-1 — interval minim per domeniu, si pe poarta HTTP
+
+Inchide datoria lasata la G2F-6, unde action.com a intrat in registru FARA campul
+de interval fiindca mecanismul nu exista pe calea lui.
+
+### Masuratoarea-sursa
+
+Pe action.com (G2F-5, pasa de corectie): a **patra** cerere intr-un minut a primit
+403 cu interstitiul Cloudflare „Just a moment...", iar **acelasi URL pe acelasi
+profil a trecut cu 200 dupa o pauza de 95s**. Ordinea cererilor a fost aleasa
+deliberat ca sa excluda celelalte doua explicatii — nu era ruta (aceeasi ruta
+trecuse deja) si nu era profilul (acelasi profil a trecut imediat dupa). Deci
+limitarea e pe **RATA**, iar raspunsul corect nu e alta amprenta, ci mai putine
+cereri pe minut. Pragul ales, **90s**, sta SUB pauza care a trecut masurat (95s),
+nu peste ea.
+
+### Unde sta mecanismul, si de ce acolo
+
+In `_fetch_shop_url_guarded` din `scraper_service` — **poarta unica** prin care
+trece tot traficul HTTP catre magazine. La momentul rundei avea sase puncte de
+apel, in cinci module: `deal_scanner`, `listing_scanner`, ambele cai din
+`product_page_extractor` (fluxul generic si `_fetch_text_guarded` al extractoarelor
+custom) si doua apeluri din `scraper_service` insusi. Pus in poarta, mecanismul
+acopera si scannerele viitoare fara ca cineva sa-si aminteasca sa-l cableze.
+
+Detaliile care conteaza:
+* **Ceas monoton**, nu wall-clock: o ajustare a ceasului de sistem ar putea altfel
+  sa para ca au trecut ore, sau sa blocheze o ora.
+* **Asteptarea sta SUB lacat.** Daca doua fire ar verifica in paralel, amandoua ar
+  vedea „a trecut destul" si ar pleca spate-in-spate catre exact magazinul pe care
+  incercam sa-l menajam. Sub lacat se serializeaza. Costul — un al doilea fir catre
+  ACELASI domeniu sta blocat — **este** protectia, nu un efect secundar.
+* **Stampila la plecare**, nu la intoarcere: masuratoarea numara cereri pe minut,
+  iar durata raspunsului nu e sub controlul nostru; altfel ar trebui tinut lacatul
+  peste apelul de retea, adica serializate toate fetch-urile.
+* **O data pe fetch logic, nu pe hop**: un lant de redirecturi e o singura vizita,
+  iar o pauza de 90s intre hop-uri ar rupe fetch-ul in loc sa-l menajeze.
+* **Cost zero pe restul catalogului**: harta se deriva o data la import (ca
+  `_IMPERSONATE_OVERRIDES`), iar domeniile care nu-s in ea ies inainte de lacat.
+* Potrivire **suffix-safe**, identica cu `_impersonate_for` si cu allow-list-ul
+  C-14: `shop.action.com` mosteneste intervalul, `evil-action.com.attacker.net` nu.
+
+### Contractul campului, actualizat
+
+`min_fetch_interval_s` nu mai e „doar pe method=browser". E valabil pe ORICE
+metoda, dar cele doua cai il consuma DIFERIT, si asta e deliberat:
+
+| cale | sub prag | de ce |
+|---|---|---|
+| BROWSER (`browser_fetch`) | fetch-ul e **REFUZAT**, refresh-ul pastreaza pretul anterior | lansarea unui browser e prea scumpa ca sa astepti cu el pornit |
+| HTTP (poarta, RATE-1) | cererea **ASTEAPTA** diferenta, apoi pleaca | o cerere HTTP e ieftina; refuzul ar pierde inutil o extractie |
+
+### Garda din suita, rescrisa in ACELASI commit
+
+La BR-1 campul fusese inchis pe `method == "browser"` fiindca acolo era singurul
+consumator, iar pe alte metode ar fi fost un **camp mort** — prezenta lui ar fi
+sugerat fals o protectie inexistenta. Argumentul acela era despre CONSUM, nu despre
+semantica: „secunde minime intre cereri" are inteles pe orice cale. La RATE-1
+consumatorul HTTP exista, deci restrictia si-a pierdut temeiul si a cazut — dar
+**odata cu** aparitia mecanismului, niciodata inaintea lui. `headed` ramane
+browser-only: el chiar n-are inteles fara browser.
+
+Regula care se desprinde, si merita tinuta: *o garda care interzice un camp mort se
+ridica in acelasi commit cu codul care il face viu — nu mai devreme, ca sa nu apara
+campuri decorative, si nu mai tarziu, ca sa nu fie nevoie de un commit care „repara"
+suita.*
+
+### Verificarea live, si ce a scos la iveala
+
+Doua extractii consecutive pe action.com, prin calea de productie, fara ca scriptul
+sa doarma explicit:
+
+```
+[t+  0.0s] action.com /p/2574593/  -> 3.98 RON, jsonld     (extractia a durat 0.3s)
+[t+  0.3s] action.com /p/2567526/  -> 11.95 RON, jsonld    (extractia a durat 180.0s)
+[t+180.3s] control pe domeniu FARA interval -> pleaca imediat (0.4s, status 200)
+```
+
+Mecanismul functioneaza — a doua cerere n-a plecat inainte de prag, iar domeniile
+fara camp nu asteapta deloc. Dar cifra de **180s**, nu 90, spune ceva in plus:
+`extract_product` are bucla de retry, si **fiecare incercare trece prin poarta**,
+deci a consumat DOUA intervale. Adica prima incercare (la t≈90s) n-a dat o pagina
+parsabila, iar a doua (la t≈180s) a dat. Bucla nu jurnalizeaza statusul per
+incercare, deci cauza exacta n-a fost capturata: ori un challenge la 90s, ori o
+eroare tranzitorie.
+
+Doua consecinte practice:
+1. **Un retry costa un interval intreg.** E corect ca protectie (retry-ul e tot o
+   cerere catre acelasi magazin), dar inseamna ca o extractie nereusita din prima
+   poate dura 3 x interval inainte sa renunte.
+2. **90s ar putea fi sub pragul real.** Singura recuperare masurata (G2F-5) a fost
+   la **95s**, iar valoarea a fost aleasa deliberat SUB ea. Directia e discutabila:
+   un interval de protectie ar trebui sa fie la sau peste timpul de recuperare
+   observat, nu sub. Verificarea live e compatibila cu ipoteza „90 nu ajunge".
+   Valoarea se urca din registru, fara cod — o linie.
+
+### Efectul la deploy
+
+Verificat pe registrul de dinaintea rundei: singurul domeniu cu camp era
+`sephora.ro` (browser, 180s), deci **niciun domeniu HTTP nu-l avea**. Comportamentul
+intregului catalog ramane identic; singura schimbare e action.com, care de acum
+asteapta cel putin 90s intre doua cereri.
+
+---
+
 ## Domenii neintrate
 
 > bipa.ro — VITRINA, nu magazin (masurat in G2D-1): ZERO semnale de cos/checkout in
