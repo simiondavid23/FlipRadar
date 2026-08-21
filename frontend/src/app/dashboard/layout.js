@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { systemAPI } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
+import ModuleTabs from "@/components/ModuleTabs";
 import { Menu, X } from "lucide-react";
 
 function DashboardContent({ children }) {
@@ -116,6 +117,7 @@ function DashboardContent({ children }) {
             </button>
           </div>
         )}
+        <ModuleTabs />
         {children}
       </main>
 

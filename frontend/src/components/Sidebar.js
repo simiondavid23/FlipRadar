@@ -4,93 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import {
-  LayoutDashboard, Search, Bell, LogOut,
-  Heart, Globe, Boxes, Receipt,
-  BarChart2, Radar, Target, Bookmark, Settings,
-  Calculator, Rss, Tag, Activity, Percent
-} from "lucide-react";
+import { LayoutDashboard, Search, LogOut, Settings } from "lucide-react";
+import { DASHBOARD_HREF, visibleModules, findModuleForPath } from "@/lib/navigation";
 
-// Sidebar-ul "Prism Obsidian": panou flotant din sticla, nav plat cu etichete de
-// grup mono, item activ pill cu punct cyan + index. Culorile sunt hardcodate
-// pentru ca panoul ramane intunecat indiferent de restul temei.
+// Sidebar-ul "Prism Obsidian": panou flotant din sticla, nav plat cu un item per
+// MODUL, item activ pill cu punct cyan + index. Paginile modulului se vad in
+// ModuleTabs, deasupra continutului. Culorile sunt hardcodate pentru ca panoul
+// ramane intunecat indiferent de restul temei.
 const ICON = { width: 14, height: 14, strokeWidth: 1.8, flexShrink: 0 };
-
-const categories = [
-  {
-    id: "catalog",
-    label: "Catalog",
-    items: [
-      { name: "Descoperă Oportunități", href: "/dashboard/products", icon: Search },
-      { name: "Deal-uri", href: "/dashboard/deals", icon: Percent },
-      { name: "Scanare Magazine", href: "/dashboard/scraping", icon: Globe, flag: "can_use_scraping" },
-      { name: "Produse Urmărite", href: "/dashboard/tracked-products", icon: Heart },
-    ],
-  },
-  {
-    id: "radar",
-    label: "Radar Piața",
-    items: [
-      { name: "Feed Anunțuri", href: "/dashboard/radar", icon: Radar },
-      { name: "Keyword-uri", href: "/dashboard/radar/keywords", icon: Target },
-      { name: "Salvate & Ignorate", href: "/dashboard/radar/saved", icon: Bookmark },
-    ],
-  },
-  {
-    id: "auto_lots",
-    label: "Loturi Automobile — În lucru",
-    items: [
-      { name: "Feed Loturi", href: "/dashboard/auto/lots/feed", icon: Rss },
-      { name: "Keyword-uri", href: "/dashboard/auto/lots/keywords", icon: Tag },
-      { name: "Cauta Loturi", href: "/dashboard/auto/lots/search", icon: Search },
-      { name: "Loturi Salvate", href: "/dashboard/auto/lots/saved", icon: Heart },
-      { name: "Calculator Import", href: "/dashboard/auto/lots/calculator", icon: Calculator },
-    ],
-  },
-  {
-    id: "auto_listings",
-    label: "Auto Anunțuri",
-    items: [
-      { name: "Feed Anunțuri", href: "/dashboard/auto-listings/feed", icon: Rss },
-      { name: "Keyword-uri", href: "/dashboard/auto-listings/keywords", icon: Tag },
-      { name: "Salvate & Ignorate", href: "/dashboard/auto-listings/saved", icon: Bookmark },
-    ],
-  },
-  {
-    id: "real_estate",
-    label: "Imobiliare",
-    items: [
-      { name: "Feed Anunțuri", href: "/dashboard/real-estate-monitor/feed", icon: Rss },
-      { name: "Keyword-uri", href: "/dashboard/real-estate-monitor/keywords", icon: Tag },
-      { name: "Salvate & Ignorate", href: "/dashboard/real-estate-monitor/saved", icon: Bookmark },
-    ],
-  },
-  {
-    id: "gestiune",
-    label: "Gestiune",
-    items: [
-      { name: "Inventar", href: "/dashboard/inventory", icon: Boxes },
-      { name: "Registru Vanzari", href: "/dashboard/sales", icon: Receipt },
-      { name: "Statistici & Profit", href: "/dashboard/reports", icon: BarChart2 },
-    ],
-  },
-  {
-    id: "monitorizare",
-    label: "Monitorizare",
-    items: [
-      { name: "Jurnale Live", href: "/dashboard/logs", icon: Activity },
-      { name: "Alerte Pret", href: "/dashboard/alerts", icon: Bell, flag: "can_use_alerts" },
-    ],
-  },
-];
-
-function filterItemsForUser(items, user) {
-  if (!user) return items;
-  return items.filter((it) => {
-    if (!it.flag) return true;
-    return user[it.flag] !== false;
-  });
-}
 
 // Diacriticele nu trebuie sa strice cautarea in nav ("anunturi" gaseste "Anunțuri").
 // NFD desparte si virgula de sub ț/ș (U+0326), deci intervalul acopera ambele familii.
@@ -110,27 +31,29 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const [query, setQuery] = useState("");
 
-  // Indexul mono din dreapta itemului activ = pozitia paginii in nav (01, 02, …).
-  const { groups, indexOf } = useMemo(() => {
-    const idx = { "/dashboard": 1 };
+  // Indexul mono din dreapta itemului activ = pozitia modulului in nav (01, 02, …),
+  // cu 01 rezervat pentru Tablou de Bord.
+  const { modules, indexOf } = useMemo(() => {
+    const ms = visibleModules(user);
+    const idx = { [DASHBOARD_HREF]: 1 };
     let n = 1;
-    const gs = categories
-      .map((cat) => ({ ...cat, items: filterItemsForUser(cat.items, user) }))
-      .filter((cat) => cat.items.length > 0);
-    for (const cat of gs) {
-      for (const it of cat.items) idx[it.href] = ++n;
-    }
-    return { groups: gs, indexOf: idx };
+    for (const m of ms) idx[m.id] = ++n;
+    return { modules: ms, indexOf: idx };
   }, [user]);
 
-  const q = norm(query);
-  const visibleGroups = q
-    ? groups
-        .map((cat) => ({ ...cat, items: cat.items.filter((it) => norm(it.name).includes(q) || norm(cat.label).includes(q)) }))
-        .filter((cat) => cat.items.length > 0)
-    : groups;
+  const activeModuleId = findModuleForPath(pathname, user)?.module.id ?? null;
 
-  const dashboardActive = pathname === "/dashboard";
+  // Cautarea coboara la nivel de PAGINA: doar etichetele de modul n-ar da destul context.
+  const q = norm(query);
+  const results = q
+    ? modules.flatMap((m) =>
+        m.pages
+          .filter((p) => norm(p.name).includes(q) || norm(m.label).includes(q))
+          .map((p) => ({ module: m, page: p }))
+      )
+    : [];
+
+  const dashboardActive = pathname === DASHBOARD_HREF;
   const showDashboardLink = !q || norm("Tablou de Bord").includes(q);
   const pad = (n) => String(n).padStart(2, "0");
 
@@ -194,36 +117,54 @@ export default function Sidebar() {
 
       <nav style={{ flex: 1, padding: "8px 10px 0", overflowY: "auto" }}>
         {showDashboardLink && (
-          <Link href="/dashboard" className={`pill-nav-item${dashboardActive ? " active" : ""}`}>
+          <Link href={DASHBOARD_HREF} className={`pill-nav-item${dashboardActive ? " active" : ""}`}>
             {dashboardActive ? <span className="pill-nav-dot" /> : <LayoutDashboard style={ICON} />}
             <span>Tablou de Bord</span>
-            {dashboardActive && <span className="pill-nav-idx">{pad(indexOf["/dashboard"])}</span>}
+            {dashboardActive && <span className="pill-nav-idx">{pad(indexOf[DASHBOARD_HREF])}</span>}
           </Link>
         )}
 
-        {visibleGroups.map((cat) => (
-          <div key={cat.id} style={{ marginTop: "12px" }}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)", fontSize: "8.5px", letterSpacing: ".18em",
-                textTransform: "uppercase", color: "#41547a", padding: "0 13px 5px",
-              }}
-            >
-              {cat.label}
-            </div>
-            {cat.items.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              return (
-                <Link key={item.href} href={item.href} className={`pill-nav-item${isActive ? " active" : ""}`}>
-                  {isActive ? <span className="pill-nav-dot" /> : <Icon style={ICON} />}
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</span>
-                  {isActive && <span className="pill-nav-idx">{pad(indexOf[item.href])}</span>}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+        <div style={{ marginTop: "12px" }}>
+          {q
+            ? results.map(({ module, page }) => {
+                const Icon = page.icon;
+                return (
+                  <Link key={`${module.id}:${page.href}`} href={page.href} className="pill-nav-item">
+                    <Icon style={ICON} />
+                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {module.label} › {page.name}
+                    </span>
+                  </Link>
+                );
+              })
+            : modules.map((module) => {
+                const isActive = module.id === activeModuleId;
+                const Icon = module.icon;
+                return (
+                  <Link
+                    key={module.id}
+                    href={module.pages[0].href}
+                    className={`pill-nav-item${isActive ? " active" : ""}`}
+                  >
+                    {isActive ? <span className="pill-nav-dot" /> : <Icon style={ICON} />}
+                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{module.label}</span>
+                    {module.badge && (
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)", fontSize: "8px", letterSpacing: ".12em",
+                          textTransform: "uppercase", color: "#41547a",
+                          border: "1px solid rgba(94,140,255,.18)", borderRadius: "5px",
+                          padding: "1px 5px", marginLeft: "auto", flexShrink: 0,
+                        }}
+                      >
+                        {module.badge}
+                      </span>
+                    )}
+                    {isActive && <span className="pill-nav-idx">{pad(indexOf[module.id])}</span>}
+                  </Link>
+                );
+              })}
+        </div>
         <div style={{ height: "10px" }} />
       </nav>
 
