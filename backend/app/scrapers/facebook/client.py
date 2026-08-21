@@ -404,7 +404,11 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
 
     def _verdict(lista, eticheta_reusita, *, zero_confirmat=False):
         """`zero_confirmat` se propaga DOAR cand verdictul chiar e `gol`: pe un „ok"
-        n-are inteles, iar un „blocat" nu e un zero explicat, e un refuz."""
+        n-are inteles, iar un „blocat" nu e un zero explicat, e un refuz.
+
+        FBS-14, D3: un gol produs de FILTRUL de varsta pe treptele degradate NU e
+        `zero_confirmat` — serverul n-a confirmat niciun zero, noi am taiat. Apelantii
+        de acolo nu paseaza steagul, deci implicitul `False` e chiar regula."""
         e = eticheta_reusita if lista else "gol"
         if _pare_blocat(cl, cod):
             e = "blocat"
@@ -419,6 +423,34 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
         """Facebook a spus explicit „zero rezultate" — raspuns valid, oprim aici."""
         return getattr(cl, "santinela_ultima", False)
 
+    def _dupa_varsta_degradata(canonice):
+        """Taierea de varsta pe treptele DEGRADATE (2-3), cu contoare SEPARATE.
+
+        FBS-14 — pana aici filtrul se aplica doar treptei 1, deci o degradare la
+        GraphQL intorcea anunturi NESORTATE si de ORICE varsta, care in aval aratau ca
+        oricare altele. Garantia devine uniforma: nimic DATAT peste prag nu iese din
+        nucleu, indiferent de treapta. Pragul e ACELASI (`_varsta_max_ore`), citit din
+        aceeasi sursa ca la treapta 1 — doua praguri ar fi doua adevaruri.
+
+        Nedatatele se PASTREAZA (regula lui `filtreaza_dupa_varsta`: „nu stiu varsta"
+        nu inseamna „vechi"), si tocmai de-aia se numara SEPARAT de cele taiate.
+        Acoperirea lui `listed_at` e masurata 100% doar pe SSR; pe GraphQL e
+        NEMASURATA. Contoarele astea sunt instrumentul care va spune, la prima
+        degradare reala, daca filtrul chiar musca sau doar exista — si deci daca
+        marcarea treptei in bazin (varianta B din audit) trebuie redeschisa.
+
+        UN emit per apel, si numai daca are ce raporta.
+        """
+        ore = _varsta_max_ore()
+        proaspete = filtreaza_dupa_varsta(canonice, ore)
+        taiate = len(canonice) - len(proaspete)
+        nedatate = sum(1 for c in proaspete if c.get("listed_at") is None)
+        if taiate or nedatate:
+            log_manager.emit("radar", "INFO",
+                f"Facebook GraphQL (treapta {trepte}): {taiate} din {len(canonice)} "
+                f"anunturi peste pragul de {ore:g} h, {nedatate} fara data pastrate")
+        return proaspete
+
     # ── treapta 1: SSR pe `city_page_id` — calea FIERBINTE de la FBS-2 ───────
     # Ancorele fara ID sar treapta asta si incep de la GraphQL, exact ca inainte.
     if city_page_id:
@@ -428,9 +460,12 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
         if _oprit_de_sesiune():
             return [], StareCautare("sesiune_invalida", cod, trepte)
         if brute:
-            # Calea a FUNCTIONAT. Filtrul local de varsta se aplica DOAR aici,
-            # fiindca doar aici am CERUT recenta (`daysSinceListed=1`), iar fereastra
-            # serverului e de ~38 h, nu 24. Daca filtrul goleste rezultatul, NU se
+            # Calea a FUNCTIONAT. Filtrul local de varsta se aplica si aici, si pe
+            # treptele degradate (FBS-14) — dar din motive DIFERITE, si de-aia codul e
+            # separat: aici recenta s-a cerut SI serverului (`daysSinceListed=1`), iar
+            # filtrul doar strange fereastra lui, care e de ~38 h, nu 24; pe 2-3 nu s-a
+            # cerut nimanui nimic, deci filtrul e singura garantie. Difera si verdictul
+            # la gol — vezi `_dupa_varsta_degradata`. Daca filtrul goleste rezultatul, NU se
             # cade la GraphQL: caderea e pentru esec de transport, nu pentru un
             # verdict de filtru — altfel am inlocui „nimic proaspat aici" cu un teanc
             # de anunturi vechi de saptamani, si am plati si cereri pentru el.
@@ -478,7 +513,7 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
     if _santinela():
         return [], StareCautare("gol", cod, trepte, zero_confirmat=True)
     if obiecte is not None:
-        return _verdict(_canonice(obiecte), "ok")
+        return _verdict(_dupa_varsta_degradata(_canonice(obiecte)), "ok")
 
     # ── treapta 2: sablon invechit -> re-bootstrap fortat, O SINGURA DATA ─────
     trepte = 3
@@ -508,7 +543,7 @@ def _search_intern(query: str, lat: float, lon: float, *, raza_km: float = 65,
     if _santinela():
         return [], StareCautare("gol", cod, trepte, zero_confirmat=True)
     if obiecte is not None:
-        return _verdict(_canonice(obiecte), "ok")
+        return _verdict(_dupa_varsta_degradata(_canonice(obiecte)), "ok")
 
     motiv = ("nici SSR pe ID, nici GraphQL n-au intors anunturi" if city_page_id
              else "ancora n-are `city_page_id`, iar GraphQL a esuat pe ambele trepte")

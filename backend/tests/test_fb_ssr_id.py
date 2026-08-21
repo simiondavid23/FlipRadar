@@ -5,10 +5,15 @@ Totul OFFLINE, pe dubluri cu `get`/`post`.
 Ce fixeaza fisierul, dincolo de comportament:
   · URL-ul CODIFICA termenul. Pana la FBS-2 se interpola brut, ceea ce rupea orice
     termen cu spatiu sau diacritice — adica majoritatea termenilor romanesti reali.
-  · filtrul local de varsta se aplica DOAR pe calea SSR, unde am CERUT recenta.
-    Pe GraphQL nu se aplica: acolo n-am cerut nicio fereastra, iar anunturile masurate
-    ajungeau la 3581 h — un filtru de 24 h ar fi golit calea veche in tacere.
+  · filtrul local de varsta se aplica pe TOATE treptele care intorc anunturi (FBS-14).
+    Motivele difera insa, si de-aia si codul si verdictul difera: pe SSR recenta s-a
+    cerut SI serverului, deci filtrul doar strange fereastra lui (~38 h) si un gol de
+    acolo e `zero_confirmat`; pe GraphQL nu s-a cerut nimanui nimic (anunturile masurate
+    ajungeau la 3581 h), filtrul e singura garantie, iar un gol produs de el NU e
+    `zero_confirmat` — serverul n-a confirmat nimic, noi am taiat.
 """
+import copy
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -38,6 +43,17 @@ def _izolare(monkeypatch, tmp_path):
     monkeypatch.delenv("FB_VARSTA_MAX_ORE", raising=False)
     yield
     fb_bootstrap._memo = None
+
+
+@pytest.fixture
+def warns(monkeypatch):
+    """Captureaza emit-urile. NEautouse deliberat: doar testele FBS-14 au nevoie de
+    ele, iar restul fisierului ramane exact cum era."""
+    from app.services.log_manager import log_manager
+    mesaje = []
+    monkeypatch.setattr(log_manager, "emit",
+                        lambda modul, nivel, mesaj: mesaje.append((nivel, mesaj)))
+    return mesaje
 
 
 class ClientFals:
@@ -166,16 +182,162 @@ def test_filtrul_se_aplica_pe_calea_ssr(monkeypatch):
         "filtrul care goleste NU e un motiv de cadere la GraphQL"
 
 
-def test_filtrul_NU_se_aplica_pe_calea_graphql():
-    """Pe GraphQL n-am cerut nicio fereastra, iar anunturile masurate ajungeau la
-    3581 h. Un filtru de 24 h ar fi golit calea veche in tacere."""
+def test_filtrul_se_aplica_SI_pe_calea_graphql():
+    """FBS-14 a INVERSAT proprietatea pe care o fixa testul asta.
+
+    Pana aici se numea `test_filtrul_NU_se_aplica_pe_calea_graphql` si sustinea ca „pe
+    GraphQL n-am cerut nicio fereastra, deci nu filtram" — adevarat ca descriere a
+    codului, dar consecinta era ca o degradare la treapta 2 intorcea anunturi de ORICE
+    varsta (fixture-ul real are 182-4361 h), care in aval aratau ca oricare altele.
+    Garantia e acum uniforma: nimic DATAT peste prag nu iese din nucleu, indiferent de
+    treapta. Testul se rescrie, nu se sterge — el e chiar locul unde se vede schimbarea.
+    """
     cl = ClientFals(rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200)},
                     post_rezultate=[(_fix("fb_graphql_ok.json"), 200)])
 
     canonice, stare = search_cu_stare("canapea", 44.43, 26.10, client=cl)
 
-    assert canonice, "GraphQL intoarce anunturi indiferent de varsta lor"
-    assert stare.eticheta == "ok"
+    # Toate cele 24 din fixture sunt peste pragul implicit -> nu iese niciunul.
+    assert canonice == []
+    assert stare.trepte_incercate == 2, "s-a ajuns chiar pe treapta degradata"
+    # D3 — gol PRODUS DE FILTRU, nu confirmat de server.
+    assert stare.eticheta == "gol" and stare.zero_confirmat is False
+
+
+def test_pe_graphql_cu_pragul_ridicat_anunturile_vechi_trec(monkeypatch):
+    """Contra-proba: filtrul e ce le taie, nu altceva de pe drum. Si dovada ca pragul
+    degradat citeste ACEEASI sursa de mediu ca cel de la treapta 1."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
+    cl = ClientFals(rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200)},
+                    post_rezultate=[(_fix("fb_graphql_ok.json"), 200)])
+
+    canonice, stare = search_cu_stare("canapea", 44.43, 26.10, client=cl)
+
+    assert len(canonice) == 24 and stare.eticheta == "ok"
+
+
+# ── FBS-14: taierea de varsta pe treptele degradate, cu contoare ─────────────
+def _graphql_cu_varste(varste_ore):
+    """Raspuns GraphQL sintetic. `None` intr-o pozitie = anunt FARA `creation_time`.
+
+    Se construieste peste forma REALA din fixture (nu una inventata de la zero), ca sa
+    treaca prin acelasi `extrage_anunturi` ca in productie.
+    """
+    from app.scrapers.facebook.graphql import extrage_anunturi
+
+    sablon = extrage_anunturi(json.loads(_fix("fb_graphql_ok.json")))[0]
+    acum = datetime.now(timezone.utc)
+    noduri = []
+    for i, ore in enumerate(varste_ore):
+        nod = copy.deepcopy(sablon)
+        nod["id"] = f"fbs14-{i}"
+        if ore is None:
+            nod.pop("creation_time", None)
+            nod.pop("if_gk_just_listed_tag_on_search_feed", None)
+        else:
+            moment = int((acum - timedelta(hours=ore)).timestamp())
+            nod["creation_time"] = moment
+            if isinstance(nod.get("if_gk_just_listed_tag_on_search_feed"), dict):
+                nod["if_gk_just_listed_tag_on_search_feed"]["creation_time"] = moment
+        noduri.append({"node": nod})
+    return json.dumps({"data": {"a": {"edges": noduri}}})
+
+
+def _pe_graphql(monkeypatch, varste_ore, prag="48"):
+    """Duce scara pe treapta 2 (fara `city_page_id`) cu feedul sintetic dat."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", prag)
+    cl = ClientFals(rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200)},
+                    post_rezultate=[(_graphql_cu_varste(varste_ore), 200)])
+    return search_cu_stare("canapea", 44.43, 26.10, client=cl)
+
+
+def test_treapta_2_taie_vechile_pastreaza_proaspetele_si_nedatatele(monkeypatch, warns):
+    """D1 + D2 intr-un singur feed: proaspete, peste prag, si nedatate."""
+    canonice, stare = _pe_graphql(monkeypatch, [1.0, 5.0, 100.0, 500.0, None])
+
+    assert len(canonice) == 3, "doua proaspete + una nedatata"
+    assert sum(1 for c in canonice if c["listed_at"] is None) == 1
+    assert stare.eticheta == "ok" and stare.trepte_incercate == 2
+
+    info = [m for niv, m in warns if niv == "INFO" and "treapta 2" in m]
+    assert len(info) == 1, f"UN emit per apel, nu {len(info)}"
+    assert "2 din 5 anunturi peste pragul de 48 h" in info[0], info
+    assert "1 fara data pastrate" in info[0], info
+
+
+def test_treapta_2_integral_peste_prag_da_gol_fara_zero_confirmat(monkeypatch):
+    """D3 — golul PRODUS DE FILTRU nu e un zero confirmat de server. Distinctia conteaza:
+    `zero_confirmat` hraneste detectorul de anomalie din FBS-1b, iar un gol al nostru
+    n-are voie sa treaca drept liniste a pietei."""
+    canonice, stare = _pe_graphql(monkeypatch, [100.0, 200.0, 3000.0])
+
+    assert canonice == []
+    assert stare.eticheta == "gol"
+    assert stare.zero_confirmat is False
+    assert stare.trepte_incercate == 2
+
+
+def test_treapta_2_integral_nedatat_trece_tot(monkeypatch, warns):
+    """LIMITA CUNOSCUTA a variantei A, documentata ca test: `filtreaza_dupa_varsta`
+    pastreaza nedatatele („nu stiu varsta" nu inseamna „vechi"), iar acoperirea lui
+    `listed_at` e masurata 100% doar pe SSR — pe GraphQL e NEMASURATA. Contorul de mai
+    jos e instrumentul care va spune, la prima degradare reala, daca filtrul musca sau
+    doar exista."""
+    canonice, stare = _pe_graphql(monkeypatch, [None, None, None])
+
+    assert len(canonice) == 3 and stare.eticheta == "ok"
+    info = [m for niv, m in warns if niv == "INFO" and "treapta 2" in m]
+    assert len(info) == 1
+    assert "0 din 3" in info[0] and "3 fara data pastrate" in info[0], info
+
+
+def test_treapta_2_feed_integral_proaspat_nu_emite_nimic(monkeypatch, warns):
+    """Emit-ul apare doar cand are ce raporta — altfel jurnalul s-ar umple de linii
+    care spun „n-am facut nimic"."""
+    canonice, _ = _pe_graphql(monkeypatch, [1.0, 2.0, 3.0])
+
+    assert len(canonice) == 3
+    assert not [m for niv, m in warns if niv == "INFO" and "treapta 2" in m]
+
+
+def test_pragul_degradat_vine_din_mediu(monkeypatch):
+    """Filtrul degradat si cel de la treapta 1 citesc ACEEASI sursa: acelasi anunt cade
+    sau trece dupa cum e pragul."""
+    proaspete_la_48, _ = _pe_graphql(monkeypatch, [10.0], prag="48")
+    assert len(proaspete_la_48) == 1
+
+    proaspete_la_5, stare = _pe_graphql(monkeypatch, [10.0], prag="5")
+    assert proaspete_la_5 == [] and stare.zero_confirmat is False
+
+
+def test_treapta_1_ramane_neatinsa(monkeypatch, warns):
+    """D4 — regresie de neutralitate: pe treapta 1 nimic nu se schimba, si mai ales
+    filtrarea NU se aplica de doua ori. `zero_confirmat` de acolo ramane True."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
+    cl = ClientFals(rute={f"/marketplace/{_ID_CLUJ}/search":
+                          (_fix("fb_ssr_search.html"), 200)})
+
+    canonice, stare = search_cu_stare("canapea", 46.77, 23.62,
+                                      city_page_id=_ID_CLUJ, client=cl)
+
+    assert canonice and stare.eticheta == "ok" and stare.trepte_incercate == 1
+    assert [m for m, _ in cl.cereri] == ["get"], "nu s-a coborat pe scara"
+    # Emit-ul de treapta degradata nu are ce cauta pe calea SSR.
+    assert not [m for niv, m in warns if "treapta 2" in m or "treapta 3" in m]
+
+
+def test_treapta_1_goala_de_filtru_ramane_zero_confirmat(monkeypatch):
+    """Contrastul explicit dintre cele doua goluri: pe treapta 1 transportul a REUSIT si
+    avem dovada pozitiva a ce a venit, deci golul e `zero_confirmat`; pe 2-3 nu."""
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "0.0001")
+    cl = ClientFals(rute={f"/marketplace/{_ID_CLUJ}/search":
+                          (_fix("fb_ssr_search.html"), 200)})
+
+    canonice, stare = search_cu_stare("canapea", 46.77, 23.62,
+                                      city_page_id=_ID_CLUJ, client=cl)
+
+    assert canonice == [] and stare.eticheta == "gol"
+    assert stare.zero_confirmat is True
 
 
 def test_pragul_se_citeste_din_mediu(monkeypatch):

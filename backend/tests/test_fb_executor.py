@@ -184,7 +184,11 @@ def _client_cu_bootstrap(post_rezultate):
                       post_rezultate=post_rezultate)
 
 
-def test_stare_ok_pe_raspuns_valid():
+def test_stare_ok_pe_raspuns_valid(monkeypatch):
+    # FBS-14: pragul de varsta se ridica, ca testul sa fie despre SCARA, nu
+    # despre vechimea fixture-ului (`fb_graphql_ok.json` are 182-4361 h, iar de
+    # la FBS-14 filtrul se aplica si treptelor degradate).
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
     cl = _client_cu_bootstrap([(_fix("fb_graphql_ok.json"), 200)])
 
     canonice, stare = search_cu_stare("canapea", 44.43, 26.10, client=cl)

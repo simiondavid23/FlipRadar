@@ -297,8 +297,12 @@ def test_scara_incepe_cu_ssr_pe_id(monkeypatch, warns):
     assert "sortBy=creation_time_descend" in cl.cereri[0][1]
 
 
-def test_scara_cade_la_graphql_pe_esec_ambiguu_al_ssr(warns):
+def test_scara_cade_la_graphql_pe_esec_ambiguu_al_ssr(warns, monkeypatch):
     """Caderea ramane pentru esecul AMBIGUU — fara anunturi si fara santinela."""
+    # FBS-14: pragul de varsta se ridica, ca testul sa fie despre SCARA, nu
+    # despre vechimea fixture-ului (`fb_graphql_ok.json` are 182-4361 h, iar de
+    # la FBS-14 filtrul se aplica si treptelor degradate).
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
     cl = ClientFals(
         rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200),
               "/marketplace/109529709065736/search": ("<html></html>", 200)},
@@ -331,7 +335,11 @@ def test_scara_fara_id_incepe_de_la_graphql(warns, blocari):
     assert any("n-are `city_page_id`" in m for m in w), w
 
 
-def test_scara_treapta_1_reusita_nu_coboara(warns):
+def test_scara_treapta_1_reusita_nu_coboara(warns, monkeypatch):
+    # FBS-14: pragul de varsta se ridica, ca testul sa fie despre SCARA, nu
+    # despre vechimea fixture-ului (`fb_graphql_ok.json` are 182-4361 h, iar de
+    # la FBS-14 filtrul se aplica si treptelor degradate).
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
     cl = ClientFals(rute={URL_SEARCH: (_fix("fb_ssr_search.html"), 200)},
                     post_rezultate=[(_fix("fb_graphql_ok.json"), 200)])
 
@@ -392,7 +400,11 @@ def test_listed_at_din_creation_time_inclusiv_imbricat():
 
 
 # ── 10. dedup pe external_id ─────────────────────────────────────────────────
-def test_dedup_pe_external_id_in_acelasi_apel():
+def test_dedup_pe_external_id_in_acelasi_apel(monkeypatch):
+    # FBS-14: pragul de varsta se ridica, ca testul sa fie despre SCARA, nu
+    # despre vechimea fixture-ului (`fb_graphql_ok.json` are 182-4361 h, iar de
+    # la FBS-14 filtrul se aplica si treptelor degradate).
+    monkeypatch.setenv("FB_VARSTA_MAX_ORE", "1000000")
     raspuns = _fix_json("fb_graphql_ok.json")
     anunturi = extrage_anunturi(raspuns)
     dublat = {"data": {"a": {"edges": [{"node": anunturi[0]}, {"node": anunturi[0]},
