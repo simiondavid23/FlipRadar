@@ -103,6 +103,20 @@ def _izolare(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def curs_fix(monkeypatch):
+    """Cursul BNR PINUIT la 5.0.
+
+    De la FBS-13, `_keywords_facebook` converteste pragurile Auto/Imobiliare, deci orice
+    test care construieste un asemenea keyword ar chema cursul REAL — al carui lant
+    incepe cu un fetch la BNR. Masurat inainte de fixare: un `price_max=25000` iesea
+    131337, adica prin cursul zilei.
+    """
+    from app.services import bnr_exchange
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron", lambda: 5.0)
+    monkeypatch.setattr(bnr_exchange, "get_usd_ron", lambda: 4.5)
+
+
+@pytest.fixture(autouse=True)
 def logs(monkeypatch):
     capturate = []
     monkeypatch.setattr(log_manager, "emit",
@@ -634,18 +648,76 @@ def test_pragul_radar_se_normalizeaza_ca_la_fbs6(db, uid, min_price, asteptat):
     assert [i["pret_min"] for i in intrari] == [asteptat]
 
 
-def test_imobiliarele_nu_trimit_prag_desi_au_price_min(db, uid):
-    """D3 — AMANAT pe moneda, si asta e comportament TESTAT, nu doar comentat:
-    `price_min` e in EUR pe `price_currency`, iar `minPrice` e RON. O regresie care
-    l-ar cabla „ca la Radar" ar taia la ~5x pragul real, tacut."""
+@pytest.mark.parametrize("price_min,moneda,asteptat,de_ce", [
+    (250, "EUR", 1250, "EUR convertit la cursul pinuit"),
+    (250, "RON", 250, "RON direct"),
+    (250.50, "EUR", 1252, "Numeric cu zecimale -> trunchiat"),
+    (250, "CHF", None, "moneda exotica: fail-safe"),
+    (0, "EUR", None, "zero inseamna fara prag"),
+])
+def test_pragul_imobiliare_pleaca_convertit(db, uid, price_min, moneda, asteptat, de_ce):
+    """Simetricul lui Auto, pe cealalta margine. Amanarea de la FBS-7 D3 era tot pe
+    moneda."""
+    _keyword_re(db, uid, platform="facebook_marketplace", query="apartament",
+                is_active=True, price_min=price_min, price_currency=moneda)
+    db.commit()
+
+    intrari = ex._keywords_facebook(db)
+
+    assert [i["modul"] for i in intrari] == ["real_estate"]
+    assert intrari[0]["pret_min"] == asteptat, de_ce
+
+
+def test_imobiliarele_tot_nu_trimit_plafon(db, uid):
+    """`price_max` exista si pe Imobiliare, dar ramane necablat deliberat — vezi
+    comentariul din `_keywords_facebook`. Cheia e prezenta si `None`."""
+    _keyword_re(db, uid, platform="facebook_marketplace", query="apartament",
+                is_active=True, price_min=250, price_max=800, price_currency="EUR")
+    db.commit()
+
+    assert [i["pret_max"] for i in ex._keywords_facebook(db)] == [None]
+
+
+@pytest.mark.parametrize("cazul", ["explodeaza", "curs_zero"])
+def test_cursul_indisponibil_lasa_pragul_none_cu_warn(db, uid, monkeypatch, logs, cazul):
+    """D3, FAIL-SAFE — deliberat INVERS fata de fail-open-ul de la scorare: un filtru
+    absent e recuperabil (filtrele locale din `_din_canonice` prind oricum), pe cand un
+    filtru calculat gresit taie anunturi la SURSA, ireversibil si tacut."""
+    from app.services import bnr_exchange
+
+    def _explodeaza():
+        raise RuntimeError("BNR indisponibil")
+
+    monkeypatch.setattr(bnr_exchange, "get_eur_ron",
+                        _explodeaza if cazul == "explodeaza" else (lambda: 0))
+    _keyword_auto(db, uid, platform="facebook_auto", make="BMW", is_active=True,
+                  price_max=25000, price_currency="EUR")
     _keyword_re(db, uid, platform="facebook_marketplace", query="apartament",
                 is_active=True, price_min=250, price_currency="EUR")
     db.commit()
 
     intrari = ex._keywords_facebook(db)
 
-    assert [i["modul"] for i in intrari] == ["real_estate"]
-    assert intrari[0]["pret_min"] is None
+    assert [i["pret_max"] for i in intrari if i["modul"] == "auto"] == [None]
+    assert [i["pret_min"] for i in intrari if i["modul"] == "real_estate"] == [None]
+    warn = [m for niv, m in logs if niv == "WARN" and "praguri de pret" in m]
+    assert len(warn) == 1, f"UN singur WARN per apel, nu {len(warn)}"
+    assert "2 praguri" in warn[0], warn
+
+
+def test_pragurile_convertite_ajung_la_nucleu(db, uid, monkeypatch):
+    """Contra-proba de capat: valoarea convertita chiar ajunge in apelul nucleului, nu
+    se pierde intre dictul de keyword si bucla din `tick`."""
+    nucleu = _mock_nucleu(monkeypatch, implicit=[])
+    kw = _keyword_auto(db, uid, platform="facebook_auto", make="BMW", model="320d",
+                       is_active=True, price_max=25000, price_currency="EUR")
+    db.commit()
+
+    _pregateste(db, [("auto", kw.id)], buget=1, scadente=[("auto", kw.id)])
+    ex.tick(db)
+
+    assert nucleu.plafoane == [125000]
+    assert nucleu.praguri == [None]
 
 
 def test_autoul_nu_trimite_prag(db, uid):
@@ -710,21 +782,55 @@ def test_plafonul_radar_se_normalizeaza_ca_pragul(db, uid, max_price, asteptat):
     assert [i["pret_max"] for i in intrari] == [asteptat]
 
 
-def test_autoul_nu_trimite_plafon_desi_ARE_price_max(db, uid):
-    """D4 — amanare pe MONEDA, si e comportament TESTAT, nu doar comentat.
-
-    Spre deosebire de prag (unde Auto pur si simplu n-are camp), plafonul EXISTA:
-    `price_max`. Dar exista si `price_currency`, implicit EUR, iar piata auto chiar se
-    listeaza frecvent in EUR. Un `maxPrice` care e RON, alimentat dintr-o valoare EUR,
-    ar taia la ~5x sub plafonul real — tacut. De-aia keyword-ul de aici ARE `price_max`
-    setat: testul ar trece si daca ramura ar fi goala, dar atunci n-ar dovedi nimic."""
+# ── FBS-13: pragurile Auto/Imobiliare pleaca server-side, cu curs plutitor ───
+# Testele de mai jos INLOCUIESC cele doua teste de amanare de la FBS-7/FBS-10. Alea
+# fusesera construite anume ca sa pice la cablare, iar cablarea e chiar scopul rundei
+# astea — deci se rescriu, nu se sterg.
+@pytest.mark.parametrize("price_max,moneda,asteptat,de_ce", [
+    (25000, "EUR", 125000, "EUR convertit la cursul pinuit (5.0)"),
+    (25000, "RON", 25000, "RON: trunchiere directa, fara curs"),
+    (25000.75, "EUR", 125003, "Numeric(10,2) -> `int` trunchiaza, ca la Radar"),
+    (25000, "GBP", None, "moneda exotica: fail-safe, nu inventam cursuri"),
+    (0, "EUR", None, "zero inseamna fara plafon"),
+    (None, "EUR", None, "necompletat"),
+])
+def test_plafonul_auto_pleaca_convertit(db, uid, price_max, moneda, asteptat, de_ce):
+    """Amanarea de la FBS-10 era pe MONEDA: `price_max` exista, dar e in
+    `price_currency` (implicit EUR), iar `maxPrice` e RON — trimis ca atare ar fi taiat
+    la ~5x sub plafonul real. Acum se converteste."""
     _keyword_auto(db, uid, platform="facebook_auto", make="BMW", model="320d",
-                  is_active=True, price_max=25000, price_currency="EUR")
+                  is_active=True, price_max=price_max, price_currency=moneda)
     db.commit()
 
     intrari = ex._keywords_facebook(db)
 
-    assert [(i["modul"], i["pret_max"]) for i in intrari] == [("auto", None)]
+    assert [(i["modul"], i["pret_max"]) for i in intrari] == [("auto", asteptat)], de_ce
+
+
+@pytest.mark.parametrize("valoare,moneda,asteptat,de_ce", [
+    (25000, None, (None, False), "moneda absenta -> fail-safe, nu presupunem EUR"),
+    (25000, "", (None, False), "moneda goala, la fel"),
+    (25000, "eur ", (125000, False), "normalizare: minuscule + spatiu"),
+    (25000, "CHF", (None, False), "exotica"),
+])
+def test_prag_in_ron_direct(valoare, moneda, asteptat, de_ce):
+    """Unitatile helper-ului, pentru ramurile pe care ORM-ul nu le poate produce.
+
+    `price_currency` are `default="EUR"` pe AMBELE modele, deci un keyword salvat prin
+    ORM nu poate avea moneda absenta — coloana o completeaza. Helper-ul o trateaza
+    oricum, fiindca „nu se poate intampla azi" nu e o proprietate pe care sa ne sprijinim,
+    iar a presupune EUR pentru un NULL ar inmulti pragul cu ~5 pe baza unei ghiciri."""
+    assert ex._prag_in_ron(valoare, moneda) == asteptat, de_ce
+
+
+def test_autoul_tot_nu_trimite_prag_minim(db, uid):
+    """Neschimbat de la FBS-7 D2: `AutoKeyword` n-are camp de pret minim, deci nu exista
+    ce alimenta. Cheia ramane prezenta si `None`."""
+    _keyword_auto(db, uid, platform="facebook_auto", make="BMW", is_active=True,
+                  price_max=25000, price_currency="EUR")
+    db.commit()
+
+    assert [i["pret_min"] for i in ex._keywords_facebook(db)] == [None]
 
 
 def test_imobiliarele_nu_trimit_plafon(db, uid):

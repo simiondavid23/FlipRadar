@@ -1804,17 +1804,29 @@ def _too_old(listed_at, max_age_days, now=None) -> bool:
 _unknown_currency_warned: set[str] = set()
 
 
-def _price_to_ron(price, currency, eur_ron) -> Optional[float]:
+def _price_to_ron(price, currency, eur_ron, usd_ron=None) -> Optional[float]:
     """Pretul anuntului adus in RON pentru scorare. Functie PURA (fara DB/retea):
-    pentru aceleasi argumente intoarce mereu aceeasi valoare, cursul se paseaza.
+    pentru aceleasi argumente intoarce mereu aceeasi valoare, cursurile se paseaza.
 
     - moneda absenta sau "RON" (case-insensitive) -> valoarea neschimbata
-    - "EUR" -> valoarea * eur_ron (cursul BNR luat o data pe scan)
-    - orice alta moneda (ex. "USD") -> NECONVERTITA + un WARN cu moneda intalnita.
-      Fail-open deliberat: un scor aproximativ e mai bun decat un anunt aruncat.
-      Idem daca `eur_ron` lipseste/e invalid (BNR indisponibil).
+    - "EUR" -> valoarea * eur_ron; "USD" -> valoarea * usd_ron (cursurile scanului,
+      luate o data, nu per anunt)
+    - orice alta moneda -> NECONVERTITA + un WARN cu moneda intalnita. De la FBS-12
+      chiar apar asemenea monede: parserele Facebook raporteaza acum codul real
+      (GBP, CHF), in loc sa eticheteze RON orice nu recunosteau.
+    - curs lipsa sau invalid pentru o moneda pe care ALTFEL am sti s-o convertim ->
+      tot neconvertita, tot cu WARN. Fail-open deliberat, in ambele cazuri: un scor
+      aproximativ e mai bun decat un anunt aruncat.
     - pret absent sau neparsabil -> None (apelantul decide; calculate_score
       filtreaza oricum un pret <= 0)
+
+    FBS-13 — USD s-a mutat de pe ramura fail-open pe cea de conversie: era deja
+    convertit in FILTRE (FBS-12), deci acelasi anunt era comparat corect cu pragurile
+    dar scorat cu pretul brut. Tot atunci, WARN-ul pentru curs lipsa a devenit real:
+    docstring-ul il promitea de la R1 incoace, dar codul iesea TACUT pe `return
+    price_f if rate > 0 else price_f`, deci un BNR cazut nu se vedea in jurnal.
+
+    WARN-ul e unul pe scan PER MONEDA (`_unknown_currency_warned`), nu unul per anunt.
     """
     try:
         price_f = float(price)
@@ -1823,16 +1835,22 @@ def _price_to_ron(price, currency, eur_ron) -> Optional[float]:
     cur = (currency or "RON").strip().upper()
     if cur in ("", "RON"):
         return price_f
-    if cur == "EUR":
+
+    cursuri = {"EUR": eur_ron, "USD": usd_ron}
+    if cur in cursuri:
         try:
-            rate = float(eur_ron or 0)
+            rate = float(cursuri[cur] or 0)
         except (TypeError, ValueError):
             rate = 0.0
-        return price_f * rate if rate > 0 else price_f
+        if rate > 0:
+            return price_f * rate
+        motiv = f"Curs indisponibil pentru {cur} la scorare — preț lăsat neconvertit"
+    else:
+        motiv = f"Monedă necunoscută la scorare: {cur} — preț lăsat neconvertit"
+
     if cur not in _unknown_currency_warned:
         _unknown_currency_warned.add(cur)
-        log_manager.emit("radar", "WARN",
-            f"Monedă necunoscută la scorare: {cur} — preț lăsat neconvertit")
+        log_manager.emit("radar", "WARN", motiv)
     return price_f
 
 
@@ -2004,15 +2022,17 @@ def _first_image(images_raw) -> str:
 
 
 def _refresh_seen_listing(db: Session, user, kw, platform: str,
-                          listing: dict, settings, eur_ron=None) -> Optional[str]:
+                          listing: dict, settings, eur_ron=None,
+                          usd_ron=None) -> Optional[str]:
     """Actualizeaza randul existent la reaparitia unui anunt cunoscut.
 
     Intoarce un marcaj pentru observabilitate/teste:
     None = fara rand in feed; "bumped" = doar last_checked_at;
     "updated" = pret+scor actualizate; "notified" = si notificare de scadere.
 
-    `eur_ron` e cursul scanului (vezi _scan_user) — se foloseste DOAR ca sa aducem
-    pretul in RON pentru calculate_score; preturile persistate/comparate raman brute.
+    `eur_ron`/`usd_ron` sunt cursurile scanului (vezi _scan_user) — se folosesc DOAR
+    ca sa aducem pretul in RON pentru calculate_score; preturile persistate/comparate
+    raman brute, in moneda lor.
     """
     ext_id = listing.get("external_id")
     if not ext_id:
@@ -2050,7 +2070,7 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
     # fiindca kw.resale_price e in RON.
     drop = (old_price - new_price) / old_price if old_price > 0 else 0.0
     row.price = new_price
-    _new_price_ron = _price_to_ron(new_price, new_cur, eur_ron)
+    _new_price_ron = _price_to_ron(new_price, new_cur, eur_ron, usd_ron)
     sd = calculate_score(
         listing_price=_new_price_ron or 0,
         resale_price=kw.resale_price,
@@ -2372,11 +2392,19 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
     # inainte de scorare, fiindca kw.resale_price e in RON. get_eur_ron are cache pe
     # zi + fallback 5.0; daca pica de tot ramane None => fail-open, fara conversie.
     # Mirror pe real_estate_scanner.run_real_estate_scan.
+    # FBS-13 — si cursul USD, tot o data pe scan. Doua try/except separate ca o cadere
+    # pe unul sa nu-l piarda si pe celalalt; ambele trec prin acelasi cache din
+    # `currency_service`, deci nu e un al doilea fetch. Import prin MODUL, ca
+    # monkeypatch-ul din teste sa fie vazut (lectia FBS-11).
+    from app.services import bnr_exchange
     try:
-        from app.services.bnr_exchange import get_eur_ron
-        eur_ron = get_eur_ron()
+        eur_ron = bnr_exchange.get_eur_ron()
     except Exception:
         eur_ron = None
+    try:
+        usd_ron = bnr_exchange.get_usd_ron()
+    except Exception:
+        usd_ron = None
     _unknown_currency_warned.clear()   # WARN de moneda necunoscuta: o data pe scan
     keywords = (
         db.query(RadarKeyword)
@@ -2540,7 +2568,8 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     if _already_seen(db, user.id, platform, ext_id):
                         # SAVED-BRIDGE: reaparitia unui anunt cunoscut = re-verificare
                         # gratuita — pret/scor la zi + alerta de scadere pe salvate.
-                        _refresh_seen_listing(db, user, kw, platform, listing, settings, eur_ron)
+                        _refresh_seen_listing(db, user, kw, platform, listing, settings,
+                                              eur_ron, usd_ron)
                         continue
 
                     # RAD-1 — filtru de vechime per keyword: anunturile prea vechi se marcheaza
@@ -2552,7 +2581,8 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     # Scorul se calculeaza in RON (kw.resale_price e in RON), deci un
                     # anunt cotat in EUR se converteste cu cursul scanului. Pretul
                     # persistat mai jos ramane cel BRUT, cu moneda lui.
-                    _price_ron = _price_to_ron(listing.get("price"), listing.get("currency"), eur_ron)
+                    _price_ron = _price_to_ron(listing.get("price"),
+                                               listing.get("currency"), eur_ron, usd_ron)
                     score_data = calculate_score(
                         listing_price=_price_ron or 0,
                         resale_price=kw.resale_price,

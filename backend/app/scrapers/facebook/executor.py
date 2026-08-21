@@ -281,6 +281,50 @@ def _platforme_radar(kw) -> list:
         return []
 
 
+def _prag_in_ron(valoare, moneda) -> tuple:
+    """Un prag de keyword adus in RON pentru `minPrice`/`maxPrice`.
+
+    Intoarce `(prag_int_sau_None, pierdut_pe_curs)`. Al doilea element exista ca
+    apelantul sa poata numara si sa emita UN singur WARN per apel, nu unul per keyword.
+
+    FBS-13, D2 — CURS PLUTITOR, nu inghetat: conversia se face la fiecare apel, deci
+    tick-ul de azi foloseste cursul de azi. `get_eur_ron` are cache pe zi, deci costul
+    e o citire, nu un fetch.
+
+    FBS-13, D3 — FAIL-SAFE, deliberat INVERS fata de fail-open-ul de la scorare: daca
+    nu putem calcula pragul, nu trimitem niciunul. Un filtru absent e recuperabil (
+    filtrele locale din `_din_canonice` prind oricum), pe cand un filtru calculat
+    gresit taie anunturi la SURSA, ireversibil si tacut. Acelasi motiv pentru monedele
+    exotice: nu inventam cursuri pentru praguri.
+
+    Moneda absenta intra tot pe ramura fail-safe. Coloana are `default="EUR"`, deci un
+    NULL inseamna un rand scris pe alta cale, nu o intentie — a presupune EUR ar
+    inmulti pragul cu ~5 pe baza unei ghiciri.
+    """
+    try:
+        v = float(valoare) if valoare is not None else 0.0
+    except (TypeError, ValueError):
+        return None, False
+    if v <= 0:
+        return None, False
+
+    cod = (moneda or "").strip().upper()
+    if cod == "RON":
+        return int(v), False
+    if cod != "EUR":
+        return None, False
+
+    from app.services import bnr_exchange        # prin MODUL (lectia FBS-11)
+    try:
+        curs = bnr_exchange.get_eur_ron()
+    except Exception:                            # noqa: BLE001 — orice esec de curs
+        return None, True
+    if not isinstance(curs, (int, float)) or curs <= 0:
+        return None, True
+    prag = int(v * float(curs))
+    return (prag if prag > 0 else None), False
+
+
 def _keywords_facebook(db) -> list:
     """Keyword-urile ACTIVE care au Facebook ca platforma, din toate trei modulele.
 
@@ -288,15 +332,20 @@ def _keywords_facebook(db) -> list:
 
     `pret_min` (FBS-7) si `pret_max` (FBS-10) sunt marginile care pleaca SERVER-SIDE
     pe treapta 1, masurate ca respectate la FBS-V1b si FBS-V3. Cheile exista pe TOATE
-    cele trei ramuri, chiar daca doar Radar le alimenteaza: o forma uniforma de dict
-    inseamna ca `tick` citeste direct, fara `get` cu implicit, deci un modul adaugat
-    mai tarziu si uitat aici crapa zgomotos in loc sa scaneze tacit fara margini.
+    cele trei ramuri: o forma uniforma de dict inseamna ca `tick` citeste direct, fara
+    `get` cu implicit, deci un modul adaugat mai tarziu si uitat aici crapa zgomotos in
+    loc sa scaneze tacit fara margini.
+
+    De la FBS-13 le alimenteaza si Auto (`price_max`) si Imobiliare (`price_min`),
+    prin `_prag_in_ron`: pragurile lor sunt in `price_currency` (implicit EUR), iar
+    `minPrice`/`maxPrice` sunt RON.
     """
     from app.models.auto_keyword import AutoKeyword
     from app.models.radar_keyword import RadarKeyword
     from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword
 
     out = []
+    praguri_pierdute = 0        # FBS-13 D3 — cate praguri s-au pierdut pe curs
 
     for kw in db.query(RadarKeyword).filter(RadarKeyword.is_active.is_(True)).all():
         if "facebook" not in _platforme_radar(kw):
@@ -327,17 +376,17 @@ def _keywords_facebook(db) -> list:
             # Un termen gol la Auto nu are semantica de expandare (aia e doar la
             # Imobiliare, designul Q) — keyword-ul se sare.
             continue
+        prag_auto, pierdut = _prag_in_ron(kw.price_max, kw.price_currency)
+        praguri_pierdute += int(pierdut)
         out.append({"modul": "auto", "keyword_id": kw.id, "termeni": [termen],
                     "in_ore_active": _in_ore_active(kw),
                     # D2 — `AutoKeyword` n-are camp de pret minim (doar `price_max`
                     # si `resale_price`), deci nu exista ce alimenta.
                     "pret_min": None,
-                    # FBS-10, D4 — plafonul EXISTA (`price_max`), dar e AMANAT pe
-                    # MONEDA, exact ca la Imobiliare: `price_currency` e implicit EUR,
-                    # iar piata auto chiar se listeaza frecvent in EUR. Trimis ca atare
-                    # intr-un `maxPrice` care e RON ar taia la ~5x sub plafonul real,
-                    # tacut. Conversia prin BNR e o runda separata.
-                    "pret_max": None})
+                    # FBS-13 — plafonul pleaca acum server-side, convertit din
+                    # `price_currency` (implicit EUR, si piata auto chiar se listeaza
+                    # frecvent in EUR). Amanarea de la FBS-10 era tocmai pe moneda.
+                    "pret_max": prag_auto})
 
     for kw in db.query(RealEstateMonitorKeyword).filter(
             RealEstateMonitorKeyword.is_active.is_(True)).all():
@@ -349,16 +398,26 @@ def _keywords_facebook(db) -> list:
         else:
             from app.scrapers.real_estate.facebook_real_estate import _termeni_gol
             termeni = _termeni_gol()
+        prag_re, pierdut = _prag_in_ron(kw.price_min, kw.price_currency)
+        praguri_pierdute += int(pierdut)
         out.append({"modul": "real_estate", "keyword_id": kw.id, "termeni": termeni,
                     "in_ore_active": _in_ore_active(kw),
-                    # D3 — AMANAT pe MONEDA, nu uitat: `price_min` e in moneda din
-                    # `price_currency` (implicit EUR), iar `minPrice` e RON. Trimis ca
-                    # atare ar taia la ~5x pragul real, tacut. Conversia prin BNR e o
-                    # runda separata.
-                    "pret_min": None,
-                    # FBS-10 — plafonul, acelasi motiv si aceeasi amanare.
+                    # FBS-13 — pragul pleaca acum server-side, convertit din
+                    # `price_currency`. Amanarea de la FBS-7 era tocmai pe moneda.
+                    "pret_min": prag_re,
+                    # `price_max` EXISTA si pe Imobiliare, dar plafonul ramane
+                    # neaimentat aici: modulul filtreaza pe suprafata si camere in
+                    # aceeasi trecere, iar un plafon server-side ar interactiona cu
+                    # fereastra elastica masurata la FBS-V3 pe un feed pe care nu l-am
+                    # masurat inca. Cablarea lui e o decizie separata.
                     "pret_max": None})
 
+    if praguri_pierdute:
+        # UNUL per apel, nu unul per keyword (D3). Filtrele locale prind oricum —
+        # se pierde doar economia de sloturi, nu corectitudinea.
+        log_manager.emit("radar", "WARN",
+            f"Facebook: {praguri_pierdute} praguri de pret n-au putut fi aduse in RON "
+            f"(curs indisponibil) — tick-ul asta merge fara filtru server-side pe ele")
     return out
 
 

@@ -40,19 +40,70 @@ def test_eur_se_inmulteste_cu_cursul():
 
 
 def test_moneda_necunoscuta_ramane_neconvertita_si_avertizeaza_o_singura_data(monkeypatch):
+    """Exemplarul era USD pana la FBS-13, cand USD a trecut pe ramura de conversie.
+    GBP il inlocuieste: de la FBS-12 parserele Facebook chiar raporteaza asemenea coduri
+    (inainte eticheteau RON orice nu recunosteau), deci cazul e real, nu teoretic."""
     logs = []
     monkeypatch.setattr(rs.log_manager, "emit",
                         lambda module, level, msg: logs.append((level, msg)))
     rs._unknown_currency_warned.clear()
     try:
         # Fail-open: mai bine un scor aproximativ decat un anunt aruncat.
-        assert rs._price_to_ron(100.0, "USD", 5.0) == 100.0
-        assert rs._price_to_ron(200.0, "USD", 5.0) == 200.0
+        assert rs._price_to_ron(100.0, "GBP", 5.0, 4.5) == 100.0
+        assert rs._price_to_ron(200.0, "GBP", 5.0, 4.5) == 200.0
         warns = [m for lvl, m in logs if lvl == "WARN"]
         assert len(warns) == 1                  # un singur WARN pe scan, per moneda
-        assert "USD" in warns[0]
+        assert "GBP" in warns[0]
     finally:
         rs._unknown_currency_warned.clear()
+
+
+# ── FBS-13: USD trece de pe ramura fail-open pe cea de conversie ─────────────────
+def test_usd_se_converteste_cu_cursul_scanului():
+    """Asimetria reparata: USD era deja convertit in FILTRE de la FBS-12, deci acelasi
+    anunt era comparat corect cu pragurile dar scorat cu pretul brut."""
+    assert rs._price_to_ron(100.0, "USD", 5.0, 4.5) == 450.0
+    assert rs._price_to_ron(100.0, "usd ", 5.0, 4.5) == 450.0      # normalizare
+    assert rs._price_to_ron(200.0, "USD", 5.0, 4.56) == pytest.approx(912.0)
+
+
+def test_usd_fara_curs_ramane_brut_cu_warn(monkeypatch):
+    """Compatibilitatea veche, explicita: `usd_ron` are implicit `None`, deci un apelant
+    care n-a fost adus la zi vede EXACT comportamentul de dinainte de FBS-13."""
+    logs = []
+    monkeypatch.setattr(rs.log_manager, "emit",
+                        lambda module, level, msg: logs.append((level, msg)))
+    rs._unknown_currency_warned.clear()
+    try:
+        assert rs._price_to_ron(100.0, "USD", 5.0) == 100.0        # fara usd_ron
+        warns = [m for lvl, m in logs if lvl == "WARN"]
+        assert len(warns) == 1 and "USD" in warns[0]
+    finally:
+        rs._unknown_currency_warned.clear()
+
+
+def test_cursul_lipsa_avertizeaza_acum_si_pentru_eur(monkeypatch):
+    """Docstring-ul promitea WARN la curs lipsa inca de la R1, dar codul iesea TACIT pe
+    `return price_f`. FBS-13 aliniaza codul la ce scria deja: un BNR cazut se vede in
+    jurnal. Valoarea intoarsa ramane neschimbata — fail-open, ca inainte."""
+    logs = []
+    monkeypatch.setattr(rs.log_manager, "emit",
+                        lambda module, level, msg: logs.append((level, msg)))
+    rs._unknown_currency_warned.clear()
+    try:
+        assert rs._price_to_ron(100.0, "EUR", None) == 100.0
+        warns = [m for lvl, m in logs if lvl == "WARN"]
+        assert len(warns) == 1 and "EUR" in warns[0]
+    finally:
+        rs._unknown_currency_warned.clear()
+
+
+def test_eur_ramane_neatins_de_fbs13():
+    """Regresie de neutralitate: adaugarea lui `usd_ron` nu schimba nimic pe EUR/RON."""
+    assert rs._price_to_ron(100.0, "EUR", 5.0) == 500.0
+    assert rs._price_to_ron(100.0, "EUR", 5.0, 4.5) == 500.0
+    assert rs._price_to_ron(250.0, "RON", 5.0, 4.5) == 250.0
+    assert rs._price_to_ron(250.0, None, 5.0, 4.5) == 250.0
 
 
 def test_pret_absent_sau_neparsabil_da_none():
