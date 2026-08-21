@@ -783,6 +783,66 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "promotii din header). Axa D e val ULTERIOR: /sale/ are 86 de carduri "
                  "cu article.x-product-box, dar paginarea e nemasurata — "
                  "vezi docs/catalog_domain_log.md",
+        # DEAL-2 — masurat la LST-2 (dump-uri `scripts/diagnostics/dumps_lst2/`):
+        # `data-total-pages="305"`, 30 de carduri pe pagina, 9148 de produse — dar
+        # astea sunt cifrele pe care le ANUNTA site-ul, nu cele pe care le SERVESTE;
+        # vezi nota despre clamp de la `max_pages`.
+        # CORECTIE la nota de mai sus: G2F-2 consemnase „86 de carduri"; masurat
+        # acum sunt 30, cifra care se si inchide cu totalul (305 x 30 = 9150 ~ 9148).
+        # Paginarea, nemasurata la G2F-2, e acum masurata pe ambele capete:
+        # `<link rel="next" href="https://www.intersport.ro/sale/p2/" />` pe p1 si
+        # `rel="prev"` -> /sale/ pe p2. Dincolo de final NU e 404: `/sale/p9999/` da
+        # 200 cu grila GOALA (zero `article.x-product-box`, „0 produse"), adica
+        # tiparul otter/caseking — il prinde conditia compusa existenta, deci valul
+        # asta n-a avut nevoie de cod nou in scanner. ATENTIE: pe pagina goala
+        # `rel=next` inca arata spre /sale/p10000/, deci rel=next NU e semnal de
+        # oprire; scannerul se opreste pe grila goala, si bine face.
+        "listing": {
+            "url": "https://www.intersport.ro/sale/",
+            # Numarul de pagina e in CALE, sub forma /pN/ — citit din `rel=next`.
+            "page_url_template": "https://www.intersport.ro/sale/p{n}/",
+            # DERIVAT, nu citat: 305 pagini ANUNTATE (`data-total-pages`) plus marja,
+            # dupa conventia otter (197 reale / 210).
+            #
+            # In practica plasa asta NU se atinge, si merita stiut de ce. Scanul live
+            # de la RUNDA 2 s-a oprit la pagina 126 pe clauza „pagina repetata"
+            # (CLAMP), dupa 125 de pagini si 3477 de produse UNICE — adica 38% din
+            # catalogul anuntat. 125 x 30 = 3750, exact offset-ul de la care pagina
+            # 126 ar trebui sa inceapa: site-ul pare sa clameze la ultima pagina
+            # servita cand ceri dincolo de setul real, tiparul bergfreunde. Deci
+            # „9148 produse / 305 pagini" e o numaratoare de catalog (probabil pe
+            # variante), nu adancimea navigabila a grilei.
+            #
+            # Listarea se si RE-SORTEAZA intre cereri: 273 din cele 3750 de carduri
+            # servite erau deja vazute (7,3%), iar sonda masurase acelasi lucru intre
+            # p1 si p2 (2 URL-uri comune din 60, Jaccard 0.034). Garda SCAN-1
+            # (`vazute`) le absoarbe, deci nu se dubleaza nimic in baza.
+            "max_pages": 320,
+            # Din COD, ca la axa L: langa pret scrie „LEI", nu „RON".
+            "currency": "RON",
+            "card": "article.x-product-box",
+            # Doua ancore per card duc la acelasi PDP; `js-select-product` e cea
+            # unica (a doua poarta doar `js-click-product`).
+            "link": "a.js-select-product",
+            # `h2.heading` poarta numele CU brand („adidas PANTOFI GALAXY 8");
+            # `.title` din acelasi card il da fara brand („PANTOFI GALAXY 8").
+            "title": "h2.heading",
+            # Pe TEXT, nu pe atribut: `data-current-price="189,99"` e cu VIRGULA, iar
+            # calea de atribut trece prin parserul strict cu punct si ar da tacut
+            # None. Nodul `.current-price` poarta „189,99 LEI" si merge prin
+            # `_pret_eu_comma`. Capcana `span.points-gain` din G2F-2 (aceeasi cifra,
+            # alt inteles) e fenomen de PDP: pe listare apare de 0 ori.
+            "price_text": ".current-price",
+            "compare_text": "span.deleted-price",
+            "price_parse": "eu_comma",
+            # Niciun label legal pe listare: „Omnibus" x0, „30 de zile" x0,
+            # „cel mai mic" x0, „PRP" x0 — deci referinta e NEMARCATA.
+            "reference_kind": "nemarcat",
+            # FARA `stock_attr`, INTERZIS EXPLICIT: `out-of-stock` apare pe 30/30 de
+            # carduri ca sablon ascuns prin CSS extern (tiparul elefant, deja
+            # consemnat in nota axei L). Un sablon ascuns nu e stare, deci ar marca
+            # tot catalogul drept indisponibil.
+        },
     },
     "toolnation.nl": {
         "label": "Toolnation",

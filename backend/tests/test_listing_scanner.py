@@ -2,9 +2,13 @@
 
 Toate testele sunt OFFLINE: fetch-ul e monkeypatch-uit peste tot, ZERO retea
 (doctrina BNR-1c). Fixture-urile de parsare NU sunt inventate — sunt fragmente
-DECUPATE din dump-urile reale ale sondelor LST-1/LST-1b
-(`scripts/diagnostics/dumps_lst1/<domeniu>_p1.html`), cu 3 carduri complete
-fiecare, iar preturile asteptate mai jos sunt exact cele masurate acolo.
+DECUPATE din dump-urile reale ale sondelor, iar preturile asteptate mai jos sunt
+exact cele masurate acolo. Cele sase de la LST-1/LST-1b
+(`scripts/diagnostics/dumps_lst1/<domeniu>_p1.html`) au 3 carduri complete
+fiecare; buzzsneakers vine de la SNK-1 (`dumps_snk1/`), tot cu 3. Exceptie
+DELIBERATA: intersport (LST-2, `dumps_lst2/`) pastreaza PAGINA INTREAGA, toate
+cele 30 de carduri — acolo „30 pe pagina" si „pret taiat pe 30/30" sunt ele
+insele invariante masurate, iar un decupaj de 3 le-ar transforma in proxy.
 """
 import os
 import uuid
@@ -186,6 +190,50 @@ def test_powerup_quickview_ul_nu_devine_link_de_produs():
     for card in carduri:
         assert "quickview" not in card["url"]
         assert "/refurbished-sh/" in card["url"]
+
+
+def test_intersport_pagina_intreaga_masurata_la_lst2():
+    """LST-2: pagina 1 de pe /sale/, INTREAGA, nu un decupaj de 3 carduri.
+
+    Trei invariante masurate pe dump-ul real (`dumps_lst2/I1_listare_p1.html`),
+    toate trei pierdute daca fixture-ul s-ar trunchia:
+      * 30 de carduri pe pagina — cifra care inchide si totalul afisat
+        (`data-total-pages="305"` x 30 = 9150, iar pagina scrie „9148 produse");
+      * pret taiat pe 30/30, deci R1 poate porni pe domeniul asta din primul scan
+        (spre deosebire de buzzsneakers, unde referinta nu e citibila);
+      * pretul e pe TEXT cu virgula („189,99 LEI"), nu pe atribut — atributul
+        `data-current-price="189,99"` ar trece prin parserul strict cu punct si ar
+        da tacut None.
+    """
+    carduri = extrage_carduri(_fixture("intersport.ro"),
+                              listing_descriptor("intersport.ro"), "intersport.ro")
+
+    assert len(carduri) == 30, "pagina masurata are 30 de carduri"
+    primul = carduri[0]
+    assert primul["title"] == "adidas PANTOFI GALAXY 8"
+    assert primul["price"] == 189.99
+    assert primul["compare_at"] == 299.99
+    assert all(c["compare_at"] is not None for c in carduri), \
+        "referinta taiata e prezenta pe 30/30 — masurat la LST-2"
+    assert all(c["price"] > 0 for c in carduri)
+
+
+def test_intersport_capcana_points_gain_nu_e_pe_listare():
+    """G2F-2 a masurat pe PDP o capcana: `span.points-gain` poarta ACEEASI cifra ca
+    pretul, cu alt inteles („305,99 puncte" de fidelitate). LST-2 a masurat ca pe
+    LISTARE ea nu apare deloc — deci `.current-price` e neambiguu aici. Testul
+    pinuieste faptul, ca o schimbare de markup sa nu-l reintroduca tacit."""
+    assert "points-gain" not in _fixture("intersport.ro")
+
+
+def test_intersport_out_of_stock_e_sablon_pe_toate_cardurile():
+    """Motivul pentru care descriptorul NU are `stock_attr`: marcajul exista pe
+    TOATE cele 30 de carduri (sablon ascuns prin CSS extern, tiparul elefant), deci
+    ca semnal ar declara tot catalogul indisponibil. Daca cineva adauga cheia,
+    testul de mai jos cade pe descriptor, iar asta explica de ce."""
+    fixture = _fixture("intersport.ro")
+    assert fixture.count("out-of-stock") == 30
+    assert "stock_attr" not in listing_descriptor("intersport.ro")
 
 
 def test_card_fara_pret_valid_e_sarit():
@@ -600,10 +648,11 @@ def test_plafonul_de_productie_este_zece():
 
 def test_listing_domains_exact_cele_din_registru():
     """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2) +
-    buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404)."""
+    buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404) +
+    intersport.ro (LST-2, intrat fara nicio linie de scanner)."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
                                  "bergfreunde.eu", "tezyo.ro", "powerup.ro",
-                                 "buzzsneakers.ro"}
+                                 "buzzsneakers.ro", "intersport.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
