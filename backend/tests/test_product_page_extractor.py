@@ -2879,3 +2879,116 @@ def test_cardmarket_e_in_lista_de_destinatii_a_harnessului():
     from app.services.shop_registry import browser_domains
 
     assert "cardmarket.com" in browser_domains()
+
+
+# ── G4-V4b: aplatizarea listelor imbricate in `offers` ────────────────────────
+
+_DECATHLON_FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "decathlon")
+
+# URL real, din meta-ul dump-ului sondei G4-V0.
+DECATHLON_URL = ("https://www.decathlon.ro/p/incaltaminte-alergare-trail-si-cross-"
+                 "country-kiprun-k500-grip-negru-copii/_/R-p-346400?mc=8800255&c=NEGRU")
+
+
+def _decathlon_fixture(nume: str = "pdp_kiprun_k500.html") -> str:
+    with open(os.path.join(_DECATHLON_FIXTURI, nume), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_aplatizare_lista_simpla_ramane_NESCHIMBATA():
+    """Cazul de azi al intregului catalog: nicio lista plata nu se atinge.
+
+    E garda care conteaza cel mai mult — 449 din 450 de dump-uri masurate trec pe
+    aici, si niciunul n-are voie sa-si schimbe rezultatul.
+    """
+    plata = [{"@type": "Offer", "price": 10}, {"@type": "Offer", "price": 20}]
+
+    assert ppe._aplatizeaza_oferte(plata) == plata
+    # Un `offers` care e dict, nu lista, trece verbatim.
+    dict_simplu = {"@type": "Offer", "price": 5}
+    assert ppe._aplatizeaza_oferte(dict_simplu) is dict_simplu
+    assert ppe._aplatizeaza_oferte(None) is None
+
+
+def test_aplatizare_lista_de_liste():
+    """Forma masurata la decathlon: `offers` = lista de DOUA liste."""
+    imbricat = [[{"price": 1}, {"price": 2}], [{"price": 3}]]
+
+    assert ppe._aplatizeaza_oferte(imbricat) == [{"price": 1}, {"price": 2}, {"price": 3}]
+
+
+def test_aplatizare_pastreaza_elementele_NEDICT_verbatim():
+    """Un element care nu e nici dict, nici lista, NU se arunca aici.
+
+    Consumatorii stiu deja sa-l sara (`if not isinstance(offer, dict): continue`).
+    Daca l-am arunca la aplatizare, o forma noua ar disparea tacut in loc sa se vada
+    in dump — exact genul de pierdere pe care runda asta o repara, nu o repeta.
+    """
+    assert ppe._aplatizeaza_oferte([{"price": 1}, "zgomot", None, 7]) == \
+        [{"price": 1}, "zgomot", None, 7]
+
+
+def test_aplatizare_adancime_absurda_se_opreste():
+    """Structura mai adanca decat limita nu e forma reala de magazin, ci date
+    corupte sau ciclice: coborarea se opreste in loc sa mearga la infinit."""
+    adanc = [{"price": 0}]
+    for _ in range(ppe._ADANCIME_MAX_OFERTE + 3):
+        adanc = [adanc]
+
+    rezultat = ppe._aplatizeaza_oferte(adanc)
+
+    # Nu crapa, nu recursioneaza la infinit, si intoarce ceva bine-format.
+    assert isinstance(rezultat, list)
+    # Sub limita, aplatizarea chiar are loc.
+    sub_limita = [[[{"price": 42}]]]
+    assert ppe._aplatizeaza_oferte(sub_limita) == [{"price": 42}]
+
+
+def test_decathlon_fixture_chiar_poarta_patologia():
+    """Lectia G2F-2: un fixture „curatat" face garda tacut inutila.
+
+    Se verifica explicit ca `offers` e lista de liste si ca sunt 18 oferte cotate —
+    daca cineva aplatizeaza fixture-ul, testul cade aici, cu mesaj clar.
+    """
+    import json as _json
+    soup = ppe.BeautifulSoup(_decathlon_fixture(), "html.parser")
+    produse = []
+    for sc in soup.find_all("script", type="application/ld+json"):
+        nod = _json.loads(sc.string or sc.get_text(), strict=False)
+        produse += [n for n in (nod if isinstance(nod, list) else [nod])
+                    if n.get("@type") == "Product"]
+
+    assert len(produse) == 1
+    offers = produse[0]["offers"]
+    assert isinstance(offers, list)
+    assert all(isinstance(x, list) for x in offers), "patologia lista-de-liste a disparut"
+    assert sum(len(x) for x in offers) == 18
+
+
+def test_decathlon_devine_extractibil_dupa_aplatizare(fetch_mock):
+    """Cazul motivant, capat la capat: inainte de fix cadea cu `no_product_data`.
+
+    Cele 18 oferte au toate acelasi pret, deci minimul (G2F-4) e chiar el; testul
+    pinuieste valoarea din dump, nu una construita.
+    """
+    fetch_mock(_decathlon_fixture())
+
+    data = ppe.extract_product(DECATHLON_URL)
+
+    assert data["price"] == 159.99
+    assert data["currency"] == "RON"
+    assert data["in_stock"] is True
+    assert data["method"] == "jsonld"
+    assert data["is_aggregate"] is False
+    assert data["override_applied"] is False
+
+
+def test_aplatizarea_NU_fabrica_variante():
+    """`_variants_from_offer_list` primeste lista aplatizata, dar ofertele decathlon
+    n-au `size` — deci raman oferte obisnuite, nu devin variante. Pretul vine din
+    minimul lor, nu dintr-o agregare inventata."""
+    variante = ppe._variants_from_offer_list(
+        ppe._aplatizeaza_oferte([[{"@type": "Offer", "price": 1}],
+                                 [{"@type": "Offer", "price": 2}]]))
+
+    assert variante is None

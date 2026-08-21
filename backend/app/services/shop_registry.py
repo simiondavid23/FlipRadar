@@ -1664,6 +1664,57 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "(masurat `in_stock: False` pe PDP-ul de proba, cu pagina servita "
                  "fara eroare).",
     },
+
+    # ── G4-V4b — epilogul axei L ──────────────────────────────────────────────
+    # Din cele patru tinte ale sondei corective G4-V4 intra UNA (reichelt);
+    # decathlon vine separat, deblocat de aplatizarea ofertelor imbricate.
+    # sportsdirect.ro cere extractor pe stare (pretul e in `productPrice`, ancorat
+    # pe `productId`) — runda proprie. ccc.eu e blocat de un zid de CONSIMTAMANT
+    # fara buton de refuz, iar fressnapf.ro isi incarca produsele printr-un XHR
+    # ulterior. Toate trei in docs.
+    "decathlon.ro": {
+        "label": "Decathlon",
+        "category": "outdoor",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "browser",
+        "status": "validated",
+        "headed": True,
+        "notes": "G4-V4b; deblocat de aplatizarea listelor imbricate din `offers` "
+                 "(`_aplatizeaza_oferte`). Forma masurata: ld+json `Product` cu "
+                 "`offers` = lista de DOUA liste a cate 9 `Offer` — 18 in total, toate "
+                 "cotate `159,99 RON` / `InStock`. Inainte de fix, consumatorii sareau "
+                 "orice element nedict si le pierdeau pe toate 18, deci pagina cadea cu "
+                 "`no_product_data` desi publica preturi perfect valide: nu era pagina "
+                 "fara date, era forma nerecunoscuta. Preturile fiind egale, minimul "
+                 "G2F-4 e chiar el. BROWSERUL E OBLIGATORIU, re-verificat pe HTTP "
+                 "inainte de intrare: 403 cu „just a moment\" pe TOATE cele trei "
+                 "profiluri ale lantului. CAPCANA la citirea pe text: pagina poarta si "
+                 "`0 00 RON` (cosul gol) langa pretul real — ld+json il ocoleste.",
+    },
+    "reichelt.de": {
+        "label": "reichelt elektronik",
+        "category": "electronice",
+        "country": "DE",
+        "delivery": "unconfirmed",
+        "method": "microdata",
+        "status": "validated",
+        "notes": "G4-V4b; ATENTIE la istoric — domeniul a stat mult drept „poarta de "
+                 "sesiune neclarificata\", si era o RECOLTARE gresita, nu un blocaj: "
+                 "sondele incarcasera `/magazin/`, care e REVISTA, nu catalogul. "
+                 "Traseul real, masurat: home -> 72 de cai de catalog -> `/de/de` "
+                 "(57 de carduri) -> PDP `/de/de/shop/produkt/<slug>`. Metoda e "
+                 "MICRODATA, nu jsonld (ld+json-ul are doar Organization/WebSite/ "
+                 "BreadcrumbList/WebPage): genericul extrage fara override, masurat pe "
+                 "DOUA PDP-uri cu preturi mult diferite — 89,99 EUR si 1.188,50 EUR. "
+                 "NU e intrare de browser, desi acolo a fost masurat prima oara: "
+                 "re-verificat pe HTTP inainte de intrare, da 200 pe profilul de "
+                 "productie, fara challenge, cu ACEEASI valoare. CAPCANA la nume: "
+                 "`name` din microdata include sufixul de titlu al paginii („... | "
+                 "LED-Panels günstig kaufen | reichelt elektronik\") — se curata la "
+                 "afisare. LIVRARE IN RO nemasurata: `unconfirmed` (exista o locala "
+                 "`/ro/de/`, dar asta e tintire, nu confirmare de checkout).",
+    },
 }
 
 

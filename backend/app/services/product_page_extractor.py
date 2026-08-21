@@ -299,6 +299,44 @@ def _first_image(value) -> str | None:
     return None
 
 
+_ADANCIME_MAX_OFERTE = 4
+
+
+def _aplatizeaza_oferte(offers, _adancime=0):
+    """`offers` cu listele imbricate desfacute intr-una singura. PURA.
+
+    G4-V4b — structura REALA care a motivat-o: decathlon.ro publica
+    `offers` ca **lista de DOUA liste** a cate 9 `Offer` (18 in total, toate cotate,
+    `159.99 RON` / `InStock`). Consumatorii — `_price_from_offers` si
+    `_variants_from_offer_list` — sar orice element care nu e dict
+    (`if not isinstance(offer, dict): continue`), deci le pierdeau pe TOATE 18 si
+    produsul cadea cu „Pret lipsa sau invalid (None)", desi pagina publica preturi
+    perfect valide. Nu era o pagina fara date, era o forma nerecunoscuta.
+
+    Aplatizarea se face AICI, la sursa (`_collect_jsonld`), nu in cei doi consumatori:
+    amandoi citesc acelasi `obj.get("offers")`, deci o normalizare unica ii serveste
+    pe amandoi si le lasa contractele neatinse.
+
+    Recursiva, cu limita de adancime: o structura mai adanca de
+    `_ADANCIME_MAX_OFERTE` nu e o forma reala de magazin, ci date corupte sau
+    ciclice — se opreste in loc sa coboare la infinit. Elementele care nu sunt nici
+    dict, nici lista, se pastreaza VERBATIM: consumatorii stiu deja sa le sara, iar
+    aruncarea lor aici ar ascunde o forma noua in loc s-o lase sa se vada.
+    """
+    if not isinstance(offers, list):
+        return offers
+    if _adancime >= _ADANCIME_MAX_OFERTE:
+        return offers
+    out = []
+    for element in offers:
+        if isinstance(element, list):
+            desfacut = _aplatizeaza_oferte(element, _adancime + 1)
+            out.extend(desfacut if isinstance(desfacut, list) else [desfacut])
+        else:
+            out.append(element)
+    return out
+
+
 def _price_from_offers(offers):
     """(pret, is_aggregate, offer_folosit, s_a_vazut_candidat) din `offers`.
 
@@ -662,7 +700,9 @@ def _collect_jsonld(soup):
             continue
         if not _is_product(obj):
             continue
-        price, is_aggregate, offer, saw_candidate = _price_from_offers(obj.get("offers"))
+        # G4-V4b: o SINGURA normalizare, servind ambii consumatori de mai jos.
+        oferte = _aplatizeaza_oferte(obj.get("offers"))
+        price, is_aggregate, offer, saw_candidate = _price_from_offers(oferte)
         offer = offer or {}
         # FASHION-2 — forma #2: un singur Product, dar `offers` e o lista de oferte
         # cu `size` pe fiecare. Cand se aplica, pretul product-level vine din
@@ -672,7 +712,7 @@ def _collect_jsonld(soup):
         # `variants` ramane None si pretul e exact cel de azi.
         # NU fabricam variante dintr-o lista de marimi fara oferte per marime
         # (pattern answear) — n-am avea nici pret, nici stoc pe marime.
-        variants = _variants_from_offer_list(obj.get("offers"))
+        variants = _variants_from_offer_list(oferte)
         if variants:
             price, in_stock = _aggregate_variants(variants)
             is_aggregate = True

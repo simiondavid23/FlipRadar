@@ -2919,6 +2919,95 @@ Fiecare cu stadiul temei lui, ca valul D sa nu porneasca de la zero:
 | conrad.com | `/en/promotions/sale.html` — se randeaza, dar ZERO ld+json |
 | DEAL-2c, DEAL-3 | sortarile, respectiv `lastmod` din sitemap |
 
+## 4b. EPILOG (G4-V4/G4-V4b) — patru „blocate" reexaminate, doua recuperate
+
+Capitolul de mai sus consemna patru domenii ca **NEMASURATE pe PDP, din vina
+recoltarii**. Sonda corectiva G4-V4 le-a dat fiecaruia verdictul pe o pagina de produs
+adevarata. Doua au intrat; celelalte doua au primit cauza exacta — si niciuna nu era
+ce credeam.
+
+**Diagnosticul care le tinea „blocate".** Sondele foloseau euristica „cardul cu
+path-ul cel mai adanc", care alesese: `/magazin/` (REVISTA reichelt) in loc de catalog,
+`/c/promo/bestsellers` (o CATEGORIE) in loc de PDP la ccc, indexul `/sct/0/` la
+fressnapf, si — la G4-V2 — chiar butonul de checkout la sportsdirect, respectiv
+`/service/email-us/` la lego. Fixul e acum **IN COD**, trei filtre in ordine:
+(1) candidatul vine dintr-un CARD CU PRET de pe o listare randata, niciodata din home;
+(2) filtre negative pe rute de actiune si editoriale (login/checkout/cart/`/magazin`/
+blog/…); (3) validare LA INCARCARE — `@type: Product|ProductGroup`, sau microdata, sau
+bloc unic de pret — altfel candidatul se ARUNCA, maximum doi per tinta. O regula scrisa
+in harness nu se uita la a treia rulare; una tinuta minte, da.
+
+Fixul s-a validat in AMBELE sensuri in aceeasi rulare: a aruncat doi candidati falsi la
+sportsdirect (in loc sa produca un verdict fals) si a gasit catalogul corect la
+reichelt, ocolind revista.
+
+### Recuperate
+
+* **reichelt.de** — INTRAT, `method: "microdata"`. Nu jsonld: ld+json-ul are doar
+  `Organization`/`WebSite`/`BreadcrumbList`/`WebPage`. Traseul real: home -> 72 de cai
+  de catalog -> `/de/de` (57 de carduri) -> PDP `/de/de/shop/produkt/<slug>`. Masurat pe
+  DOUA PDP-uri cu preturi mult diferite: **89,99 EUR** si **1.188,50 EUR**, genericul
+  fara override. **NU e intrare de browser**, desi acolo a fost masurat prima oara:
+  verificat pe HTTP inainte de intrare, da 200 pe profilul de productie, fara challenge,
+  cu aceeasi valoare. A patra aplicare a regulii „viabil prin browser ≠ are nevoie de
+  browser", dupa forit.ro, lego.com si footlocker.ro.
+* **decathlon.ro** — INTRAT, `method: "browser"`, deblocat de un fix GENERAL de
+  extractor (vezi mai jos). Aici regula a functionat invers: verificat pe HTTP, da
+  **403 pe toate cele trei profiluri** — deci browserul chiar e necesar.
+
+### Fixul general: aplatizarea listelor imbricate in `offers`
+
+decathlon publica `offers` ca **lista de DOUA liste** a cate 9 `Offer` — 18 in total,
+toate cotate `159,99 RON` / `InStock`. Consumatorii (`_price_from_offers`,
+`_variants_from_offer_list`) sar orice element care nu e dict, deci le pierdeau pe toate
+18: pagina cadea cu `no_product_data` **desi publica preturi perfect valide**. Nu era o
+pagina fara date, era o forma nerecunoscuta.
+
+`_aplatizeaza_oferte` normalizeaza o SINGURA data, in `_collect_jsonld`, la sursa —
+amandoi consumatorii citesc acelasi `obj.get("offers")`, deci contractele lor raman
+neatinse. Recursiva, cu limita de adancime; elementele nedict se pastreaza verbatim, ca
+o forma noua sa se vada in dump in loc sa dispara tacut.
+
+**Tabel de regresie, disciplina G2F-4:** extractorul rulat pe **450 de dump-uri** din
+toate bancile, inainte si dupa. Predictia scrisa in avans — „identic peste tot +
+decathlon devine extractibil" — s-a confirmat exact: **o singura diferenta**, decathlon
+din `no_product_data` in `159,99 RON`. Celelalte 449, identice.
+
+### Reclasificate (cauza reala, alta decat recoltarea)
+
+* **ccc.eu** — **BLOCAT DE CONSIMTAMANT**, o clasa NOUA, distincta de anti-bot.
+  Categoria randeaza 898.187 octeti cu 672 de ancore, dar textul vizibil e bannerul de
+  cookie-uri si sunt **zero preturi**. Singurul buton masurat e „Acceptă toate
+  cookie-urile" — **niciun buton de refuz**; selectorii de refuz ai productiei
+  potrivesc 0 noduri. Harness-ul apasa DOAR refuz, deliberat: a accepta cookie-uri in
+  numele lui David e o decizie care ii apartine lui, nu sondei. Zero markere de
+  challenge, fara turnstile — deci nu e blocaj tehnic, e unul de politica. Se deblocheaza
+  daca (si numai daca) David decide ca harness-ul are voie sa accepte pe anumite domenii.
+* **fressnapf.ro** — **NEMASURABIL pe calea de browser**. Categoria CORECTA randeaza
+  (`Câini - Fressnapf Romania`, 304.242 octeti), dar produsele nu apar nici in DOM, nici
+  in stare: ld+json are doar `BreadcrumbList`/`ItemList` de navigatie, zero chei de pret
+  sau de produs, doar `dataLayer`. Singurul pret vizibil (`199 lei`) e pragul de livrare
+  gratuita. Produsele vin dintr-un XHR ulterior — cere sonda de API, alta runda.
+* **sportsdirect.ro** — **CERE EXTRACTOR CUSTOM**, deci nu intra in runda asta.
+  Listarea e perfecta (61 de carduri in 3,54s), dar PDP-ul n-are date structurate:
+  ld+json doar `BreadCrumbList` (cu majuscula neconforma). Pretul EXISTA in stare:
+  `"productId":"113526","productPrice":144.00,"productPriceInBaseUnit":120.0` —
+  ancorabil pe `productId`, tiparul cellini. CAPCANA: selectorii `[class*=price]` sunt
+  toti `product-line-card__price*`, adica etichete de COS („Preț:", „Total:"), nu pretul
+  produsului. `144/120 = 1,2`, deci `productPrice` e BRUT si `productPriceInBaseUnit` e
+  NET. Moneda e **EUR pe domeniu `.ro`**.
+
+### Corectura la nota sneakerindustry
+
+Faptul masurat e **doar ca ENUMERAREA e inchisa** (`products.json` -> 403 pe toate
+profilurile). Situl functioneaza normal; nu e blocat si nu e picat. Deci nu apartine
+clasei „verificare periodica pentru revenire", ci fluxului obisnuit: o runda SI-1 pe
+calea jsonld il poate valida oricand, fara sa astepte redeschiderea enumerarii.
+
+### Cifra actualizata
+
+**93 -> 95 de domenii validate.**
+
 ## 5. Gardul
 
 **Axa L se considera INCHISA.** Orice domeniu nou de-acum intra prin fluxul standard —

@@ -208,6 +208,8 @@ def test_validated_domains_santinela():
         "cardmarket.com",                             # G4-V2b
         "notebooksbilliger.de",                       # G4-V3b
         "footlocker.ro",                              # G4-V3b
+        "decathlon.ro",                               # G4-V4b
+        "reichelt.de",                                # G4-V4b
     }
 
 
