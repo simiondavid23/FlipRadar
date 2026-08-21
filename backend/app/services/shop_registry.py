@@ -1151,17 +1151,41 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "inrudirea „n-a fost dovedita cu fragmente din AMBELE parti, "
                  "fiindca nu exista dump buzzsneakers\" — exista, din LOT3, iar acum "
                  "exista si dump de LISTARE.",
-        # AXA D — descriptorul e MASURAT INTEGRAL la SNK-1/SNK-2, dar cheia
-        # `listing` NU se scrie inca, si motivul e in scanner, nu in magazin:
-        # buzzsneakers foloseste 404 drept semnal de sfarsit de paginare, iar
-        # `_scaneaza_domeniu` ridica RuntimeError la orice status != 200 (opririle
-        # lui sunt doar „grila goala pe 200" si „pagina repetata"). Cu `max_pages`
-        # peste numarul real de pagini scanul crapa INAINTE de `db.commit()`, deci
-        # se pierde tot — inclusiv paginile deja citite. Cu numarul exact merge, dar
-        # e un OUTLET: numarul scade des, iar la prima scadere s-ar pierde iar totul.
-        # Deci intrarea asteapta valul D, care invata scannerul ca 404 pe o pagina
-        # > 1 e OPRIRE, nu esec. Descriptorul complet, valorile masurate si comanda
-        # de regenerare a fixture-ului sunt in docs/catalog_domain_log.md (SNK-2).
+        # DEAL-2 — masurat la SNK-1/SNK-2: NBSHOP, `data-total-pages="39"`, 24 de
+        # carduri pe pagina, 918 produse la scanul live. Intrarea a asteptat valul
+        # D fiindca paginarea se termina in 404 (pagina 40), iar `_scaneaza_domeniu`
+        # ridica RuntimeError la orice status != 200 — inainte de `db.commit()`,
+        # deci se pierdea tot scanul. Valul D a invatat scannerul ca 404 pe o
+        # pagina > 1, dupa una reusita, e OPRIRE; `max_pages` redevine o margine.
+        "listing": {
+            "url": "https://www.buzzsneakers.ro/produse/outlet",
+            # Numarul de pagina e in CALE, cu CRATIMA — nu in query, ca la Magento.
+            "page_url_template": "https://www.buzzsneakers.ro/produse/outlet/page-{n}",
+            # 39 de pagini MASURATE; plasa e peste, ca la otter (197 reale / 210).
+            # Supra-dimensionarea e gratuita de la valul D incoace: pagina de peste
+            # final da 404 si opreste curat. Sub-dimensionarea ar tacea si ar taia,
+            # iar `/produse/outlet` e un OUTLET — numarul de pagini scade des.
+            "max_pages": 60,
+            "currency": "RON",
+            # Cardul-PARINTE, cel care poarta atributele; 24 pe pagina.
+            "card": ".product-item",
+            "link": "a.product-link",
+            # `.title`, nu textul ancorei: ancora produsului scrie „Detalii" pe
+            # TOATE cardurile, deci ar da acelasi titlu peste tot.
+            "title": ".title",
+            # Pe text, nu pe atribut: `data-productprice` exista pe card, dar e cu
+            # VIRGULA („455,99"), iar calea de atribut trece prin parserul strict cu
+            # punct si ar da tacut None. `div.current-price span.value` poarta
+            # aceeasi valoare si merge prin `_pret_eu_comma`.
+            "price_text": "div.current-price span.value",
+            "price_parse": "eu_comma",
+            # FARA cheie de pret taiat, DELIBERAT. Pretul vechi exista doar ca
+            # `data-productprevprice="759,99"` — tot cu virgula, deci necitibil pe
+            # calea de atribut — iar vizibil nu se randeaza niciun pret taiat (zero
+            # <del>/<s>, `data-productdiscount` constant "0"). Domeniul califica deci
+            # pe R2 (minim istoric), nu pe R1.
+            "reference_kind": "nemarcat",
+        },
     },
     "officeshoes.ro": {
         "label": "Office Shoes",

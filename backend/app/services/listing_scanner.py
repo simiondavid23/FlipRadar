@@ -10,14 +10,19 @@ Every selector below is DECLARED IN THE REGISTRY, never guessed here, and every
 one of them was measured on real dumps in probes LST-1 / LST-1b. The scanner is
 therefore generic: adding a shop means adding a `listing` descriptor, not code.
 
-Three facts from those probes shape the design and are not negotiable:
+Four facts from those probes shape the design and are not negotiable:
 
-  * The stop condition cannot be the HTTP status. All four pilots answer 200
-    well past their last page. otter and caseking then serve an EMPTY grid,
-    noriel CLAMPS back to page 1, and bergfreunde CLAMPS to its last page. A
+  * The stop condition cannot be the HTTP status ALONE. All four LST-1 pilots
+    answer 200 well past their last page. otter and caseking then serve an EMPTY
+    grid, noriel CLAMPS back to page 1, and bergfreunde CLAMPS to its last page. A
     scanner that stopped only on "no cards" would loop forever on two of four,
     re-ingesting the same page until `max_pages`. Hence the composite rule in
     `_scaneaza_domeniu`.
+  * A fifth shop then showed the OTHER half of that lesson: buzzsneakers (SNK-2)
+    serves 200 on all 39 of its pages and 404 on page 40. So the status is not the
+    whole answer, but a 404 PAST a page that already succeeded is a real end of
+    pagination, and treating it as a failure lost the entire scan. That case is
+    handled next to the fetch, and only for 404.
   * The struck price is NOT a 30-day minimum. On otter and bergfreunde it is an
     explicitly-labelled recommended price (PRP/UVP); on caseking and noriel it
     carries no legal label at all. `reference_kind` in the descriptor records
@@ -298,6 +303,26 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
             _pauza()
         url = _pagina_url(descriptor, numar)
         raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS, timeout=_TIMEOUT)
+
+        # VAL D — 404 pe o pagina > 1, cu cel putin o pagina reusita in ACELASI
+        # scan, e SFARSIT DE PAGINARE, nu esec. Masurat pe buzzsneakers (SNK-2):
+        # cele 39 de pagini raspund 200, iar pagina 40 da 404 — a treia forma de
+        # final, dupa „grila goala pe 200" si „pagina repetata" din docstring.
+        # Precedentul exista deja in codebase: `olx_scraper.py` are
+        # „404 = paginare depasita (pagina nu exista) -> stop curat, nu eroare".
+        #
+        # Miza nu e cosmetica: RuntimeError cade INAINTE de `db.commit()`, deci un
+        # 404 la final pierdea TOT scanul, inclusiv paginile deja citite.
+        #
+        # Doua granite, amandoua deliberate:
+        #   * pe pagina 1 (`pagini == 0`) 404 ramane EROARE — acolo inseamna
+        #     listare moarta (URL mutat, categorie stearsa), nu sfarsit;
+        #   * DOAR 404. Un 403 sau un 5xx e zid ori defectiune si trebuie sa se
+        #     vada ca eroare, nu sa fie confundat cu un final de paginare.
+        if (raspuns is not None and raspuns.status_code == 404
+                and numar > 1 and pagini > 0):
+            break
+
         if raspuns is None or raspuns.status_code != 200:
             raise RuntimeError(
                 f"listare esuata la pagina {numar} "

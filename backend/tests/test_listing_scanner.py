@@ -65,7 +65,12 @@ def scan(monkeypatch):
         cereri.append(url)
         pagini = cutie["pagini"]
         indice = len(cereri) - 1
-        return _Raspuns(pagini[indice] if indice < len(pagini) else "<html></html>")
+        pagina = pagini[indice] if indice < len(pagini) else "<html></html>"
+        # O intrare poate fi si `(html, status)`: valul D masoara oprirea pe 404,
+        # deci statusul nu mai e mereu 200. Sirurile simple raman neatinse.
+        if isinstance(pagina, tuple):
+            return _Raspuns(pagina[0], pagina[1])
+        return _Raspuns(pagina)
 
     monkeypatch.setattr("app.services.scraper_service._fetch_shop_url_guarded", fals)
     monkeypatch.setattr(listing_scanner, "listing_domains", lambda: {DOM})
@@ -109,6 +114,10 @@ def _deals():
     ("bergfreunde.eu", 47.97, 79.95),     # data-codecept, "€ 47,97"
     ("tezyo.ro", 244.0, 349.0),           # G1-2: Magento, AMBELE ramuri in atribut
     ("powerup.ro", 197.01, 199.0),        # G2A-2: OpenCart, zecimalele in <sup>
+    # SNK-2: NBSHOP. `taiat` e None DELIBERAT — pretul vechi exista doar ca
+    # `data-productprevprice="759,99"`, cu virgula, deci necitibil pe calea de
+    # atribut, si nu se randeaza niciun <del>/<s>. Domeniul califica pe R2, nu R1.
+    ("buzzsneakers.ro", 455.99, None),
 ])
 def test_parsare_fixture_real(domeniu, pret, taiat):
     """Descriptorul din registru extrage din dump-ul REAL exact valorile masurate."""
@@ -359,6 +368,109 @@ def test_pagina_1_foloseste_url_ul_masurat(scan):
     assert scan.cereri[1] == "https://www.otter.ro/reduceri?p=2"
 
 
+# ── 4b. VAL D — 404 la finalul paginarii (masurat pe buzzsneakers, SNK-1/SNK-2) ─
+
+# Corpul REAL al paginii de dincolo de final, din `buzzsneakers.ro_plast.html`
+# (dump SNK-1, 228.229 de octeti): NU e un document gol, ci pagina de eroare cu tot
+# chrome-ul site-ului, iar grila ei are ZERO `.product-item`. Aici se pastreaza doar
+# titlul, verbatim din dump; restul e navigatie fara efect asupra parsarii. Corpul
+# nevid conteaza: dovedeste ca oprirea vine din STATUS, nu din „grila goala".
+_CORP_404 = ('<html><head><title>Pagina inexistenta | BuzzSneakers Romania'
+             '</title></head><body><div id="grid"></div></body></html>')
+
+
+def _descriptor_buzz(max_pages=5):
+    """Descriptorul MASURAT la SNK-2 (docs/catalog_domain_log.md), fara cheie de
+    pret taiat: `data-productprevprice` e cu VIRGULA, deci calea de atribut ar da
+    tacut None, iar vizibil nu se randeaza niciun pret taiat (zero <del>/<s>)."""
+    return {"url": "https://www.buzzsneakers.ro/produse/outlet",
+            "page_url_template": "https://www.buzzsneakers.ro/produse/outlet/page-{n}",
+            "max_pages": max_pages, "currency": "RON",
+            "card": ".product-item", "link": "a.product-link", "title": ".title",
+            "price_text": "div.current-price span.value",
+            "price_parse": "eu_comma", "reference_kind": "nemarcat"}
+
+
+def test_404_dupa_prima_pagina_e_oprire_curata(scan):
+    """buzzsneakers foloseste 404 drept sfarsit de paginare: masurat live la SNK-2
+    („scanul a mers pe cele 39 de pagini, iar pagina 40 a dat 404") si in dump pe
+    `/produse/outlet/page-999` (`buzzsneakers.ro_plast.meta.json`: `"status": 404`).
+
+    Pana la valul D orice status != 200 ridica RuntimeError, iar exceptia cade
+    INAINTE de `db.commit()` — deci se pierdea TOT scanul, inclusiv paginile deja
+    citite. Pagina 1 e buna, pagina 2 da 404: scanul trebuie sa iasa ca SUCCES.
+    """
+    rezumat = scan([_fixture("otter.ro"), (_CORP_404, 404)],
+                   descriptor=_descriptor_test())
+
+    assert rezumat["erori"] == 0, "404 dupa o pagina reusita nu e eroare de scan"
+    assert rezumat["magazine"] == 1
+    assert rezumat["produse"] == 3, "cele 3 carduri ale paginii 1 sunt procesate"
+    assert len(scan.cereri) == 2, "oprire curata: pagina 3 nu se mai cere"
+
+    deals = _deals()
+    assert len(deals) == 1, "cardul redus 98/379 califica pe R1, ca la scanul normal"
+    assert deals[0].price == 98.0 and deals[0].compare_at_price == 379.0
+    assert deals[0].deal_source == "listing_scan"
+
+
+def test_404_dupa_prima_pagina_scrie_starea_ok(scan):
+    """Consecinta vizibila in panoul de sanatate: domeniul ramane `ok`, nu `error`."""
+    scan([_fixture("otter.ro"), (_CORP_404, 404)], descriptor=_descriptor_test())
+
+    db = SessionLocal()
+    try:
+        stare = db.query(ShopScanState).filter(
+            ShopScanState.shop_domain == DOM).first()
+        assert stare is not None and stare.last_status == "ok"
+    finally:
+        db.close()
+
+
+def test_404_pe_buzzsneakers_cu_descriptorul_masurat(scan):
+    """Acelasi lucru pe pacientul real: fixture-ul decupat din
+    `dumps_snk1/buzzsneakers.ro_listare_p1.html` plus 404-ul de final.
+
+    Domeniul n-are pret taiat citibil, deci pe primul scan nu califica nimic pe R1
+    — „procesat normal" inseamna aici cele 3 randuri de memorie de pret, temelia
+    lui R2.
+    """
+    rezumat = scan([_fixture("buzzsneakers.ro"), (_CORP_404, 404)],
+                   descriptor=_descriptor_buzz())
+
+    assert rezumat["erori"] == 0
+    assert rezumat["produse"] == 3
+    assert len(scan.cereri) == 2
+    assert scan.cereri[1] == "https://www.buzzsneakers.ro/produse/outlet/page-2"
+
+    db = SessionLocal()
+    try:
+        memorie = db.query(ShopPriceMemory).all()
+    finally:
+        db.close()
+    assert len(memorie) == 3, "tot ce s-a citit pana la 404 intra in memorie"
+
+
+def test_404_pe_prima_pagina_ramane_eroare(scan):
+    """Granita semanticii aprobate: fara nicio pagina reusita in ACELASI scan, un
+    404 pe pagina 1 e o listare moarta (URL mutat, categorie stearsa), nu un
+    sfarsit de paginare — si trebuie sa se vada ca eroare."""
+    rezumat = scan([(_CORP_404, 404)], descriptor=_descriptor_test())
+
+    assert rezumat["erori"] == 1, "404 pe prima pagina ramane eroare de scan"
+    assert rezumat["magazine"] == 0
+    assert len(scan.cereri) == 1
+
+
+def test_alte_statusuri_raman_eroare_si_dupa_o_pagina_buna(scan):
+    """DOAR 404 e tolerat. Un 403/500 pe pagina 2 e un zid sau o defectiune, nu un
+    sfarsit de paginare, si nu are voie sa fie confundat cu el."""
+    for status in (403, 410, 500):
+        rezumat = scan([_fixture("otter.ro"), (_CORP_404, status)],
+                       descriptor=_descriptor_test())
+        assert rezumat["erori"] == 1, f"status {status} trebuie sa ramana eroare"
+
+
 # ── 5. Deal-uri, memorie si sursa ────────────────────────────────────────────
 
 def test_creeaza_deal_cu_sursa_listing_scan(scan):
@@ -487,9 +599,11 @@ def test_plafonul_de_productie_este_zece():
 # ── 7. Registrul ─────────────────────────────────────────────────────────────
 
 def test_listing_domains_exact_cele_din_registru():
-    """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2)."""
+    """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2) +
+    buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404)."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
-                                 "bergfreunde.eu", "tezyo.ro", "powerup.ro"}
+                                 "bergfreunde.eu", "tezyo.ro", "powerup.ro",
+                                 "buzzsneakers.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
