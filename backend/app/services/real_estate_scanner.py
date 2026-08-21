@@ -18,14 +18,13 @@ from app.services.ai_service import AIConfigError, get_ai_client
 from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
 from app.services.log_manager import log_manager, set_log_user
+from app.utils.ore_active import in_ore_active
 
 
 def _within_hours(kw: RealEstateKeyword) -> bool:
-    if kw.active_hours_start is None or kw.active_hours_end is None:
-        return True
-    h = datetime.now().hour
-    s, e = kw.active_hours_start, kw.active_hours_end
-    return (s <= h < e) if s <= e else (h >= s or h < e)
+    """Delegat subtire spre helperul unic (FB-7a). Numele ramane — il folosesc
+    apelantii din modulul asta."""
+    return in_ore_active(kw)
 
 
 def _polling_due(kw, now: datetime) -> bool:

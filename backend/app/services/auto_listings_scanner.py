@@ -14,6 +14,7 @@ from app.services.bnr_exchange import get_eur_ron
 # revanzare + praguri A/B/C). scorer.py nu importa nimic din app -> fara ciclu.
 from app.services.radar.scorer import calculate_score
 from app.services.log_manager import log_manager, set_log_user
+from app.utils.ore_active import in_ore_active
 
 _CURRENT_YEAR = 2026
 
@@ -37,11 +38,9 @@ def _auto_platform_delay(platform: str) -> float:
 
 
 def _within_hours(kw: AutoKeyword) -> bool:
-    if kw.active_hours_start is None or kw.active_hours_end is None:
-        return True
-    h = datetime.now().hour
-    s, e = kw.active_hours_start, kw.active_hours_end
-    return (s <= h < e) if s <= e else (h >= s or h < e)
+    """Delegat subtire spre helperul unic (FB-7a). Numele ramane — il folosesc
+    apelantii din modulul asta."""
+    return in_ore_active(kw)
 
 
 def _resale_price_ron(kw: AutoKeyword) -> Optional[float]:

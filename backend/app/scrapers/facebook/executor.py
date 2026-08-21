@@ -27,6 +27,7 @@ from sqlalchemy import func
 from app.models.fb_pool import FbPoolListing
 from app.models.fb_scan_state import FbScanState
 from app.services.log_manager import log_manager
+from app.utils.ore_active import in_ore_active
 
 from .anchors import dupa_slug
 from .client import search_cu_stare
@@ -252,21 +253,11 @@ def _obtine_planificator(db):
 def _in_ore_active(kw) -> bool:
     """Fereastra orara a keyword-ului (suporta intervalul peste miezul noptii).
 
-    Foloseste helperul EXISTENT din radar_scanner. Import lenes: `radar_scanner` e un
-    modul greu care importa la randul lui scraperele, iar executorul trebuie sa ramana
-    importabil singur (in teste, fara aplicatie). Logica e duplicata identic in cele
-    trei scannere; nu exista un helper comun de nivel util.
+    FB-7a — helperul comun de nivel util pe care il cerea comentariul de aici EXISTA
+    acum (`app.utils.ore_active`, doar stdlib), deci au disparut si importul lenes, si
+    rezerva din `except`: nu mai e nimic greu de importat si nimic de reimplementat.
     """
-    try:
-        from app.utils.radar_scanner import _is_within_active_hours
-        return bool(_is_within_active_hours(kw))
-    except Exception:
-        s = getattr(kw, "active_hours_start", None)
-        e = getattr(kw, "active_hours_end", None)
-        if s is None or e is None:
-            return True
-        h = datetime.now().hour
-        return (s <= h < e) if s <= e else (h >= s or h < e)
+    return in_ore_active(kw)
 
 
 def _platforme_radar(kw) -> list:

@@ -40,6 +40,7 @@ from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 from app.services.radar.vinted_html import guard_status as vinted_guard_status
+from app.utils.ore_active import in_ore_active
 
 
 # Contor global pentru frecventa cleanup-ului (ruleaza la fiecare 10 cicluri).
@@ -2169,15 +2170,11 @@ def _send_email_alert(
 def _is_within_active_hours(kw) -> bool:
     """Returns True if the keyword should be scanned at the current time.
     Supports overnight ranges: e.g. start=22, end=6 → active 22:00–05:59.
+
+    FB-7a: regula traieste acum in `app.utils.ore_active`, ca sa nu existe cinci copii
+    care pot diverge tacit. Numele ramane — il folosesc apelantii de mai jos.
     """
-    if kw.active_hours_start is None or kw.active_hours_end is None:
-        return True
-    h = datetime.now().hour
-    s, e = kw.active_hours_start, kw.active_hours_end
-    if s <= e:
-        return s <= h < e
-    else:  # overnight
-        return h >= s or h < e
+    return in_ore_active(kw)
 
 
 def _seller_persist_fields(listing: dict, kw: RadarKeyword) -> tuple:

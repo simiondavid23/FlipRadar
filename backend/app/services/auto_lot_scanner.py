@@ -18,6 +18,7 @@ from app.scrapers.auto.lots.copart_public import search_copart_lots
 from app.scrapers.auto.lots.iaai_public import search_iaai_lots
 from app.scrapers.auto.lots.sca_auctions import search_sca_lots
 from app.scrapers.auto.lots.openlane_scraper import search_openlane_lots
+from app.utils.ore_active import in_ore_active
 
 _SCRAPERS = {
     "copart": search_copart_lots,
@@ -28,11 +29,9 @@ _SCRAPERS = {
 
 
 def _within_hours(kw: AutoLotKeyword) -> bool:
-    if kw.active_hours_start is None or kw.active_hours_end is None:
-        return True
-    h = datetime.now().hour
-    s, e = kw.active_hours_start, kw.active_hours_end
-    return (s <= h < e) if s <= e else (h >= s or h < e)
+    """Delegat subtire spre helperul unic (FB-7a). Numele ramane — il folosesc
+    apelantii din modulul asta."""
+    return in_ore_active(kw)
 
 
 def _build_query(kw: AutoLotKeyword) -> str:
