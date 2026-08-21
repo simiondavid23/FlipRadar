@@ -3056,3 +3056,197 @@ sus nu sunt un backlog; sunt verdicte. Se redeschid punctual, cu motiv, nu ca lo
 >                  masurare, nu realitate. Vezi nota valului din VALIDATED_DOMAINS.
 >   sole.ro      — RECLASIFICAT: nu e magazin de fashion, deci nu apartine acestor
 >                  valuri. Ramane in backlogul general (degradat de la RETAIL-1: 502).
+
+---
+
+# SNK-2 — lotul de sneakers (sonda SNK-1, 2026-08-21)
+
+Trei tinte, trei naturi, un singur verdict pe fiecare. Doua intra in registru, una
+asteapta o reparatie de scanner. Capitolul se deschide dupa gardul axei L fiindca
+exact asta prevedea gardul: domeniile noi intra prin fluxul standard — sonda intai,
+implementare dupa — nu prin redeschiderea listei inchise.
+
+## 1. sneakerindustry.ro — INTRAT pe `og`, si o corectie de PLATFORMA
+
+Cea mai lunga poveste din watchlist se inchide, dar nu cum era scrisa.
+
+**Ce spunea banca.** „Shopify cu enumerarea inchisa": `products.json` da 403 pe toate
+cele trei profiluri (ultima verificare 2026-08-20), deci domeniul sta pe „verificare
+periodica pentru revenire". Corectura din epilogul G4-V4 nuantase deja verdictul —
+faptul masurat e DOAR ca enumerarea e inchisa, situl functioneaza pentru oameni — dar
+pastrase premisa.
+
+**Ce e masurat.** Premisa era gresita. Situl **nu e Shopify**:
+
+```
+powered-by: PrestaShop
+set-cookie: PHPSESSID=...; PrestaShop-77a7fdbc0e11141a4675f53b63935921=...
+server: cloudflare
+```
+
+Deci `products.json` nu e „o enumerare inchisa": e o ruta care **nu exista pe aceasta
+platforma**, iar 403-ul e Cloudflare pe o cale straina. Consemnarea „se re-verifica la
+o runda de watchlist viitoare" ramane **fara obiect** — nu se poate deschide ceva ce nu
+exista. Domeniul iese din clasa „verificare periodica" definitiv, nu temporar.
+
+Regula de metoda, a treia oara in acest jurnal (dupa WL-4 si dupa epilogul G4-V4):
+**verdictul vechi se citeste ca o masuratoare, cu premisele ei — nu ca un fapt.**
+
+**Axa L: VIABILA, dar NU pe `jsonld`.** PDP-urile n-au **niciun** ld+json. Metoda
+masurata e `og`, pe doua PDP-uri cu preturi diferite: **899,10 RON** si **692,10 RON**,
+moneda RON incrucisata in `og` SI in afisaj. Fragmentul propriu, verbatim:
+
+```html
+<p class="product-price has-discount" itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+  <link itemprop="availability" href="https://schema.org/InStock"/>
+  <span itemprop="price" content="899.1">899,10 RON</span>
+  <meta itemprop="priceCurrency" content="RON">
+</p>
+<p class="product-discount"> <span class="regular-price">999,00 RON</span> </p>
+```
+
+Trei capcane, toate necesare la implementare:
+
+| capcana | masuratoare |
+|---|---|
+| `og:title` e numele SITULUI | „Sneaker Industry - SNKR IND." pe ORICE produs. Numele real e in `h1`: „On Cloud 6 Geo WP", „On Cloudzone". De aici override-ul `name_selector: "h1"`. |
+| microdata e AMBIGUA | un singur `itemtype=schema.org/Product`, dar **12** noduri `itemprop=price`: cel propriu plus 10 carduri de recomandare (`.product-price-and-shipping`) si un duplicat `.physicalStoresProductPrice`. De aceea genericul cade pe `og`; microdata NU e o alternativa sigura fara selector. |
+| widget de rate | `.mokka-price-amount` = „74,93 RON/luna". |
+
+Omnibus: **NEMARCAT**. Pretul vechi exista (`span.regular-price`) dar fara `<del>`/`<s>`
+si fara nicio formulare de 30 de zile.
+
+**Axa D: nesondata, nu blocata.** Listarea `/ro/reduceri-de-pret` are 48 de carduri
+`article.product-miniature.home-product`, cu forma de PDP
+`/ro/<categorie>/<id>-<id>-<slug>.html`. Descriptorul se scrie la un val ulterior, cu
+masuratori proprii — nu se ghiceste acum.
+
+## 2. buzzsneakers.ro — descriptor COMPLET, intrare AMANATA (motiv: scannerul)
+
+Axa L era deja in registru (LOT3, `jsonld`, `validated`). SNK-1 a masurat exclusiv
+listarea, si a adus in plus proba de platforma care lipsea.
+
+**Inrudirea NBSHOP, dovedita din AMBELE parti.** Nota `sportvision.ro` cerea exact
+asta: „inrudirea n-a fost dovedita cu fragmente verbatim din AMBELE parti, fiindca nu
+exista dump buzzsneakers". Exista — din LOT3 — iar acum exista si dump de listare.
+Semnalele coincid: cookies `NBIDSN` + `NBPHPSESSIONSECURE`, marker `NBSHOP` in corp,
+cai de imagine `slike-proizvoda`, si resturi sarbesti netraduse chiar in carduri
+(`Uporedi`, `Brzi Pregled`, `Sacuvano u omiljne`).
+
+**Descriptorul masurat**, gata de transcris:
+
+| cheie | valoare masurata |
+|---|---|
+| `url` | `https://www.buzzsneakers.ro/produse/outlet` |
+| `page_url_template` | `https://www.buzzsneakers.ro/produse/outlet/page-{n}` — numarul e in CALE, cu CRATIMA |
+| pagini | `data-total-pages="39"`, 24 de carduri pe pagina, **918 produse** citite la scanul live |
+| `currency` | `RON` |
+| `card` | `.product-item` (24/pagina; cardul-parinte, cel care poarta atributele) |
+| `link` | `a.product-link` |
+| `title` | `.title` — ancora produsului are textul „Detalii" pe TOATE cardurile |
+| `price_text` | `div.current-price span.value` -> `455,99` |
+| `price_parse` | `eu_comma` |
+| `reference_kind` | `nemarcat` |
+
+**Paginarea NBSHOP e masurata acum.** Nota lui sportvision o lasase drept
+„`a[rel='next']` cu textul «Arata mai multe», deci incarcare client-side, nemasurata".
+Verbatim din dump:
+
+```html
+<a rel="next" href="https://www.buzzsneakers.ro/produse/outlet/page-2"
+   class="btn btn-default next-load-btn" data-total-pages="39"
+   onclick="autoLoadProductForPage(2, 39, false, event)">
+```
+
+AJAX-ul e o **imbunatatire peste un URL de server real**: p2 raspunde 200 cu 24 de
+produse **disjuncte** de p1 (suprapunere 0, Jaccard 0.000). Pe sportvision ramane de
+re-masurat pe el insusi — inrudirea de platforma nu tine loc de masuratoare.
+
+**Doua motive pentru care cheia `listing` NU s-a scris inca.**
+
+*(a) `compare_at` nu se poate citi.* Pretul vechi exista pe cardul-parinte, dar numai
+ca `data-productprevprice="759,99"` — cu VIRGULA. Calea de atribut a scannerului
+(`price_attr`/`compare_attr`) trece prin parserul strict cu punct, deci ar da tacut
+None. Vizibil nu se randeaza niciun pret taiat (zero `<del>`/`<s>`), iar
+`data-productdiscount` e constant `"0"` pe toate cardurile. Domeniul ar califica deci
+pe R2 (minim istoric), nu pe R1.
+
+*(b) — decisiv — 404 e semnalul de sfarsit de paginare.* Masurat live: scanul a mers
+pe cele 39 de pagini, iar pagina 40 a dat **404**. `_scaneaza_domeniu` ridica
+`RuntimeError` la orice status diferit de 200; opririle lui sunt doar „grila goala pe
+200" (otter, caseking) si „pagina repetata" (noriel, bergfreunde). Consecinta e mai
+grava decat pare: exceptia cade **inainte de `db.commit()`**, deci se pierde TOT
+scanul, inclusiv cele 39 de pagini deja citite. Cu numarul exact de pagini scanul merge
+perfect — **39 pagini, 918 produse, 0 alerte, 918 randuri de memorie de pret, 160 s** —
+dar `/produse/outlet` e un OUTLET: numarul de pagini scade des, si la prima scadere
+sub pragul scris s-ar pierde iar totul.
+
+**Decizia (David, in sesiune): la valul D, cu scannerul reparat.** Valul invata
+scannerul ca un 404 pe o pagina > 1 e OPRIRE, nu esec — dupa care buzzsneakers intra
+cu descriptorul de mai sus, iar `max_pages` redevine o margine inofensiva. Atunci se
+poate adauga si citirea atributului cu virgula, si R1 porneste odata cu R2.
+
+Fixture-ul de teste nu s-a comis (whitelist-ul rundei il conditiona de decizia
+„acum"). Se regenereaza dintr-un dump SNK-1 cu:
+
+```
+python -c "from bs4 import BeautifulSoup as B; h=open('scripts/diagnostics/dumps_snk1/buzzsneakers.ro_listare_p1.html',encoding='utf-8',errors='replace').read(); cs=B(h,'html.parser').select('.product-item')[:3]; open('backend/tests/fixtures/listing/buzzsneakers.ro_cards.html','w',encoding='utf-8').write('<html><body><div id=\"grid\">\n'+'\n'.join(map(str,cs))+'\n</div></body></html>\n')"
+```
+
+Valorile asteptate ale primului card, verbatim din dump: pret **455,99**, titlu
+**„NIKE Pantofi Sport React Revision"**, URL
+`/pantofi-sport/234081-nike-pantofi-sport-react-revision`, `compare_at` **None**.
+
+## 3. nike.com — INTRAT pe `jsonld`, contra asteptarilor
+
+Sonda pornise cu asteptari explicit mici: varf de clasa de protectie, iar
+`BLOCAT_FINAL` era un deznodamant asumat ca legitim la prima atingere. Masuratoarea a
+dat altceva, pe ambele trepte.
+
+**Treapta 1 (HTTP).** `https://www.nike.com/ro/` da **200** pe profilul de PRODUCTIE
+(`chrome131`), 684 KB, `<title>Nike. Just Do It. Nike RO`, **zero challenge**, fara
+escaladare de profil. Singurul cookie e `ak_bmsc` — infrastructura Akamai, nevinovat
+prin el insusi, exact ca `_abck` la G2C-1b si `cf-ray` la G2C-2.
+
+**De ce s-a escaladat totusi la browser.** Home-ul si categoriile n-au pret
+server-side: `__NEXT_DATA__` fara chei de pret, zero linkuri `/t/`. Deci treapta 1 nu
+putea RASPUNDE axei L — `NEMASURABIL`, nu blocat. Distinctia e consemnata anume, ca sa
+nu devina „nike e blocat" in banca.
+
+**Treapta 2 (browser).** Listarea randata `/ro/w/back-to-school-shoes-840ikzy7ok` a dat
+24 de candidati `/t/`; PDP-ul a iesit `VALIDAT` in **2,23 s**, cu `ProductGroup` si 19
+oferte, toate cu pret.
+
+**Si apoi regula G4-V4b, a cincea oara.** Acelasi PDP, cerut pe HTTP:
+
+```
+200, chrome131, 758.126 octeti, ld+json: ['ProductGroup'], 19 oferte, toate cu price
+{'name': 'Nike Mercurial Superfly 11 Elite Firm-Ground Low-Top Football Boots',
+ 'price': 1499.99, 'currency': 'RON', 'in_stock': None, 'method': 'jsonld'}
+```
+
+**Nike NU are nevoie de browser.** Dupa forit.ro, lego.com, footlocker.ro si
+reichelt.de, asta e a cincea aplicare a regulii — dar cu o forma NOUA, care merita
+scrisa separat fiindca generalizeaza la orice SPA:
+
+> Absenta datelor pe HOME nu prezice absenta lor pe PDP. Browserul poate fi necesar ca
+> sa **recoltezi** URL-ul de produs, fara sa fie necesar ca sa **citesti** pagina.
+
+Forma masurata: PDP `/ro/t/<slug>/<cod-stil>`, listari `/ro/w/<slug>`. `in_stock` iese
+`None` — ofertele n-au `availability`; e negasit, nu ignorat. Axa D pe nike nu s-a
+sondat: intai verdictul de L.
+
+## 4. Corectii ramase din SNK-1
+
+* Nota `sportvision.ro` spune „nu exista dump buzzsneakers". Exista, din LOT3, la
+  `scripts/diagnostics/dumps/lot3_fashion_ro/buzzsneakers.ro/`; inrudirea NBSHOP e
+  dovedita mai sus. Nota se corecteaza cand se atinge intrarea, la valul D.
+* Recoltarea de PDP-uri a gresit din nou, altfel decat la G4-V4: sortarea pe adancimea
+  caii a urcat URL-uri de FACETA (`?q=Marime+-37+1//3` — `1//3` aduce doua slash-uri in
+  plus) peste PDP-urile reale, arzand 4 cereri pe 403-uri care erau refuzul modulului
+  de faceta, nu al sitului (corpul lor era listarea intreaga, 440 KB). Filtrul negativ
+  pe facete e acum in harness-ul de sonda.
+
+## 5. Cifra actualizata
+
+**95 -> 97 de domenii validate** (sneakerindustry.ro, nike.com).

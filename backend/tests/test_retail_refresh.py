@@ -210,6 +210,8 @@ def test_validated_domains_santinela():
         "footlocker.ro",                              # G4-V3b
         "decathlon.ro",                               # G4-V4b
         "reichelt.de",                                # G4-V4b
+        "sneakerindustry.ro",                         # SNK-2
+        "nike.com",                                   # SNK-2
     }
 
 

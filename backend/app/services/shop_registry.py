@@ -1143,7 +1143,25 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT3",
+        "notes": "LOT3. SNK-1 a adaugat proba de PLATFORMA care lipsea la G2C-2: e "
+                 "NBSHOP, aceeasi cu sportvision.ro — cookies NBIDSN + "
+                 "NBPHPSESSIONSECURE, marker `NBSHOP` in corp, cai de imagine "
+                 "`slike-proizvoda` si resturi sarbesti netraduse in carduri "
+                 "(`Uporedi`, `Brzi Pregled`). Nota lui sportvision spunea ca "
+                 "inrudirea „n-a fost dovedita cu fragmente din AMBELE parti, "
+                 "fiindca nu exista dump buzzsneakers\" — exista, din LOT3, iar acum "
+                 "exista si dump de LISTARE.",
+        # AXA D — descriptorul e MASURAT INTEGRAL la SNK-1/SNK-2, dar cheia
+        # `listing` NU se scrie inca, si motivul e in scanner, nu in magazin:
+        # buzzsneakers foloseste 404 drept semnal de sfarsit de paginare, iar
+        # `_scaneaza_domeniu` ridica RuntimeError la orice status != 200 (opririle
+        # lui sunt doar „grila goala pe 200" si „pagina repetata"). Cu `max_pages`
+        # peste numarul real de pagini scanul crapa INAINTE de `db.commit()`, deci
+        # se pierde tot — inclusiv paginile deja citite. Cu numarul exact merge, dar
+        # e un OUTLET: numarul scade des, iar la prima scadere s-ar pierde iar totul.
+        # Deci intrarea asteapta valul D, care invata scannerul ca 404 pe o pagina
+        # > 1 e OPRIRE, nu esec. Descriptorul complet, valorile masurate si comanda
+        # de regenerare a fixture-ului sunt in docs/catalog_domain_log.md (SNK-2).
     },
     "officeshoes.ro": {
         "label": "Office Shoes",
@@ -1714,6 +1732,72 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "LED-Panels günstig kaufen | reichelt elektronik\") — se curata la "
                  "afisare. LIVRARE IN RO nemasurata: `unconfirmed` (exista o locala "
                  "`/ro/de/`, dar asta e tintire, nu confirmare de checkout).",
+    },
+
+    # ── SNK-2 — lotul de sneakers (sonda SNK-1) ───────────────────────────────
+    "sneakerindustry.ro": {
+        "label": "Sneaker Industry",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "og",
+        "status": "validated",
+        # `og:title` e numele SITULUI („Sneaker Industry - SNKR IND."), nu al
+        # produsului. `h1` e unic pe PDP si poarta numele real, verificat pe DOUA
+        # pagini: „On Cloud 6 Geo WP" si „On Cloudzone".
+        "overrides": {"name_selector": "h1"},
+        "notes": "SNK-2; deznodamantul celei mai lungi povesti din watchlist, si o "
+                 "CORECTIE de platforma. Domeniul a stat luni intregi drept „Shopify "
+                 "cu enumerarea inchisa\", pe temeiul ca `products.json` da 403 pe "
+                 "toate cele trei profiluri. Masurat la SNK-1: nu e Shopify deloc — "
+                 "header `powered-by: PrestaShop`, sesiune `PHPSESSID` + "
+                 "`PrestaShop-<hash>`, Cloudflare in fata. Deci 403-ul era Cloudflare "
+                 "pe o ruta STRAINA de platforma, nu o enumerare inchisa, iar "
+                 "consemnarea „se re-verifica daca se deschide enumerarea\" ramane "
+                 "fara obiect: nu se poate deschide ceva ce nu exista. Axa L merge pe "
+                 "fluxul standard, dar NU pe jsonld: PDP-urile n-au NICIUN ld+json. "
+                 "Metoda masurata e `og` (`product:price:amount`), pe doua PDP-uri cu "
+                 "preturi diferite — 899,10 RON si 692,10 RON, moneda RON incrucisata "
+                 "in og SI in afisaj. CAPCANE: (1) exista microdata cu un singur "
+                 "`itemtype=schema.org/Product`, dar DOUASPREZECE noduri "
+                 "`itemprop=price` — cel propriu e sub `p.product-price[itemprop="
+                 "offers]`, restul sunt carduri de recomandare "
+                 "(`.product-price-and-shipping`); de aceea genericul cade pe og si "
+                 "microdata NU e o alternativa sigura fara selector. (2) Widget de "
+                 "rate Mokka, `.mokka-price-amount` = „74,93 RON/luna\". (3) Pretul "
+                 "vechi exista, in `span.regular-price` (999,00 RON), dar FARA "
+                 "<del>/<s> si fara nicio formulare de 30 de zile: Omnibus NEMARCAT. "
+                 "Axa D e nesondata: listarea `/ro/reduceri-de-pret` are 48 de carduri "
+                 "`article.product-miniature.home-product` cu forma de PDP "
+                 "`/ro/<categorie>/<id>-<id>-<slug>.html` — descriptor de scris la un "
+                 "val ulterior, nu de ghicit acum.",
+    },
+    "nike.com": {
+        "label": "Nike",
+        "category": "sneakers",
+        "country": "RO",
+        "delivery": "ro_storefront",
+        "method": "jsonld",
+        "status": "validated",
+        "notes": "SNK-2; intrat CONTRA asteptarilor si a cincea aplicare a regulii "
+                 "G4-V4b („viabil prin browser\" != „are nevoie de browser\"), dupa "
+                 "forit, lego, footlocker si reichelt. Sonda pornise cu asteptari "
+                 "mici — varf de clasa de protectie — si a masurat altceva: "
+                 "`https://www.nike.com/ro/` da 200 pe profilul de PRODUCTIE al "
+                 "scraperului, 684 KB, titlu real, ZERO challenge, fara escaladare de "
+                 "profil; singurul cookie e `ak_bmsc`, infrastructura Akamai, "
+                 "nevinovat prin el insusi. Escaladarea la browser s-a facut pentru "
+                 "ca home-ul si categoriile n-au pret server-side (`__NEXT_DATA__` "
+                 "fara chei de pret, zero linkuri `/t/`) — deci NEMASURABIL pe "
+                 "treapta 1, nu blocat. Odata ce URL-ul de PDP a fost recoltat din "
+                 "listarea RANDATA, ACELASI PDP pe HTTP a dat `ProductGroup` cu 19 "
+                 "oferte, toate cu `price`/`RON`. Lectia, generala pentru SPA-uri: "
+                 "absenta datelor pe home NU prezice absenta lor pe PDP — browserul "
+                 "poate fi necesar ca sa RECOLTEZI URL-ul, fara sa fie necesar ca sa "
+                 "CITESTI pagina. Forma masurata: PDP `/ro/t/<slug>/<cod-stil>`, "
+                 "listari `/ro/w/<slug>`. `in_stock` iese None: ofertele n-au "
+                 "`availability` — negasit, nu ignorat. Pret verificat: 1.499,99 RON, "
+                 "identic in ld+json si in afisaj.",
     },
 }
 
