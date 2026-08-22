@@ -212,6 +212,7 @@ def test_validated_domains_santinela():
         "reichelt.de",                                # G4-V4b
         "sneakerindustry.ro",                         # SNK-2
         "nike.com",                                   # SNK-2
+        "amazon.de",                                  # AMZ-1
     }
 
 

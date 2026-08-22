@@ -1,0 +1,14 @@
+<!-- Acelasi sablon care lasa „null" in nodul de pret taiat il poate lasa si in
+     nodul de vanzator. Garda pe textul literal „null" nu e redundanta aici:
+     pe calea de PRET parserul strict l-ar respinge oricum, dar pe un camp de TEXT
+     „null" ar fi acceptat ca valoare si ar da `condition="new"` pe un vanzator
+     inexistent. -->
+<html><body>
+<span id="productTitle">Produs cu vanzator nul</span>
+<input type="hidden" id="ASIN" value="B0FNWKCDLS">
+<div id="corePrice_feature_div">
+  <span class="a-price"><span class="a-offscreen">10,00&nbsp;&euro;</span></span>
+</div>
+<div id="availability"><span>Auf Lager</span></div>
+<a id="sellerProfileTriggerId">null</a>
+</body></html>

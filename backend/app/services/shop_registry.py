@@ -113,6 +113,61 @@ Campurile unei intrari:
 import copy
 
 SHOP_REGISTRY: dict[str, dict] = {
+    # ── AMZ-1 ─────────────────────────────────────────────────────────────────
+    "amazon.de": {
+        "label": "Amazon.de",
+        "category": "general",
+        "country": "DE",
+        "delivery": "ro_confirmed",
+        "method": "custom",
+        "status": "validated",
+        "currency": "EUR",
+        "min_fetch_interval_s": 10,
+        "cookie_jar": "amazon_de",
+        "bootstrap_url": ("https://www.amazon.de/portal-migration/hz/glow/"
+                          "get-rendered-address-selections?deviceType=desktop"
+                          "&pageType=Gateway&storeContext=NoStoreName"
+                          "&actionSource=desktop-modal"),
+        "overrides": {
+            # Masurati la AMZ-0 pe 137 de dump-uri: ZERO aparitii pe pagini reale.
+            # `api-services-support@amazon.com` apare SI pe paginile 404 — e sigur
+            # doar fiindca `classify()` verifica statusul 404 INAINTEA markerilor.
+            "block_markers": ("validatecaptcha", "api-services-support@amazon.com"),
+        },
+        "notes": "AMZ-0/0c/AMZ-1. Sesiunea RECE e blocata 100%: primele 20 de cereri "
+                 "fara cookie-uri au picat pe patru rute si cu trei mecanisme diferite "
+                 "— interstitiu de 200 (3.815 octeti, buton „Weiter shoppen”, NU "
+                 "captcha vizual), pagina 503 „Tut uns Leid!”, provocare AWS WAF pe "
+                 "status 202. Nu tine de amprenta TLS: cele 5 profiluri incercate au "
+                 "primit raspuns identic la octet. Deblocarea vine din `bootstrap_url` "
+                 "(ruta glow), care raspunde 200 pe sesiune rece si emite 6 cookie-uri "
+                 "cu expirare la 2 ani; dupa ele, 90/90 de cereri OK la 5-20 s "
+                 "interval, iar sesiunea supravietuieste restartului de proces. "
+                 "ZERO ld+json pe 9/9 PDP-uri, deci `method: custom` — genericul "
+                 "n-ar avea ce parsa. IDENTITATEA e ASIN-ul din URL: "
+                 "`link[rel=canonical]` sare pe parintele de varianta (alt ASIN) pe "
+                 "3/9 pagini, deci extractorul intoarce el forma canonica "
+                 "`/dp/<ASIN>` si NU citeste canonicalul paginii; `input#ASIN` a fost "
+                 "egal cu ASIN-ul cerut pe 9/9 si se verifica la fiecare extractie. "
+                 "De aceea NU se pune `url_identity: exact`: acela ar pastra "
+                 "`?ref=...` din URL-ul lipit de user si ar sparge dedup-ul pe ASIN. "
+                 "CAPCANE de parsare: primul `.a-offscreen` din `.priceToPay` e un "
+                 "span GOL (deci prima potrivire NEVIDA, nu prima potrivire), 2/9 "
+                 "PDP-uri au literalul „null” ca pret taiat, iar `basisPrice` poate fi "
+                 "EGAL cu pretul platit desi `.savingsPercentage` anunta −7% — de "
+                 "aceea referinta se accepta doar daca e strict mai mare. Buy box-ul "
+                 "poate fi oferta second („Amazon Retourenkauf”), deci extractorul "
+                 "intoarce `seller`/`condition`; NU se persista, fiindca modelul "
+                 "Product n-are coloanele (decizie amanata la AMZ-2). Preturile vin cu "
+                 "TVA RO prin geolocatia IP-ului, iar masuratoarea NU se transfera pe "
+                 "o iesire straina (VPS/proxy), unde tara de livrare ar trebui setata "
+                 "programatic — mecanism inca nedescoperit. Link-urile scurte "
+                 "amzn.eu / amzn.to NU sunt suportate in v1 (nu sunt in allow-list). "
+                 "Panoul „toate ofertele” (AOD) ramane NEMASURAT: ambele rute "
+                 "incercate dau 404. Axa D e separata: SERP-ul are 33 de carduri pe "
+                 "`i=toys` (nu 60), iar pretul taiat de pe carduri amesteca UVP, "
+                 "„Statt” si preturi UNITARE (0,05 €/Stück) — vezi docs.",
+    },
     # ── RETAIL-3a ─────────────────────────────────────────────────────────────
     "altex.ro": {
         "label": "Altex",

@@ -1105,7 +1105,7 @@ def _apply_override(soup, html: str, result: dict, override: dict) -> bool:
     return applied
 
 
-def _fetch_text_guarded(url: str, max_retries: int = 3) -> str:
+def _fetch_text_guarded(url: str, max_retries: int = 3, headers: dict | None = None) -> str:
     """Textul unui URL prin poarta C-14, cu taxonomia de erori din extract_product.
 
     NU e o refactorizare a buclei din extract_product si nu o inlocuieste: acolo
@@ -1124,7 +1124,7 @@ def _fetch_text_guarded(url: str, max_retries: int = 3) -> str:
         if attempt > 1:
             time.sleep(random.uniform(1, 3))
 
-        response = _fetch_shop_url_guarded(url, headers=_HEADERS, timeout=_TIMEOUT)
+        response = _fetch_shop_url_guarded(url, headers=(headers or _HEADERS), timeout=_TIMEOUT)
         if response is None:
             if not _is_allowed_shop_url(url):
                 raise ProductExtractionError(
@@ -2098,7 +2098,212 @@ def _extract_cardmarket(url: str) -> dict:
     }
 
 
+# ── AMZ-1: amazon.de ─────────────────────────────────────────────────────────
+#
+# De ce extractor custom si nu fluxul generic: pe cele 9 PDP-uri masurate la AMZ-0
+# exista ZERO blocuri `application/ld+json`. Nu „unele n-au", ci niciunul — deci
+# `method: "jsonld"` n-ar avea ce parsa, iar genericul ar ridica `no_product_data`.
+#
+# Identitatea sursei e ASIN-ul din URL, si asta e o masuratoare, nu o preferinta:
+# `link[rel=canonical]` sare pe ALT ASIN pe 3 din 9 pagini (B00PY3EYQO ->
+# B07J3MHDFC, B0CYTFB73V -> B0DQQY6R34, si inca una) — parintele de varianta. Daca
+# am urma canonicalul, doua produse distincte ar colapsa pe acelasi rand. In schimb
+# `input#ASIN` a fost egal cu ASIN-ul din URL pe 9 din 9.
+_AMZ_ASIN_RE = re.compile(r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})(?![A-Z0-9])")
+
+# LIMBA e pinuita pe germana, si nu din cochetarie. Masurat la verificarea AMZ-1:
+# cu antetele implicite ale extractorului (`ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7`,
+# fara germana) amazon.de serveste pagina in ENGLEZA — si odata cu ea ALT format de
+# pret: „€35.56" (€ in fata, PUNCT zecimal) in loc de „35,56 €". Doua formate care
+# difera prin rolul punctului sunt exact tipul de ambiguitate in care un parser
+# gresit citeste 1.234,56 ca 1.23. Cerand `de-DE`, formatul devine determinist.
+_AMZ_HEADERS = dict(_HEADERS, **{"Accept-Language": "de-DE,de;q=0.9,en;q=0.5"})
+
+# Ambele forme MASURATE, nu „ce s-ar putea intampla": germana (comma zecimala, €
+# sufix) si engleza (punct zecimal, € prefix). Parsarea ramane STRICTA — ca la
+# intersport/powerup/elefant — fiindca `_parse_price_any` e permisiv prin design si
+# ar transforma un text corupt intr-un numar plauzibil, ascunzand exact momentul in
+# care pagina se schimba. Aici acoperim doua formate cunoscute, nu orice text.
+_AMZ_PRET_RE_DE = re.compile(r"^(?:€\s*)?(\d{1,3}(?:\.\d{3})*|\d+),(\d{2})\s*€?$")
+_AMZ_PRET_RE_EN = re.compile(r"^(?:€\s*)?(\d{1,3}(?:,\d{3})*|\d+)\.(\d{2})\s*€?$")
+
+# Vanzatori de marfa returnata/second: buy box-ul poate fi o oferta folosita chiar
+# cand pagina arata ca una noua. Masurat la AMZ-0 pe B015WGDX6E si B0FP2S1MNB:
+# `#merchant-info` = „Verkauf durch Amazon Retourenkauf und Versand durch Amazon".
+_AMZ_MARCI_FOLOSIT = ("retourenkauf", "gebraucht", "warehouse", "used", "renewed")
+
+
+def _amz_asin_din_url(url: str) -> str | None:
+    """ASIN-ul din URL. Acopera /dp/, /gp/product/, /gp/aw/d/, cu sau fara /-/en/."""
+    potrivire = _AMZ_ASIN_RE.search(url or "")
+    return potrivire.group(1) if potrivire else None
+
+
+def _amz_parse_pret(text) -> float | None:
+    """Pretul din `.a-offscreen`, in oricare din cele DOUA formate masurate."""
+    if not isinstance(text, str):
+        return None
+    curat = re.sub(r"\s+", "", text.replace("\xa0", "")).strip()
+    for tipar, separator_mii in ((_AMZ_PRET_RE_DE, "."), (_AMZ_PRET_RE_EN, ",")):
+        potrivire = tipar.match(curat)
+        if potrivire is None:
+            continue
+        intreg = potrivire.group(1).replace(separator_mii, "")
+        try:
+            return float(f"{intreg}.{potrivire.group(2)}")
+        except ValueError:
+            return None
+    return None
+
+
+def _amz_prima_nevida(soup, *selectori) -> str | None:
+    """Prima potrivire NEVIDA, nu prima potrivire — si nu e o subtilitate.
+
+    Masurat la AMZ-0: sub `.priceToPay` PRIMUL `.a-offscreen` e un span de spatiu,
+    iar pretul sta in al doilea. Cu `select_one` intreg lantul de selectori cade in
+    gol pe o pagina care CHIAR poarta pretul (PS5 B08H93ZRK9: `.priceToPay` =
+    „537,55 €", selectorul cerut = "").
+
+    Textul literal `null` se trateaza ca LIPSA: pe 2 din 9 PDP-uri sablonul lasa
+    sirul „null" in nodul de pret taiat, iar un parser care l-ar accepta ar propaga
+    o valoare inventata.
+    """
+    for selector in selectori:
+        for nod in soup.select(selector):
+            text = _clean_text(nod.get_text(" ", strip=True))
+            if text and text.lower() != "null":
+                return text
+    return None
+
+
+def _extract_amazon_de(url: str) -> dict:
+    """amazon.de — axa L. Sesiunea o rezolva poarta (AMZ-1 C1), aici doar parsam."""
+    asin = _amz_asin_din_url(url)
+    if not asin:
+        raise ProductExtractionError(
+            "no_product_data",
+            f"URL amazon.de fara ASIN recunoscut: {(url or '')[:120]}")
+
+    # Cerem FORMA CANONICA, nu URL-ul lipit de user: fara `ref=`, fara `th=`, fara
+    # parametri de sesiune. Tot ea se si stocheaza (vezi `canonical_url` mai jos).
+    url_canonic = f"https://www.amazon.de/dp/{asin}"
+    html = _fetch_text_guarded(url_canonic, headers=_AMZ_HEADERS)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # `input#ASIN` e martorul paginii despre ce produs a servit. Diferenta inseamna
+    # ca Amazon a livrat alta varianta decat cea ceruta — v1 nu rezolva variante,
+    # deci esuam curat in loc sa urmarim tacut alt produs.
+    nod_asin = soup.select_one("input#ASIN[value]")
+    asin_servit = (nod_asin.get("value") or "").strip() if nod_asin is not None else None
+    if asin_servit and asin_servit != asin:
+        # Import LOCAL, ca la `_fetch_text_guarded`: modulul asta nu capata dependente
+        # de servicii la nivel de fisier. Fara importul asta, `log_manager` ar fi un
+        # NameError inghitit de `except Exception` de mai jos — adica WARN-ul s-ar
+        # pierde TACUT, exact tiparul pe care AMZ-1a l-a gasit la 0.3.
+        from app.services.log_manager import log_manager
+        try:
+            log_manager.emit(
+                "catalog", "WARN",
+                f"amazon.de: ASIN cerut {asin} dar pagina a servit {asin_servit} "
+                f"(varianta) — extractie oprita")
+        except Exception:                                          # noqa: BLE001
+            pass
+        raise ProductExtractionError(
+            "no_product_data",
+            f"amazon.de a servit alt ASIN ({asin_servit}) decat cel cerut ({asin})")
+
+    name = _amz_prima_nevida(soup, "#productTitle")
+
+    pret_text = _amz_prima_nevida(
+        soup,
+        "#corePrice_feature_div .a-price .a-offscreen",
+        "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
+        "#apex_desktop .a-price .a-offscreen",
+    )
+    price = _amz_parse_pret(pret_text)
+
+    if not name:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina amazon.de fara #productTitle: {asin}")
+    if price is None:
+        raise ProductExtractionError(
+            "no_product_data", f"Pagina amazon.de fara pret citibil: {asin}")
+    if price <= 0:
+        raise ProductExtractionError(
+            "invalid_price", f"Pret invalid ({price!r}) la '{name[:60]}'")
+
+    # Referinta taiata e NESIGURA pe acest magazin si se accepta doar cand chiar
+    # spune ceva: masurat la AMZ-0, `basisPrice` poate fi EGAL cu pretul platit
+    # (118,92 € = 118,92 €) desi `.savingsPercentage` anunta −7%. O referinta egala
+    # sau mai mica ar produce o „reducere" de 0% sau negativa.
+    referinta = _amz_parse_pret(_amz_prima_nevida(
+        soup, "#corePriceDisplay_desktop_feature_div .basisPrice .a-offscreen"))
+    if referinta is not None and referinta <= price:
+        referinta = None
+
+    # Cuvintele-cheie in AMBELE limbi: chiar cu `Accept-Language: de-DE` cerut,
+    # verificarea live a aratat ca pagina poate veni in engleza („In stock"), deci
+    # o ramura doar-germana ar raporta „stoc necunoscut" pe o pagina care spune clar.
+    disponibil = _amz_prima_nevida(soup, "#availability span")
+    in_stock = None
+    if disponibil:
+        jos = disponibil.lower()
+        if any(m in jos for m in ("auf lager", "nur noch", "in stock", "only ")):
+            in_stock = True
+        elif any(m in jos for m in ("nicht verfügbar", "nicht verfugbar",
+                                    "currently unavailable", "out of stock")):
+            in_stock = False
+
+    vanzator = _amz_prima_nevida(
+        soup,
+        "#sellerProfileTriggerId",
+        "#merchant-info",
+        "#merchantInfoFeature_feature_div",
+        ".offer-display-feature-text-message",
+    )
+    conditie = None
+    if vanzator:
+        jos = vanzator.lower()
+        conditie = "used" if any(m in jos for m in _AMZ_MARCI_FOLOSIT) else "new"
+
+    imagine = None
+    nod_img = soup.select_one("#landingImage")
+    if nod_img is not None:
+        imagine = (_clean_text(nod_img.get("data-old-hires"))
+                   or _clean_text(nod_img.get("src")))
+
+    return {
+        "name": name,
+        "price": price,
+        # Moneda din COD: pagina scrie „€" langa pret, dar magazinul e amazon.de si
+        # preturile vin cu TVA RO prin geolocatie (AMZ-0) — EUR e proprietatea
+        # magazinului, nu a paginii.
+        "currency": "EUR",
+        "in_stock": in_stock,
+        "is_aggregate": False,
+        "variants": None,
+        "image_url": imagine,
+        # ATENTIE: NU `_canonical_url(soup, url)`. `link[rel=canonical]` al paginii
+        # sare pe parintele de varianta (alt ASIN) pe 3 din 9 pagini masurate, iar
+        # routerul stocheaza exact valoarea asta. Intoarcem forma canonica pe ASIN,
+        # ca doua lipiri ale aceluiasi produs cu `ref=` diferit sa dea acelasi rand.
+        "canonical_url": url_canonic,
+        "domain": _domain_of(url),
+        "method": "amazon_de_custom",
+        "override_applied": False,
+        # AMZ-1: `Product` NU are coloane pentru astea (verificat la PASUL 0.6), deci
+        # NU se persista in runda asta — sunt disponibile apelantului si intra in UI
+        # abia la AMZ-2, cand se decide unde stau. Buy box-ul poate fi o oferta
+        # folosita chiar pe o pagina care arata ca una noua, deci informatia e
+        # necesara inainte de a compara preturi.
+        "seller": vanzator,
+        "condition": conditie,
+        "reference_price": referinta,
+    }
+
+
 CUSTOM_EXTRACTORS: dict[str, callable] = {
+    "amazon.de": _extract_amazon_de,
     "asos.com": _extract_asos,
     "cardmarket.com": _extract_cardmarket,
     "elefant.ro": _extract_elefant,
