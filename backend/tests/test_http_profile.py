@@ -7,6 +7,7 @@ valida ca profilul chiar trece de WAF-uri; validarea aia se face live cu
 scripts/test_scrapers.py (rulata inainte si dupa schimbare).
 """
 import pathlib
+import re
 
 import pytest
 
@@ -32,15 +33,31 @@ _COMMON_MODULES = [
 _PROFIL_PROPRIU_PERMIS = {
     # Vorbeste cu MODEMUL, nu cu un site anti-bot — amprenta nu conteaza acolo.
     "services/network/rotator.py",
-    # Vinted (cookie de sesiune + DataDome) si extractorul retail: profil propriu,
-    # neschimbat, fiindca nu pot fi validate live aici (Vinted cere cookie, iar
-    # scraper_service are override-uri deliberate per magazin, vezi comentariul lui).
+    # Vinted: cookie de sesiune + DataDome, deci nu poate fi validat live de aici.
     "services/radar/vinted_html.py",
     "services/radar/vinted_catalog_service.py",
-    "services/scraper_service.py",
     # Sursa centrala: docstring-ul ei explica de ce s-au scos profilele vechi.
     "utils/http_profile.py",
 }
+
+# IMP-2 — `services/scraper_service.py` NU mai e pe lista de mai sus.
+#
+# Motivul cu care intrase era „nu poate fi validata live aici", nu „profilul vechi
+# e necesar": IMP-1 a lasat poarta retail pe `chrome131` fiindca la momentul acela
+# nu exista o masuratoare pe magazine. IMP-2 a facut-o — 73 de domenii validate
+# prin poarta plus cele 5 scrapere de cautare care cheama curl direct — si a gasit
+# 3 DEBLOCARI pe profilul centralizat (altex.ro, mediagalaxy.ro, vexio.ro, toate
+# 2/2 blocate pe cel vechi si 2/2 OK pe cel nou) contra unei singure regresii,
+# `sivasdescalzo.com`, intermitenta (2/4) si pinuita in registru. Exceptia s-a
+# stins odata cu motivul ei.
+#
+# Ce ramane permis, si DOAR atat: literalul unui profil vechi ca VALOARE a cheii
+# `impersonate` din registru — adica exact forma prin care un domeniu masurat sta
+# pinuit pe un profil anterior. Nu se pune `shop_registry.py` pe lista alba,
+# fiindca asta ar permite orice profil hardcodat oriunde in registru, inclusiv in
+# prosa din `notes`. Tiparul e ingust prin constructie:
+_OVERRIDE_MASURAT_IN_REGISTRU = re.compile(
+    r'"impersonate"\s*:\s*"(?:chrome110|chrome131)"')
 
 _APP = pathlib.Path(__file__).resolve().parent.parent / "app"
 
@@ -81,16 +98,42 @@ def test_modulele_comune_iau_profilul_din_sursa_centrala(modul):
 
 def test_niciun_profil_hardcodat_vechi_in_app():
     """Grep-test: profilele vechi nu mai au voie sa apara in cod, in afara fisierelor
-    din `_PROFIL_PROPRIU_PERMIS` — care sunt exceptii DOCUMENTATE, nu scapari."""
+    din `_PROFIL_PROPRIU_PERMIS` — care sunt exceptii DOCUMENTATE, nu scapari.
+
+    IMP-2 a scos poarta retail de pe lista si a inlocuit-o cu o exceptie de TIPAR:
+    `"impersonate": "<profil vechi>"` (override masurat, per domeniu, in registru).
+    Restul aparitiilor raman interzise oriunde — inclusiv in acelasi fisier.
+    """
     ramase = []
     for p in _APP.rglob("*.py"):
         rel = p.relative_to(_APP).as_posix()
         if rel in _PROFIL_PROPRIU_PERMIS:
             continue
-        text = p.read_text(encoding="utf-8")
+        text = _OVERRIDE_MASURAT_IN_REGISTRU.sub("", p.read_text(encoding="utf-8"))
         if "chrome110" in text or "chrome131" in text:
             ramase.append(rel)
     assert ramase == [], f"profil vechi hardcodat in: {ramase}"
+
+
+def test_exceptia_de_override_e_INGUSTA():
+    """Garda gardei: exceptia acopera DOAR valoarea cheii `impersonate`.
+
+    Fara testul asta, cineva ar putea largi regexul (sau ar putea crede ca e larg)
+    si un `_IMPERSONATE = "chrome131"` re-hardcodat ar trece neobservat — exact
+    scaparea pe care IMP-2 a reparat-o.
+    """
+    permis = '"impersonate": "chrome131"'
+    assert _OVERRIDE_MASURAT_IN_REGISTRU.sub("", permis) == ""
+
+    for interzis in (
+        '_IMPERSONATE = "chrome131"',
+        'impersonate="chrome131"',            # apel, nu cheie de registru
+        '"notes": "ramane pe chrome131"',     # prosa, nu configuratie
+        "'impersonate': 'chrome131'",         # ghilimele simple: nu e forma din registru
+        '"impersonate": "chrome146"',         # profil care nu e vechi -> nimic de iertat
+    ):
+        ramas = _OVERRIDE_MASURAT_IN_REGISTRU.sub("", interzis)
+        assert ramas == interzis, f"exceptia a inghitit ceva ce nu trebuia: {interzis}"
 
 
 @pytest.mark.parametrize("modul", _COMMON_MODULES)

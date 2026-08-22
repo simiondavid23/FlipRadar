@@ -1159,7 +1159,18 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "no_product_data e comportamentul CORECT acolo, nu un bug. "
                  "Marimile stau doar in RSC, nu in ld+json (hasVariant lipseste). "
                  "Axa D cere o runda RSC separata in valul D — pagina de promotii "
-                 "e o aterizare, nu o listare — vezi docs/catalog_domain_log.md",
+                 "e o aterizare, nu o listare — vezi docs/catalog_domain_log.md. "
+                 "IMP-2: pica pe profilul centralizat (2026-08-22, BLOCKED), deci "
+                 "ramane pinuit pe profilul anterior — vezi cheia `impersonate`. "
+                 "Masurat INTERMITENT, nu determinist: pe profilul centralizat 2 din "
+                 "4 cereri au iesit BLOCKED, pe cel anterior 0 din 4. Singurul "
+                 "domeniu din 73 cu regresie, si singurul motiv pentru care exista "
+                 "override-ul de mai jos.",
+        # IMP-2: vezi nota. Pinuit pe profilul anterior fiindca acolo masuratoarea e
+        # curata (4/4 OK), nu fiindca profilul nou ar fi gresit in general — pe
+        # celelalte 72 de domenii e egal sau mai bun (3 deblocari). De re-masurat
+        # la urmatorul bump de profil; daca devine stabil, override-ul iese.
+        "impersonate": "chrome131",
     },
     "tezyo.ro": {
         "label": "Tezyo",

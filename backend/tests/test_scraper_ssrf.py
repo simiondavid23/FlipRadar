@@ -15,6 +15,9 @@ from app.services.scraper_service import (
     _is_allowed_shop_url,
     fetch_ean_from_url,
 )
+# IMP-2: default-ul poartei se asereaza prin SIMBOL, nu prin literal. Vezi nota de
+# la test_impersonate_for_alege_treapta_domeniului.
+from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 
 class _FakeResponse:
@@ -288,20 +291,32 @@ def test_domeniu_absent_din_ambele_multimi_ramane_respins(monkeypatch):
     ("https://www.flanco.ro/produs.html", "firefox135"),
     # Sufix inselator: NU primeste amprenta domeniului pe care il imita — altfel
     # un atacator si-ar alege singur clientul cu care iese backend-ul pe retea.
-    ("https://evil-43einhalb.com.attacker.com/x", "chrome131"),
-    ("https://43einhalb.com.attacker.com/x", "chrome131"),
+    ("https://evil-43einhalb.com.attacker.com/x", DEFAULT_IMPERSONATE),
+    ("https://43einhalb.com.attacker.com/x", DEFAULT_IMPERSONATE),
     # Domeniu fara override -> default-ul global.
-    ("https://www.emag.ro/x", "chrome131"),
-    ("https://altex.ro/cpd/ABC/", "chrome131"),
+    ("https://www.emag.ro/x", DEFAULT_IMPERSONATE),
+    ("https://altex.ro/cpd/ABC/", DEFAULT_IMPERSONATE),
     # URL neparsabil -> fail-safe pe default (hostname gol, respectiv urlparse care
     # arunca pe IPv6 invalid).
-    ("not a url", "chrome131"),
-    ("", "chrome131"),
-    ("http://[::1", "chrome131"),
+    ("not a url", DEFAULT_IMPERSONATE),
+    ("", DEFAULT_IMPERSONATE),
+    ("http://[::1", DEFAULT_IMPERSONATE),
 ])
 def test_impersonate_for_alege_treapta_domeniului(url, asteptat):
-    """Treptele sunt scrise LITERAL, nu prin _IMPERSONATE: daca cineva schimba
-    default-ul global, testul pica si obliga la o decizie constienta."""
+    """Treptele CU override raman literale; default-ul se asereaza prin SIMBOL.
+
+    IMP-2 a schimbat ce pazeste testul. Inainte, default-ul era scris literal
+    („chrome131") ca sa oblige la o decizie constienta pe orice schimbare de profil.
+    Dar exact asta a produs situatia pe care IMP-2 a reparat-o: poarta retail a
+    ramas pe un profil din februarie 2023 fara ca nimeni sa observe, fiindca nimic
+    nu lega default-ul poartei de sursa centralizata — testul doar il fotografia.
+
+    Acum garda e mai tare, nu mai slaba: default-ul poartei trebuie sa FIE
+    `DEFAULT_IMPERSONATE` din `app/utils/http_profile.py`. O deviere (cineva
+    re-hardcodeaza o versiune in scraper_service) pica testul, indiferent CE
+    versiune ar pune. Alegerea profilului ramane o decizie constienta — dar se ia
+    intr-un singur loc, in http_profile, unde e si documentata.
+    """
     assert _impersonate_for(url) == asteptat
 
 
@@ -334,12 +349,12 @@ def test_poarta_guarded_pastreaza_default_ul_pentru_restul(monkeypatch):
 
     _fetch_shop_url_guarded("https://www.emag.ro/x", headers={}, timeout=5)
 
-    assert calls == [("https://www.emag.ro/x", "chrome131")]
+    assert calls == [("https://www.emag.ro/x", DEFAULT_IMPERSONATE)]
 
 
 def test_impersonate_rezolvat_per_hop(monkeypatch):
     """Un redirect intre domenii trebuie sa plece cu amprenta TINTEI, nu a sursei:
-    altfel hop-ul catre 43einhalb ar cere pagina cu chrome131 si ar lua 403.
+    altfel hop-ul catre 43einhalb ar cere pagina cu default-ul si ar lua 403.
 
     Ambele domenii sunt in allow-list-ul real (emag.ro prin scrapere, 43einhalb.com
     prin VALIDATED_DOMAINS), deci aranjamentul nu indoaie nimic din productie.
@@ -355,6 +370,6 @@ def test_impersonate_rezolvat_per_hop(monkeypatch):
 
     assert response.status_code == 200
     assert calls == [
-        ("https://www.emag.ro/x", "chrome131"),
+        ("https://www.emag.ro/x", DEFAULT_IMPERSONATE),
         (tinta, "firefox135"),
     ]

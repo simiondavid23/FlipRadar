@@ -69,7 +69,10 @@ _PCGARAGE_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-_IMPERSONATE = "chrome131"
+# IMP-2: profilul implicit vine din sursa centralizata (IMP-1), nu dintr-o
+# versiune fixa care imbatraneste tacut. Per domeniu se poate forta alt profil
+# prin cheia `impersonate` din registru (vezi _impersonate_for).
+from app.utils.http_profile import DEFAULT_IMPERSONATE as _IMPERSONATE  # noqa: E402
 
 # Amprenta TLS/HTTP2 per domeniu, pentru magazinele pe care default-ul nu le
 # deschide. Cheia e domeniul de baza; rezolvarea trece prin _impersonate_for,
@@ -1131,7 +1134,7 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
 
     Amprenta de impersonate se rezolva PER HOP, ca un redirect intre domenii sa
     plece cu amprenta TINTEI, nu a sursei — altfel un redirect catre 43einhalb.com
-    ar cere pagina cu chrome131 si ar lua 403, exact ce evita override-ul.
+    ar cere pagina cu profilul implicit si ar lua 403, exact ce evita override-ul.
     """
     # RATE-1: menajarea domeniului se face INAINTE de primul hop, o data pe fetch.
     _asteapta_intervalul(url)

@@ -171,6 +171,11 @@ def test_harta_de_impersonate_e_pinuita():
         "notino.ro": "firefox135",       # LOT4
         "elefant.ro": "chrome",          # ELF-2 — 403 Cloudflare pe implicit, 200 pe chrome
         "cyberport.at": "chrome",        # G2B-2 — challenge Cloudflare pe implicit, 200 pe chrome
+        # IMP-2 — 0/4 blocat pe chrome131 vs 2/4 pe chrome146: INTERMITENT, nu
+        # determinist. Singurul domeniu din 73 care a regresat la alinierea
+        # poartei pe profilul centralizat. De RE-MASURAT la urmatorul profil:
+        # daca intre timp devine stabil, override-ul iese.
+        "sivasdescalzo.com": "chrome131",
     }
 
     # Si harta chiar ajunge la fetch: rezolvarea per-URL a productiei o onoreaza,
