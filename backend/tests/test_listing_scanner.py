@@ -650,11 +650,13 @@ def test_listing_domains_exact_cele_din_registru():
     """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2) +
     buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404) +
     intersport.ro (LST-2) + regatuljocurilor.ro (LST-3a) + modivo.ro (LST-3c) —
-    ultimele trei intrate fara nicio linie de scanner."""
+    toate trei intrate fara nicio linie de scanner — plus toolnation.nl (runda 4a),
+    PRIMUL pe calea de stare, care a cerut punctul de plug."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
                                  "bergfreunde.eu", "tezyo.ro", "powerup.ro",
                                  "buzzsneakers.ro", "intersport.ro",
-                                 "regatuljocurilor.ro", "modivo.ro"}
+                                 "regatuljocurilor.ro", "modivo.ro",
+                                 "toolnation.nl"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -667,13 +669,38 @@ def test_descriptorul_e_copie_nu_referinta():
 
 
 def test_fiecare_descriptor_are_cheile_obligatorii():
+    """VAL D runda 4a — contractul are acum DOUA cai, si exact una per descriptor.
+
+    Cheile comune raman comune. Peste ele, un descriptor descrie ori o listare in
+    DOM (selectori CSS: `card` + `price_parse`), ori una in STARE
+    (`state_extractor`). Regula e SAU-EXCLUSIV, nu „macar una": un descriptor cu
+    ambele ar fi ambiguu — plugul din `extrage_carduri` ar prefera tacut starea si
+    selectorii ar deveni cod mort care pare viu.
+    """
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
     for domeniu in listing_domains():
         d = listing_descriptor(domeniu)
         for cheie in ("url", "page_url_template", "max_pages", "currency",
-                      "card", "price_parse", "reference_kind"):
+                      "reference_kind"):
             assert d.get(cheie), f"{domeniu} nu are `{cheie}`"
         assert d["reference_kind"] in {"prp", "min30", "nemarcat"}
         assert "{n}" in d["page_url_template"]
+
+        pe_stare = bool(d.get("state_extractor"))
+        pe_css = bool(d.get("card"))
+        assert pe_stare != pe_css, (
+            f"{domeniu}: exact una din `card` / `state_extractor`, nu ambele si nu "
+            f"niciuna")
+        if pe_stare:
+            assert d["state_extractor"] in LISTING_STATE_EXTRACTORS, (
+                f"{domeniu}: `state_extractor` necunoscut in registru")
+            for interzisa in ("card", "link", "title", "price_text", "price_attr",
+                              "compare_text", "compare_attr", "price_parse"):
+                assert interzisa not in d, (
+                    f"{domeniu}: `{interzisa}` n-are sens pe calea de stare")
+        else:
+            assert d.get("price_parse"), f"{domeniu} nu are `price_parse`"
 
 
 # ── 8. DEAL-2b — pragul separat al lui R1 + inchiderea pe calificare ─────────
@@ -1032,3 +1059,75 @@ def test_modivo_paginarea_din_registru_reproduce_url_ul_masurat():
     assert "itm_source" not in descriptor["page_url_template"]
     assert descriptor["currency"] == "RON"
     assert descriptor["reference_kind"] == "min30"
+
+
+# ── VAL D runda 4a — punctul de plug al extractoarelor de stare ──────────────
+def test_state_extractor_preia_locul_selectorilor_css(monkeypatch):
+    """T-arh: cand descriptorul declara `state_extractor`, bucla de scan NU mai
+    atinge selectorii CSS — deleaga extractorului inregistrat.
+
+    Asertia e pe APEL, cu un extractor fals inregistrat in registru: daca plugul
+    s-ar face altundeva (sau deloc), `chemat` ramane gol si testul cade."""
+    from app.services import listing_state_extractors as lse
+
+    chemat = {}
+
+    def fals(html, descriptor):
+        chemat["html"] = html
+        chemat["descriptor"] = descriptor
+        return [{"url": "https://x.ro/p/1", "external_id": "lst:fals",
+                 "handle": "/p/1", "title": "T", "price": 1.0, "compare_at": None}]
+
+    monkeypatch.setitem(lse.LISTING_STATE_EXTRACTORS, "_fals_de_test", fals)
+
+    descriptor = {"state_extractor": "_fals_de_test", "currency": "RON",
+                  # selectori DELIBERAT imposibili: daca ar fi folositi, ies 0 carduri
+                  "card": "nu.exista", "link": "nu.exista", "price_text": "nu.exista"}
+    carduri = extrage_carduri("<html>marcaj</html>", descriptor, "x.ro")
+
+    assert chemat["html"] == "<html>marcaj</html>", "extractorul primeste HTML-ul brut"
+    assert chemat["descriptor"] is descriptor, "si descriptorul, pentru campurile lui"
+    assert len(carduri) == 1 and carduri[0]["external_id"] == "lst:fals"
+
+
+class _RegistruExploziv(dict):
+    """Dict care refuza orice citire — dovedeste ca nici macar nu e consultat."""
+
+    def __getitem__(self, cheie):                # pragma: no cover
+        raise AssertionError(f"registrul de stare consultat pentru {cheie!r}")
+
+    def __contains__(self, cheie):               # pragma: no cover
+        raise AssertionError(f"registrul de stare consultat pentru {cheie!r}")
+
+
+def test_fara_state_extractor_calea_css_e_neatinsa(monkeypatch):
+    """Reversul: un descriptor FARA cheia noua nu trebuie sa treaca nici macar pe
+    langa registrul de stare. Daca cineva inverseaza conditia, testul cade."""
+    from app.services import listing_state_extractors as lse
+
+    monkeypatch.setattr(lse, "LISTING_STATE_EXTRACTORS", _RegistruExploziv())
+
+    carduri = extrage_carduri(_fixture("otter.ro"), listing_descriptor("otter.ro"),
+                              "otter.ro")
+    assert len(carduri) == 3, "otter iese exact ca inainte, pe selectori"
+
+
+@pytest.mark.parametrize("domeniu,asteptat", [
+    ("otter.ro", 3), ("caseking.de", 3), ("noriel.ro", 3), ("bergfreunde.eu", 3),
+    ("tezyo.ro", 3), ("powerup.ro", 3), ("buzzsneakers.ro", 3),
+    ("intersport.ro", 30), ("regatuljocurilor.ro", 20), ("modivo.ro", 73),
+])
+def test_regresie_toate_fixture_urile_pe_calea_css(domeniu, asteptat):
+    """T-regresie: dupa adaugarea plugului, FIECARE fixture existent trebuie sa dea
+    exact aceleasi carduri ca inainte. Predictia e ZERO diferente — niciunul dintre
+    cele 10 descriptoare nu declara `state_extractor`, deci niciunul nu intra pe
+    ramura noua. Numerele de mai jos sunt cele masurate INAINTE de runda 4a."""
+    descriptor = listing_descriptor(domeniu)
+    assert "state_extractor" not in descriptor
+
+    carduri = extrage_carduri(_fixture(domeniu), descriptor, domeniu)
+
+    assert len(carduri) == asteptat
+    assert all(set(c) == {"url", "external_id", "handle", "title", "price",
+                          "compare_at"} for c in carduri)
+    assert all(c["price"] > 0 for c in carduri)

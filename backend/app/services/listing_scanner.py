@@ -221,7 +221,20 @@ def _in_stoc(card, descriptor) -> bool:
 
 def extrage_carduri(html: str, descriptor: dict, domain: str) -> list[dict]:
     """Parse one listing page into card dicts. Public: the tests drive it directly
-    on fragments cut from the real LST-1 dumps."""
+    on fragments cut from the real LST-1 dumps.
+
+    VAL D runda 4a — punctul de plug al familiei „listare-din-stare": daca
+    descriptorul declara `state_extractor`, datele NU sunt in DOM si nu exista
+    selector CSS de scris, deci parsarea se deleaga extractorului inregistrat, care
+    intoarce EXACT aceeasi forma de card. Restul functiei ramane calea CSS,
+    neatinsa. Importul e amanat aici fiindca modulul de extractoare are nevoie de
+    `_external_id` de mai sus — la nivel de modul ar fi ciclu.
+    """
+    nume_extractor = descriptor.get("state_extractor")
+    if nume_extractor:
+        from app.services import listing_state_extractors as _lse
+        return _lse.LISTING_STATE_EXTRACTORS[nume_extractor](html, descriptor)
+
     soup = BeautifulSoup(html or "", "html.parser")
     iesire = []
     for card in soup.select(descriptor["card"]):

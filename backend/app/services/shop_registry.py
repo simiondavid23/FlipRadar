@@ -1036,6 +1036,47 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "poarta 24 de noduri Product COMPLETE in ld+json — primul candidat "
                  "pentru un mod ldjson-listing al scannerului, unde o singura cerere da "
                  "toate produsele gata parsate — vezi docs/catalog_domain_log.md",
+        # DEAL-2 / VAL D runda 4a — PRIMUL descriptor de listare pe STARE, nu pe
+        # selectori CSS. Datele listarii nu sunt in DOM: pretul nu apare deloc in
+        # textul vizibil (vezi `notes`), deci `card`/`link`/`price_text` n-au ce
+        # descrie. De aici cheia `state_extractor`, care deleaga parsarea unui
+        # extractor inregistrat in `listing_state_extractors.py`.
+        #
+        # Masurat pe DOUA pagini — p1 la G2F-1/G2F-2 (`dumps_g2f/`) si p2 la LST-4
+        # (`dumps_lst4/`): 24 de `Product` pe fiecare, cu ACELEASI noua chei pe
+        # 24/24 si o singura `Offer` cu opt chei pe 24/24, iar `p1 ∩ p2 = 0` —
+        # starea chiar traieste pe paginare, nu re-randeaza prima pagina.
+        # Paginarea: `<link rel="next" href=".../aanbiedingen.html?p=2" />` pe p1 si
+        # `?p=3` pe p2; totalul, verbatim din toolbar: „1 - 24 van 819" pe p1 si
+        # „25 - 48 van 818" pe p2 (a driftat cu unul in cinci zile).
+        "listing": {
+            "url": "https://www.toolnation.nl/aanbiedingen.html",
+            "page_url_template": "https://www.toolnation.nl/aanbiedingen.html?p={n}",
+            # DERIVAT, nu citat: `class="page last"` arata `?p=35`, iar 35 x 24 = 840
+            # acopera cele 818-819 produse anuntate. 45 e aia plus marja, conventia
+            # otter.
+            "max_pages": 45,
+            # Din STARE, incrucisat: `priceCurrency: "EUR"` pe 24/24 pe ambele pagini.
+            "currency": "EUR",
+            "state_extractor": "toolnation_ldjson",
+            # NEMARCAT, si mai tare decat de obicei: in ld+json nu exista NICIO cheie
+            # de referinta (`highPrice`/`listPrice`/`was`), masurat pe ambele pagini.
+            # Consecinta e de regim, nu cosmetica: `compare_at` iese None pe tot, deci
+            # R1 nu poate porni NICIODATA aici si dealurile vin exclusiv din minimul
+            # istoric (R2) — acelasi caz ca buzzsneakers.
+            "reference_kind": "nemarcat",
+            #
+            # Doua campuri din stare ramin DELIBERAT necitite:
+            #  * stocul — `availability` e `InStock` pe 24/24 pe AMBELE pagini, ceea ce
+            #    nu se poate deosebi de o constanta de sablon. Capcana e dovedita pe
+            #    vivre (`ldjson_availability: "untrusted"`), unde PDP-urile emiteau
+            #    `OutOfStock` pe produse pe care listarea proprie le dadea in stoc.
+            #    Cat timp e nedecis, nu se declara stoc deloc.
+            #  * `description` — IDENTIC pe toate cele 24 („Sale % bij Toolnation.
+            #    Ontdek alle producten binnen deze categorie."), deci text de
+            #    categorie, componenta partajata. Titlul vine din `name`, distinct
+            #    24/24.
+        },
     },
     "direct-running.com": {
         "label": "Direct Running",
