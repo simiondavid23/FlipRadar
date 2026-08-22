@@ -649,10 +649,12 @@ def test_plafonul_de_productie_este_zece():
 def test_listing_domains_exact_cele_din_registru():
     """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2) +
     buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404) +
-    intersport.ro (LST-2, intrat fara nicio linie de scanner)."""
+    intersport.ro (LST-2) + regatuljocurilor.ro (LST-3) — ultimele doua intrate
+    fara nicio linie de scanner."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
                                  "bergfreunde.eu", "tezyo.ro", "powerup.ro",
-                                 "buzzsneakers.ro", "intersport.ro"}
+                                 "buzzsneakers.ro", "intersport.ro",
+                                 "regatuljocurilor.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -776,3 +778,124 @@ def test_inchiderea_pe_calificare_nu_atinge_starea(scan):
     for d in _deals():
         assert d.ended_at is not None
         assert d.state == "ignorat", "inchiderea nu rescrie starea userului"
+
+
+# ── LST-3 — regatuljocurilor.ro (PrestaShop `prices-drop`) ───────────────────
+def test_regatuljocurilor_grila_scopata_taie_caruselul():
+    """LST-3: motivul pentru care `card` e SCOPAT pe `#js-product-list`.
+
+    Fixture-ul pastreaza pagina cu patologia ei: doua blocuri de bara laterala
+    („Produse noi") cu 9 `.product-item` in total, fiecare cu `.price` propriu, si
+    ele apar INAINTEA grilei in sursa reala (offset 42974 vs 908892). Un selector
+    nescopat le-ar prinde primele si ar amesteca recomandari in listarea de
+    reduceri — a doua aparitie a capcanei pe domeniul asta, dupa cea de pe PDP
+    consemnata in `notes`.
+
+    Cele doua numere de mai jos sunt masurate pe `dumps_lst3/RJ2_listare_p1.html`.
+    """
+    from bs4 import BeautifulSoup
+
+    fixture = _fixture("regatuljocurilor.ro")
+    soup = BeautifulSoup(fixture, "html.parser")
+
+    assert len(soup.select("#js-product-list .js-product-miniature")) == 20
+    assert len(soup.select(".product-item")) == 9, \
+        "caruselul e in fixture DELIBERAT — fara el testul n-ar dovedi nimic"
+    assert not soup.select("#js-product-list .product-item"), \
+        "caruselul e in AFARA grilei, deci scoparea singura il taie"
+
+    carduri = extrage_carduri(fixture, listing_descriptor("regatuljocurilor.ro"),
+                              "regatuljocurilor.ro")
+    assert len(carduri) == 20, "descriptorul real vede doar grila"
+
+
+def test_regatuljocurilor_valori_masurate_pe_primul_card():
+    """Titlu / pret / referinta taiata, exact cum au fost masurate la LST-3.
+
+    Pretul poarta NBSP intre suma si moneda („291,60\xa0RON"), forma pe care
+    `_pret_eu_comma` o digera deja — e chiar cazul noriel din docstringul lui.
+    Testul o pinuieste aici fiindca e primul domeniu cu NBSP *si* cu „RON" scris
+    in litere langa suma.
+    """
+    carduri = extrage_carduri(_fixture("regatuljocurilor.ro"),
+                              listing_descriptor("regatuljocurilor.ro"),
+                              "regatuljocurilor.ro")
+
+    primul = carduri[0]
+    assert primul["title"] == "1989: Dawn of Freedom (2020 English Second Edition)"
+    assert primul["price"] == 291.60
+    assert primul["compare_at"] == 324.00
+    assert primul["url"] == ("https://regatuljocurilor.ro/ro/acasa/"
+                             "1989-dawn-of-freedom-2020-english-second-edition")
+    assert all(c["price"] > 0 for c in carduri)
+
+
+def test_regatuljocurilor_nbsp_trece_prin_eu_comma():
+    """Forma verbatim din dump, izolata de restul cardului: daca parserul pierde
+    vreodata tratarea NBSP-ului, testul asta cade primul si spune de ce."""
+    assert _pret_eu_comma("291,60\xa0RON") == 291.60
+    assert _pret_eu_comma("324,00\xa0RON") == 324.00
+
+
+def test_regatuljocurilor_ramura_pret_plin_e_nemasurata_dar_nu_crapa():
+    """LST-3, A3: pe AMBELE pagini masurate toate cele 20+20 de carduri au si
+    `.price` si `.regular-price` — o pagina `prices-drop` nu serveste, prin
+    definitie, carduri la pret plin. Ramura e deci NEMASURATA live.
+
+    Ce se poate totusi dovedi offline e CONTRACTUL: cu un selector de compare care
+    nu exista pe niciun card, `_pret_of` intoarce None (nodul lipsa iese pe
+    `select_one`, fara exceptie) si cardul ramane valid cu pretul lui — nu se sare
+    si nu crapa. Asta face ca absenta lui `.regular-price` sa fie sigura daca apare.
+    """
+    fixture = _fixture("regatuljocurilor.ro")
+    descriptor = listing_descriptor("regatuljocurilor.ro")
+    assert all(c["compare_at"] is not None
+               for c in extrage_carduri(fixture, descriptor, "regatuljocurilor.ro")), \
+        "linia de baza: 20/20 au referinta taiata"
+
+    fara_compare = dict(descriptor)
+    fara_compare["compare_text"] = ".nu-exista-pe-niciun-card"
+    carduri = extrage_carduri(fixture, fara_compare, "regatuljocurilor.ro")
+
+    assert len(carduri) == 20, "cardul supravietuieste fara referinta taiata"
+    assert all(c["compare_at"] is None for c in carduri)
+    assert all(c["price"] > 0 for c in carduri)
+
+
+def test_regatuljocurilor_descriptorul_nu_declara_stoc_nici_insigna():
+    """Doua absente DELIBERATE din descriptor, ca sa nu para omisiuni.
+
+    (1) Fara `stock_attr`: listarea chiar contine epuizate („Nu este momentan in
+        stoc"), dar semnalul e TEXT, iar schema n-are decat varianta pe atribut.
+    (2) Fara ancorare pe `.discount-percentage`: insigna LIPSESTE pe carduri care
+        au totusi `.regular-price` (masurat pe cardul 4), deci „e redus?" nu se
+        poate citi de pe ea.
+    """
+    descriptor = listing_descriptor("regatuljocurilor.ro")
+    assert "stock_attr" not in descriptor
+    assert "stock_text" not in descriptor
+    assert ".discount-percentage" not in str(descriptor)
+
+    fixture = _fixture("regatuljocurilor.ro")
+    assert "Nu este momentan in stoc" in fixture, \
+        "epuizatele sunt in fixture: se ingereaza, inerte cat timp pretul e valid"
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(fixture, "html.parser")
+    carduri = soup.select("#js-product-list .js-product-miniature")
+    fara_insigna = [c for c in carduri
+                    if c.select_one(".regular-price") and not c.select_one(".discount-percentage")]
+    assert fara_insigna, "cardul 4 masurat la LST-3: redus, dar fara insigna"
+
+
+def test_regatuljocurilor_paginarea_din_registru_reproduce_url_ul_masurat():
+    """`rel=next` de pe p1 arata verbatim spre `?page=2` (LST-3), iar p1 si p2 sunt
+    disjuncte. Testul leaga template-ul din registru de URL-ul chiar masurat."""
+    descriptor = listing_descriptor("regatuljocurilor.ro")
+    assert descriptor["url"] == "https://regatuljocurilor.ro/ro/reduceri-de-pret"
+    assert (listing_scanner._pagina_url(descriptor, 2)
+            == "https://regatuljocurilor.ro/ro/reduceri-de-pret?page=2")
+    assert descriptor["currency"] == "RON"
+    assert descriptor["price_parse"] == "eu_comma"
+    assert descriptor["reference_kind"] == "nemarcat"

@@ -1582,6 +1582,67 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "(has-discount + raw_price); capcana caruselului comun — "
                  "regular-price identic pe pagini diferite e componenta "
                  "partajata, nu pretul paginii",
+        # DEAL-2 — masurat la LST-3 (dump-uri `scripts/diagnostics/dumps_lst3/`).
+        # PrestaShop: pagina de reduceri e controllerul standard `prices-drop`, iar
+        # `/outlet` — conventia incercata prima — da 404 prin `controller=404`.
+        # URL-ul canonic s-a obtinut din navigatia PROPRIE a paginii de 404, nu prin
+        # ghicit: `index.php?controller=prices-drop` redirectioneaza la
+        # `/ro/reduceri-de-pret` (200), iar `<body>` poarta clasa `page-prices-drop`.
+        # Total anuntat verbatim: „Sunt 269 produse", 20 pe pagina => 14 pagini reale.
+        # Paginarea e masurata pe ambele capete: `rel=next` pe p1 arata verbatim
+        # `https://regatuljocurilor.ro/ro/reduceri-de-pret?page=2`, iar p1 si p2 sunt
+        # DISJUNCTE (20 + 20, intersectie 0 pe `data-id-product`) — deci paginarea
+        # chiar serveste produse noi, nu re-randeaza aceeasi grila.
+        "listing": {
+            "url": "https://regatuljocurilor.ro/ro/reduceri-de-pret",
+            "page_url_template": "https://regatuljocurilor.ro/ro/reduceri-de-pret?page={n}",
+            # DERIVAT, nu citat: 14 pagini masurate plus marja, conventia otter.
+            "max_pages": 20,
+            # Din COD: langa suma scrie „RON", dar moneda nu se citeste din text.
+            "currency": "RON",
+            # Scoparea pe `#js-product-list` NU e decorativa: in afara grilei stau 9
+            # `.product-item` (carusel de recomandari), fiecare cu `.price` propriu.
+            # A doua plasa e chiar numele clasei — grila foloseste
+            # `.js-product-miniature`, caruselul `.product-item`, deci selectorul
+            # scopat da 20 si prinde ZERO carduri de carusel (verificat pe dump).
+            # Asta e a doua aparitie a capcanei pe domeniu, dupa cea din `notes`.
+            "card": "#js-product-list .js-product-miniature",
+            # Ancora de titlu e si ancora de produs; `a.product-thumbnail` din acelasi
+            # card duce la acelasi PDP, deci alegerea e indiferenta — o pastram pe cea
+            # care da si textul, ca `title` sa nu tinteasca alt nod decat `link`.
+            "link": "h3.product-title a",
+            "title": "h3.product-title a",
+            # Pe TEXT, nu pe atribut: cardul n-are nici `content=`, nici `data-*price*`
+            # (verificat pe toata grila). Forma e „291,60\xa0RON", cu NBSP intre suma
+            # si moneda — `_pret_eu_comma` il digera deja, e chiar cazul noriel pinuit
+            # in docstringul lui.
+            "price_text": ".price",
+            "compare_text": ".regular-price",
+            "price_parse": "eu_comma",
+            # Niciun label legal pe listare: „Omnibus", „30 de zile", „PRP" si „pret
+            # recomandat" apar de 0 ori in textul vizibil al ambelor pagini.
+            "reference_kind": "nemarcat",
+            # DOUA ramuri deliberat NEDECLARATE, ca sa nu para omisiuni:
+            #
+            # (1) Fara `stock_attr`. Listarea CHIAR contine produse epuizate — `.stock`
+            #     poarta „Nu este momentan in stoc" / „Ultimele produse in stoc" — dar
+            #     semnalul e TEXT, iar schema n-are decat varianta pe atribut. Fara
+            #     camp, `_in_stoc` intoarce True pe tot, deci epuizatele se ingereaza.
+            #     Sunt inerte cat timp pretul e valid: intra in memoria de preturi ca
+            #     orice card, si pot genera o alerta pentru ceva necumparabil. Se
+            #     rezolva cand schema capata `stock_text`, nu prin cod aici.
+            #
+            # (2) Fara ancorare pe `.discount-percentage`. Insigna e prezenta pe
+            #     majoritatea cardurilor dar LIPSESTE pe unele care AU totusi
+            #     `.regular-price` (masurat pe cardul 4 al dump-ului p1), deci „e
+            #     redus?" nu se poate citi de pe ea.
+            #
+            # RAMURA NEMASURATA, asumata: pe ambele pagini masurate toate cele 20+20
+            # de carduri au SI `.price` SI `.regular-price` — pagina de prices-drop
+            # nu serveste, prin definitie, carduri la pret plin. Daca vreodata apare
+            # unul, `_pret_of` intoarce None pe compare (nod absent -> `.get`-ul de la
+            # `select_one`, fara exceptie) si cardul ramane valid cu pretul lui.
+        },
     },
     "jucarii-vorbarete.ro": {
         "label": "Jucarii Vorbarete",
