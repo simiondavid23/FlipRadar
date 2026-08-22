@@ -155,3 +155,205 @@ def test_toolnation_descriptorul_nu_declara_stoc():
     produse = ldjson_product_list(_fixture("toolnation.nl"))
     disponibilitati = {o["availability"] for p in produse for o in p["offers"]}
     assert disponibilitati == {"https://schema.org/InStock"}
+
+
+# ── ro.vivre.eu — payload RSC (`vivre_rsc`) ─────────────────────────────────
+def test_vivre_24_carduri_din_rsc():
+    """Fixture-ul e dump-ul LST-2 real: 23 de bucati `self.__next_f.push` care se
+    CONCATENEAZA inainte de dezescapare — `initialData` cade la granita dintre ele,
+    deci o singura bucata nu s-ar putea parsa."""
+    carduri = extrage_carduri(_fixture("ro.vivre.eu"),
+                              listing_descriptor("ro.vivre.eu"), "ro.vivre.eu")
+
+    assert len(carduri) == 24
+    assert all(set(c) == {"url", "external_id", "handle", "title", "price",
+                          "compare_at"} for c in carduri)
+    primul = carduri[0]
+    assert primul["price"] == 352.87
+    assert primul["title"] == ("Birou pentru copii cu rafturi, dulap, sertar "
+                               "și scaun, alb")
+
+
+def test_vivre_compare_e_lowestPrice_nu_originalPrice():
+    """MIEZUL domeniului. `price` are DOUA campuri de referinta si unul e momeala:
+    `originalPrice` e 0 pe 19 din 24, in timp ce `lowestPrice` e populat pe 24/24
+    si strict peste pretul curent pe 24/24.
+
+    Pe item[0]: price 352.87, originalPrice 0, lowestPrice 415.15. Daca extractorul
+    ar lua `originalPrice`, cardul ar iesi cu compare_at 0 -> None si reducerea ar
+    disparea; pe cele 5 unde e nenul ar raporta o marja UMFLATA (masurat: 3586.99
+    fata de 1799.99 lowest, la un pret de 1151.99).
+    """
+    carduri = extrage_carduri(_fixture("ro.vivre.eu"),
+                              listing_descriptor("ro.vivre.eu"), "ro.vivre.eu")
+
+    assert carduri[0]["compare_at"] == 415.15, "lowestPrice"
+    assert carduri[0]["compare_at"] != 0, "NU originalPrice (0 pe item[0])"
+    assert all(c["compare_at"] is not None for c in carduri), "lowestPrice e pe 24/24"
+    assert all(c["compare_at"] > c["price"] for c in carduri)
+
+
+def test_vivre_linkul_construit_coincide_cu_DOM_ul():
+    """`/p-{id}/{slug}` nu e ghicit: fixture-ul pastreaza si cele 24 de ancore
+    randate de pagina, iar linkurile construite din stare le reproduc exact.
+    Ancorele poarta in plus `?ch_type=0&ch_id=products` — sufix de urmarire,
+    irelevant pentru `external_id`, care ia doar calea."""
+    from bs4 import BeautifulSoup
+
+    fixture = _fixture("ro.vivre.eu")
+    dom = {a["href"].split("?")[0]
+           for a in BeautifulSoup(fixture, "html.parser").select('a[href^="/p-"]')}
+    assert len(dom) == 24
+
+    carduri = extrage_carduri(fixture, listing_descriptor("ro.vivre.eu"),
+                              "ro.vivre.eu")
+
+    assert {c["handle"] for c in carduri} == dom
+    assert carduri[0]["url"].startswith("https://ro.vivre.eu/p-9056050/")
+
+
+def test_vivre_moneda_si_min30():
+    """`currency: RON` pe 24/24 in stare, si e singurul domeniu din familie cu
+    fereastra Omnibus scrisa EXPLICIT — i18n-ul din payload spune verbatim
+    „Cel mai mic pret in ultimele 30 de zile" (modivo o lasa implicita)."""
+    descriptor = listing_descriptor("ro.vivre.eu")
+    assert descriptor["currency"] == "RON"
+    assert descriptor["reference_kind"] == "min30"
+    assert "Cel mai mic pret in ultimele 30 de zile" in _fixture("ro.vivre.eu")
+
+
+# ── cellini.ro — array JS (`cellini_js`) ────────────────────────────────────
+def test_cellini_48_carduri_cu_pret_compus():
+    """Pretul e SPART in stare: `price` e intregul de lei si `decimalprice` e sirul
+    de bani. Se recompun, ca sa nu se piarda tacit banii — 14739 + "00" = 14739.00.
+    Referinta e `oldprice`, care e deja sir zecimal ("17340.00")."""
+    carduri = extrage_carduri(_fixture("cellini.ro"),
+                              listing_descriptor("cellini.ro"), "cellini.ro")
+
+    assert len(carduri) == 48
+    primul = carduri[0]
+    assert primul["price"] == 14739.00
+    assert primul["compare_at"] == 17340.00
+    assert all(c["compare_at"] is not None for c in carduri), "oldprice nenul 48/48"
+
+
+def test_cellini_titlul_vine_din_slug_fiindca_name_e_null():
+    """DECIZIE DE DESIGN, consemnata. `name` e `null` pe 48/48 in stare, iar
+    `metatitle`/`subtitle` sunt goale — starea NU are titlu.
+
+    Doua variante erau pe masa: (a) `code` (SKU-ul, „AD_CT18CO27927") — stabil dar
+    ilizibil in feed; (b) slug-ul din `url`, umanizat. S-a ales (b): cititorul
+    feedului trebuie sa vada numele produsului, nu un cod de inventar. Sufixul de
+    cod din slug se pastreaza (nu se ghiceste unde se termina numele), iar `.html`
+    se taie.
+
+    Titlul din DOM ar fi fost mai curat, dar l-ar fi legat de o a doua sursa; cand
+    schema va sti sa combine stare + DOM, se poate reconsidera.
+    """
+    carduri = extrage_carduri(_fixture("cellini.ro"),
+                              listing_descriptor("cellini.ro"), "cellini.ro")
+
+    assert carduri[0]["title"].startswith("Lant cu pandantiv maria granacci")
+    assert "-" not in carduri[0]["title"], "cratimele devin spatii"
+    assert not carduri[0]["title"].endswith(".html")
+    assert all(c["title"] for c in carduri), "niciun titlu gol pe 48/48"
+
+
+def test_cellini_linkul_e_calea_RADACINA_canonica():
+    """`url` din stare e un nume de fisier GOL, ancorat de `<base href=".../">` la
+    RADACINA. Sonda LST-4 (C6) a masurat ca forma-radacina raspunde 200 fara
+    redirect si e SELF-CANONICAL, in timp ce varianta `/bijuterii/filtre/<fisier>`
+    canonicalizeaza spre categorie. Deci radacina e calea corecta — si, fiindca
+    `external_id` e sha1 pe CALE, ea decide identitatea produsului."""
+    carduri = extrage_carduri(_fixture("cellini.ro"),
+                              listing_descriptor("cellini.ro"), "cellini.ro")
+
+    primul = carduri[0]
+    assert primul["url"] == ("https://www.cellini.ro/lant-cu-pandantiv-maria-"
+                             "granacci-cu-turmaline-si-diamante-din-aur-galben-"
+                             "de-18k-ad-ct18co27927.html")
+    assert "/bijuterii/filtre/" not in primul["url"]
+    assert primul["handle"].count("/") == 1, "cale de un singur segment, la radacina"
+
+
+# ── bonami.ro — __NEXT_DATA__ (`bonami_next`) ───────────────────────────────
+def test_bonami_48_carduri_din_toate_blocurile():
+    """`blocks` are SAPTE elemente si doar 4, 5 si 6 poarta `products` (16 fiecare).
+    Blocurile 0-3 sunt breadcrumbs / banner / carusel si trebuie sarite CURAT — un
+    extractor care ar lua doar primul bloc cu produse ar raporta 16 din 48."""
+    carduri = extrage_carduri(_fixture("bonami.ro"),
+                              listing_descriptor("bonami.ro"), "bonami.ro")
+
+    assert len(carduri) == 48, "toate cele trei blocuri, nu doar unul"
+    assert all(set(c) == {"url", "external_id", "handle", "title", "price",
+                          "compare_at"} for c in carduri)
+
+
+def test_bonami_pretul_vine_din_units_si_scale():
+    """Pretul e un obiect, nu un numar: `{"amount": {"scale": 2, "units": 57290}}`
+    = 572,90. Referinta e `retailPrice`, in aceeasi forma (67400 / 10^2 = 674,00).
+    Valoarea se incruciseaza cu ld+json-ul PDP-ului masurat pe axa L (`price` 572.9),
+    deci doua surse independente ale aceluiasi produs, de acord."""
+    carduri = extrage_carduri(_fixture("bonami.ro"),
+                              listing_descriptor("bonami.ro"), "bonami.ro")
+
+    primul = carduri[0]
+    assert primul["price"] == 572.90
+    assert primul["compare_at"] == 674.00
+    assert primul["title"] == "Covor Universal Moar Hakuna, 160 x 230 cm"
+    assert primul["url"] == ("https://www.bonami.ro/p/"
+                             "covor-universal-moar-hakuna-160-x-230-cm")
+
+
+def test_bonami_blocurile_fara_products_sunt_ignorate_curat():
+    """Garda ceruta explicit: blocurile fara cheia `products` nu trebuie sa ridice
+    exceptie si nici sa produca un card gol."""
+    import json as _json
+    import re as _re
+
+    fixture = _fixture("bonami.ro")
+    nd = _json.loads(_re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+                                fixture, _re.S).group(1))
+    blocuri = nd["props"]["pageProps"]["initialCataloguePageState"]["blocks"]
+    assert len(blocuri) == 7
+    assert sum(1 for b in blocuri if "products" not in b) == 4
+
+    carduri = extrage_carduri(fixture, listing_descriptor("bonami.ro"), "bonami.ro")
+    assert len(carduri) == 48
+    assert all(c["title"] and c["price"] > 0 for c in carduri)
+
+
+def test_bonami_e_pagina_unica_masurat():
+    """Zero paginare server-side: `nextPagePath` e None, nu exista `rel=next` si
+    nici href cu `?page=`; `productList` (magazinul de infinite-scroll) e GOL la
+    randare. De aici `max_pages: 1` si lipsa lui `page_url_template` — scannerul
+    nu-l atinge niciodata, fiindca `_pagina_url` intoarce `url` pentru pagina 1."""
+    from app.services import listing_scanner
+
+    descriptor = listing_descriptor("bonami.ro")
+    assert descriptor["max_pages"] == 1
+    assert "page_url_template" not in descriptor
+    assert listing_scanner._pagina_url(descriptor, 1) == descriptor["url"]
+
+
+# ── toate patru: contractul si filtrele ─────────────────────────────────────
+@pytest.mark.parametrize("domeniu,asteptat", [
+    ("ro.vivre.eu", 24),
+    ("cellini.ro", 48),
+    ("bonami.ro", 48),
+    ("toolnation.nl", 24),
+])
+def test_contractul_de_card_e_identic_pe_toate_extractoarele(domeniu, asteptat):
+    """Restul scannerului (memoria R2, `_evalueaza`, `Deal`) nu stie din ce sursa a
+    venit cardul, deci cele patru extractoare trebuie sa produca EXACT aceeasi
+    forma — si sa aplice aceleasi filtre ca pe calea CSS."""
+    carduri = extrage_carduri(_fixture(domeniu), listing_descriptor(domeniu), domeniu)
+
+    assert len(carduri) == asteptat
+    for c in carduri:
+        assert set(c) == {"url", "external_id", "handle", "title", "price",
+                          "compare_at"}
+        assert c["url"].startswith("https://")
+        assert isinstance(c["price"], float) and c["price"] > 0
+        assert c["external_id"].startswith("lst:")
+        assert c["compare_at"] is None or c["compare_at"] > 0

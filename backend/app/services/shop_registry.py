@@ -1173,6 +1173,38 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "Pretul de referinta NU e in ld+json (oferta are doar `price`), deci "
                  "reducerea nu se poate calcula din PDP. Zgomot de vitrina: pragul "
                  "partajat `40 Lei`. `og:type` e `website`, nu `product`.",
+        # DEAL-2 / VAL D runda 4b — listare pe STARE, din `__NEXT_DATA__`.
+        # Produsele stau in `initialCataloguePageState.blocks[*].products[]`, si
+        # accentul e pe STEA: `blocks` are sapte elemente, iar `products` apare pe
+        # TREI (indicii 4, 5, 6, cate 16 = 48). Celelalte patru sunt breadcrumbs,
+        # banner si carusel. Un extractor care ar lua primul bloc cu produse ar
+        # raporta 16 din 48, tacut.
+        #
+        # Am verificat si o pista care parea mai buna si a picat: acelasi state are
+        # un `productList` cu `totalProductsCount` / `nextPageToken` / `pageIndex`.
+        # E GOL server-side (`products: []`, `totalProductsCount: 0`) — e magazinul
+        # client-side de infinite-scroll, hidratat ulterior. `blocks[].products[]`
+        # ramane singura sursa randata.
+        "listing": {
+            "url": "https://www.bonami.ro/c/oferte-speciale-si-reduceri",
+            # PAGINA-UNICA, masurat: `nextPagePath` e None, zero `rel=next`, zero
+            # href cu `?page=`, iar `productList` e gol. Deci NU exista
+            # `page_url_template` — si nici nu e nevoie: cu `max_pages: 1` bucla
+            # ruleaza o singura tura, iar `_pagina_url` intoarce `url` pentru pagina
+            # 1 fara sa atinga vreodata template-ul. Cele 48 de produse sunt o
+            # selectie editoriala, nu catalogul de reduceri; infinite-scroll-ul
+            # client-side e NON-SCOP.
+            "max_pages": 1,
+            "currency": "RON",
+            "state_extractor": "bonami_next",
+            # `retailPrice` e pret de referinta comercial, fara eticheta legala pe
+            # pagina — nici „30 de zile", nici „PRP".
+            "reference_kind": "nemarcat",
+            # Linkul se CONSTRUIESTE `/p/<slug>`: DOM-ul listarii n-are NICIO ancora
+            # de produs (masurat: zero `a[href^="/p/"]`), grila fiind hidratata.
+            # Forma vine de pe axa L, unde a fost confirmata pe viu (200, fara
+            # redirect) — vezi `notes`.
+        },
     },
     "action.com": {
         "label": "Action",
@@ -1224,6 +1256,33 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "deci ld+json e SINGURA sursa server-side, iar moneda RON NU e "
                  "incrucisabila pe text: acceptata pe ld+json, 2/2 PDP-uri. "
                  "Listarea /products?discount=yes, 46.536 produse — val ULTERIOR.",
+        # DEAL-2 / VAL D runda 4b — listare pe STARE, din payload-ul RSC.
+        # URL-ul e forma CANONICA `?qf=discount`, cea pe care o genereaza chiar
+        # paginarea lor; sonda LST-4 a masurat ca `?discount=yes` (forma veche, din
+        # `notes`) si `?qf=discount` sunt ECHIVALENTE — acelasi total si aceleasi
+        # 24 de produse, intersectie 24/24 in aceeasi zi. Paginarea `&page={n}` e
+        # dovedita live: `meta.page` chiar devine 2, cu intersectie 0 fata de p1.
+        "listing": {
+            "url": "https://ro.vivre.eu/products?qf=discount",
+            "page_url_template": "https://ro.vivre.eu/products?qf=discount&page={n}",
+            # PLAFON DELIBERAT, nu plasa — singurul din registru asa, si merita spus
+            # de ce. `meta.total_pages` era 1.939 pe 18 august, 5.118 pe 21 si 5.201
+            # pe 23: catalogul a crescut cu ~78.000 de produse in cinci zile. O plasa
+            # „peste maxim" n-are ce sa acopere aici. Primele 50 de pagini (1.200 de
+            # produse, sortarea implicita a magazinului) sunt segmentul pe care
+            # feedul il urmareste zilnic; enumerarea completa a celor 124.819 e
+            # NON-SCOP, nu o limitare tehnica.
+            "max_pages": 50,
+            "currency": "RON",
+            "state_extractor": "vivre_rsc",
+            # Singurul domeniu din familie cu fereastra Omnibus scrisa EXPLICIT:
+            # i18n-ul din payload spune verbatim „Cel mai mic pret in ultimele 30 de
+            # zile", iar textul legal vorbeste de „perioada de 30 de zile anterioara
+            # aplicarii reducerii de pret". La modivo eticheta era doar „Cel mai mic
+            # pret", fara fereastra. Referinta citita e `lowestPrice` — vezi
+            # extractorul pentru de ce NU `originalPrice`.
+            "reference_kind": "min30",
+        },
     },
     "biciclop.eu": {
         "label": "Biciclop",
@@ -1279,6 +1338,51 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "Segment de lux: preturi masurate pana la 27.990 lei. Listarea "
                  "promo are 539 de produse si 179 de carduri pe pagina, cu "
                  "price+oldprice per card in stare — val ULTERIOR.",
+        # DEAL-2 / VAL D runda 4b — listare pe STARE, din `var products`.
+        # CORECTIE la `notes` de mai sus: „179 de carduri pe pagina" e GRESIT.
+        # Masurat la extractia R4 si reconfirmat la LST-4 pe un dump proaspat: sunt
+        # 48, consistent pe fiecare clasa de card din DOM si pe 48 de URL-uri
+        # distincte. Totalul 539 se confirma verbatim („Promotii (539)"), deci
+        # 539 / 48 = 12 pagini — si exact 12 e si pagina maxima linkata.
+        "listing": {
+            "url": "https://www.cellini.ro/bijuterii/filtre/promo-promotii",
+            # `/pag-{n}` in CALE, citit din `rel=next` verbatim. ATENTIE la forma:
+            # nu `/page-`, nu `?page=` — tiparul romanesc `pag` n-a fost prins de
+            # detectorul de paginare al sondei, l-a salvat `rel=next`.
+            "page_url_template": "https://www.cellini.ro/bijuterii/filtre/"
+                                 "promo-promotii/pag-{n}",
+            # 12 masurate + marja.
+            "max_pages": 16,
+            "currency": "RON",
+            "state_extractor": "cellini_js",
+            # Zero eticheta legala pe listare; `save_percent` din stare e doar
+            # procentul fata de `oldprice`, nu o referinta Omnibus.
+            "reference_kind": "nemarcat",
+            #
+            # DOUA consecinte de stiut, ambele masurate la LST-4:
+            #
+            # (1) `external_id` iese pe calea-RADACINA. `url` din stare e un nume de
+            #     fisier gol, ancorat de `<base href="https://www.cellini.ro/">`.
+            #     Sonda C6 a masurat ca forma-radacina raspunde 200 fara redirect si
+            #     e SELF-CANONICAL (og:url + ld+json `Product.url` la fel), in timp
+            #     ce `/bijuterii/filtre/<fisier>.html` canonicalizeaza spre
+            #     `/bijuterii` — categoria. Radacina e deci calea corecta.
+            #     Fiindca `external_id` e sha1 pe CALE, randurile vechi intrate prin
+            #     `refresh_diff` pe `/bijuterii/filtre/` vor avea ALT id. Divergenta
+            #     e ASUMATA si nu se migreaza: sunt cateva randuri de link manual,
+            #     iar o migrare ar rescrie identitati pe baza unei presupuneri
+            #     despre ce a vrut userul sa urmareasca.
+            #
+            # (2) Titlul vine din SLUG, nu din stare: `name` e `null` pe 48/48, iar
+            #     `metatitle`/`subtitle` sunt goale. Alternativa era `code` (SKU),
+            #     stabil dar ilizibil in feed. DOM-ul ar fi avut `.product-name`, dar
+            #     l-ar fi legat de o a doua sursa — se reconsidera cand schema va sti
+            #     sa combine stare + DOM.
+            #
+            # DOM-ul de pret e oricum nefolosibil: `.price-product` da
+            # „17.340 , 00 Lei (-15%) 14.739 , 00 Lei" — ambele preturi intr-un nod,
+            # cu spatii in jurul virgulei, deci un parser de text le-ar concatena.
+        },
     },
     "foto-erhardt.com": {
         "label": "Foto Erhardt",

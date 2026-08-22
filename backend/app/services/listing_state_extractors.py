@@ -1,4 +1,4 @@
-"""VAL D runda 4a — extractoare de listare pe STARE, nu pe selectori CSS.
+"""VAL D rundele 4a/4b — extractoare de listare pe STARE, nu pe selectori CSS.
 
 De ce exista fisierul asta. Scannerul de listari (`listing_scanner`) citeste o
 pagina de reduceri prin selectori CSS declarati in descriptor: `card`, `link`,
@@ -11,9 +11,12 @@ payload structurat — si acolo un selector CSS n-are ce descrie:
     cellini.ro      un array JS: `var products = [...]`
     ro.vivre.eu     payload RSC: initialData.items[]
 
-Runda asta aduce DOAR structura care le primeste plus primul extractor
-(toolnation). Helperii pentru `__NEXT_DATA__`, RSC si array JS nu se scriu aici
-pe speculatie — fiecare intra cu domeniul lui, pe dump-ul lui.
+Runda 4a a adus structura plus primul extractor (toolnation); 4b a inchis lotul
+cu celelalte trei. Fiecare helper de sursa — `ldjson_product_list`,
+`rsc_initial_data`, `js_array`, `next_data` — a intrat abia odata cu domeniul lui,
+pe dump-ul lui, niciunul pe speculatie. Sunt scrisi generic si refolosibili, dar
+masurati pe un singur magazin fiecare: al doilea consumator ii poate cere ajustari,
+si asta e normal, nu o regresie.
 
 CONTRACTUL, identic cu al caii CSS (`listing_scanner.extrage_carduri`): un
 extractor primeste `(html, descriptor)` si intoarce o lista de dicturi cu EXACT
@@ -132,9 +135,291 @@ def toolnation_ldjson(html: str, descriptor: dict) -> list[dict]:
     return iesire
 
 
+# ── infrastructura comuna celor trei surse de mai jos ───────────────────────
+def _baza(descriptor: dict) -> str:
+    """`https://<gazda>` derivat din URL-ul listarii.
+
+    Trei dintre extractoare construiesc linkul PDP din stare (slug sau id+slug) si
+    au deci nevoie de o gazda. O luam din `descriptor["url"]`, nu dintr-o constanta
+    in cod si nici din cheia de registru: cheia poate fi fara `www` acolo unde
+    magazinul serveste CU `www` (cellini), iar o constanta ar fi a doua sursa de
+    adevar, care se poate desincroniza tacit de descriptor.
+    """
+    p = urllib.parse.urlsplit(descriptor["url"])
+    return f"{p.scheme}://{p.netloc}"
+
+
+def _card(url: str, titlu: str, pret: float, compare) -> dict:
+    """Cardul normalizat, in forma EXACTA a caii CSS (`extrage_carduri`).
+
+    Aici traiesc si cele doua filtre pe care calea CSS le aplica dupa citire:
+    referinta <= 0 devine None (nu se raporteaza o reducere din nimic), iar
+    trunchierile de lungime sunt aceleasi — `handle` 255, `title` 500.
+    """
+    from app.services.listing_scanner import _external_id
+
+    if compare is not None and compare <= 0:
+        compare = None
+    return {
+        "url": url,
+        "external_id": _external_id(url),
+        "handle": urllib.parse.urlsplit(url).path[:255],
+        "title": (titlu or "").strip()[:500],
+        "price": pret,
+        "compare_at": compare,
+    }
+
+
+# ── ro.vivre.eu — payload RSC (`self.__next_f`) ─────────────────────────────
+def rsc_initial_data(html: str) -> dict | None:
+    """`initialData` din payload-ul RSC al unui Next.js modern, sau None.
+
+    Payload-ul e spart in bucati emise ca `self.__next_f.push([1,"..."])`, fiecare
+    un SIR JS escapat. Se decodeaza fiecare bucata cu `raw_decode` (nu cu un regex:
+    sirurile contin ghilimele escapate si `\\n`-uri) si abia apoi se CONCATENEAZA —
+    masurat pe vivre, `initialData` cade la granita dintre bucati, deci o parsare
+    bucata-cu-bucata l-ar rata. 23 de bucati pe dump-ul LST-2.
+    """
+    dec = json.JSONDecoder()
+    marca = "self.__next_f.push([1,"
+    bucati, poz = [], 0
+    while True:
+        i = (html or "").find(marca, poz)
+        if i < 0:
+            break
+        try:
+            j = html.index('"', i + len(marca) - 1)
+            valoare, capat = dec.raw_decode(html, j)
+            bucati.append(valoare)
+            poz = capat
+        except Exception:                                        # noqa: BLE001
+            poz = i + len(marca)          # bucata nedecodabila: se sare, nu se cade
+    payload = "".join(b for b in bucati if isinstance(b, str))
+    i = payload.find('"initialData"')
+    if i < 0:
+        return None
+    try:
+        obj, _ = dec.raw_decode(payload, payload.index("{", i + len('"initialData"')))
+    except Exception:                                            # noqa: BLE001
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def vivre_rsc(html: str, descriptor: dict) -> list[dict]:
+    """ro.vivre.eu — `/products?qf=discount`, listare din payload-ul RSC.
+
+    REFERINTA E `lowestPrice`, NU `originalPrice`. Obiectul `price` are amandoua, si
+    al doilea e o momeala: masurat pe dump-ul LST-2, `originalPrice` e **0 pe 19 din
+    24** de produse, in timp ce `lowestPrice` e populat pe 24/24 si strict peste
+    pretul curent pe 24/24. Pe cele cinci unde `originalPrice` e nenul, el e si mult
+    mai mare (3586,99 fata de 1799,99 `lowestPrice`, la un pret de 1151,99), deci
+    l-am fi raportat ca o marja umflata. `discountPercentage` din stare se
+    calculeaza tot fata de `lowestPrice`, ceea ce confirma alegerea.
+
+    `lowestPrice` e si Omnibus-ul: i18n-ul paginii il eticheteaza verbatim „Cel mai
+    mic pret in ultimele 30 de zile" — singurul domeniu din familie cu fereastra
+    scrisa explicit, de unde `reference_kind: min30`.
+
+    Linkul se CONSTRUIESTE `/p-{id}/{slug}` si e verificat: coincide cu cele 24 de
+    ancore randate de pagina (ele poarta in plus `?ch_type=0&ch_id=products`, sufix
+    de urmarire pe care nu-l reproducem — `external_id` ia oricum doar calea).
+
+    Stocul NU se citeste, desi starea are `stock` numeric si `flags.inStock`:
+    domeniul poarta deja `ldjson_availability: "untrusted"` fiindca PDP-urile lui
+    contrazic listarea proprie, iar aici `inStock` e True pe 24/24 — acelasi tipar
+    de constanta suspecta ca la toolnation.
+    """
+    date = rsc_initial_data(html)
+    if not date or not isinstance(date.get("items"), list):
+        return []
+    baza = _baza(descriptor)
+    iesire = []
+    for it in date["items"]:
+        if not isinstance(it, dict):
+            continue
+        pid, slug = it.get("id"), it.get("slug")
+        if not pid or not slug:
+            continue
+        p = it.get("price") or {}
+        pret = _pret_numeric(p.get("price"))
+        if pret is None or pret <= 0:
+            continue
+        iesire.append(_card(f"{baza}/p-{pid}/{slug}", it.get("name"), pret,
+                            _pret_numeric(p.get("lowestPrice"))))
+    return iesire
+
+
+# ── cellini.ro — array JS (`var products = [...]`) ──────────────────────────
+def js_array(html: str, nume_variabila: str) -> list | None:
+    """Array-ul JS atribuit lui `var <nume> = [...]`, taiat prin numarare de paranteze.
+
+    Nu cu regex: obiectele contin `[` si `]` in siruri (descrieri, JSON imbricat),
+    deci o potrivire lacoma sau lenesa ar taia gresit. Numararea porneste de la
+    prima paranteza dupa `=` si se opreste la inchiderea ei.
+    """
+    marca = f"var {nume_variabila} = "
+    if not html or marca not in html:
+        return None
+    i = html.index(marca) + len(marca)
+    adanc = 0
+    for k in range(i, len(html)):
+        if html[k] == "[":
+            adanc += 1
+        elif html[k] == "]":
+            adanc -= 1
+            if adanc == 0:
+                try:
+                    return json.loads(html[i:k + 1], strict=False)
+                except Exception:                                # noqa: BLE001
+                    return None
+    return None
+
+
+def _titlu_din_slug(fisier: str) -> str:
+    """Numele produsului din slug-ul fisierului: cratime -> spatii, `.html` taiat.
+
+    DECIZIE DE DESIGN (cellini): starea are `name: null` pe 48/48 si `metatitle` /
+    `subtitle` goale, deci nu exista titlu de citit. Alternativa era `code` (SKU-ul,
+    „AD_CT18CO27927") — stabil, dar in feed cititorul ar vedea un cod de inventar in
+    loc de un produs. Slug-ul e lizibil si vine din aceeasi sursa ca linkul.
+    Sufixul de cod din slug NU se taie: n-avem un criteriu masurat pentru unde se
+    termina numele, iar a ghici ar rupe titluri.
+    """
+    baza = re.sub(r"\.html?$", "", (fisier or "").strip())
+    return baza.replace("-", " ").strip().capitalize()
+
+
+def cellini_js(html: str, descriptor: dict) -> list[dict]:
+    """cellini.ro — `/bijuterii/filtre/promo-promotii`, listare din `var products`.
+
+    PRETUL E SPART IN DOUA in stare: `price` e intregul de lei (14739) si
+    `decimalprice` e sirul de bani ("00"). Se recompun, ca sa nu se piarda tacit
+    banii. Referinta, `oldprice`, e deja sir zecimal ("17340.00") si e nenula pe
+    48/48 — pagina e o listare de promotii, prin definitie.
+
+    DOM-ul NU e o alternativa: `.price-product` da „17.340 , 00 Lei (-15%) 14.739 ,
+    00 Lei" — ambele preturi intr-un nod, cu spatii in jurul virgulei, deci un parser
+    de text le-ar concatena in gunoi. Starea e sursa curata aici.
+
+    LINKUL: `url` din stare e un nume de fisier GOL, pe care `<base href=".../">` il
+    ancoreaza la RADACINA. Sonda LST-4 (C6) a masurat ca forma-radacina raspunde 200
+    fara redirect si e SELF-CANONICAL, in timp ce `/bijuterii/filtre/<fisier>`
+    canonicalizeaza spre categorie. Radacina e deci calea corecta — si, fiindca
+    `external_id` e sha1 pe CALE, ea decide identitatea produsului.
+    """
+    produse = js_array(html, "products")
+    if not produse:
+        return []
+    baza = _baza(descriptor)
+    iesire = []
+    for p in produse:
+        if not isinstance(p, dict):
+            continue
+        fisier = (p.get("url") or "").strip().lstrip("/")
+        if not fisier:
+            continue
+        intreg = _pret_numeric(p.get("price"))
+        if intreg is None:
+            continue
+        bani = str(p.get("decimalprice") or "0")[:2] or "0"
+        pret = _pret_numeric(f"{int(intreg)}.{bani.zfill(2)}")
+        if pret is None or pret <= 0:
+            continue
+        iesire.append(_card(f"{baza}/{fisier}", _titlu_din_slug(fisier), pret,
+                            _pret_numeric(p.get("oldprice"))))
+    return iesire
+
+
+# ── bonami.ro — `__NEXT_DATA__` ─────────────────────────────────────────────
+def next_data(html: str) -> dict | None:
+    """Obiectul `__NEXT_DATA__`, sau None. Un singur bloc, JSON curat."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html or "", re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1), strict=False)
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
+def _suma_units_scale(obiect) -> float | None:
+    """`{"amount": {"scale": 2, "units": 57290}}` -> 572.90.
+
+    Forma bonami: banii ca INTREG plus exponentul zecimal, ca sa nu existe erori de
+    virgula mobila in transport. `round` la final fiindca `units / 10**scale` poate
+    da 572.9000000000001 pe alte valori.
+    """
+    if not isinstance(obiect, dict):
+        return None
+    suma = obiect.get("amount")
+    if not isinstance(suma, dict):
+        return None
+    unitati, scara = suma.get("units"), suma.get("scale")
+    if not isinstance(unitati, (int, float)) or not isinstance(scara, int):
+        return None
+    return round(float(unitati) / (10 ** scara), 2)
+
+
+def bonami_next(html: str, descriptor: dict) -> list[dict]:
+    """bonami.ro — `/c/oferte-speciale-si-reduceri`, listare din `__NEXT_DATA__`.
+
+    Produsele stau in `initialCataloguePageState.blocks[*].products[]`, si accentul
+    e pe STEA: `blocks` are sapte elemente, iar `products` apare pe TREI dintre ele
+    (indicii 4, 5, 6, cate 16 = 48). Celelalte patru sunt breadcrumbs, banner si
+    carusel — se sar curat. Un extractor care ar lua primul bloc cu produse ar
+    raporta 16 din 48, tacut.
+
+    Pagina-UNICA, masurat: `nextPagePath` e None, nu exista `rel=next` si niciun
+    href cu `?page=`, iar `productList` (magazinul de infinite-scroll) e GOL la
+    randare — de unde `max_pages: 1` in registru.
+
+    Linkul se CONSTRUIESTE `/p/<slug>`: DOM-ul listarii n-are NICIO ancora de produs
+    (masurat: zero `a[href^="/p/"]`), fiindca grila e hidratata client-side. Forma
+    `/p/<slug>` vine de pe axa L, unde a fost confirmata pe viu (200, fara redirect).
+
+    `retailPrice` e referinta si e in aceeasi forma `units`/10^`scale` ca pretul
+    platit. Stocul (`availability.usableStock`, numeric!) NU se citeste: schema de
+    descriptor n-are camp de stoc pe stare, iar a-l inventa aici ar fi o conventie
+    per-domeniu nescrisa nicaieri.
+    """
+    date = next_data(html)
+    if not date:
+        return []
+    try:
+        blocuri = date["props"]["pageProps"]["initialCataloguePageState"]["blocks"]
+    except (KeyError, TypeError):
+        return []
+    if not isinstance(blocuri, list):
+        return []
+
+    baza = _baza(descriptor)
+    iesire = []
+    for bloc in blocuri:
+        if not isinstance(bloc, dict):
+            continue
+        produse = bloc.get("products")
+        if not isinstance(produse, list):
+            continue                      # breadcrumbs / banner / carusel: se sar
+        for p in produse:
+            if not isinstance(p, dict):
+                continue
+            slug = (p.get("slug") or "").strip()
+            if not slug:
+                continue
+            pret = _suma_units_scale(p.get("customerPrice"))
+            if pret is None or pret <= 0:
+                continue
+            iesire.append(_card(f"{baza}/p/{slug}", p.get("name"), pret,
+                                _suma_units_scale(p.get("retailPrice"))))
+    return iesire
+
+
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
 LISTING_STATE_EXTRACTORS = {
     "toolnation_ldjson": toolnation_ldjson,
+    "vivre_rsc": vivre_rsc,
+    "cellini_js": cellini_js,
+    "bonami_next": bonami_next,
 }

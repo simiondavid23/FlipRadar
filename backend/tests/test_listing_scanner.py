@@ -650,13 +650,15 @@ def test_listing_domains_exact_cele_din_registru():
     """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2) +
     buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404) +
     intersport.ro (LST-2) + regatuljocurilor.ro (LST-3a) + modivo.ro (LST-3c) —
-    toate trei intrate fara nicio linie de scanner — plus toolnation.nl (runda 4a),
-    PRIMUL pe calea de stare, care a cerut punctul de plug."""
+    toate trei intrate fara nicio linie de scanner — plus cele PATRU pe calea de
+    stare: toolnation.nl (4a, care a cerut punctul de plug) si ro.vivre.eu /
+    cellini.ro / bonami.ro (4b, intrate pe arhitectura deja existenta)."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
                                  "bergfreunde.eu", "tezyo.ro", "powerup.ro",
                                  "buzzsneakers.ro", "intersport.ro",
                                  "regatuljocurilor.ro", "modivo.ro",
-                                 "toolnation.nl"}
+                                 "toolnation.nl", "ro.vivre.eu", "cellini.ro",
+                                 "bonami.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -681,11 +683,22 @@ def test_fiecare_descriptor_are_cheile_obligatorii():
 
     for domeniu in listing_domains():
         d = listing_descriptor(domeniu)
-        for cheie in ("url", "page_url_template", "max_pages", "currency",
-                      "reference_kind"):
+        for cheie in ("url", "max_pages", "currency", "reference_kind"):
             assert d.get(cheie), f"{domeniu} nu are `{cheie}`"
         assert d["reference_kind"] in {"prp", "min30", "nemarcat"}
-        assert "{n}" in d["page_url_template"]
+
+        # `page_url_template` e obligatoriu EXACT cand scannerul chiar il citeste:
+        # `_pagina_url` intoarce `url` pentru pagina 1 si abia de la 2 in sus
+        # formateaza template-ul. Un domeniu masurat ca PAGINA-UNICA (bonami:
+        # `nextPagePath` None, zero `rel=next`, zero `?page=`) are `max_pages: 1`,
+        # deci bucla face o singura tura si template-ul n-ar fi citit niciodata —
+        # a-l cere ar insemna sa inventam un URL nemasurat doar ca sa treaca garda.
+        if d["max_pages"] > 1:
+            assert d.get("page_url_template"), f"{domeniu} nu are `page_url_template`"
+            assert "{n}" in d["page_url_template"]
+        else:
+            assert "page_url_template" not in d, (
+                f"{domeniu}: max_pages=1 dar declara un template care nu se citeste")
 
         pe_stare = bool(d.get("state_extractor"))
         pe_css = bool(d.get("card"))
