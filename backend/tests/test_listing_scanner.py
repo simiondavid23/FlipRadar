@@ -649,12 +649,12 @@ def test_plafonul_de_productie_este_zece():
 def test_listing_domains_exact_cele_din_registru():
     """Cei 4 piloti DEAL-2 + tezyo.ro (G1-2) + powerup.ro (G2A-2) +
     buzzsneakers.ro (SNK-2, intrat odata cu oprirea pe 404) +
-    intersport.ro (LST-2) + regatuljocurilor.ro (LST-3) — ultimele doua intrate
-    fara nicio linie de scanner."""
+    intersport.ro (LST-2) + regatuljocurilor.ro (LST-3a) + modivo.ro (LST-3c) —
+    ultimele trei intrate fara nicio linie de scanner."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
                                  "bergfreunde.eu", "tezyo.ro", "powerup.ro",
                                  "buzzsneakers.ro", "intersport.ro",
-                                 "regatuljocurilor.ro"}
+                                 "regatuljocurilor.ro", "modivo.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -899,3 +899,136 @@ def test_regatuljocurilor_paginarea_din_registru_reproduce_url_ul_masurat():
     assert descriptor["currency"] == "RON"
     assert descriptor["price_parse"] == "eu_comma"
     assert descriptor["reference_kind"] == "nemarcat"
+
+
+# ── LST-3c — modivo.ro (eobuwie / Nuxt, fateta `omnibus_discount`) ───────────
+def test_modivo_grila_intreaga_masurata_la_lst3b():
+    """LST-3b: pagina 1 a fatetei de reduceri, INTREAGA, 73 de carduri.
+
+    Ca la intersport, decupajul ar transforma in proxy chiar invariantele masurate:
+    73 pe pagina (cifra care inchide si totalul — `offerCount` 1490 / 73 ≈ 21 de
+    pagini, iar linkurile din DOM merg pana la `p=21`), referinta Omnibus pe 73/73,
+    si divergenta celor doua linii pe 32 din 73.
+    """
+    fixture = _fixture("modivo.ro")
+    carduri = extrage_carduri(fixture, listing_descriptor("modivo.ro"), "modivo.ro")
+
+    assert len(carduri) == 73
+    assert all(c["compare_at"] is not None for c in carduri), \
+        "referinta Omnibus e pe 73/73 — o fateta de reduceri n-are carduri la pret plin"
+    assert all(c["price"] > 0 for c in carduri)
+    assert all(c["compare_at"] > c["price"] for c in carduri), \
+        "ambele referinte sunt strict peste pretul curent — masurat pe 146/146 la LST-3b"
+
+    primul = carduri[0]
+    assert primul["title"] == "G-STAR Blugi · Bleumarin · Relaxed Fit"
+    assert primul["price"] == 659.90
+    assert primul["compare_at"] == 732.90
+
+
+def test_modivo_compare_ia_linia_a_doua_cel_mai_mic_pret():
+    """Miezul rundei: `.omnibus` are DOUA linii etichetate, iar alegerea schimba marja.
+
+    Pe cardul 13 al fixture-ului („Polo Ralph Lauren Pulover") ele DIVERG:
+        „Prețul inițial"   1.378,90 Lei
+        „Cel mai mic preț" 1.129,90 Lei      <- asta se ia
+    la un pret curent de 1.072,90 Lei. Daca descriptorul ar cadea pe prima linie,
+    `compare_at` ar fi 1378.9 si marja raportata ar fi umflata cu ~23 de puncte.
+    Divergenta e masurata pe 32 din 73 de carduri, deci nu e un caz izolat.
+    """
+    fixture = _fixture("modivo.ro")
+    carduri = extrage_carduri(fixture, listing_descriptor("modivo.ro"), "modivo.ro")
+
+    card = carduri[13]
+    assert card["title"] == "Polo Ralph Lauren Pulover · Alb · Slim Fit"
+    assert card["price"] == 1072.90
+    assert card["compare_at"] == 1129.90, "linia 2 = Cel mai mic pret"
+    assert card["compare_at"] != 1378.90, "NU linia 1 = Pretul initial"
+
+
+def test_modivo_linia_a_doua_chiar_poarta_eticheta_cel_mai_mic_pret():
+    """`:nth-child(2)` e POZITIONAL — eticheta e un nod-text, neselectabil CSS. Deci
+    pozitia se pinuieste pe TEXT, nu invers: daca platforma inverseaza liniile sau
+    materializeaza placeholderul Vue `<!-- -->` din `.omnibus`, testul asta cade
+    inaintea oricarui scan si spune exact unde s-a mutat referinta."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(_fixture("modivo.ro"), "html.parser")
+    carduri = soup.select(".product-card-small")
+    assert len(carduri) == 73
+
+    for card in carduri:
+        linii = card.select(".omnibus .line")
+        assert len(linii) == 2
+        assert "Prețul inițial" in linii[0].get_text(" ", strip=True)
+        assert "Cel mai mic preț" in linii[1].get_text(" ", strip=True)
+
+    divergente = [c for c in carduri
+                  if c.select(".omnibus .line")[0].select_one(".value").get_text(strip=True)
+                  != c.select(".omnibus .line")[1].select_one(".value").get_text(strip=True)]
+    assert len(divergente) == 32, \
+        "divergenta masurata la LST-3b — fara ea testul de mai sus n-ar dovedi nimic"
+
+
+def test_modivo_eu_comma_digera_separatorul_de_mii_si_nbsp():
+    """Doua forme masurate pe acelasi domeniu, in noduri DIFERITE: pretul platit are
+    separator de mii cu punct dar spatii normale („1.072,90 Lei", 15 din 73 de
+    carduri), iar referinta are si NBSP („1.129,90\xa0Lei"). Ambele prin acelasi
+    parser. Textul pretului include si eticheta sr-only „Prețul actual" — inofensiva
+    fiindca n-are nicio cifra."""
+    assert _pret_eu_comma("Prețul actual 1.072,90 Lei") == 1072.90
+    assert _pret_eu_comma("1.129,90\xa0Lei") == 1129.90
+    assert _pret_eu_comma("Prețul actual 659,90 Lei") == 659.90
+
+
+def test_modivo_ldjson_e_capcana_de_pret_nu_sursa():
+    """Singurul `Product` din ld+json e la nivel de CATEGORIE: `name: "Femei"` cu un
+    `AggregateOffer` `lowPrice: 55`. Citit ca pret de produs ar da 55 de lei pe orice
+    card — de aici `price_text` pe DOM, desi domeniul e `method: jsonld` pe axa L.
+    Blocurile sunt in fixture tocmai ca sa se vada capcana."""
+    import json as _json
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(_fixture("modivo.ro"), "html.parser")
+    blocuri = [_json.loads(s.string, strict=False)
+               for s in soup.select('script[type="application/ld+json"]')]
+    produse = [b for b in blocuri if b.get("@type") == "Product"]
+
+    assert len(produse) == 1, "un singur Product, si ala e categoria"
+    assert produse[0]["name"] == "Femei"
+    assert produse[0]["offers"]["@type"] == "AggregateOffer"
+    assert produse[0]["offers"]["lowPrice"] == 55
+    assert produse[0]["offers"]["offerCount"] == 1490, "singura sursa a totalului"
+
+    descriptor = listing_descriptor("modivo.ro")
+    assert "price_text" in descriptor and "price_attr" not in descriptor
+
+    colectie = [b for b in blocuri if b.get("@type") == "CollectionPage"][0]
+    primul = colectie["mainEntity"]["itemListElement"][0]["item"]["name"]
+    assert "Jeansy" in primul, "ItemList-ul e in poloneza netradusa — nici el nu e titlu"
+
+
+def test_modivo_price_wrapper_discount_nu_e_semnal_de_reducere():
+    """Clasa `discount` e pusa de componenta, nu de starea produsului: aici e pe
+    73/73, dar pe categoria masurata GRESIT la LST-3 era pe 70 din 72 de carduri cu
+    ZERO preturi taiate. Semnalul bun e prezenta blocului `.omnibus`."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(_fixture("modivo.ro"), "html.parser")
+    assert len(soup.select(".price-wrapper.discount")) == 73
+    assert len(soup.select(".product-card-small .omnibus")) == 73
+    assert ".price-wrapper" not in str(listing_descriptor("modivo.ro"))
+
+
+def test_modivo_paginarea_din_registru_reproduce_url_ul_masurat():
+    """Fateta canonica, FARA parametrii `itm_*` de atributie, si `?p={n}` — exact ce
+    a dat 200 la LST-3b pe ambele capete (`rel=next` pe p1, `rel=prev` pe p2)."""
+    descriptor = listing_descriptor("modivo.ro")
+    baza = "https://modivo.ro/c/femei/akcja:new_sale/omnibus_discount:~r-5-99"
+
+    assert descriptor["url"] == baza
+    assert listing_scanner._pagina_url(descriptor, 2) == baza + "?p=2"
+    assert "itm_source" not in descriptor["page_url_template"]
+    assert descriptor["currency"] == "RON"
+    assert descriptor["reference_kind"] == "min30"

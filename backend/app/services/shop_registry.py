@@ -254,6 +254,90 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "notes": "FASHION-1b",
+        # DEAL-2 — masurat la LST-3b (dump-uri `scripts/diagnostics/dumps_lst3b/`).
+        # Platforma eobuwie (Nuxt/Vue), aceeasi cu epantofi.ro — dovedit in dump-ul
+        # LST-3: `Go.MODIVO={type:"all"};Go.eobuwie={type:ni};Go.CCC={type:ni};...`
+        # si cheia de configurare `"roROEob","epantofi.ro","roROBrandEob"`.
+        #
+        # URL-ul NU e o conventie ghicita: `/outlet` e link in propriul nav dar da
+        # 404, iar fateta reala a fost harvestata verbatim din navigatia paginii de
+        # 404, sub ancora „Reduceri recente":
+        #   /c/femei/akcja:new_sale/omnibus_discount:~r-5-99?itm_source=ovm&...
+        # Parametrii `itm_*` (atributie de campanie) sunt taiati deliberat: intr-un
+        # descriptor intra fateta, nu attribution-ul cuiva.
+        #
+        # Totalul NU e in text vizibil — singura sursa e `offerCount` din ld+json
+        # (1490), acelasi nod care e capcana de PRET (vezi mai jos). 1490 / 73 pe
+        # pagina => 21 de pagini, iar linkurile din DOM merg pana la `p=21`.
+        "listing": {
+            "url": "https://modivo.ro/c/femei/akcja:new_sale/omnibus_discount:~r-5-99",
+            "page_url_template": "https://modivo.ro/c/femei/akcja:new_sale/"
+                                 "omnibus_discount:~r-5-99?p={n}",
+            # DERIVAT, nu citat: 21 de pagini masurate plus marja, conventia otter.
+            "max_pages": 25,
+            # Din COD: langa suma scrie „Lei", nu „RON".
+            "currency": "RON",
+            "card": ".product-card-small",
+            "link": "a.product-card-link",
+            # Cardul n-are un nod unic de nume: `div.title` e MARCA („G-STAR") si
+            # `div.description` e descrierea („Blugi · Bleumarin · Relaxed Fit").
+            # Parintele lor e un `div` FARA clasa cu exact acesti doi copii, deci se
+            # tinteste prin pozitie in `.product-details`, iar `_titlu_of` concateneaza:
+            # „G-STAR Blugi · Bleumarin · Relaxed Fit". `img[alt]` e mai bogat (are si
+            # codul de model) dar ar fi cerut un camp nou de schema — nu e nevoie.
+            "title": ".product-details > div:first-child",
+            # Textul include eticheta sr-only „Prețul actual", dar ea n-are NICIO
+            # cifra, deci `_pret_eu_comma` o curata odata cu „Lei". Formele masurate:
+            # „1.072,90 Lei" (separator de mii cu punct) pe 15 din 73 de carduri.
+            "price_text": ".price-container",
+            #
+            # (1) LINIA A DOUA, deliberat. Blocul `.omnibus` are DOUA linii etichetate
+            #     in romana: „Prețul inițial" (pret de lista) si „Cel mai mic preț"
+            #     (referinta Omnibus). Ele DIVERG pe 32 din 73 de carduri (p1) — de
+            #     exemplu initial 229,90 vs cel-mai-mic 190,90 la un pret curent de
+            #     171,90 — deci alegerea schimba marja raportata. Luam a doua, ca marja
+            #     sa fie cea onesta: lectia PRP de la nichiduta („marja reala e mai
+            #     mica decat sugereaza eticheta"). Verificat ca linia 2 CHIAR poarta
+            #     eticheta „Cel mai mic preț" pe 146/146 de carduri, pe ambele pagini —
+            #     testul o pinuieste pe TEXT, nu doar pe pozitie.
+            #     Ambele referinte sunt strict peste pretul curent pe 146/146, deci
+            #     niciuna n-ar produce o reducere <= 0.
+            #
+            # (2) `:nth-child(2)` e POZITIONAL, fiindca eticheta e un nod-text si nu
+            #     se poate selecta CSS. Riscul concret: `.omnibus` incepe cu un
+            #     `<!-- -->` (placeholder Vue). Comentariul nu e element, deci acum nu
+            #     deplaseaza nimic — dar daca devine element, linia 2 se muta. DACA
+            #     `compare_at` incepe sa iasa None in masa, AICI se cauta intai.
+            "compare_text": ".omnibus .line:nth-child(2) .value",
+            "price_parse": "eu_comma",
+            # Eticheta vizibila „Cel mai mic preț" + numele campurilor din stare
+            # (`omnibus_price`, `show_omnibus_price`) + fateta `omnibus_discount` din
+            # URL. ATENTIE: „30 de zile" apare O SINGURA DATA in toata sursa si e
+            # „30 de zile pentru retur" — politica de retur, NU fereastra de pret.
+            # Fereastra nu e scrisa vizibil nicaieri; verdictul se sprijina pe
+            # eticheta campului plus afisarea Omnibus-conforma cu doua linii.
+            "reference_kind": "min30",
+            #
+            # (3) ACOPERIRE PARTIALA, asumata (tiparul tezyo): fateta e per SECTIUNE,
+            #     iar aici intra doar `femei`. Nav-ul arata si
+            #     `/c/barbati/akcja:new_sale/omnibus_discount:~r-5-99` si
+            #     `/c/copii/...` — nemasurate. Se adauga cand domeniul capata mai
+            #     multe listari, extensia care asteapta si la powerup si la nichiduta.
+            #
+            # (4) `price-wrapper discount` NU e semnal de reducere. Pe fateta asta e pe
+            #     73/73 (toate chiar reduse), dar pe categoria masurata gresit la LST-3
+            #     era pe 70 din 72 de carduri cu ZERO preturi taiate — clasa e pusa de
+            #     componenta, nu de starea produsului. „E redus?" se citeste din
+            #     prezenta blocului `.omnibus`, nu din ea.
+            #
+            # CAPCANA de pret, pentru cine ar fi tentat de datele structurate: singurul
+            # `Product` din ld+json e la nivel de CATEGORIE — `name: "Femei"`, cu
+            # `AggregateOffer` `lowPrice: 55` / `highPrice: 2911` / `offerCount: 1490`.
+            # Citit ca pret de produs ar da 55 lei pe orice card. E buna doar la numarat.
+            # In plus `CollectionPage.mainEntity.ItemList` poarta numele in POLONEZA
+            # netradusa („Jeansy … Granatowy" acolo unde DOM-ul scrie „Blugi …
+            # Bleumarin"), deci nici el nu e sursa de titlu.
+        },
     },
 
     # ── FASHION-2 ─────────────────────────────────────────────────────────────
