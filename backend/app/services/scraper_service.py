@@ -13,7 +13,7 @@ from curl_cffi import requests as curl_requests
 from app.utils.category_mapper import infer_category_from_name
 from app.services.log_manager import log_manager
 from app.services.shop_registry import (
-    SHOP_REGISTRY, impersonate_overrides, overrides_option_map,
+    SHOP_REGISTRY, impersonate_overrides, option_map, overrides_option_map,
 )
 # AMZ-1a: base_scraper e FRUNZA (importa doar stdlib: os, random, enum, typing), deci
 # importul asta top-level nu poate inchide un ciclu — verificat la PASUL 0.3.
@@ -134,6 +134,114 @@ _PRAG_INTERSTITIU_DOMENIU: dict[str, int] = overrides_option_map("interstitial_m
 _MARKERI_WAF: tuple[str, ...] = ("awswafcookiedomainlist", "token.awswaf.com")
 
 
+# ── AMZ-1: cookie jar + bootstrap de sesiune, per domeniu ────────────────────
+#
+# Unele magazine nu servesc nimic unei sesiuni RECI. Masurat pe amazon.de
+# (AMZ-0/0c): primele 20 de cereri fara cookie-uri au fost blocate 20/20, pe patru
+# rute si cu trei mecanisme diferite. Ruta `glow` raspunde insa 200 pe aceeasi
+# sesiune rece si emite cookie-urile; dupa ele, 90/90 de cereri OK la 5-20 s.
+#
+# Mecanismul e OPT-IN prin registru: domeniile fara `cookie_jar` nu vad nicio
+# diferenta — nu li se trimite `cookies=`, nu se atinge discul, nu se ia lacatul.
+_COOKIE_JAR_DOMENIU: dict[str, str] = option_map("cookie_jar")
+_BOOTSTRAP_URL_DOMENIU: dict[str, str] = option_map("bootstrap_url")
+
+# Racire: cel mult UN bootstrap per jar la 10 minute, la nivel de PROCES. Fara ea,
+# un tick cu 20 de produse urmarite pe acelasi magazin ar declansa 20 de bootstrap-uri
+# — adica exact tiparul de trafic pe care incercam sa-l evitam.
+_RACIRE_BOOTSTRAP_S = 600
+
+_JARURI: dict[str, dict] = {}                 # nume jar -> {cookie: valoare}
+_JARURI_INCARCATE: set[str] = set()           # jar-uri citite deja de pe disc
+_ULTIMUL_BOOTSTRAP: dict[str, float] = {}     # nume jar -> ceas MONOTON
+# Reentrant: `_salveaza_jar` e chemat din interiorul sectiunii critice a fetch-ului.
+_LOCK_JAR = threading.RLock()
+
+# Bootstrap-ul se face printr-un apel RECURSIV la poarta (ca sa mosteneasca
+# allow-list, interval si clasificare). Fara steag, cererea de bootstrap ar vedea si
+# ea jar-ul gol si ar cere alt bootstrap, la infinit. Steagul e per FIR, nu global:
+# doua fire pe domenii diferite nu trebuie sa se blocheze reciproc.
+_local_bootstrap = threading.local()
+
+
+def _in_bootstrap() -> bool:
+    return getattr(_local_bootstrap, "activ", False)
+
+
+def _cale_jar(nume: str):
+    """`<DATA_DIR>/data/cookies_<nume>.json` — acelasi director cu sesiunea Facebook,
+    deci sub aceeasi regula `.gitignore` (`backend/data/`)."""
+    from app.config import DATA_DIR      # import local, ca la _default_facebook_session_path
+    director = DATA_DIR / "data"
+    director.mkdir(parents=True, exist_ok=True)
+    return director / f"cookies_{nume}.json"
+
+
+def _incarca_jar(nume: str) -> dict:
+    """Jar-ul, citit de pe disc o SINGURA data per proces. Niciodata None."""
+    with _LOCK_JAR:
+        if nume in _JARURI_INCARCATE:
+            return dict(_JARURI.get(nume) or {})
+        jar = {}
+        try:
+            cale = _cale_jar(nume)
+            if cale.is_file():
+                brut = json.loads(cale.read_text(encoding="utf-8"))
+                if isinstance(brut, dict):
+                    jar = {str(k): str(v) for k, v in brut.items()}
+        except Exception:                                       # noqa: BLE001
+            jar = {}      # un jar corupt nu trebuie sa rupa fetch-ul; se re-creeaza
+        _JARURI[nume] = jar
+        _JARURI_INCARCATE.add(nume)
+        return dict(jar)
+
+
+def _salveaza_jar(nume: str, jar: dict) -> bool:
+    """Persista DOAR daca s-a schimbat ceva. Intoarce True daca a scris pe disc.
+
+    Comparatia pe continut, nu pe „am primit un raspuns": Amazon retrimite aceleasi
+    cookie-uri la fiecare cerere, deci o scriere neconditionata ar insemna un write
+    de disc pe fiecare produs urmarit, la fiecare tick.
+    """
+    with _LOCK_JAR:
+        if _JARURI.get(nume) == jar:
+            return False
+        _JARURI[nume] = dict(jar)
+        _JARURI_INCARCATE.add(nume)
+        try:
+            _cale_jar(nume).write_text(
+                json.dumps(jar, indent=2, sort_keys=True), encoding="utf-8")
+            return True
+        except Exception:                                       # noqa: BLE001
+            return False   # disc plin / drepturi: mergem mai departe cu jar-ul din RAM
+
+
+def _goleste_jar(nume: str) -> None:
+    with _LOCK_JAR:
+        _JARURI[nume] = {}
+        _JARURI_INCARCATE.add(nume)
+        try:
+            cale = _cale_jar(nume)
+            if cale.is_file():
+                cale.unlink()
+        except Exception:                                       # noqa: BLE001
+            pass
+
+
+def _cookies_din_raspuns(response) -> dict:
+    """Cookie-urile emise de raspuns, ca dict nume->valoare. Tolerant la forma."""
+    out = {}
+    try:
+        for c in response.cookies.jar:
+            out[c.name] = c.value
+    except Exception:                                           # noqa: BLE001
+        try:
+            out = {str(k): str(v) for k, v in dict(response.cookies).items()}
+        except Exception:                                       # noqa: BLE001
+            out = {}
+    return out
+
+
 def _cheie_pe_domeniu(hostname: str, harta: dict):
     """Cheia din `harta` care acopera hostname-ul, cu GRANITA PE PUNCT.
 
@@ -169,6 +277,18 @@ def prag_interstitiu(domeniu: str) -> int:
     if cheie is None:
         return INTERSTITIAL_MAX_BYTES
     return int(_PRAG_INTERSTITIU_DOMENIU.get(cheie) or INTERSTITIAL_MAX_BYTES)
+
+
+def jar_pentru(url: str):
+    """Numele jar-ului domeniului, sau None daca domeniul nu cere sesiune."""
+    cheie = _cheie_pe_domeniu(_domeniu_din_url(url), _COOKIE_JAR_DOMENIU)
+    return _COOKIE_JAR_DOMENIU.get(cheie) if cheie else None
+
+
+def bootstrap_pentru(url: str):
+    """URL-ul care emite cookie-urile de sesiune pentru domeniu, sau None."""
+    cheie = _cheie_pe_domeniu(_domeniu_din_url(url), _BOOTSTRAP_URL_DOMENIU)
+    return _BOOTSTRAP_URL_DOMENIU.get(cheie) if cheie else None
 
 
 # Pagination safety caps (per-site) so a runaway query can't hammer a shop.
@@ -1032,8 +1152,11 @@ def _asteapta_intervalul(url: str) -> float:
         trecut = time.monotonic() - _ULTIMA_CERERE_PE_DOMENIU.get(cheie, float("-inf"))
         de_asteptat = interval - trecut
         if de_asteptat > 0:
+            # AMZ-1 (0.3): modulul e "catalog", nu "retail" — "retail" NU e in
+            # LogManager.MODULES, iar emit() remapeaza tacut orice modul necunoscut
+            # pe "radar". Liniile de retail ajungeau deci in jurnalul Radar.
             log_manager.emit(
-                "retail", "INFO",
+                "catalog", "INFO",
                 f"Interval minim {cheie}: astept {de_asteptat:.0f}s "
                 f"(minim {interval}s intre cereri)")
             time.sleep(de_asteptat)
@@ -1090,7 +1213,7 @@ def _clasifica_raspuns(url: str, response) -> Outcome:
             # FARA body in log: un interstitiu poate purta token-uri de sesiune, iar
             # jurnalul e vizibil in UI.
             log_manager.emit(
-                "retail", "WARN",
+                "catalog", "WARN",
                 f"retail fetch blocat: {domeniu} outcome={rezultat.value} "
                 f"status={status} bytes={len(body or '')}")
         except Exception:                                       # noqa: BLE001
@@ -1138,10 +1261,72 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
     """
     # RATE-1: menajarea domeniului se face INAINTE de primul hop, o data pe fetch.
     _asteapta_intervalul(url)
+
+    nume_jar = jar_pentru(url)
+    if nume_jar is None:
+        # Calea celorlalte 88 de magazine: identica cu cea de dinainte de AMZ-1.
+        raspuns, _ = _parcurge_hopuri(url, headers, timeout, max_hops, None, None)
+        return raspuns
+
+    jar = _incarca_jar(nume_jar)
+    url_bootstrap = bootstrap_pentru(url)
+
+    # (2) Jar lipsa/gol + bootstrap disponibil -> il facem INAINTE de cererea utila.
+    if not jar and url_bootstrap and not _in_bootstrap():
+        if _face_bootstrap(nume_jar, url, url_bootstrap, headers, timeout, "lipsa"):
+            # Bootstrap-ul a consumat el insusi o cerere catre domeniu, iar cererea
+            # utila vine imediat dupa. Fara asteptarea asta, cele doua ar pleca
+            # spate-in-spate si ar incalca exact `min_fetch_interval_s` al domeniului
+            # — pe amazon.de, 10s. `_asteapta_intervalul` de la intrarea in poarta
+            # s-a consumat INAINTEA bootstrap-ului, deci nu acopera cazul.
+            _asteapta_intervalul(url)
+            jar = _incarca_jar(nume_jar)
+
+    raspuns, rezultat = _parcurge_hopuri(url, headers, timeout, max_hops,
+                                         jar, nume_jar)
+
+    # (3) BLOCAT -> golim jar-ul, bootstrap O SINGURA data, cererea utila O SINGURA
+    # data. Fara bucla: daca si a doua oara e zid, raspundem None ca pana acum.
+    #
+    # DOAR pe `BLOCKED`, nu pe orice zid: `RATE_LIMITED` (429) inseamna „prea multe
+    # cereri", iar raspunsul la asta e mai PUTIN trafic, nu inca doua cereri si un
+    # jar aruncat. Sesiunea nu e vinovata acolo, deci nici nu se reface.
+    if (rezultat is Outcome.BLOCKED and url_bootstrap and not _in_bootstrap()):
+        _goleste_jar(nume_jar)
+        if _face_bootstrap(nume_jar, url, url_bootstrap, headers, timeout, "blocat"):
+            _asteapta_intervalul(url)     # a doua cerere utila isi asteapta randul
+            jar = _incarca_jar(nume_jar)
+            raspuns, _ = _parcurge_hopuri(url, headers, timeout, max_hops,
+                                          jar, nume_jar)
+    return raspuns
+
+
+def _parcurge_hopuri(url: str, headers: dict, timeout: int, max_hops: int,
+                     jar, nume_jar):
+    """Bucla de hop-uri. Intoarce (raspuns_sau_None, Outcome_sau_None).
+
+    Corpul e cel dinainte de AMZ-1, mutat aici neschimbat in afara cookie-urilor.
+
+    Al doilea element e OUTCOME-ul, nu un boolean: poarta trebuie sa deosebeasca
+    `BLOCKED` (sesiune respinsa -> bootstrap-ul are sens) de `RATE_LIMITED` (prea
+    multe cereri -> raspunsul corect e mai putin trafic, nu inca doua cereri). `None`
+    inseamna „nu s-a ajuns la clasificare": URL neautorizat, eroare de retea, redirect
+    fara Location, hop-uri epuizate. Valoarea de retur PUBLICA a portii ramane un
+    simplu response-sau-None.
+    """
     current_url = url
     for _hop in range(max_hops + 1):  # 1 request initial + max_hops redirecturi
         if not _is_allowed_shop_url(current_url):
-            return None
+            return None, None
+
+        # Cookie-urile se trimit DOAR pe hop-urile care apartin ACELUIASI jar.
+        # Un redirect intre domenii e legitim si allow-list-ul il permite, dar
+        # sesiunea unui magazin n-are ce cauta la altul: ar fi o scurgere de date
+        # de sesiune catre un tert. Simetric cu `_impersonate_for`, care se rezolva
+        # tot per hop, si din acelasi motiv.
+        jar_hop = jar_pentru(current_url) if nume_jar is not None else None
+        acelasi_jar = jar_hop is not None and jar_hop == nume_jar
+        kw = {"cookies": jar} if (acelasi_jar and jar) else {}
         try:
             response = curl_requests.get(
                 current_url,
@@ -1149,6 +1334,7 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
                 impersonate=_impersonate_for(current_url),
                 timeout=timeout,
                 allow_redirects=False,
+                **kw,
             )
         except Exception:
             # AMZ-1a, ramura de exceptie: in taxonomia din base_scraper o exceptie e
@@ -1156,18 +1342,68 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
             # de a privi orice altceva), iar TRANSIENT nu e zid. Deci comportamentul
             # ramane identic — None, fara WARN — si un apel `classify` aici ar fi un
             # no-op al carui rezultat s-ar arunca. Pinuit de test_08.
-            return None
+            return None, None
+
+        # Cookie-urile primite intra in jar INDIFERENT de clasificare (si un raspuns
+        # de bootstrap, si unul util pot emite — pe amazon.de pagina de produs adauga
+        # `session-token` si `sp-cdn` peste cele 6 de la glow), dar DOAR de pe
+        # hop-urile aceluiasi jar: altfel un redirect catre alt magazin si-ar
+        # strecura propriile cookie-uri in sesiunea noastra.
+        if acelasi_jar:
+            primite = _cookies_din_raspuns(response)
+            if primite:
+                jar = {**(jar or {}), **primite}
+                _salveaza_jar(nume_jar, jar)
+
         if response.status_code in (301, 302, 303, 307, 308):
             loc = response.headers.get("location") or response.headers.get("Location")
             if not loc:
-                return None
+                return None, None
             # Location poate fi cale relativa -> rezolvam fata de URL-ul curent.
             current_url = urllib.parse.urljoin(current_url, loc)
             continue
-        if _clasifica_raspuns(current_url, response) in _REZULTATE_ZID:
-            return None
-        return response
-    return None  # hop-uri epuizate fara raspuns final
+        rezultat = _clasifica_raspuns(current_url, response)
+        if rezultat in _REZULTATE_ZID:
+            return None, rezultat
+        return response, rezultat
+    return None, None  # hop-uri epuizate fara raspuns final
+
+
+def _face_bootstrap(nume_jar: str, url_util: str, url_bootstrap: str,
+                    headers: dict, timeout: int, motiv: str) -> bool:
+    """Cere `url_bootstrap` ca sa emita cookie-urile. True daca a plecat cererea.
+
+    (4) Racire la nivel de proces: cel mult un bootstrap per jar la 10 minute. Peste
+    prag intoarce False, iar apelantul raspunde cu ce avea — adica `None` pe calea
+    de blocaj. Ceas MONOTON, ca la RATE-1: o ajustare de ceas de sistem n-are voie
+    sa deschida sau sa inchida fereastra.
+    """
+    with _LOCK_JAR:
+        acum = time.monotonic()
+        trecut = acum - _ULTIMUL_BOOTSTRAP.get(nume_jar, float("-inf"))
+        if trecut < _RACIRE_BOOTSTRAP_S:
+            return False
+        _ULTIMUL_BOOTSTRAP[nume_jar] = acum
+
+    try:
+        # (5) FARA cookie-uri in mesaj: jurnalul e vizibil in UI.
+        log_manager.emit(
+            "catalog", "WARN",
+            f"retail bootstrap sesiune: {_domeniu_din_url(url_util)} motiv={motiv}")
+    except Exception:                                           # noqa: BLE001
+        pass
+
+    _local_bootstrap.activ = True
+    try:
+        # Apel RECURSIV, deliberat: bootstrap-ul trebuie sa treaca prin exact aceleasi
+        # porti ca orice alta cerere (allow-list C-14, interval RATE-1, clasificare
+        # AMZ-1a). Steagul de fir opreste recursia la un nivel.
+        _fetch_shop_url_guarded(url_bootstrap, headers=headers, timeout=timeout)
+    except Exception:                                           # noqa: BLE001
+        pass      # un bootstrap picat nu e fatal: cererea utila decide singura
+    finally:
+        _local_bootstrap.activ = False
+    return True
 
 
 def fetch_ean_from_url(source_url: str) -> Optional[str]:

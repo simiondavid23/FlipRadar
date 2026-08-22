@@ -73,6 +73,23 @@ Campurile unei intrari:
                 PDP-urile dau `OutOfStock` pe produse pe care datele proprii de
                 listare le marcheaza `"inStock":true`. Absent = availability se
                 citeste normal.
+  cookie_jar  — OPTIONAL (AMZ-1), nume de jar: magazinul cere o SESIUNE ca sa
+                serveasca pagini reale. Cookie-urile se persista la
+                `<DATA_DIR>/data/cookies_<nume>.json` — acelasi director cu sesiunea
+                Facebook, acoperit de aceeasi regula `.gitignore` (`backend/data/`),
+                fiindca sunt date locale sensibile. Absent = fara jar, exact
+                comportamentul celorlalte magazine (nu se trimite `cookies=`).
+                Masurat pe amazon.de la AMZ-0/0c: sesiunea RECE e blocata 100%
+                (interstitiu de 200, DOGS 503, provocare AWS WAF 202), iar cu jar-ul
+                incarcat intr-un proces nou pagina de produs vine intreaga.
+  bootstrap_url
+              — OPTIONAL (AMZ-1), URL care EMITE cookie-urile de sesiune, cerut
+                inaintea primei cereri utile (si o singura data dupa un blocaj).
+                Are sens doar impreuna cu `cookie_jar`. Pe amazon.de e ruta `glow`
+                de alegere a tarii de livrare: raspunde 200 pe sesiune rece — unde
+                homepage-ul si pagina de produs sunt blocate — si emite 6 cookie-uri
+                cu expirare la 2 ani. NU e login: nu exista cont, iar valorile nu
+                intra niciodata in jurnal.
   min_fetch_interval_s
               — OPTIONAL, pe ORICE metoda (int pozitiv): secunde minime intre doua
                 cereri catre domeniu. Cele doua cai il consuma DIFERIT, si asta e
@@ -1938,6 +1955,22 @@ def impersonate_overrides() -> dict[str, str]:
     """Domeniu -> treapta impersonate, doar intrarile care au cheia."""
     return {domain: meta["impersonate"]
             for domain, meta in SHOP_REGISTRY.items() if "impersonate" in meta}
+
+
+def option_map(key: str) -> dict:
+    """Domeniu -> valoarea cheii OPTIONALE `key` de la NIVELUL DE SUS al intrarii.
+
+    AMZ-1. Perechea lui `overrides_option_map`, dar pentru chei care NU stau in
+    payload-ul `overrides`: acolo traiesc lucruri de PARSARE, aici lucruri de
+    TRANSPORT (`cookie_jar`, `bootstrap_url`), langa `min_fetch_interval_s` si
+    `impersonate`, care sunt deja de nivel de sus din acelasi motiv.
+
+    Aceeasi disciplina ca la celelalte derivari: doar domeniile care CHIAR au cheia,
+    ca apelantul sa poata construi harta o data la import, si copie adanca fiindca
+    valoarea poate fi mutabila.
+    """
+    return {domain: copy.deepcopy(meta[key])
+            for domain, meta in SHOP_REGISTRY.items() if key in meta}
 
 
 def overrides_option_map(key: str) -> dict:
