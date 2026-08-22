@@ -55,12 +55,13 @@ const REASON_LABEL = {
   ambele: "reducere + minim istoric",
 };
 
-// DEAL-2b — cele trei surse ale feed-ului. Valorile sunt exact cele acceptate de
-// backend (`_SURSE`); orice altceva ar primi 422.
+// DEAL-2b + VAL D — cele patru surse ale feed-ului. Valorile sunt exact cele
+// acceptate de backend (`_SURSE`); orice altceva ar primi 422.
 const SOURCE_FILTERS = [
   { value: "", label: "Toate sursele" },
   { value: "shopify_enum", label: "Scanner Shopify" },
   { value: "listing_scan", label: "Scanner listări" },
+  { value: "api_enum", label: "API catalog" },
   { value: "refresh_diff", label: "Produse urmărite" },
 ];
 

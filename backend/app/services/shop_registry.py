@@ -1179,6 +1179,52 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "Omnibus PRP, care din ele e minimul pe 30 de zile e NEMASURAT. "
                  "API-ul de catalog VTEX e deschis (206 + header resources, 52.930 "
                  "produse), rezervat axei D — vezi docs/catalog_domain_log.md",
+        # AXA D — `api_enum`, primul domeniu pe sursa asta. Mecanismele sunt
+        # masurate la VTX-1/1b/1c/2 si VTX-3; ce e aici sunt DATE despre magazin,
+        # nu algoritm (fereastra, plafoanele si descenderea stau in api_scanner).
+        "catalog_api": {
+            # RUNDA 3b — baza CU `www`, masurata: runda 3 a plecat de la cheia de
+            # registru (`https://f64.ro/...`) si a incasat un redirect pe 335 din
+            # 335 de cereri, catre `https://www.f64.ro:443/...`. Hopul se plateste
+            # o data la fiecare cerere, deci se evita din start.
+            "base": "https://www.f64.ro",
+            "endpoint": "/api/catalog_system/pub/products/search",
+            "tree": "/api/catalog_system/pub/category/tree/2",
+            # Moneda NU vine din raspuns: `commertialOffer` n-are niciun camp de
+            # moneda (masurat: „RON" x0, „currency" x0 in tot corpul), deci se ia
+            # de aici. RON e masurat pe ld+json-ul aceluiasi domeniu (VTX-2).
+            "currency": "RON",
+            # `ListPrice` e PRP, nu minim pe 30 de zile: de aceea R1 merge pe
+            # `listing_r1_threshold`, nu pe pragul global.
+            "reference_kind": "prp",
+            # Categorii ne-catalog. SASE, nu sapte: „EOL" a fost SCOASA la runda
+            # 3e, pe masuratoarea VTX-3d, si merita spus de ce — documentele o
+            # dadeau drept zgomot, iar cifrele o contrazic:
+            #
+            #   EOL (1000013)                          20.779 produse
+            #   Insurance / frontend / Card Cadou F64        6 / 1 / 1
+            #   Advanced Payment / SH-uri de postat / NoDepartment   0 / 0 / 0
+            #
+            # Cele 20.779 erau 99,96% din gaura de acoperire masurata la 3c
+            # (52.540 in catalog fata de 31.752 intalnite). ATENTIE insa la
+            # compozitia lor, masurata complet prin recensaminte de banda la
+            # rundele 3g/3h: doar 13 produse au pret real (resigilatele, ex.
+            # Fujifilm X-T2 la -20%), iar 20.766 (99,94%) au pretul indexat 0 —
+            # non-oferte, tratate prin D9 (banda P:[0 TO 0] se recenseaza dar
+            # NU se enumereaza). Esantionul E8 de la 3d (10 produse "toate cu
+            # pret") era capul unei liste sortate, deci partinitor. EOL ramane
+            # inclusa pentru cele 13 reale; `categoriesIds: ["/1000013/"]`
+            # arata ca stau exclusiv acolo.
+            # Celelalte sase raman: masurate goale sau neglijabile (8 produse cap).
+            "exclude_categories": [
+                "Advanced Payment Products",
+                "SH-uri de postat",
+                "frontend",
+                "NoDepartment",
+                "Insurance",
+                "Card Cadou F64",
+            ],
+        },
     },
     "elefant.ro": {
         "label": "Elefant",
@@ -2090,6 +2136,25 @@ def listing_descriptor(domain: str) -> dict | None:
     """
     meta = SHOP_REGISTRY.get(domain) or {}
     return copy.deepcopy(meta["listing"]) if "listing" in meta else None
+
+
+def catalog_api_domains() -> set[str]:
+    """Domeniile cu descriptor de API de catalog (VAL D / `api_enum`).
+
+    Apartenenta se decide din PREZENTA cheii `catalog_api`, exact ca la
+    `listing_domains`: un magazin poate fi citit prin `jsonld` la nivel de produs
+    SI, separat, enumerat prin API-ul lui de catalog — capabilitati independente.
+    """
+    return {domain for domain, meta in SHOP_REGISTRY.items()
+            if "catalog_api" in meta}
+
+
+def catalog_api_descriptor(domain: str) -> dict | None:
+    """Descriptorul de API al unui domeniu, copiat adanc — acelasi motiv ca la
+    `listing_descriptor`: scannerul il plimba prin functii, iar o referinta ar lasa
+    un bug de acolo sa rescrie registrul pentru tot procesul."""
+    meta = SHOP_REGISTRY.get(domain) or {}
+    return copy.deepcopy(meta["catalog_api"]) if "catalog_api" in meta else None
 
 
 def browser_domains() -> set[str]:

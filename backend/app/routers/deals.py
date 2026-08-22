@@ -32,7 +32,7 @@ _STARI_MANUALE = {"vazut", "ignorat"}
 
 # DEAL-2b — cele trei surse ale feed-ului. Lista e inchisa si validata la intrare,
 # ca o valoare gresita sa dea 422 explicit, nu o lista goala derutanta.
-_SURSE = {"shopify_enum", "refresh_diff", "listing_scan"}
+_SURSE = {"shopify_enum", "refresh_diff", "listing_scan", "api_enum"}
 
 
 class DealStateUpdate(BaseModel):
@@ -248,6 +248,38 @@ def scan_listings_now(
             run_listing_scan(_db)
         except Exception as exc:                        # noqa: BLE001
             print(f"[ListingScan manual] eroare: {exc}")
+        finally:
+            _db.close()
+
+    threading.Thread(target=_background_scan, daemon=True).start()
+    return {"started": True}
+
+
+@router.post("/scan-api")
+def scan_api_now(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """VAL D — porneste imediat enumerarea prin API de catalog, fara jobul de 24h.
+
+    Acelasi tipar ca `/scan-listings`, pe lock-ul PROPRIU al scannerului de API:
+    cele trei surse scaneaza domenii disjuncte, deci pot merge in paralel, iar
+    409-ul de aici raspunde doar pentru o enumerare de API deja in curs.
+    """
+    from app.services.api_scanner import is_api_scan_running, run_api_scan
+
+    if is_api_scan_running():
+        raise HTTPException(
+            status_code=409,
+            detail="O enumerare prin API este deja în curs. Așteaptă să se termine.")
+
+    def _background_scan():
+        from app.database import SessionLocal
+        _db = SessionLocal()
+        try:
+            run_api_scan(_db)
+        except Exception as exc:                        # noqa: BLE001
+            print(f"[ApiScan manual] eroare: {exc}")
         finally:
             _db.close()
 

@@ -317,6 +317,40 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] Listing scan setup failed: {exc}")
 
+    # VAL D — `api_enum`: enumerarea catalogului prin API-ul de catalog VTEX.
+    # IMPLICIT OPRIT (garda de mediu API_ENUM_SCAN, tiparul FB_EXECUTOR): un scan
+    # complet inseamna ~1.100-1.300 de cereri si 33-48 de minute pe un singur
+    # domeniu, deci pornirea lui e o DECIZIE, nu un efect al unui deploy.
+    # Decalat +20 min fata de boot, adica la 10 minute DUPA scanul de listari,
+    # ca cele trei surse sa nu porneasca peste rafala de la pornire.
+    try:
+        if (os.getenv("API_ENUM_SCAN") or "").strip().lower() in ("1", "true"):
+            from app.services.api_scanner import run_api_scan
+
+            def _run_api_scan():
+                from app.database import SessionLocal
+                _db = SessionLocal()
+                try:
+                    run_api_scan(_db)
+                except Exception as exc:
+                    print(f"[ApiScan] eroare: {exc}")
+                finally:
+                    _db.close()
+
+            scheduler.add_job(
+                _run_api_scan,
+                "interval",
+                hours=24,
+                id="api_enum_scan",
+                replace_existing=True,
+                next_run_time=datetime.now() + timedelta(minutes=20),
+            )
+            print("[Scheduler] API catalog scan (24h) inregistrat.")
+        else:
+            print("[Scheduler] API catalog scan OPRIT (API_ENUM_SCAN nesetat).")
+    except Exception as exc:
+        print(f"[Scheduler] API catalog scan setup failed: {exc}")
+
     # FlipRadar — Imobiliare Monitor: scan (tick 5m, polling per keyword) + cleanup (12:30).
     try:
         from app.services.real_estate_scanner import run_real_estate_scan, RE_PLATFORMS
