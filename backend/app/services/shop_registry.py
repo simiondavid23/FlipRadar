@@ -44,7 +44,22 @@ Campurile unei intrari:
                 preferat). Consultat in routers/products.py prin url_identity_of().
   impersonate — OPTIONAL, treapta TLS/HTTP2 cand default-ul nu deschide site-ul
   overrides   — OPTIONAL, payload-ul DOMAIN_OVERRIDES (contractul campurilor e
-                documentat la structura din product_page_extractor)
+                documentat la structura din product_page_extractor). Doua chei
+                optionale din payload NU tin de parsare, ci de POARTA DE FETCH, si
+                se citesc din scraper_service prin `overrides_option_map` (AMZ-1a):
+                  * block_markers — tuplu de stringuri LOWERCASE, adaugate la
+                    BLOCK_MARKERS-ul generic din base_scraper DOAR pentru domeniul
+                    asta. Se pune cand magazinul serveste un interstitiu anti-bot
+                    pe care markerii generici nu-l prind. Fiecare marker trebuie
+                    masurat pe dump-uri reale: zero aparitii pe pagini NORMALE ale
+                    domeniului, altfel poarta declara blocate paginile bune.
+                    (Contraexemplu masurat la AMZ-0: „entschuldigung" apare pe 103
+                    pagini reale amazon.de — deci NU e marker.)
+                  * interstitial_max_bytes — int pozitiv, pragul sub care prezenta
+                    markerilor mai e concludenta, cand cel generic (40 000) nu e
+                    potrivit. Se pune DOAR daca s-a masurat o pagina de blocare mai
+                    mare decat pragul generic; pe amazon.de nu e cazul (cel mai mare
+                    interstitiu masurat are 3 817 octeti).
   headed      — OPTIONAL, DOAR pe method == "browser": True cere fereastra reala
                 (headless=False). Nu e preferinta, ci masuratoare: hhv.de raspunde
                 headless cu ERR_CONNECTION_RESET si sephora.ro cu 403, iar headed
@@ -1912,6 +1927,29 @@ def impersonate_overrides() -> dict[str, str]:
     """Domeniu -> treapta impersonate, doar intrarile care au cheia."""
     return {domain: meta["impersonate"]
             for domain, meta in SHOP_REGISTRY.items() if "impersonate" in meta}
+
+
+def overrides_option_map(key: str) -> dict:
+    """Domeniu -> valoarea cheii OPTIONALE `key` din payload-ul `overrides`.
+
+    AMZ-1a. Pana acum nu exista niciun accesor generic peste cheile optionale din
+    `overrides`: fiecare consumator facea manual
+    `DOMAIN_OVERRIDES.get(match_shop_domain(...)) or {}` si apoi `.get(cheie)`
+    (vezi product_page_extractor, la `vat_prices`). Poarta de fetch retail are
+    nevoie de doua astfel de chei, iar a treia copie a tiparului ar fi fost locul
+    in care apar divergentele.
+
+    Intoarce doar domeniile care CHIAR au cheia, exact ca `impersonate_overrides`
+    si `domain_overrides`, ca apelantul sa poata deriva o harta o singura data la
+    import si sa nu plateasca nimic pe domeniile fara cheie.
+
+    Copie adanca din acelasi motiv ca la `domain_overrides`: valoarea poate fi un
+    tuplu (imutabil) dar si o lista (mutabila), iar o referinta ar lasa un bug din
+    consumator sa rescrie registrul pentru tot procesul.
+    """
+    return {domain: copy.deepcopy(meta["overrides"][key])
+            for domain, meta in SHOP_REGISTRY.items()
+            if isinstance(meta.get("overrides"), dict) and key in meta["overrides"]}
 
 
 def url_identity_of(domain: str) -> str | None:

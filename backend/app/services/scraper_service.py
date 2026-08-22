@@ -12,7 +12,16 @@ from curl_cffi import requests as curl_requests
 
 from app.utils.category_mapper import infer_category_from_name
 from app.services.log_manager import log_manager
-from app.services.shop_registry import SHOP_REGISTRY, impersonate_overrides
+from app.services.shop_registry import (
+    SHOP_REGISTRY, impersonate_overrides, overrides_option_map,
+)
+# AMZ-1a: base_scraper e FRUNZA (importa doar stdlib: os, random, enum, typing), deci
+# importul asta top-level nu poate inchide un ciclu — verificat la PASUL 0.3.
+# `classify` si `Outcome` se CONSUM, nu se adapteaza: ordinea lor de decizie e
+# contract testat pe calea Radar.
+from app.services.radar.base_scraper import (
+    INTERSTITIAL_MAX_BYTES, Outcome, classify,
+)
 # Directia importurilor e sigura in acest sens: extractorul importa scraper_service
 # DOAR lenes (in corpul lui extract_product, pentru allow-list-ul SSRF), tocmai ca
 # importul asta top-level sa nu inchida un ciclu.
@@ -96,6 +105,68 @@ _MIN_FETCH_INTERVALE: dict[str, int] = {
 # sistem ar putea altfel sa para ca au trecut ore, sau sa blocheze o ora).
 _ULTIMA_CERERE_PE_DOMENIU: dict[str, float] = {}
 _LOCK_INTERVAL = threading.Lock()
+
+# ── AMZ-1a: clasificarea blocajelor in poarta de fetch retail ────────────────
+#
+# Pana aici calea retail n-avea NICIO notiune de „blocat": `_fetch_shop_url_guarded`
+# intorcea raspunsul brut, iar un interstitiu anti-bot servit cu 200 ajungea la
+# extractor ca HTML valid si iesea ca `no_product_data` — adica „markup schimbat",
+# nu „blocat". Diferenta se vede pana in UI: `no_product_data` da 422 („n-am putut
+# extrage datele", care acuza parserul nostru), pe cand un blocaj da 502 („magazinul
+# a blocat cererea"), care e adevarul.
+#
+# Sonda AMZ-0 a dovedit ca unghiul mort e real in modul cel mai direct cu putinta:
+# propria ei masuratoare a fost citita gresit exact asa.
+#
+# Cele doua harti se deriva o SINGURA data, la import, exact ca `_IMPERSONATE_OVERRIDES`
+# si `_MIN_FETCH_INTERVALE` — registrul e un literal Python, deci oricum cere repornire.
+_MARKERI_BLOCAJ_DOMENIU: dict[str, tuple] = overrides_option_map("block_markers")
+_PRAG_INTERSTITIU_DOMENIU: dict[str, int] = overrides_option_map("interstitial_max_bytes")
+
+# AWS WAF serveste provocarea JS cu status 202, iar `classify()` verifica markerii de
+# body NUMAI pe 200 — deci fara ramura proprie provocarea ar iesi `OK` si pagina de
+# 2 008 octeti ar ajunge la extractor. Masurat in AMZ-0 pe amazon.de (2 008 octeti,
+# identic pe toate cele 5 amprente TLS incercate), dar tinut GENERIC: AWS WAF nu e
+# specific Amazon, iar `classify` nu se modifica fiindca ordinea lui e contract.
+_MARKERI_WAF: tuple[str, ...] = ("awswafcookiedomainlist", "token.awswaf.com")
+
+
+def _cheie_pe_domeniu(hostname: str, harta: dict):
+    """Cheia din `harta` care acopera hostname-ul, cu GRANITA PE PUNCT.
+
+    Aceeasi regula ca `_impersonate_for` si allow-list-ul C-14 (`m.emag.ro` ->
+    `emag.ro`, dar `evil-emag.ro.attacker.com` -> None). Cele doua bucle mai vechi
+    isi pastreaza deliberat varianta inline: refactorizarea lor n-are legatura cu
+    AMZ-1a si ar largi diff-ul peste fisierele permise.
+    """
+    if not harta or not hostname:
+        return None
+    for domeniu in harta:
+        if hostname == domeniu or hostname.endswith("." + domeniu):
+            return domeniu
+    return None
+
+
+def _domeniu_din_url(url: str) -> str:
+    try:
+        return (urllib.parse.urlparse(url or "").hostname or "").lower()
+    except Exception:                                           # noqa: BLE001
+        return ""
+
+
+def markeri_blocaj(domeniu: str) -> tuple:
+    """Markerii SUPLIMENTARI de blocaj ai domeniului (peste BLOCK_MARKERS generici)."""
+    cheie = _cheie_pe_domeniu(domeniu, _MARKERI_BLOCAJ_DOMENIU)
+    return tuple(_MARKERI_BLOCAJ_DOMENIU.get(cheie) or ()) if cheie else ()
+
+
+def prag_interstitiu(domeniu: str) -> int:
+    """Pragul de octeti sub care markerii mai sunt concludenti, pentru domeniu."""
+    cheie = _cheie_pe_domeniu(domeniu, _PRAG_INTERSTITIU_DOMENIU)
+    if cheie is None:
+        return INTERSTITIAL_MAX_BYTES
+    return int(_PRAG_INTERSTITIU_DOMENIU.get(cheie) or INTERSTITIAL_MAX_BYTES)
+
 
 # Pagination safety caps (per-site) so a runaway query can't hammer a shop.
 _MAX_PAGES_EMAG = 10         # eMAG serves ~72-78 cards per page
@@ -969,6 +1040,61 @@ def _asteapta_intervalul(url: str) -> float:
     return de_asteptat
 
 
+# Doar astea doua opresc fluxul. NOT_FOUND / TRANSIENT / OK / SITE_CHANGED se intorc
+# la apelant exact ca pana acum: 404-ul, de pilda, e sfarsit de paginare pentru
+# listing_scanner si trebuie sa ajunga la el ca raspuns, nu ca None.
+_REZULTATE_ZID = (Outcome.BLOCKED, Outcome.RATE_LIMITED)
+
+
+def _clasifica_raspuns(url: str, response) -> Outcome:
+    """Diagnosticul raspunsului, INAINTE de orice parsare.
+
+    AMZ-1a. Clasificarea se face INAINTE ca body-ul sa ajunga la orice parser: un
+    interstitiu anti-bot servit cu 200 nu are voie sa intre in extractor ca HTML
+    valid. `parsed=None` INTOTDEAUNA — n-am parsat inca, deci n-avem dreptul sa
+    declansam `SITE_CHANGED`, care inseamna „markup schimbat".
+
+    Intoarce Outcome-ul, nu un boolean, DELIBERAT: politica („ce opreste fluxul") sta
+    in poarta, iar aici ramane doar diagnosticul. Diferenta e testabila — un control
+    negativ care schimba `parsed=None` in `parsed=0` face ca un 200 curat sa iasa
+    `SITE_CHANGED` in loc de `OK`, iar cu un boolean asta ar fi fost INVIZIBIL (niciuna
+    din cele doua valori nu blocheaza). Sabotajul S2 chiar n-a fost prins pana la
+    schimbarea asta.
+    """
+    status = getattr(response, "status_code", None)
+    try:
+        body = response.text
+    except Exception:                                           # noqa: BLE001
+        body = None
+    domeniu = _domeniu_din_url(url)
+    prag = prag_interstitiu(domeniu)
+
+    # AWS WAF serveste provocarea cu 202, status pe care `classify()` nu-l verifica
+    # pe markeri (doar 200). Verificarea proprie sta INAINTEA lui classify tocmai ca
+    # sa nu cerem modificarea unui contract testat. Vezi `_MARKERI_WAF`.
+    if (status == 202 and body and len(body) < prag
+            and any(m in body.lower() for m in _MARKERI_WAF)):
+        rezultat = Outcome.BLOCKED
+    else:
+        rezultat = classify(
+            status=status, body=body, exc=None, parsed=None,
+            extra_markers=markeri_blocaj(domeniu),
+            interstitial_max_bytes=prag,
+        )
+
+    if rezultat in _REZULTATE_ZID:
+        try:
+            # FARA body in log: un interstitiu poate purta token-uri de sesiune, iar
+            # jurnalul e vizibil in UI.
+            log_manager.emit(
+                "retail", "WARN",
+                f"retail fetch blocat: {domeniu} outcome={rezultat.value} "
+                f"status={status} bytes={len(body or '')}")
+        except Exception:                                       # noqa: BLE001
+            pass  # logging-ul nu trebuie sa rupa fluxul
+    return rezultat
+
+
 def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: int = 3):
     """C-14b/C-14c: fetch cu allow-list per-hop, partajat de toate fetch-urile pe
     URL-uri controlate de user.
@@ -978,8 +1104,30 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
     urmarim manual, validand FIECARE hop prin _is_allowed_shop_url inainte de a-l cere.
 
     Intoarce response-ul final (non-redirect) sau None daca: URL neautorizat pe orice
-    hop, prea multe redirecturi, sau eroare de retea. NU verifica `url` gol si NU
-    parseaza continutul — alea raman la apelanti.
+    hop, prea multe redirecturi, eroare de retea, SAU raspunsul e un zid anti-bot
+    (AMZ-1a: `Outcome.BLOCKED` / `RATE_LIMITED` — vezi `_clasifica_raspuns`). NU verifica
+    `url` gol si NU parseaza continutul — alea raman la apelanti.
+
+    De ce blocajul intoarce None, adica EXACT forma de la eroarea de retea: valoarea
+    de retur n-are camp de motiv, iar apelantii nu se rescriu in runda asta. Varianta
+    cu cea mai mica atingere e deci sa refolosim forma existenta si sa lasam motivul
+    distinct doar in linia de WARN. Consecinta masurata pe cele doua cai:
+      * pagina de produs: un interstitiu de 200 iesea `no_product_data` -> 422
+        („n-am putut extrage datele", care acuza parserul nostru); acum iese
+        `fetch_failed` -> 502 („magazinul a blocat cererea"), care e adevarul;
+      * un 403 iesea `challenge`, acum iese `fetch_failed` — dar AMBELE se mapeaza
+        la acelasi 502 cu acelasi text (routers/products.py), deci degradarea nu e
+        vizibila utilizatorului.
+    Blocul `403 / cf-mitigated / just a moment` din product_page_extractor NU devine
+    cod mort, desi asa pare la prima vedere. Doua ramuri ale lui sunt intr-adevar
+    acoperite acum de poarta (403 -> BLOCKED; `<title>just a moment` -> BLOCK_MARKERS),
+    dar a treia e STRICT MAI LARGA decat markerul generic: acolo testul e
+    `"just a moment" in response.text[:2000].lower()`, fara ancora pe <title>, deci
+    prinde si proza dintr-o descriere de produs. Masurat de testul
+    `test_02b_just_a_moment_in_proza_NU_e_blocaj`: poarta lasa pagina sa treaca (corect,
+    ancora pe titlu e deliberata — vezi base_scraper), iar extractorul o respinge totusi
+    cu `challenge`. Diferenta e reala si e in AFARA fisierelor permise in AMZ-1a; se
+    consemneaza aici ca sa nu fie descoperita din nou ca surpriza.
 
     Amprenta de impersonate se rezolva PER HOP, ca un redirect intre domenii sa
     plece cu amprenta TINTEI, nu a sursei — altfel un redirect catre 43einhalb.com
@@ -1000,6 +1148,11 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
                 allow_redirects=False,
             )
         except Exception:
+            # AMZ-1a, ramura de exceptie: in taxonomia din base_scraper o exceptie e
+            # prin definitie TRANSIENT (`classify` intoarce TRANSIENT pe `exc` INAINTE
+            # de a privi orice altceva), iar TRANSIENT nu e zid. Deci comportamentul
+            # ramane identic — None, fara WARN — si un apel `classify` aici ar fi un
+            # no-op al carui rezultat s-ar arunca. Pinuit de test_08.
             return None
         if response.status_code in (301, 302, 303, 307, 308):
             loc = response.headers.get("location") or response.headers.get("Location")
@@ -1008,6 +1161,8 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
             # Location poate fi cale relativa -> rezolvam fata de URL-ul curent.
             current_url = urllib.parse.urljoin(current_url, loc)
             continue
+        if _clasifica_raspuns(current_url, response) in _REZULTATE_ZID:
+            return None
         return response
     return None  # hop-uri epuizate fara raspuns final
 
