@@ -111,12 +111,12 @@ export function visibleModules(user) {
 export function findModuleForPath(pathname, user) {
   if (!pathname) return null;
   let best = null;
-  for (const module of visibleModules(user)) {
-    for (const page of module.pages) {
+  for (const modul of visibleModules(user)) {
+    for (const page of modul.pages) {
       if (page.href === DASHBOARD_HREF) continue;
       const hit = pathname === page.href || pathname.startsWith(page.href + "/");
       if (!hit) continue;
-      if (!best || page.href.length > best.page.href.length) best = { module, page };
+      if (!best || page.href.length > best.page.href.length) best = { module: modul, page };
     }
   }
   return best;
