@@ -2965,13 +2965,28 @@ def test_decathlon_fixture_chiar_poarta_patologia():
     assert sum(len(x) for x in offers) == 18
 
 
-def test_decathlon_devine_extractibil_dupa_aplatizare(fetch_mock):
+def test_decathlon_devine_extractibil_dupa_aplatizare(monkeypatch):
     """Cazul motivant, capat la capat: inainte de fix cadea cu `no_product_data`.
 
     Cele 18 oferte au toate acelasi pret, deci minimul (G2F-4) e chiar el; testul
     pinuieste valoarea din dump, nu una construita.
+
+    Mock-ul sta pe `fetch_browser_html`, NU pe poarta curl: de la G4-V4b decathlon
+    e pe ruta de browser (BR-1), unde `_fetch_shop_url_guarded` nu mai e atinsa —
+    un mock pe ea ar lasa testul sa plece intr-un fetch LIVE cu Chrome real (trece
+    local, cade in CI cu `BrowserFetchUnavailable`). Intentia capat-la-capat se
+    pastreaza: fixture-ul trece prin acelasi `parse_product_html` din
+    `_extract_via_browser`.
     """
-    fetch_mock(_decathlon_fixture())
+    from app.services import browser_fetch as bf
+
+    apeluri = []
+
+    def _fake_browser(url, domain, valideaza=None):
+        apeluri.append(domain)
+        return _decathlon_fixture()
+
+    monkeypatch.setattr(bf, "fetch_browser_html", _fake_browser)
 
     data = ppe.extract_product(DECATHLON_URL)
 
@@ -2981,6 +2996,7 @@ def test_decathlon_devine_extractibil_dupa_aplatizare(fetch_mock):
     assert data["method"] == "jsonld"
     assert data["is_aggregate"] is False
     assert data["override_applied"] is False
+    assert apeluri == ["decathlon.ro"]
 
 
 def test_aplatizarea_NU_fabrica_variante():
