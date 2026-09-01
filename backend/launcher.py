@@ -4,6 +4,15 @@ Ruleaza identic in dev: `python launcher.py` din backend/ (data dir = cwd,
 per app.paths). Sub PyInstaller (sys.frozen): data dir = LOCALAPPDATA,
 stdout/stderr -> <data_dir>/logs/flipradar.log (fara consola, print-urile
 altfel crapa), frontend-ul static de langa exe.
+
+Mod viewer (D9a + LAUNCH-1): `--viewer` pe linia de comanda sau
+FLIPRADAR_VIEWER_ONLY=1 deschid DOAR o fereastra catre instanta existenta si nu
+pornesc NICIODATA un server. Portul vine din FLIPRADAR_VIEWER_PORT (implicit
+primul din PORT_RANGE). Fiindca serviciul e delayed-auto-start, launcher-ul
+asteapta pana la VIEWER_WAIT_S secunde, interogand /api/health la fiecare
+VIEWER_PROBE_INTERVAL_S cu VIEWER_PROBE_TIMEOUT_S timeout pe cerere; daca tot nu
+raspunde, arata un MessageBox (vizibil si sub pythonw, unde print-ul n-are unde
+sa iasa) si iese.
 """
 import os
 import socket
@@ -17,6 +26,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # `import app.*` si di
 
 READY_TIMEOUT_S = 30
 PORT_RANGE = range(8000, 8011)
+
+# LAUNCH-1 — asteptarea din modul viewer. Serviciul e delayed-auto-start, deci
+# la login poate porni zeci de secunde dupa shortcut si un esec instantaneu ar fi
+# un fals negativ. Probele sunt RARE si cu timeout GENEROS, nu dese si scurte:
+# /api/health atinge DB-ul, iar sub contentie SQLite raspunde greu — exact cazul
+# in care o proba de 1s ar declara gresit "nu ruleaza nimic".
+VIEWER_WAIT_S = 60
+VIEWER_PROBE_TIMEOUT_S = 10
+VIEWER_PROBE_INTERVAL_S = 3
 
 
 def _setup_frozen_logging() -> None:
@@ -49,11 +67,13 @@ def _port_is_free(port: int) -> bool:
             return False
 
 
-def _flipradar_at(port: int) -> bool:
-    """True daca la port raspunde chiar FlipRadar (nu alt server)."""
+def _flipradar_at(port: int, timeout: float = 1) -> bool:
+    """True daca la port raspunde chiar FlipRadar (nu alt server). `timeout` e
+    parametrizat pentru modul viewer, care asteapta un serviciu ce abia porneste;
+    default-ul de 1s lasa `_choose_port` exact cum era."""
     import requests
     try:
-        r = requests.get(f"http://127.0.0.1:{port}/api/health", timeout=1)
+        r = requests.get(f"http://127.0.0.1:{port}/api/health", timeout=timeout)
         return r.status_code == 200 and "status" in r.json()
     except Exception:
         return False
@@ -107,10 +127,39 @@ def _window_mode_enabled() -> bool:
 
 
 def _viewer_only_enabled() -> bool:
-    """D9a — FLIPRADAR_VIEWER_ONLY=1: shortcut-ul deschide DOAR un viewer catre
-    instanta existenta si nu porneste NICIODATA un server. Portul se ia din
+    """D9a + LAUNCH-1 — `--viewer` pe linia de comanda SAU
+    FLIPRADAR_VIEWER_ONLY=1: shortcut-ul deschide DOAR un viewer catre instanta
+    existenta si nu porneste NICIODATA un server. Portul se ia din
     FLIPRADAR_VIEWER_PORT, implicit primul din PORT_RANGE."""
-    return os.environ.get("FLIPRADAR_VIEWER_ONLY") == "1"
+    return "--viewer" in sys.argv or os.environ.get("FLIPRADAR_VIEWER_ONLY") == "1"
+
+
+def _wait_viewer_ready(port: int) -> bool:
+    """Asteapta pana la VIEWER_WAIT_S ca serviciul sa raspunda la /api/health.
+    Deliberat FARA bind si FARA alegere de port: in mod viewer nu avem voie sa
+    ocupam nimic, deci singura intrebare e "raspunde?", niciodata "e liber?"."""
+    deadline = time.time() + VIEWER_WAIT_S
+    while True:
+        if _flipradar_at(port, VIEWER_PROBE_TIMEOUT_S):
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(VIEWER_PROBE_INTERVAL_S)
+
+
+def _alerteaza(titlu: str, text: str) -> None:
+    """Mesaj vizibil si cand nu exista consola. Sub pythonw / PyInstaller-windowed
+    stdout e redirectat intr-un fisier, deci un print n-ar ajunge niciodata la
+    user; pe Windows MessageBoxW e singurul canal sigur. Orice esec cade inapoi
+    pe print — un launcher nu are voie sa moara din cauza unui dialog."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, text, titlu, 0x10)  # MB_ICONERROR
+            return
+        except Exception as exc:
+            print(f"[Launcher] MessageBox indisponibil ({exc}).")
+    print(f"[Launcher] {titlu}: {text}")
 
 
 def _run_tray_browser(url: str, app_version: str, server_thread) -> None:
@@ -317,15 +366,25 @@ def main() -> None:
     # il pornise. Pe masina de productie serviciul NSSM e singura instanta
     # legitima, deci shortcut-ul nu trebuie sa poata porni server niciodata.
     #
-    # Deliberat FARA proba de health: in mod viewer nu exista nicio conditie in
-    # care sa pornim server, deci nu are ce decide. Daca instanta nu raspunde,
-    # fereastra arata eroarea de conexiune — comportamentul dorit, fiindca o
-    # proba esuata nu mai poate fi confundata cu "nu ruleaza nimic, pornesc eu".
+    # LAUNCH-1 reintroduce o proba de health, dar cu alt ROL decat cea din
+    # `_choose_port`: acolo raspunsul decidea "pornesc eu server?", aici decide
+    # doar "deschid fereastra sau arat un mesaj". Nu exista nicio ramura care sa
+    # porneasca server, deci o proba esuata nu mai poate fi confundata cu "nu
+    # ruleaza nimic, pornesc eu" — in cel mai rau caz userul afla DE CE n-a mers.
+    # Asteptarea exista fiindca serviciul e delayed-auto-start: la login poate
+    # porni zeci de secunde dupa shortcut, iar un esec instantaneu ar fi un fals
+    # negativ.
     if _viewer_only_enabled():
         port = int(os.environ.get("FLIPRADAR_VIEWER_PORT") or PORT_RANGE.start)
         url = f"http://127.0.0.1:{port}"
-        print(f"[Launcher] Mod viewer: nu pornesc server, deschid {url}.")
-        if _window_mode_enabled():
+        print(f"[Launcher] Mod viewer: nu pornesc server, astept {url}.")
+        if not _wait_viewer_ready(port):
+            _alerteaza(
+                "FlipRadar",
+                f"Serviciul FlipRadar nu raspunde la {url} dupa {VIEWER_WAIT_S}s.\n"
+                "Verifica: SSD-ul E: conectat, apoi `C:\\tools\\nssm.exe status flipradar`.")
+            return
+        if "--viewer" in sys.argv or _window_mode_enabled():
             try:
                 from app.version import APP_VERSION
                 _open_viewer(url, APP_VERSION)
