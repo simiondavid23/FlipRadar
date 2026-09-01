@@ -24,7 +24,7 @@ from app.models.deal import Deal
 from app.models.radar_settings import RadarSettings
 from app.models.shop_price_memory import ShopPriceMemory
 from app.models.shop_scan_state import ShopScanState
-from app.services.log_manager import set_log_user
+from app.services.log_manager import log_manager, set_log_user
 from app.services.shop_registry import SHOP_REGISTRY, shopify_domains
 
 # D9 — pragul global implicit, cand userul nu si-a pus unul.
@@ -208,6 +208,9 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
     calificate: set[str] = set()
     produse_vazute = 0
     alerte = 0
+    # D7 — notificarile se strang aici si pleaca DUPA commit-ul paginii, ca un
+    # timeout de retea catre Discord sa nu mai prelungeasca tranzactia.
+    de_notificat: list[Deal] = []
 
     for pagina in _pagini(domain):
         for produs in pagina:
@@ -276,8 +279,7 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
                     first_seen_at=acum, last_seen_at=acum)
                 db.add(deal)
                 db.flush()
-                if send_deal_notification(deal, settings):
-                    alerte += 1
+                de_notificat.append(deal)
             else:
                 # D7: starea e a USERULUI, deci ramane neatinsa — `ignorat` ramane
                 # `ignorat`, `vazut` ramane `vazut`. Fara alerta la reaparitie.
@@ -293,6 +295,28 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
                 deal.min_price_seen = min_price_vechi
                 deal.last_seen_at = acum
                 deal.ended_at = None
+
+        # D6 — commit dupa FIECARE pagina, nu o data la finalul magazinului.
+        # Motivul e lock-ul de scriere SQLite: cu un singur commit la final,
+        # tranzactia traversa si `_pauza()`-ul si fetch-ul HTTP al paginii
+        # urmatoare, deci pe un magazin de 8000+ produse lock-ul de scriere se
+        # tinea ~100s. busy_timeout-ul celorlalti scriitori (30s) expira si
+        # cadeau in lant cu "database is locked". Comitand per pagina, lock-ul
+        # se tine sub o secunda la fiecare ~1.5s de pauza, deci restul
+        # aplicatiei apuca sa scrie intre pagini.
+        #
+        # Consecinta asumata: `db.rollback()`-ul din `run_deal_scan` anuleaza
+        # acum doar pagina curenta, nu tot magazinul — paginile deja comise
+        # raman. E acceptabil: blocul de inchidere pe `calificate` ruleaza doar
+        # la final, deci un magazin picat la jumatate nu inchide nimic gresit,
+        # iar scanul urmator recalculeaza si corecteaza.
+        db.commit()
+        # Notificarea pleaca DOAR pentru randuri deja comise: altfel am putea
+        # anunta un deal pe care un rollback ulterior l-ar face sa nu fi existat.
+        for deal in de_notificat:
+            if send_deal_notification(deal, settings):
+                alerte += 1
+        de_notificat.clear()
 
     # --- deal-urile care nu mai CALIFICA se INCHEIE, nu se sterg ---
     # DEAL-2b: pana acum criteriul era `not in vazute`, deci se inchideau doar
@@ -345,6 +369,8 @@ def run_deal_scan(db) -> dict:
     # cea curenta si ar reface aceeasi munca. Mai bine iese si o reia jobul urmator.
     if not _SCAN_LOCK.acquire(blocking=False):
         print("[DealScan] scanare deja in curs — cererea a fost ignorata")
+        log_manager.emit("catalog", "WARN",
+                         "Deal scan Shopify: sarit — scanare deja in curs")
         return {"skipped": "scan deja in curs", "magazine": 0}
 
     try:
@@ -355,6 +381,8 @@ def run_deal_scan(db) -> dict:
         dezactivate = set(getattr(settings, "deal_shops_disabled", None) or []) if settings else set()
         domenii = sorted(shopify_domains() - dezactivate)
         prag = _prag(settings)
+        log_manager.emit("catalog", "SCAN",
+                         f"Deal scan Shopify: start, {len(domenii)} magazine")
 
         rezumat = {"magazine": 0, "produse": 0, "alerte": 0, "erori": 0}
         for domain in domenii:
@@ -366,12 +394,20 @@ def run_deal_scan(db) -> dict:
                 db.rollback()
                 _scrie_stare(db, domain, "error", eroare=f"{type(exc).__name__}: {exc}"[:500])
                 rezumat["erori"] += 1
+                log_manager.emit(
+                    "catalog", "WARN",
+                    f"Deal scan {domain}: {type(exc).__name__}: {str(exc)[:160]}")
                 continue
             _scrie_stare(db, domain, "ok", produse=rezultat["produse"],
                          deals_active=rezultat["deals_active"])
             rezumat["magazine"] += 1
             rezumat["produse"] += rezultat["produse"]
             rezumat["alerte"] += rezultat["alerte"]
+        log_manager.emit(
+            "catalog", "OK",
+            f"Deal scan Shopify: gata — {rezumat['magazine']} magazine ok, "
+            f"{rezumat['erori']} erori, {rezumat['produse']} produse, "
+            f"{rezumat['alerte']} alerte")
         return rezumat
     finally:
         _SCAN_LOCK.release()

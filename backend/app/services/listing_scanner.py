@@ -310,6 +310,9 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
     produse_vazute = 0
     alerte = 0
     pagini = 0
+    # D7 — notificarile se strang aici si pleaca DUPA commit-ul paginii, ca un
+    # timeout de retea catre Discord sa nu mai prelungeasca tranzactia.
+    de_notificat: list[Deal] = []
 
     for numar in range(1, int(descriptor.get("max_pages") or 1) + 1):
         if numar > 1:
@@ -416,9 +419,8 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                     first_seen_at=acum, last_seen_at=acum)
                 db.add(deal)
                 db.flush()
-                if not primul_scan and alerte < _MAX_ALERTE:
-                    if send_deal_notification(deal, settings):
-                        alerte += 1
+                if not primul_scan:
+                    de_notificat.append(deal)
             else:
                 # D7: the state belongs to the USER, so it stays untouched —
                 # `ignorat` stays `ignorat`. No alert on reappearance.
@@ -432,6 +434,34 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 deal.min_price_seen = min_price_vechi
                 deal.last_seen_at = acum
                 deal.ended_at = None
+
+        # D6 — commit dupa FIECARE pagina, nu o data la finalul domeniului.
+        # Motivul e lock-ul de scriere SQLite: cu un singur commit la final,
+        # tranzactia traversa si `_pauza()`-ul si fetch-ul HTTP al paginii
+        # urmatoare, deci pe un domeniu mare lock-ul de scriere se tinea zeci de
+        # secunde. busy_timeout-ul celorlalti scriitori (30s) expira si cadeau in
+        # lant cu "database is locked". Comitand per pagina, lock-ul se tine sub
+        # o secunda intre doua pauze, deci restul aplicatiei apuca sa scrie.
+        #
+        # Pozitia e la SFARSITUL corpului buclei, deci dupa procesarea cardurilor
+        # paginii curente si inainte de fetch-ul urmatoarei. Toate cele trei
+        # iesiri timpurii (404 = paginare depasita, grila goala, pagina repetata)
+        # cad INAINTE de bucla pe carduri, deci cand una se declanseaza ultima
+        # pagina procesata cu succes a fost deja comisa la iteratia ei.
+        #
+        # Consecinta asumata: `db.rollback()`-ul din apelant anuleaza acum doar
+        # pagina curenta, nu tot domeniul — paginile deja comise raman. E
+        # acceptabil: blocul de inchidere pe `calificate` ruleaza doar la final,
+        # deci un domeniu picat la jumatate nu inchide nimic gresit, iar scanul
+        # urmator recalculeaza si corecteaza.
+        db.commit()
+        # Notificarea pleaca DOAR pentru randuri deja comise: altfel am putea
+        # anunta un deal pe care un rollback ulterior l-ar face sa nu fi existat.
+        # Plafonul se verifica aici, nu la append, ca sa ramana global pe domeniu.
+        for deal in de_notificat:
+            if alerte < _MAX_ALERTE and send_deal_notification(deal, settings):
+                alerte += 1
+        de_notificat.clear()
 
     # --- deals that no longer QUALIFY are ENDED, not deleted ---
     # DEAL-2b: the criterion used to be `not in vazute`, so only VANISHED products
