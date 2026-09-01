@@ -106,6 +106,13 @@ def _window_mode_enabled() -> bool:
     return os.environ.get("FLIPRADAR_WINDOW") == "1"
 
 
+def _viewer_only_enabled() -> bool:
+    """D9a — FLIPRADAR_VIEWER_ONLY=1: shortcut-ul deschide DOAR un viewer catre
+    instanta existenta si nu porneste NICIODATA un server. Portul se ia din
+    FLIPRADAR_VIEWER_PORT, implicit primul din PORT_RANGE."""
+    return os.environ.get("FLIPRADAR_VIEWER_ONLY") == "1"
+
+
 def _run_tray_browser(url: str, app_version: str, server_thread) -> None:
     """Ramura clasica (fallback + FLIPRADAR_NO_WINDOW + dev implicit): deschide
     UI-ul in browserul implicit + tray pystray BLOCANT (icon.run()). Logica e
@@ -301,6 +308,33 @@ def main() -> None:
     _setup_frozen_logging()
     if "--selfcheck" in sys.argv:
         sys.exit(_selfcheck())
+
+    # D9a — mod viewer, inaintea oricarei alegeri de port. Motivul e concret: pe
+    # 01.09, sub contentie SQLite, proba `_flipradar_at` (timeout 1s, si atinge
+    # DB-ul prin /api/health) a expirat; `_choose_port` a citit de aici "la 8000
+    # nu e FlipRadar" si launcher-ul a pornit un AL DOILEA server pe 8001, peste
+    # acelasi flipradar.db — exact scriitorul in plus care agrava contentia care
+    # il pornise. Pe masina de productie serviciul NSSM e singura instanta
+    # legitima, deci shortcut-ul nu trebuie sa poata porni server niciodata.
+    #
+    # Deliberat FARA proba de health: in mod viewer nu exista nicio conditie in
+    # care sa pornim server, deci nu are ce decide. Daca instanta nu raspunde,
+    # fereastra arata eroarea de conexiune — comportamentul dorit, fiindca o
+    # proba esuata nu mai poate fi confundata cu "nu ruleaza nimic, pornesc eu".
+    if _viewer_only_enabled():
+        port = int(os.environ.get("FLIPRADAR_VIEWER_PORT") or PORT_RANGE.start)
+        url = f"http://127.0.0.1:{port}"
+        print(f"[Launcher] Mod viewer: nu pornesc server, deschid {url}.")
+        if _window_mode_enabled():
+            try:
+                from app.version import APP_VERSION
+                _open_viewer(url, APP_VERSION)
+                return
+            except Exception as exc:
+                print(f"[Launcher] Fereastra indisponibila ({exc}) — deschid browserul.")
+        webbrowser.open(url)
+        return
+
     port, already = _choose_port()
     url = f"http://127.0.0.1:{port}"
     if already:
