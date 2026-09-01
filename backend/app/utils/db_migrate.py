@@ -265,6 +265,17 @@ def _portable_migrations(conn, inspector):
                  "ALTER TABLE deals ADD COLUMN deal_source VARCHAR(20) "
                  "NOT NULL DEFAULT 'shopify_enum'")
 
+    # DEAL-3 — indexul compus (ended_at, discount_pct) pe tabela EXISTENTA.
+    # create_all() nu adauga indexuri pe tabele deja create, deci pe o baza veche
+    # declaratia din model n-ar ajunge niciodata in DB. Garda e inspectorul, ca
+    # peste tot in acest fisier, deci SQL-ul ramane fara IF NOT EXISTS.
+    if _table_exists(inspector, "deals"):
+        existing_idx = {i["name"] for i in inspector.get_indexes("deals")}
+        if "ix_deals_ended_discount" not in existing_idx:
+            _migrate(conn, "create_ix_deals_ended_discount",
+                     "CREATE INDEX ix_deals_ended_discount "
+                     "ON deals (ended_at, discount_pct)")
+
 
 def run_migrations():
     """Apply any pending column additions."""

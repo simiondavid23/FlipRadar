@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint,
+    Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text,
+    UniqueConstraint,
 )
 
 from app.database import Base
@@ -28,8 +29,14 @@ class Deal(Base):
     __tablename__ = "deals"
     # Ambele coloane sunt NOT NULL, deci constrangerea chiar protejeaza si pe
     # SQLite (unde NULL-urile ar fi considerate distincte intre ele).
+    # DEAL-3 — indexul compus deserveste interogarea principala a paginii:
+    # `WHERE ended_at IS NULL ORDER BY discount_pct DESC`. Fara el, EXPLAIN pe
+    # productie da `SCAN deals` + `USE TEMP B-TREE FOR ORDER BY` pe 21k randuri
+    # active, adica tabela intreaga citita si resortata la fiecare cerere.
+    # Ordinea coloanelor conteaza: ended_at filtreaza, discount_pct ordoneaza.
     __table_args__ = (UniqueConstraint("shop_domain", "external_id",
-                                       name="uq_deals_shop_external"),)
+                                       name="uq_deals_shop_external"),
+                      Index("ix_deals_ended_discount", "ended_at", "discount_pct"))
 
     id = Column(Integer, primary_key=True, index=True)
     shop_domain = Column(String(100), nullable=False, index=True)

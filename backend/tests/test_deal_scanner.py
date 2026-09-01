@@ -826,3 +826,108 @@ def test_settings_un_singur_rand_neschimbat():
         assert deal_scanner._prag(setari) == 33.0
     finally:
         db.close()
+
+
+# ── DEAL-3: paginare, numaratoare, filtre si sortare pe SERVER ───────────────
+# Fixture-urile sunt cele existente (`auth_client` + `clean_db` autouse). Toate
+# cele cinci randuri stau pe DOM, ca filtrul de categorie sa aiba ce potrivi.
+
+def _cinci_active(db):
+    """Cinci deal-uri active, cu discounturi SI preturi distincte, ca ordinea sa
+    fie neambigua indiferent de sortarea ceruta."""
+    for ext, disc, pret, moneda, stare in (
+            ("p1", 50.0, 5.0, "EUR", "nou"),
+            ("p2", 40.0, 80.0, "RON", "nou"),
+            ("p3", 30.0, 60.0, "RON", "vazut"),
+            ("p4", 20.0, 40.0, "RON", "vazut"),
+            ("p5", 10.0, 20.0, "RON", "vazut")):
+        db.add(Deal(shop_domain=DOM, external_id=ext, title=ext.upper(),
+                    url=f"https://x/{ext}", currency=moneda, price=pret,
+                    discount_pct=disc, reason="compare_at", state=stare))
+    db.commit()
+
+
+def test_deal3_limit_offset_si_count(auth_client):
+    """T1 — paginarea taie in SQL, nu in browser, iar /count raspunde pe aceleasi
+    filtre ca lista."""
+    db = SessionLocal()
+    try:
+        _cinci_active(db)
+    finally:
+        db.close()
+
+    prima = auth_client.get("/api/deals/?limit=2").json()
+    assert [d["external_id"] for d in prima] == ["p1", "p2"], "discount descrescator"
+
+    ultima = auth_client.get("/api/deals/?limit=2&offset=4").json()
+    assert [d["external_id"] for d in ultima] == ["p5"], "ultima pagina are un rand"
+
+    assert auth_client.get("/api/deals/count").json() == {"total": 5}
+
+
+def test_deal3_exclude_state_categorie_si_sortare(auth_client, monkeypatch):
+    """T2 — `exclude_state` inlocuieste filtrul client-side de pe tab-ul „Active",
+    iar categoria si sortarea au coborat si ele pe server."""
+    # Cursul e fixat in test: masuram ORDINEA, nu valorile BNR.
+    monkeypatch.setattr("app.routers.deals.get_all_rates",
+                        lambda: {"EUR_RON": 5.0, "USD_RON": 4.0})
+    monkeypatch.setattr("app.routers.deals.convert",
+                        lambda valoare, din, catre: valoare * 5.0)
+    db = SessionLocal()
+    try:
+        _cinci_active(db)
+    finally:
+        db.close()
+
+    ids = {d["external_id"]: d["id"] for d in auth_client.get("/api/deals/").json()}
+    assert auth_client.patch(f"/api/deals/{ids['p3']}",
+                             json={"state": "ignorat"}).status_code == 200
+
+    assert len(auth_client.get("/api/deals/?exclude_state=ignorat").json()) == 4
+    assert (auth_client.get("/api/deals/count?exclude_state=ignorat").json()
+            == {"total": 4}), "numaratoarea vede EXACT filtrele listei"
+
+    # sort=price compara in RON: p1 e 5 EUR = 25 RON, deci ajunge al doilea cel
+    # mai ieftin. Fara conversie ar fi iesit PRIMUL, cu "5 lei" — exact greseala
+    # pe care o prinde acest assert.
+    dupa_pret = [d["external_id"]
+                 for d in auth_client.get("/api/deals/?sort=price").json()]
+    assert dupa_pret == ["p5", "p1", "p4", "p3", "p2"]
+
+    # Categoria e a MAGAZINULUI (SHOP_REGISTRY), nu a randului: toate cele cinci
+    # stau pe DOM, care e `sneakers`.
+    assert len(auth_client.get("/api/deals/?category=sneakers").json()) == 5
+    # O categorie fara niciun magazin filtreaza la ZERO, nu se ignora.
+    assert auth_client.get("/api/deals/?category=inexistenta").json() == []
+
+    assert auth_client.get("/api/deals/?sort=invalid").status_code == 422
+    assert auth_client.get("/api/deals/?exclude_state=inventat").status_code == 422
+
+
+def test_deal3_stats_agregat(auth_client):
+    """T3 — cifrele calculate acum in SQL (COUNT/SUM/AVG) sunt identice cu cele
+    numarate manual din fixture, inclusiv pe baza GOALA, unde SUM da NULL."""
+    db = SessionLocal()
+    try:
+        _cinci_active(db)
+    finally:
+        db.close()
+
+    stats = auth_client.get("/api/deals/stats").json()
+    assert stats["active"] == 5
+    assert stats["noi"] == 2                        # p1 si p2
+    assert stats["avg_discount_active"] == 30.0     # (50+40+30+20+10)/5
+
+    db = SessionLocal()
+    try:
+        db.query(Deal).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    gol = auth_client.get("/api/deals/stats").json()
+    assert gol["active"] == 0
+    # SUM peste zero randuri da NULL -> 0, dar AVG ramane None: „nu exista active
+    # de mediat" nu e acelasi lucru cu „media e zero".
+    assert gol["noi"] == 0
+    assert gol["avg_discount_active"] is None

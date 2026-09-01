@@ -7,9 +7,9 @@ produse PE USERUL curent, deci are nevoie de el oricum.
 import threading
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -18,7 +18,7 @@ from app.models.radar_settings import RadarSettings
 from app.models.shop_scan_state import ShopScanState
 from app.models.tracked_product import TrackedProduct
 from app.models.user import User
-from app.services.currency_service import convert
+from app.services.currency_service import convert, get_all_rates
 from app.services.shop_registry import SHOP_REGISTRY, listing_domains, shopify_domains
 from app.utils.auth import get_current_user
 
@@ -33,6 +33,18 @@ _STARI_MANUALE = {"vazut", "ignorat"}
 # DEAL-2b — cele trei surse ale feed-ului. Lista e inchisa si validata la intrare,
 # ca o valoare gresita sa dea 422 explicit, nu o lista goala derutanta.
 _SURSE = {"shopify_enum", "refresh_diff", "listing_scan", "api_enum"}
+
+# DEAL-3 — multimile inchise pentru parametrii noi. `_STARI` e mai larga decat
+# `_STARI_MANUALE`: `exclude_state` doar CITESTE starea, deci are voie sa numeasca
+# si starile pe care userul nu le poate scrie.
+_STARI = {"nou", "vazut", "ignorat", "promovat"}
+_SORTARI = {"discount", "recent", "price"}
+
+# Plafonul paginii. 60 acopera un ecran de carduri cu rezerva, iar 500 e taria
+# maxima pe care o acceptam de la un client: peste atat, costul redevine cel pe
+# care DEAL-3 tocmai l-a eliminat (ORM + JSON + DOM pe zeci de mii de randuri).
+_LIMITA_IMPLICITA = 60
+_LIMITA_MAXIMA = 500
 
 
 class DealStateUpdate(BaseModel):
@@ -76,33 +88,32 @@ def _serialize(deal: Deal) -> dict:
     }
 
 
-@router.get("/")
-def list_deals(
-    state: Optional[str] = None,
-    shop_domain: Optional[str] = None,
-    source: Optional[str] = None,
-    active: Optional[bool] = None,
-    min_discount: Optional[float] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> List[dict]:
-    """Deal-urile, filtrabile. Conversia valutara pentru afisare ramane in
-    frontend (SHOP-2b), prin endpointul de rate existent — aici pretul si moneda
-    pleaca exact cum le-a masurat scannerul.
-
-    DEAL-2b — `source` filtreaza pe SERVER, nu in frontend: feed-ul are zeci de mii
-    de randuri, deci trimiterea lor toate ca sa fie aruncate in browser ar fi
-    risipa pe care filtrul de categorie (client-side, pe lista deja incarcata)
-    si-o permite doar fiindca lucreaza pe altceva.
-    """
+def _valideaza(source, exclude_state, sort):
+    """Validarile comune. Fiecare parametru inchis intr-o multime da 422 explicit,
+    nu o lista goala derutanta — aceeasi regula ca `source` de la DEAL-2b."""
     if source is not None and source not in _SURSE:
         raise HTTPException(
             status_code=422,
             detail=f"Sursă invalidă. Valori acceptate: {', '.join(sorted(_SURSE))}.")
+    if exclude_state is not None and exclude_state not in _STARI:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Stare invalidă. Valori acceptate: {', '.join(sorted(_STARI))}.")
+    if sort is not None and sort not in _SORTARI:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Sortare invalidă. Valori acceptate: {', '.join(sorted(_SORTARI))}.")
 
-    q = db.query(Deal)
+
+def _filtre(q, state, shop_domain, source, active, min_discount,
+            exclude_state, category):
+    """Filtrele, intr-un singur loc, fiindca sunt folosite de DOUA endpointuri:
+    lista si numaratoarea. Daca ar fi scrise de doua ori, ar putea devia, iar un
+    total care nu se potriveste cu randurile afisate e mai rau decat lipsa lui."""
     if state:
         q = q.filter(Deal.state == state)
+    if exclude_state:
+        q = q.filter(Deal.state != exclude_state)
     if source:
         q = q.filter(Deal.deal_source == source)
     if shop_domain:
@@ -111,9 +122,81 @@ def list_deals(
         q = q.filter(Deal.ended_at.is_(None) if active else Deal.ended_at.isnot(None))
     if min_discount is not None:
         q = q.filter(Deal.discount_pct >= min_discount)
+    if category:
+        # Categoria e o proprietate a MAGAZINULUI (SHOP_REGISTRY), nu a randului,
+        # deci se traduce intr-un IN pe domenii. O multime goala filtreaza la ZERO
+        # rezultate, nu se ignora: o categorie inexistenta trebuie sa arate gol,
+        # altfel userul ar primi tot feed-ul si ar crede ca filtrul a functionat.
+        domenii = [d for d, meta in SHOP_REGISTRY.items()
+                   if (meta or {}).get("category") == category]
+        q = q.filter(Deal.shop_domain.in_(domenii))
+    return q
+
+
+def _ordine(sort):
+    """Expresia de ORDER BY, cu tie-break pe id ca paginarea sa fie STABILA: la
+    valori egale de discount, doua cereri consecutive fara tie-break pot intoarce
+    aceleasi randuri pe pagini diferite, deci userul ar vedea duplicate si goluri.
+
+    `price` compara in RON, altfel un pret in EUR ar parea mai mic decat unul in
+    RON. Cursul vine din `get_all_rates()`; daca lipseste, cadem pe pretul brut —
+    o sortare aproximativa e mai buna decat un 500 pe o pagina de feed.
+    """
+    if sort == "recent":
+        return [Deal.first_seen_at.desc(), Deal.id.desc()]
+    if sort == "price":
+        try:
+            rate = get_all_rates() or {}
+        except Exception:
+            rate = {}
+        # Cheile sunt "EUR_RON"/"USD_RON", nu coduri simple de moneda.
+        perechi = [(cheie.split("_")[0], factor)
+                   for cheie, factor in rate.items() if factor]
+        if not perechi:
+            return [Deal.price.asc(), Deal.id.asc()]
+        # RON si orice moneda necunoscuta cad pe `else_`, adica factor 1.
+        expr = case(*[(Deal.currency == cod, Deal.price * factor)
+                      for cod, factor in perechi], else_=Deal.price)
+        return [expr.asc(), Deal.id.asc()]
+    return [Deal.discount_pct.desc(), Deal.id.desc()]
+
+
+@router.get("/")
+def list_deals(
+    state: Optional[str] = None,
+    shop_domain: Optional[str] = None,
+    source: Optional[str] = None,
+    active: Optional[bool] = None,
+    min_discount: Optional[float] = None,
+    exclude_state: Optional[str] = None,
+    category: Optional[str] = None,
+    sort: str = "discount",
+    limit: int = Query(_LIMITA_IMPLICITA, ge=1, le=_LIMITA_MAXIMA),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> List[dict]:
+    """Deal-urile, filtrabile, sortate si PAGINATE pe server. Conversia valutara
+    pentru afisare ramane in frontend (SHOP-2b), prin endpointul de rate existent
+    — aici pretul si moneda pleaca exact cum le-a masurat scannerul.
+
+    DEAL-3 — raspunsul ramane o LISTA, nu un obiect `{items, total}`: contractul
+    e deja consumat asa, iar schimbarea formei ar fi rupt fara castig fiecare
+    apelant. Totalul are endpoint separat (`/count`) tocmai din acest motiv, si
+    are si un avantaj: incarcarea incrementala cere numaratoarea O SINGURA DATA,
+    la reset, nu la fiecare pagina, deci COUNT-ul nu se plateste de N ori.
+
+    Filtrele si sortarea au coborat toate pe server (D-A/D-E). Inainte, pagina
+    aducea toate randurile active — 21k pe productie — si le filtra/sorta in
+    browser; costul nu era SQLite (216 ms masurati), ci ORM-ul, JSON-ul si DOM-ul.
+    """
+    _valideaza(source, exclude_state, sort)
+
+    q = _filtre(db.query(Deal), state, shop_domain, source, active,
+                min_discount, exclude_state, category)
 
     iesire = []
-    for d in q.order_by(Deal.discount_pct.desc()).all():
+    for d in q.order_by(*_ordine(sort)).offset(offset).limit(limit).all():
         item = _serialize(d)
         item["price_ron"] = _in_ron(d.price, d.currency)
         if d.compare_at_price is not None:
@@ -122,21 +205,57 @@ def list_deals(
     return iesire
 
 
+@router.get("/count")
+def deals_count(
+    state: Optional[str] = None,
+    shop_domain: Optional[str] = None,
+    source: Optional[str] = None,
+    active: Optional[bool] = None,
+    min_discount: Optional[float] = None,
+    exclude_state: Optional[str] = None,
+    category: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """DEAL-3 — cate randuri ar intoarce lista cu ACELEASI filtre. Fara limit /
+    offset / sort: niciunul nu schimba totalul, iar acceptarea lor ar sugera ca da.
+
+    Trece prin `_filtre`, aceeasi functie ca lista, ca numaratoarea sa nu poata
+    devia de la ce se afiseaza. COUNT in SQL, deci nu se materializeaza niciun
+    obiect ORM."""
+    _valideaza(source, exclude_state, None)
+
+    q = _filtre(db.query(Deal), state, shop_domain, source, active,
+                min_discount, exclude_state, category)
+    return {"total": q.with_entities(func.count(Deal.id)).scalar() or 0}
+
+
 @router.get("/stats")
 def deals_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Cifrele din capul paginii. „Active" = deal-uri pe care scannerul le-a
-    revazut la ultima trecere (`ended_at IS NULL`)."""
-    active = db.query(Deal).filter(Deal.ended_at.is_(None)).all()
-    discounturi = [d.discount_pct for d in active if d.discount_pct is not None]
+    revazut la ultima trecere (`ended_at IS NULL`).
+
+    DEAL-3 — totul se calculeaza in SQL, printr-o singura interogare agregata.
+    Inainte, `.all()` materializa 21k obiecte ORM ca sa numere trei lucruri;
+    COUNT/SUM/AVG dau exact aceleasi cifre fara sa construiasca niciun obiect.
+    Cheile si tipurile raspunsului raman neschimbate.
+    """
+    activ, noi, medie = (db.query(
+        func.count(Deal.id),
+        func.sum(case((Deal.state == "nou", 1), else_=0)),
+        func.avg(Deal.discount_pct),
+    ).filter(Deal.ended_at.is_(None)).one())
     ultimul = db.query(func.max(ShopScanState.last_scan_at)).scalar()
     return {
-        "active": len(active),
-        "noi": sum(1 for d in active if d.state == "nou"),
-        "avg_discount_active": (round(sum(discounturi) / len(discounturi), 1)
-                                if discounturi else None),
+        "active": activ or 0,
+        # SUM peste zero randuri da NULL, nu 0 — de aici `or 0`. AVG la fel, dar
+        # acolo None e chiar raspunsul corect (nu exista active de mediat).
+        "noi": int(noi or 0),
+        "avg_discount_active": (round(float(medie), 1) if medie is not None
+                                else None),
         "last_scan_at": ultimul,
     }
 
