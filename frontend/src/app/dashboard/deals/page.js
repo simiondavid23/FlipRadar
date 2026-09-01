@@ -78,6 +78,10 @@ const CATEGORY_LABEL = {
   "bijuterii-ceasuri": "Bijuterii & ceasuri",
 };
 
+// DEAL-3 — cate randuri cere o pagina. Acopera un ecran de carduri cu rezerva;
+// restul vin la cerere, prin butonul de sub grila.
+const PAGE_SIZE = 60;
+
 const round1 = (n) => (n == null ? null : Math.round(n * 10) / 10);
 
 export default function DealsPage() {
@@ -93,6 +97,12 @@ export default function DealsPage() {
   // backend si pot rula in paralel, deci un singur flag ar bloca gresit butonul
   // celalalt.
   const [scanningListings, setScanningListings] = useState(false);
+  // DEAL-3 — starea paginarii. `total` ramane null pana raspunde /count, iar
+  // `lastCount` tine cate randuri a adus ULTIMA pagina: cand totalul lipseste,
+  // o pagina incompleta e singurul semn ca s-a terminat feed-ul.
+  const [total, setTotal] = useState(null);
+  const [lastCount, setLastCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [tab, setTab] = useState("active");
   const [shopFilter, setShopFilter] = useState("");
@@ -102,33 +112,49 @@ export default function DealsPage() {
   const [minDiscount, setMinDiscount] = useState("");
   const [sortBy, setSortBy] = useState("discount");
 
-  // Starea si discountul se filtreaza SERVER-side; categoria ramane client-side,
-  // fiindca maparea magazin -> categorie e deja in datele de la /shops.
-  const loadDeals = useCallback(async () => {
-    setLoading(true);
+  // DEAL-3 — TOATE filtrele si sortarea pleaca la server, iar pagina cere doar
+  // PAGE_SIZE randuri. `reset` separa prima pagina (inlocuieste lista si cere
+  // numaratoarea) de „Incarca mai multe" (adauga la coada, fara COUNT repetat).
+  // `dela` vine ca parametru, nu din stare: altfel loadDeals si-ar schimba
+  // identitatea la fiecare incarcare si useEffect-ul de mai jos ar bucla.
+  const loadDeals = useCallback(async (reset = true, dela = 0) => {
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
     try {
-      const params = {};
-      if (tab === "incheiate") params.active = false;
-      else params.active = true;
-      if (tab === "noi") params.state = "nou";
-      if (tab === "ignorate") params.state = "ignorat";
-      if (shopFilter) params.shop_domain = shopFilter;
-      // DEAL-2b — filtrare pe SERVER: feed-ul are zeci de mii de randuri, deci nu
-      // le aducem pe toate ca sa le aruncam in browser (spre deosebire de filtrul
-      // de categorie, care lucreaza pe lista deja incarcata).
-      if (sourceFilter) params.source = sourceFilter;
-      if (minDiscount) params.min_discount = Number(minDiscount);
-
-      const { data } = await dealsAPI.list(params);
+      const filtre = {};
+      if (tab === "incheiate") filtre.active = false;
+      else filtre.active = true;
+      if (tab === "noi") filtre.state = "nou";
+      if (tab === "ignorate") filtre.state = "ignorat";
       // Tab-ul „Active" arata tot ce e viu MAI PUTIN ce a fost ignorat explicit.
-      setDeals(tab === "active" ? data.filter((d) => d.state !== "ignorat") : data);
+      // Era un filter() pe lista deja incarcata; cu paginare ar fi taiat DIN
+      // pagina curenta, deci ar fi dat pagini inegale — a coborat pe server.
+      if (tab === "active") filtre.exclude_state = "ignorat";
+      if (shopFilter) filtre.shop_domain = shopFilter;
+      if (sourceFilter) filtre.source = sourceFilter;
+      if (minDiscount) filtre.min_discount = Number(minDiscount);
+      // DEAL-3 — categoria s-a mutat si ea pe server: filtrata local, ar fi
+      // ales dintr-o singura pagina, nu din tot feed-ul.
+      if (categoryFilter) filtre.category = categoryFilter;
+
+      const [lista, numar] = await Promise.all([
+        dealsAPI.list({ ...filtre, sort: sortBy, limit: PAGE_SIZE, offset: reset ? 0 : dela }),
+        // Filtrele nu se schimba intre pagini, deci totalul e acelasi: se cere
+        // o singura data, la reset, nu de N ori.
+        reset ? dealsAPI.count(filtre) : Promise.resolve(null),
+      ]);
+      const data = lista.data || [];
+      setLastCount(data.length);
+      setDeals((prev) => (reset ? data : [...prev, ...data]));
+      if (numar) setTotal(numar.data?.total ?? null);
       setFeedError("");
     } catch (err) {
       setFeedError(err.response?.data?.detail || "Nu am putut încărca deal-urile.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [tab, shopFilter, sourceFilter, minDiscount]);
+  }, [tab, shopFilter, sourceFilter, minDiscount, categoryFilter, sortBy]);
 
   const loadSide = useCallback(async () => {
     try {
@@ -141,7 +167,9 @@ export default function DealsPage() {
     }
   }, []);
 
-  useEffect(() => { loadDeals(); }, [loadDeals]);
+  // Dependentele lui loadDeals SUNT exact filtrele + sortarea, deci [loadDeals]
+  // reseteaza pagina la orice schimbare de filtru si ramane lint-clean.
+  useEffect(() => { loadDeals(true); }, [loadDeals]);
   useEffect(() => { loadSide(); }, [loadSide]);
 
   const shopByDomain = useMemo(
@@ -155,22 +183,10 @@ export default function DealsPage() {
   const problemShops = useMemo(
     () => shops.filter((s) => s.last_status && s.last_status !== "ok"), [shops]);
 
-  const visibleDeals = useMemo(() => {
-    let rows = deals;
-    if (categoryFilter) {
-      rows = rows.filter((d) => shopByDomain[d.shop_domain]?.category === categoryFilter);
-    }
-    const sorted = [...rows];
-    if (sortBy === "recent") {
-      sorted.sort((a, b) => new Date(b.first_seen_at) - new Date(a.first_seen_at));
-    } else if (sortBy === "price") {
-      // Comparatia se face pe RON, ca preturile in EUR/SEK sa fie comparabile.
-      sorted.sort((a, b) => (a.price_ron ?? a.price) - (b.price_ron ?? b.price));
-    } else {
-      sorted.sort((a, b) => b.discount_pct - a.discount_pct);
-    }
-    return sorted;
-  }, [deals, categoryFilter, shopByDomain, sortBy]);
+  // DEAL-3 — filtrarea si sortarea client-side au disparut: `deals` e deja
+  // exact ce a cerut serverul. Sortarea locala ar fi fost si gresita, fiindca
+  // ar fi reordonat DOAR paginile incarcate pana acum, nu tot feed-ul.
+  const hasMore = total != null ? deals.length < total : lastCount === PAGE_SIZE;
 
   const statCards = [
     { label: "Deal-uri active", value: stats?.active ?? 0, color: "#22d3ee" },
@@ -229,13 +245,18 @@ export default function DealsPage() {
 
   const handleIgnore = async (deal) => {
     const anterior = deals;
+    const totalAnterior = total;
     // Scoatere optimista din feed-ul curent (in „Ignorate" ramane vizibil).
+    // DEAL-3 — totalul scade odata cu randul, altfel butonul „Incarca mai multe"
+    // ar ramane aprins pe un rest care nu mai exista.
     setDeals((prev) => prev.filter((d) => d.id !== deal.id));
+    setTotal((t) => (t == null ? t : t - 1));
     try {
       await dealsAPI.setState(deal.id, "ignorat");
       loadSide();
     } catch (err) {
       setDeals(anterior);
+      setTotal(totalAnterior);
       setActionMessage(err.response?.data?.detail || "Nu am putut ignora deal-ul.");
     }
   };
@@ -267,7 +288,7 @@ export default function DealsPage() {
       <PageHeading
         icon={Percent}
         title="Deal-uri"
-        subtitle={<>Chilipiruri găsite automat în magazinele urmărite — <Hl>{visibleDeals.length}</Hl> în vizualizare.</>}
+        subtitle={<>Chilipiruri găsite automat în magazinele urmărite — <Hl>{deals.length}</Hl> din <Hl>{total ?? "…"}</Hl> în vizualizare.</>}
         meta={stats?.last_scan_at ? `ULTIMUL SCAN · ${timeAgo(stats.last_scan_at)}` : null}
       />
 
@@ -351,13 +372,13 @@ export default function DealsPage() {
         </div>
       )}
 
-      <FeedErrorBanner message={feedError} onRetry={loadDeals} />
+      <FeedErrorBanner message={feedError} onRetry={() => loadDeals(true)} />
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem", color: "var(--text-dim)", fontSize: "12.5px" }}>
           Se încarcă deal-urile…
         </div>
-      ) : visibleDeals.length === 0 ? (
+      ) : deals.length === 0 ? (
         <div className="glass-panel" style={{
           textAlign: "center", padding: "3rem", marginTop: "14px",
           color: "var(--text-dim)", fontSize: "12.5px",
@@ -370,7 +391,7 @@ export default function DealsPage() {
           display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(305px, 1fr))",
           gap: "14px", marginTop: "14px",
         }}>
-          {visibleDeals.map((deal) => {
+          {deals.map((deal) => {
             const shop = shopByDomain[deal.shop_domain];
             const incheiat = Boolean(deal.ended_at);
             const marimi = deal.sizes_available || [];
@@ -485,6 +506,24 @@ export default function DealsPage() {
               />
             );
           })}
+        </div>
+      )}
+
+      {/* DEAL-3 — incarcare incrementala. Nu apare deloc cand feed-ul e epuizat,
+          ca sa nu invite la o cerere care s-ar intoarce goala. */}
+      {!loading && hasMore && (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+          <button
+            onClick={() => loadDeals(false, deals.length)}
+            disabled={loadingMore}
+            style={{
+              ...tabPillStyle(false),
+              opacity: loadingMore ? 0.6 : 1,
+              cursor: loadingMore ? "default" : "pointer",
+            }}
+          >
+            {loadingMore ? "Se încarcă…" : "Încarcă mai multe"}
+          </button>
         </div>
       )}
     </div>

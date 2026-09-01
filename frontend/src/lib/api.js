@@ -368,6 +368,9 @@ export const salesAPI = {
 // globale pe instanta; promovarea le trece in produse urmarite).
 export const dealsAPI = {
   list: (params) => api.get("/api/deals/", { params }),
+  // DEAL-3 — totalul, separat de lista: incarcarea incrementala il cere o
+  // singura data (la reset de filtre), nu la fiecare pagina.
+  count: (params) => api.get("/api/deals/count", { params }),
   stats: () => api.get("/api/deals/stats"),
   shops: () => api.get("/api/deals/shops"),
   setState: (id, state) => api.patch(`/api/deals/${id}`, { state }),
