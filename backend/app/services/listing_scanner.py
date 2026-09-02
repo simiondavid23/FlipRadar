@@ -219,6 +219,90 @@ def _in_stoc(card, descriptor) -> bool:
     return (nod.get(atribut) or "").strip() == asteptat
 
 
+# IMG-1b — respinse ca imagine de produs. `no-image`/`noimage`/`no_image` vin de la
+# toolnation, unde ld+json poarta `.../placeholder/default/toolnation-no-image-2_3.jpg`
+# pe TOATE produsele; `lazyimage` de la intersport, care are acelasi fisier fix in
+# `src` pe fiecare card.
+_RESPINSE_IMG = ("placeholder", "lazyimage", "blank", "1x1", "loading",
+                 "no-image", "noimage", "no_image")
+
+# `Deal.image_url` e `Text`, deci nu exista o lungime de coloana de respectat. Plafonul
+# e defensiv, in spiritul trunchierilor vecine (`handle` 255, `title` 500): un URL de
+# CDN masurat in sonde nu trece de ~250 de caractere, deci 2048 nu taie nimic real, dar
+# opreste o valoare patologica sa umfle randul.
+_MAX_IMG = 2048
+
+
+def normalizeaza_imagine(valoare, domain: str) -> str | None:
+    """URL absolut de imagine de produs, sau None. Public: testele il conduc direct.
+
+    Formele masurate de sondele IMG-1a/1a2, pe cele 14 domenii de listari:
+
+      * intersport.ro — `src` e un placeholder FIX pe fiecare card
+        (`//…/lazyimage/photogallerynormal.jpg`), iar poza reala sta in `data-src`,
+        protocol-relativa, cu query `?lm=<hash>`. De aici si respingerea dupa nume,
+        si completarea schemei.
+      * buzzsneakers.ro — `data-original-img` e RELATIV la radacina (`/files/thumbs/…`),
+        deci are nevoie de gazda ca sa devina utilizabil.
+      * caseking.de — `srcset` cu patru candidati separati prin virgula, fiecare
+        urmat de descriptorul de latime; se ia primul token.
+      * otter.ro / tezyo.ro — primele `<img>` din card sunt INSIGNE
+        (`/product_label_image/label_nou_1.png`), nu poza; ele se ocolesc prin
+        selectorul `img.product-image-photo` din registru, nu de aici — normalizatorul
+        n-are cum sa distinga o insigna valida de o fotografie.
+      * caseking.de — un al doilea `<img>` e eticheta energetica `.svg`, respinsa
+        prin extensie.
+    """
+    if not valoare:
+        return None
+    v = str(valoare).strip()
+    if not v:
+        return None
+    # srcset: „url 150w, url 300w" -> primul URL. Acelasi taietor acopera si forma
+    # cu un singur candidat urmat de descriptor („url 2x").
+    if "," in v or " " in v:
+        v = re.split(r"[,\s]", v, maxsplit=1)[0].strip()
+    if not v or v.lower().startswith("data:"):
+        return None
+
+    scazut = v.lower()
+    cale = urllib.parse.urlsplit(scazut).path or scazut
+    if cale.endswith(".svg") or cale.endswith(".gif"):
+        return None
+    if any(s in scazut for s in _RESPINSE_IMG):
+        return None
+
+    if v.startswith("//"):
+        v = "https:" + v
+    elif v.startswith("/"):
+        v = f"https://{domain}{v}"
+    elif not v.startswith(("http://", "https://")):
+        # Nici absolut, nici ancorat la radacina: un nume de fisier singur nu poate fi
+        # rezolvat fara o baza masurata, iar a o ghici ar produce 404-uri tacute.
+        return None
+    return v[:_MAX_IMG]
+
+
+def _imagine_of(card, descriptor: dict, domain: str) -> str | None:
+    """Prima valoare utilizabila, in ordinea declarata de descriptor.
+
+    Ordinea atributelor CONTEAZA: la intersport `src` exista si e valid ca URL, dar e
+    placeholderul; `data-src` trebuie incercat inainte. Registrul o declara per domeniu
+    (IMG-1a/1a2), aici nu se ghiceste nimic.
+
+    Fara `<noscript>` si fara `<source>`: sondele n-au gasit niciun domeniu din cele 14
+    care sa aiba poza DOAR acolo, deci le-am fi cautat degeaba pe toate cardurile.
+    """
+    selector = descriptor.get("image") or "img"
+    atribute = descriptor.get("image_attr") or ["data-src", "srcset", "src"]
+    for nod in card.select(selector):
+        for atribut in atribute:
+            gasit = normalizeaza_imagine(nod.get(atribut), domain)
+            if gasit:
+                return gasit
+    return None
+
+
 def extrage_carduri(html: str, descriptor: dict, domain: str) -> list[dict]:
     """Parse one listing page into card dicts. Public: the tests drive it directly
     on fragments cut from the real LST-1 dumps.
@@ -256,6 +340,7 @@ def extrage_carduri(html: str, descriptor: dict, domain: str) -> list[dict]:
             "title": _titlu_of(card, descriptor, link_nod)[:500],
             "price": pret,
             "compare_at": compare_at,
+            "image_url": _imagine_of(card, descriptor, domain),
         })
     return iesire
 
@@ -411,7 +496,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 deal = Deal(
                     shop_domain=domain, external_id=external_id,
                     handle=card["handle"], title=card["title"], url=card["url"],
-                    image_url=None, currency=moneda, price=card["price"],
+                    image_url=card.get("image_url"), currency=moneda, price=card["price"],
                     compare_at_price=card["compare_at"], discount_pct=discount_pct,
                     reason=reason, sizes_available=[],
                     min_price_seen=min_price_vechi, state="nou",
@@ -425,6 +510,11 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 # D7: the state belongs to the USER, so it stays untouched —
                 # `ignorat` stays `ignorat`. No alert on reappearance.
                 deal.title = card["title"]
+                # IMG-1b — `or deal.image_url`: un scan in care extractia da None
+                # (tema schimbata, card fara poza in acea zi) nu STERGE o poza deja
+                # avuta. Pierderea ar fi vizibila imediat in feed, iar recuperarea ar
+                # cere un scan reusit ulterior.
+                deal.image_url = card.get("image_url") or deal.image_url
                 deal.url = card["url"]
                 deal.handle = card["handle"]
                 deal.price = card["price"]

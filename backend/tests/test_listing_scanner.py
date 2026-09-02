@@ -1142,5 +1142,65 @@ def test_regresie_toate_fixture_urile_pe_calea_css(domeniu, asteptat):
 
     assert len(carduri) == asteptat
     assert all(set(c) == {"url", "external_id", "handle", "title", "price",
-                          "compare_at"} for c in carduri)
+                          "compare_at", "image_url"} for c in carduri)
     assert all(c["price"] > 0 for c in carduri)
+
+
+# ── IMG-1b: extractia imaginii pe calea CSS ─────────────────────────────────
+
+CSS_CU_POZA = ["bergfreunde.eu", "buzzsneakers.ro", "caseking.de", "intersport.ro",
+               "modivo.ro", "noriel.ro", "otter.ro", "powerup.ro",
+               "regatuljocurilor.ro", "tezyo.ro"]
+
+
+@pytest.mark.parametrize("domeniu", CSS_CU_POZA)
+def test_img1b_toate_cardurile_css_au_poza(domeniu):
+    """T1 — pe TOATE cele zece domenii cu selector CSS, FIECARE card iese cu o poza
+    absoluta, si nu una dintre capcanele masurate de sonde.
+
+    Cele trei excluderi nu sunt decorative, fiecare e o capcana reala:
+      * `placeholder`/`lazyimage` — intersport are acelasi fisier fix in `src` pe
+        toate cardurile, deci un extractor care ia `src` ar raporta 30 de poze
+        identice si ar parea ca merge;
+      * `label_` — otter si tezyo pun 2-4 INSIGNE (`label_nou_1.png`) ca primele
+        `<img>` din card, inaintea fotografiei;
+      * `.svg` — caseking are eticheta energetica drept al doilea `<img>`.
+    """
+    carduri = extrage_carduri(_fixture(domeniu), listing_descriptor(domeniu), domeniu)
+
+    assert carduri, "fixture-ul trebuie sa produca carduri"
+    for c in carduri:
+        poza = c["image_url"]
+        assert poza, f"{domeniu}: card fara poza -> {c['url']}"
+        assert poza.startswith("https://"), f"{domeniu}: poza neabsoluta -> {poza}"
+        for capcana in ("placeholder", "lazyimage", "label_"):
+            assert capcana not in poza.lower(), f"{domeniu}: {capcana} in {poza}"
+        assert not poza.split("?")[0].lower().endswith(".svg"), poza
+
+
+@pytest.mark.parametrize("brut, asteptat", [
+    # srcset: primul candidat, fara descriptorul de latime (caseking)
+    ("https://a/b.jpg 150w, https://a/c.jpg 300w", "https://a/b.jpg"),
+    ("https://a/b.jpg 2x", "https://a/b.jpg"),
+    # protocol-relativ (intersport) si relativ la radacina (buzzsneakers)
+    ("//cdn.x/b.jpg", "https://cdn.x/b.jpg"),
+    ("/files/b.jpg", "https://exemplu.ro/files/b.jpg"),
+    ("https://a/b.jpg?lm=deadbeef", "https://a/b.jpg?lm=deadbeef"),
+])
+def test_img1b_normalizator_forme_acceptate(brut, asteptat):
+    """T2 — cele patru forme masurate de sonde ajung la acelasi URL absolut."""
+    assert listing_scanner.normalizeaza_imagine(brut, "exemplu.ro") == asteptat
+
+
+@pytest.mark.parametrize("brut", [
+    None, "", "   ",
+    "data:image/gif;base64,R0lGODlh",                     # placeholder inline
+    "https://a/lazyimage/photogallerynormal.jpg",         # intersport, src fix
+    "https://a/placeholder/default/no-image-2_3.jpg",     # toolnation, ld+json
+    "https://a/b.svg",                                    # caseking, eticheta energetica
+    "https://a/b.gif",
+    "poza.jpg",                                           # nume gol, fara baza masurata
+])
+def test_img1b_normalizator_respinge(brut):
+    """T2 — tot ce nu e o fotografie de produs utilizabila iese None, nu un URL rupt."""
+    assert listing_scanner.normalizeaza_imagine(brut, "exemplu.ro") is None

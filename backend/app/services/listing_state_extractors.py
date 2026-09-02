@@ -107,7 +107,7 @@ def toolnation_ldjson(html: str, descriptor: dict) -> list[dict]:
     (`highPrice`/`listPrice`/`was`), masurat pe ambele pagini. Domeniul califica
     deci doar pe R2 (minim istoric), acelasi regim ca buzzsneakers.
     """
-    from app.services.listing_scanner import _external_id
+    from app.services.listing_scanner import _external_id, normalizeaza_imagine
 
     produse = ldjson_product_list(html)
     if not produse:
@@ -124,6 +124,16 @@ def toolnation_ldjson(html: str, descriptor: dict) -> list[dict]:
         pret = _pret_numeric(oferta.get("price"))
         if pret is None or pret <= 0:
             continue                 # fara pret valid se sare, niciodata nu se ghiceste
+        # IMG-1b — `image` e un STRING pe toate obiectele masurate, dar acceptam si
+        # celelalte doua forme din schema (lista, ImageObject) ca sa nu depindem de o
+        # observatie de o zi. Pe dump-ul IMG-1a valoarea e acelasi placeholder
+        # (`/placeholder/default/toolnation-no-image-2_3.jpg`) pe 24/24, deci
+        # rezultatul ASTEPTAT aici e None — nu e un bug, e ce publica magazinul.
+        brut = p.get("image")
+        if isinstance(brut, list):
+            brut = brut[0] if brut else None
+        if isinstance(brut, dict):
+            brut = brut.get("url") or brut.get("contentUrl")
         iesire.append({
             "url": url,
             "external_id": _external_id(url),
@@ -131,6 +141,7 @@ def toolnation_ldjson(html: str, descriptor: dict) -> list[dict]:
             "title": (p.get("name") or "").strip()[:500],
             "price": pret,
             "compare_at": None,
+            "image_url": normalizeaza_imagine(brut, urllib.parse.urlsplit(url).netloc),
         })
     return iesire
 
@@ -149,17 +160,24 @@ def _baza(descriptor: dict) -> str:
     return f"{p.scheme}://{p.netloc}"
 
 
-def _card(url: str, titlu: str, pret: float, compare) -> dict:
+def _card(url: str, titlu: str, pret: float, compare, image_url=None) -> dict:
     """Cardul normalizat, in forma EXACTA a caii CSS (`extrage_carduri`).
 
     Aici traiesc si cele doua filtre pe care calea CSS le aplica dupa citire:
     referinta <= 0 devine None (nu se raporteaza o reducere din nimic), iar
     trunchierile de lungime sunt aceleasi — `handle` 255, `title` 500.
+
+    IMG-1b — `image_url` trece prin ACELASI normalizator ca pe calea CSS, cu gazda
+    luata din URL-ul deja construit al produsului. Doua motive: valorile din stare pot
+    fi la fel de relative ca cele din DOM, si respingerea placeholderelor trebuie sa
+    fie o singura regula, nu doua care se pot desincroniza (toolnation serveste un
+    placeholder prin `image`, exact cazul pe care regula il prinde).
     """
-    from app.services.listing_scanner import _external_id
+    from app.services.listing_scanner import _external_id, normalizeaza_imagine
 
     if compare is not None and compare <= 0:
         compare = None
+    gazda = urllib.parse.urlsplit(url).netloc
     return {
         "url": url,
         "external_id": _external_id(url),
@@ -167,6 +185,7 @@ def _card(url: str, titlu: str, pret: float, compare) -> dict:
         "title": (titlu or "").strip()[:500],
         "price": pret,
         "compare_at": compare,
+        "image_url": normalizeaza_imagine(image_url, gazda),
     }
 
 
@@ -244,8 +263,12 @@ def vivre_rsc(html: str, descriptor: dict) -> list[dict]:
         pret = _pret_numeric(p.get("price"))
         if pret is None or pret <= 0:
             continue
+        # IMG-1b — `photo.main.thumb`, singura cheie image-like a produsului (IMG-1a2).
+        foto = it.get("photo")
+        principala = foto.get("main") if isinstance(foto, dict) else None
+        thumb = principala.get("thumb") if isinstance(principala, dict) else None
         iesire.append(_card(f"{baza}/p-{pid}/{slug}", it.get("name"), pret,
-                            _pret_numeric(p.get("lowestPrice"))))
+                            _pret_numeric(p.get("lowestPrice")), thumb))
     return iesire
 
 
@@ -325,8 +348,16 @@ def cellini_js(html: str, descriptor: dict) -> list[dict]:
         pret = _pret_numeric(f"{int(intreg)}.{bani.zfill(2)}")
         if pret is None or pret <= 0:
             continue
-        iesire.append(_card(f"{baza}/{fisier}", _titlu_din_slug(fisier), pret,
-                            _pret_numeric(p.get("oldprice"))))
+        # IMG-1b — `picture` e un dict de variante de marime; `thumb` inaintea lui
+        # `mini` fiindca e cea mai mare dintre cele doua masurate. `brand_picture` si
+        # `secondPicture` sunt DELIBERAT ignorate: prima e sigla marcii, a doua e o
+        # poza de ambalaj (`punga_cellini.jpg`) — niciuna nu e produsul.
+        poza = p.get("picture") if isinstance(p.get("picture"), dict) else {}
+        # IMG-1b — titlul vine acum din `product`. Vezi docstring-ul de mai sus.
+        titlu = (p.get("product") or p.get("master_product") or "").strip()
+        iesire.append(_card(f"{baza}/{fisier}", titlu or _titlu_din_slug(fisier), pret,
+                            _pret_numeric(p.get("oldprice")),
+                            poza.get("thumb") or poza.get("mini")))
     return iesire
 
 
@@ -409,8 +440,13 @@ def bonami_next(html: str, descriptor: dict) -> list[dict]:
             pret = _suma_units_scale(p.get("customerPrice"))
             if pret is None or pret <= 0:
                 continue
+            # IMG-1b — image_url ramane None, DELIBERAT. Starea poarta doar HASH-uri
+            # (`imageHash`, `contextImageHash`, `productImages[].hash`), nu URL-uri, iar
+            # sonda IMG-1a2 a cautat hash-ul primului produs in tot dump-ul: apare de
+            # doua ori, ambele in JSON, in ZERO atribute `src`/`srcset`/`data-src`.
+            # Sablonul de URL nu e deci deductibil din pagina — ramane pentru IMG-1c.
             iesire.append(_card(f"{baza}/p/{slug}", p.get("name"), pret,
-                                _suma_units_scale(p.get("retailPrice"))))
+                                _suma_units_scale(p.get("retailPrice")), None))
     return iesire
 
 

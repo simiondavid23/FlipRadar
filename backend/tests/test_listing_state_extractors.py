@@ -80,7 +80,7 @@ def test_toolnation_p1_24_carduri_normalizate():
 
     assert len(carduri) == 24
     assert all(set(c) == {"url", "external_id", "handle", "title", "price",
-                          "compare_at"} for c in carduri)
+                          "compare_at", "image_url"} for c in carduri)
 
     primul = carduri[0]
     assert primul["title"] == "E-00016 Schroefbitset 31-delig 25mm"
@@ -167,7 +167,7 @@ def test_vivre_24_carduri_din_rsc():
 
     assert len(carduri) == 24
     assert all(set(c) == {"url", "external_id", "handle", "title", "price",
-                          "compare_at"} for c in carduri)
+                          "compare_at", "image_url"} for c in carduri)
     primul = carduri[0]
     assert primul["price"] == 352.87
     assert primul["title"] == ("Birou pentru copii cu rafturi, dulap, sertar "
@@ -237,24 +237,24 @@ def test_cellini_48_carduri_cu_pret_compus():
     assert all(c["compare_at"] is not None for c in carduri), "oldprice nenul 48/48"
 
 
-def test_cellini_titlul_vine_din_slug_fiindca_name_e_null():
-    """DECIZIE DE DESIGN, consemnata. `name` e `null` pe 48/48 in stare, iar
-    `metatitle`/`subtitle` sunt goale — starea NU are titlu.
+def test_cellini_titlul_vine_din_campul_product():
+    """IMG-1b — CORECTIE de masuratoare. `name` chiar e `null` pe 48/48, si pe asta
+    se baza decizia veche (titlul umanizat din slug). Sonda IMG-1a2 a tiparit insa
+    elementul BRUT al array-ului si acolo se vede cheia `product`, cu numele complet
+    si corect capitalizat: „Lant cu pandantiv Maria Granacci cu turmaline si
+    diamante, din aur galben de 18K". `master_product` o dubleaza.
 
-    Doua variante erau pe masa: (a) `code` (SKU-ul, „AD_CT18CO27927") — stabil dar
-    ilizibil in feed; (b) slug-ul din `url`, umanizat. S-a ales (b): cititorul
-    feedului trebuie sa vada numele produsului, nu un cod de inventar. Sufixul de
-    cod din slug se pastreaza (nu se ghiceste unde se termina numele), iar `.html`
-    se taie.
-
-    Titlul din DOM ar fi fost mai curat, dar l-ar fi legat de o a doua sursa; cand
-    schema va sti sa combine stare + DOM, se poate reconsidera.
+    Slug-ul umanizat ramane rezerva, pentru randurile fara `product` — dar pe fixture
+    nu exista niciunul, deci calea principala e cea masurata aici. Diferenta e
+    vizibila: din slug ieseau nume cu majuscule pierdute („maria granacci") si cu
+    sufixul de cod lipit la coada.
     """
     carduri = extrage_carduri(_fixture("cellini.ro"),
                               listing_descriptor("cellini.ro"), "cellini.ro")
 
-    assert carduri[0]["title"].startswith("Lant cu pandantiv maria granacci")
-    assert "-" not in carduri[0]["title"], "cratimele devin spatii"
+    assert carduri[0]["title"] == ("Lant cu pandantiv  Maria Granacci cu turmaline "
+                                   "si diamante, din aur galben de 18K")
+    assert "Maria Granacci" in carduri[0]["title"], "capitalizarea reala, nu din slug"
     assert not carduri[0]["title"].endswith(".html")
     assert all(c["title"] for c in carduri), "niciun titlu gol pe 48/48"
 
@@ -286,7 +286,7 @@ def test_bonami_48_carduri_din_toate_blocurile():
 
     assert len(carduri) == 48, "toate cele trei blocuri, nu doar unul"
     assert all(set(c) == {"url", "external_id", "handle", "title", "price",
-                          "compare_at"} for c in carduri)
+                          "compare_at", "image_url"} for c in carduri)
 
 
 def test_bonami_pretul_vine_din_units_si_scale():
@@ -352,8 +352,58 @@ def test_contractul_de_card_e_identic_pe_toate_extractoarele(domeniu, asteptat):
     assert len(carduri) == asteptat
     for c in carduri:
         assert set(c) == {"url", "external_id", "handle", "title", "price",
-                          "compare_at"}
+                          "compare_at", "image_url"}
         assert c["url"].startswith("https://")
         assert isinstance(c["price"], float) and c["price"] > 0
         assert c["external_id"].startswith("lst:")
         assert c["compare_at"] is None or c["compare_at"] > 0
+
+
+# ── IMG-1b: image_url pe calea de stare ─────────────────────────────────────
+
+def test_img1b_vivre_poza_din_photo_main_thumb():
+    """T3 — vivre are o singura cheie image-like pe produs, `photo.main.thumb`
+    (masurat de IMG-1a2), si e un URL absolut pe CDN-ul propriu."""
+    carduri = extrage_carduri(_fixture("ro.vivre.eu"),
+                              listing_descriptor("ro.vivre.eu"), "ro.vivre.eu")
+
+    assert all(c["image_url"] for c in carduri), "poza pe 24/24"
+    assert all(c["image_url"].startswith("https://s9.vivre.eu/") for c in carduri)
+
+
+def test_img1b_cellini_poza_din_picture_thumb():
+    """T3 — `picture` e un dict de variante de marime; se ia `thumb`. `brand_picture`
+    (sigla marcii) si `secondPicture` (o poza de ambalaj, `punga_cellini.jpg`) sunt
+    ignorate deliberat — niciuna nu e produsul."""
+    carduri = extrage_carduri(_fixture("cellini.ro"),
+                              listing_descriptor("cellini.ro"), "cellini.ro")
+
+    assert all(c["image_url"] for c in carduri), "poza pe 48/48"
+    assert all(c["image_url"].startswith("https://cdn.contentspeed.ro/")
+               for c in carduri)
+    assert "punga_cellini" not in carduri[0]["image_url"], "nu poza de ambalaj"
+    assert "/brands/" not in carduri[0]["image_url"], "nu sigla marcii"
+
+
+def test_img1b_toolnation_poza_e_none_fiindca_magazinul_da_placeholder():
+    """T3 — REZULTAT NEGATIV ASTEPTAT, nu un extractor stricat. `image` exista pe
+    toate obiectele ld+json, dar valoarea e acelasi
+    `/placeholder/default/toolnation-no-image-2_3.jpg` (IMG-1a2, verificat pe doua
+    obiecte). Normalizatorul il respinge dupa nume, deci cardul iese fara poza."""
+    carduri = extrage_carduri(_fixture("toolnation.nl"),
+                              listing_descriptor("toolnation.nl"), "toolnation.nl")
+
+    assert carduri, "extractorul trebuie sa produca oricum carduri"
+    assert all(c["image_url"] is None for c in carduri)
+
+
+def test_img1b_bonami_poza_e_none_fiindca_starea_are_hash_uri():
+    """T3 — bonami nu poarta URL-uri de imagine in stare, ci HASH-uri (`imageHash`,
+    `productImages[].hash`). Sonda IMG-1a2 a cautat hash-ul primului produs in tot
+    dump-ul: doua aparitii, ambele in JSON, ZERO in `src`/`srcset`/`data-src`, deci
+    sablonul de URL nu e deductibil din pagina. Ramane pentru IMG-1c."""
+    carduri = extrage_carduri(_fixture("bonami.ro"),
+                              listing_descriptor("bonami.ro"), "bonami.ro")
+
+    assert carduri, "extractorul trebuie sa produca oricum carduri"
+    assert all(c["image_url"] is None for c in carduri)

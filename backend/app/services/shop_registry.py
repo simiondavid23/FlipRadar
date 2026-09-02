@@ -278,6 +278,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             # Din COD: langa suma scrie „Lei", nu „RON".
             "currency": "RON",
             "card": ".product-card-small",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src"],
             "link": "a.product-card-link",
             # Cardul n-are un nod unic de nume: `div.title` e MARCA („G-STAR") si
             # `div.description` e descrierea („Blugi · Bleumarin · Relaxed Fit").
@@ -705,6 +707,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             # caruselul de recomandari (55 de noduri in loc de 40 pe dump-ul SH),
             # adica exact capcana caruselului din LOT5.
             "card": "div.item-display-box.products5",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src"],
             # Fiecare card poarta DOUA ancore catre acelasi produs: slug-ul si
             # `index.php?route=product/quickview&product_id=<id>`. Excluderea se
             # face pe schema EXISTENTA, printr-un selector CSS negativ — ancora de
@@ -766,6 +770,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             "max_pages": 40,
             "currency": "EUR",
             "card": "div.product-tile",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src"],
             "link": "a[href]",
             "title_from": "link_aria_label",
             # Atributul `content` poarta zecimala cu PUNCT ("619.90"), deci nu
@@ -795,6 +801,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             "max_pages": 200,
             "currency": "EUR",
             "card": "li.product-item",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src"],
             "link": "a.product-link",
             # NU `link_aria_label`: pe bergfreunde `aria-label` e o FRAZA de
             # accesibilitate care include si preturile ("Brand: …; Original price:
@@ -982,6 +990,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             # Din COD, ca la axa L: langa pret scrie „LEI", nu „RON".
             "currency": "RON",
             "card": "article.x-product-box",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["data-src"],
             # Doua ancore per card duc la acelasi PDP; `js-select-product` e cea
             # unica (a doua poarta doar `js-click-product`).
             "link": "a.js-select-product",
@@ -1538,6 +1548,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             "max_pages": 80,
             "currency": "RON",
             "card": "li.product-item",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image": "img.product-image-photo", "image_attr": ["src"],
             "link": "a.product-item-link",
             # Titlul VINE DIN TEXTUL LINKULUI: `title` e un selector CSS pe card, iar
             # aici tinteste chiar ancora, deci _titlu_of ii ia textul. Nu e nevoie de
@@ -1592,6 +1604,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             "currency": "RON",
             # Cardul-PARINTE, cel care poarta atributele; 24 pe pagina.
             "card": ".product-item",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["data-original-img"],
             "link": "a.product-link",
             # `.title`, nu textul ancorei: ancora produsului scrie „Detalii" pe
             # TOATE cardurile, deci ar da acelasi titlu peste tot.
@@ -1636,6 +1650,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             "max_pages": 210,
             "currency": "RON",
             "card": "li.product-item",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image": "img.product-image-photo", "image_attr": ["src"],
             "link": "a.product-item-photo",
             "title": "h3.product-item-name",
             # Magento expune pretul numeric in atribut, deci nu parsam "98,00 lei".
@@ -1778,6 +1794,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             # SUBSET de clase: containerul real e `div.product-item.freegifts-<id>`,
             # cu token per-produs. Potrivirea pe lista completa ar da zero carduri.
             "card": "div.product-item",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src"],
             # `<a>` fara clasa, DESCENDENT al cardului: inveleste CONTINUTUL
             # (h2 + price-box sunt inauntrul lui), dar containerul `div.product-item`
             # ii ramane parinte. LST-1 descrisese asta ca "inveleste cardul", de unde
@@ -1826,6 +1844,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             # scopat da 20 si prinde ZERO carduri de carusel (verificat pe dump).
             # Asta e a doua aparitie a capcanei pe domeniu, dupa cea din `notes`.
             "card": "#js-product-list .js-product-miniature",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["data-src"],
             # Ancora de titlu e si ancora de produs; `a.product-thumbnail` din acelasi
             # card duce la acelasi PDP, deci alegerea e indiferenta — o pastram pe cea
             # care da si textul, ca `title` sa nu tinteasca alt nod decat `link`.
