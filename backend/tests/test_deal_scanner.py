@@ -868,14 +868,31 @@ def test_deal3_limit_offset_si_count(auth_client):
 def test_deal3_exclude_state_categorie_si_sortare(auth_client, monkeypatch):
     """T2 — `exclude_state` inlocuieste filtrul client-side de pe tab-ul „Active",
     iar categoria si sortarea au coborat si ele pe server."""
-    # Cursul e fixat in test: masuram ORDINEA, nu valorile BNR.
-    monkeypatch.setattr("app.routers.deals.get_all_rates",
-                        lambda: {"EUR_RON": 5.0, "USD_RON": 4.0})
-    monkeypatch.setattr("app.routers.deals.convert",
-                        lambda valoare, din, catre: valoare * 5.0)
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    # Cursul e fixat in test: masuram ORDINEA, nu valorile BNR. Un SINGUR
+    # monkeypatch acum, fiindca sortarea si afisarea trec prin aceeasi functie.
+    monkeypatch.setattr(
+        "app.routers.deals.convert",
+        lambda valoare, din, catre: valoare * {"EUR": 5.0, "SEK": 0.5}.get(din, 1.0))
+    # DEAL-3c ia monedele din REGISTRU, deci testul are nevoie de o intrare in
+    # SEK. E adaugata aici, nu luata de la un magazin real: REG-1 scoate
+    # caliroots.com, singurul domeniu in SEK, iar acest test masoara CONVERSIA,
+    # nu componenta registrului. `method: custom` si fara `listing` -> nu intra
+    # nici in shopify_domains(), nici in listing_domains(), deci nu atinge nimic
+    # altceva; monkeypatch restaureaza dictionarul la finalul testului.
+    monkeypatch.setitem(SHOP_REGISTRY, "test-sek.example",
+                        {"label": "Test SEK", "category": "test-deal3c",
+                         "currency": "SEK", "method": "custom"})
     db = SessionLocal()
     try:
         _cinci_active(db)
+        # Al saselea rand, DOAR in acest test: 30 SEK = 15 RON, deci cel mai
+        # ieftin din toate. discount_pct=5.0 ca sa nu schimbe ordinea implicita.
+        db.add(Deal(shop_domain=DOM, external_id="p6", title="P6",
+                    url="https://x/p6", currency="SEK", price=30.0,
+                    discount_pct=5.0, reason="compare_at", state="nou"))
+        db.commit()
     finally:
         db.close()
 
@@ -883,20 +900,22 @@ def test_deal3_exclude_state_categorie_si_sortare(auth_client, monkeypatch):
     assert auth_client.patch(f"/api/deals/{ids['p3']}",
                              json={"state": "ignorat"}).status_code == 200
 
-    assert len(auth_client.get("/api/deals/?exclude_state=ignorat").json()) == 4
+    assert len(auth_client.get("/api/deals/?exclude_state=ignorat").json()) == 5
     assert (auth_client.get("/api/deals/count?exclude_state=ignorat").json()
-            == {"total": 4}), "numaratoarea vede EXACT filtrele listei"
+            == {"total": 5}), "numaratoarea vede EXACT filtrele listei"
 
-    # sort=price compara in RON: p1 e 5 EUR = 25 RON, deci ajunge al doilea cel
-    # mai ieftin. Fara conversie ar fi iesit PRIMUL, cu "5 lei" — exact greseala
-    # pe care o prinde acest assert.
+    # sort=price compara in RON, prin ACEEASI conversie ca afisarea:
+    #   p6 30 SEK = 15 | p5 20 RON | p1 5 EUR = 25 | p4 40 | p3 60 | p2 80
+    # Cele doua greseli pe care le prinde assertul: fara conversie deloc, p1 ar
+    # iesi primul cu "5 lei"; cu doar EUR/USD convertite (starea de dinainte de
+    # DEAL-3c), p6 ar cadea al patrulea, tratat ca "30 lei".
     dupa_pret = [d["external_id"]
                  for d in auth_client.get("/api/deals/?sort=price").json()]
-    assert dupa_pret == ["p5", "p1", "p4", "p3", "p2"]
+    assert dupa_pret == ["p6", "p5", "p1", "p4", "p3", "p2"]
 
-    # Categoria e a MAGAZINULUI (SHOP_REGISTRY), nu a randului: toate cele cinci
+    # Categoria e a MAGAZINULUI (SHOP_REGISTRY), nu a randului: toate cele SASE
     # stau pe DOM, care e `sneakers`.
-    assert len(auth_client.get("/api/deals/?category=sneakers").json()) == 5
+    assert len(auth_client.get("/api/deals/?category=sneakers").json()) == 6
     # O categorie fara niciun magazin filtreaza la ZERO, nu se ignora.
     assert auth_client.get("/api/deals/?category=inexistenta").json() == []
 

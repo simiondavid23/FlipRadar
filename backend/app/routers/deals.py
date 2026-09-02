@@ -18,7 +18,7 @@ from app.models.radar_settings import RadarSettings
 from app.models.shop_scan_state import ShopScanState
 from app.models.tracked_product import TrackedProduct
 from app.models.user import User
-from app.services.currency_service import convert, get_all_rates
+from app.services.currency_service import convert
 from app.services.shop_registry import SHOP_REGISTRY, listing_domains, shopify_domains
 from app.utils.auth import get_current_user
 
@@ -139,22 +139,40 @@ def _ordine(sort):
     aceleasi randuri pe pagini diferite, deci userul ar vedea duplicate si goluri.
 
     `price` compara in RON, altfel un pret in EUR ar parea mai mic decat unul in
-    RON. Cursul vine din `get_all_rates()`; daca lipseste, cadem pe pretul brut —
-    o sortare aproximativa e mai buna decat un 500 pe o pagina de feed.
+    RON. Factorii vin prin `convert` — ACEEASI sursa ca afisarea (`_in_ron`) —
+    deci acopera orice moneda din registru, SEK inclusiv.
+
+    DEAL-3c: inainte veneau din `get_all_rates()`, care intoarce doar EUR si USD.
+    Monedele din afara acelei perechi cadeau pe `else_`, adica erau tratate ca
+    RON: cele ~1.350 de deal-uri active in SEK (1 SEK = 0,47 RON) se sortau ca si
+    cum ar fi fost de peste doua ori mai scumpe decat sunt. `convert` merge prin
+    `_get_rate`, cu tot lantul lui de rezerva (cache, BNR, disc, static).
     """
     if sort == "recent":
         return [Deal.first_seen_at.desc(), Deal.id.desc()]
     if sort == "price":
-        try:
-            rate = get_all_rates() or {}
-        except Exception:
-            rate = {}
-        # Cheile sunt "EUR_RON"/"USD_RON", nu coduri simple de moneda.
-        perechi = [(cheie.split("_")[0], factor)
-                   for cheie, factor in rate.items() if factor]
+        # Monedele vin din REGISTRU, nu dintr-o lista fixa: `currency` la nivel de
+        # intrare (magazinele Shopify) sau in `listing` (calea de listari). Asa,
+        # un domeniu nou intr-o moneda noua e acoperit din chiar momentul in care
+        # e adaugat in registru, fara sa mai fie nevoie de o modificare aici.
+        coduri = set()
+        for meta in SHOP_REGISTRY.values():
+            meta = meta or {}
+            coduri.add(meta.get("currency"))
+            coduri.add((meta.get("listing") or {}).get("currency"))
+        coduri -= {None, "RON"}
+
+        perechi = []
+        for cod in sorted(coduri):
+            try:
+                factor = convert(1.0, cod, "RON")
+            except Exception:
+                continue      # o moneda fara curs se sare, nu opreste sortarea
+            if factor:
+                perechi.append((cod, factor))
         if not perechi:
             return [Deal.price.asc(), Deal.id.asc()]
-        # RON si orice moneda necunoscuta cad pe `else_`, adica factor 1.
+        # RON si orice moneda sarita mai sus cad pe `else_`, adica factor 1.
         expr = case(*[(Deal.currency == cod, Deal.price * factor)
                       for cod, factor in perechi], else_=Deal.price)
         return [expr.asc(), Deal.id.asc()]
