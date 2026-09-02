@@ -7,6 +7,7 @@
 //   openLabel            — eticheta butonului "Deschide" (+ title)
 //   showMarginLine       — arata linia "-> revanzare | Marja" (Radar: mereu; Auto: doar cu marja)
 //   onToggleCompare      — daca lipseste, butonul de comparare nu apare (opt-in)
+import { useState } from "react";
 import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale } from "lucide-react";
 import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel } from "./listingHelpers";
 
@@ -26,6 +27,17 @@ export default function ListingFeedCard({
   onToggleSelect, onToggleCompare, onToggleBulk, onDelete,
   confirmingDelete, onConfirmDelete, onCancelDelete,
 }) {
+  // IMG-1b — o poza care nu se incarca (link mort, hotlink blocat) lasa acum
+  // placeholderul "FARA FOTO", nu un dreptunghi gol: `display:none` pe <img> ascundea
+  // imaginea, dar rama ramanea goala, fara sa spuna nimic.
+  //
+  // Retinem URL-ul care a esuat, nu un boolean: asa resetarea la schimbarea lui
+  // `image` e DERIVATA (`imgEsuat !== image`), nu facuta dintr-un efect. Un
+  // `useEffect(() => setImgEroare(false), [image])` ar fi facut acelasi lucru, dar
+  // e respins de `react-hooks/set-state-in-effect` — pe buna dreptate: ar fi
+  // declansat o a doua randare la fiecare card reciclat de React.
+  const [imgEsuat, setImgEsuat] = useState(null);
+
   const margin = listing.margin_pct;
   const marginValue = listing.margin_value;
 
@@ -96,14 +108,14 @@ export default function ListingFeedCard({
           display: "flex", alignItems: "center", justifyContent: "center",
         }}
       >
-        {image ? (
+        {image && imgEsuat !== image ? (
           <img
             src={image}
             alt={listing.title}
             loading="lazy"
             decoding="async"
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
+            onError={() => setImgEsuat(image)}
           />
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-mono)" }}>
