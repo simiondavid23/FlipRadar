@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 from app.database import SessionLocal
 from app.models.deal import Deal
 from app.models.product import Product
+from app.models.shop_price_memory import ShopPriceMemory
+from app.models.shop_scan_state import ShopScanState
 from app.services import deal_retention
 from app.services.deal_retention import run_deal_cleanup
 
@@ -21,11 +23,11 @@ def _acum():
 
 
 def _deal(db, ext, *, vazut_acum_zile=0, incheiat_acum_zile=None,
-          stare="nou", produs_id=None):
+          stare="nou", produs_id=None, domeniu=DOM):
     """Un rand de deal cu varsta ceruta. `incheiat_acum_zile=None` inseamna ACTIV."""
     acum = _acum()
     db.add(Deal(
-        shop_domain=DOM, external_id=ext, title=ext.upper(),
+        shop_domain=domeniu, external_id=ext, title=ext.upper(),
         url=f"https://x/{ext}", currency="EUR", price=10.0,
         discount_pct=30.0, reason="compare_at", state=stare,
         first_seen_at=acum - timedelta(days=vazut_acum_zile + 1),
@@ -54,7 +56,12 @@ def test_garda_de_stale_inchide_doar_ce_e_vechi():
 
         rezultat = run_deal_cleanup(db)
 
-        assert rezultat == {"stale_inchise": 3, "sterse": 0}
+        # Cheile care conteaza pentru ACEST test, nu dict-ul intreg: contractul de
+        # retur a crescut la D4, iar un test despre garda de stale n-are motiv sa
+        # pice cand se adauga un pas nou de curatenie. Forma completa e fixata in
+        # `test_d4_contractul_de_retur`.
+        assert rezultat["stale_inchise"] == 3
+        assert rezultat["sterse"] == 0
         dupa = _stari(db)
         assert len(dupa) == 5, "garda inchide, nu sterge"
         for ext in ("vechi1", "vechi2", "vechi3"):
@@ -85,7 +92,8 @@ def test_retentia_sterge_doar_incheiatele_vechi_nepromovate():
         rezultat = run_deal_cleanup(db)
 
         # Niciun rand activ, deci garda de stale n-are ce inchide.
-        assert rezultat == {"stale_inchise": 0, "sterse": 2}
+        assert rezultat["stale_inchise"] == 0
+        assert rezultat["sterse"] == 2
         assert set(_stari(db)) == {"vechi_promovat", "recent_incheiat"}
         # Produsul promovat n-a fost atins de stergere.
         assert db.query(Product).count() == 1
@@ -113,3 +121,139 @@ def test_pragul_de_stale_vine_din_mediu(monkeypatch):
         assert _stari(db)["de_doua_zile"] is not None
     finally:
         db.close()
+
+
+# ── D4a: memoria de pret prea veche ─────────────────────────────────────────
+
+def _memorie(db, ext, *, vazuta_acum_zile, domeniu=DOM):
+    db.add(ShopPriceMemory(
+        shop_domain=domeniu, external_id=ext, min_price=10.0, last_price=10.0,
+        last_seen_at=_acum() - timedelta(days=vazuta_acum_zile)))
+
+
+def test_d4a_memoria_veche_se_sterge_cea_recenta_ramane():
+    """T4 — peste DEAL_MEMORY_DAYS (90) memoria nu mai e o referinta utila: pretul
+    de acum trei luni nu spune nimic despre magazinul de azi. Sub prag ramane
+    neatinsa, altfel R2 ar pierde minime inca valide."""
+    db = SessionLocal()
+    try:
+        for ext in ("veche1", "veche2", "veche3"):
+            _memorie(db, ext, vazuta_acum_zile=100)
+        for ext in ("recenta1", "recenta2"):
+            _memorie(db, ext, vazuta_acum_zile=10)
+        db.commit()
+
+        rezultat = run_deal_cleanup(db)
+
+        assert rezultat["memorie_sterse"] == 3
+        ramase = {m.external_id for m in db.query(ShopPriceMemory).all()}
+        assert ramase == {"recenta1", "recenta2"}
+    finally:
+        db.close()
+
+
+# ── D4b: domeniile scoase din registru ──────────────────────────────────────
+
+def test_d4b_domeniile_orfane_se_curata_din_toate_tabelele(monkeypatch):
+    """T5 — lectia caliroots. Un domeniu scos din registru nu mai e scanat niciodata,
+    deci nimeni nu-i mai scrie `ended_at` si nimeni nu-i mai curata memoria.
+
+    Doua exceptii, amandoua deliberate: deal-ul PROMOVAT ramane (cheie straina spre
+    `products` plus decizia userului), si cel `refresh_diff` ramane fiindca acolo
+    `shop_domain` vine din `ps.source` si poate sa nu fie deloc un domeniu de
+    registru — l-am fi sters ca orfan desi e valid.
+    """
+    monkeypatch.setattr("app.services.shop_registry.SHOP_REGISTRY",
+                        {"a.ro": {"label": "A", "category": "test"}})
+    db = SessionLocal()
+    try:
+        produs = Product(name="Promovat", current_price=9.0)
+        db.add(produs)
+        db.flush()
+
+        # Domeniu CUNOSCUT: nimic nu trebuie atins. Domeniul se da la CREARE, nu
+        # printr-un UPDATE ulterior: cu `autoflush=False`, un update in masa nu vede
+        # randul inca neflushuit, iar deal-ul ar fi ramas pe DOM si ar fi facut si
+        # domeniul ALA orfan fata de registrul monkeypatch-uit.
+        _deal(db, "a_activ", stare="nou", domeniu="a.ro")
+        _memorie(db, "a_mem", vazuta_acum_zile=1, domeniu="a.ro")
+        db.add(ShopScanState(shop_domain="a.ro", last_status="ok"))
+
+        # Domeniu ORFAN, cu cele trei feluri de deal-uri.
+        for ext, stare, sursa, pid in (("v_nou", "nou", "shopify_enum", None),
+                                       ("v_promovat", "promovat", "shopify_enum", produs.id),
+                                       ("v_refresh", "nou", "refresh_diff", None)):
+            db.add(Deal(shop_domain="vechi.ro", external_id=ext, title=ext,
+                        url=f"https://vechi.ro/{ext}", currency="EUR", price=10.0,
+                        discount_pct=30.0, reason="compare_at", state=stare,
+                        deal_source=sursa, promoted_product_id=pid,
+                        first_seen_at=_acum(), last_seen_at=_acum()))
+        _memorie(db, "v_mem", vazuta_acum_zile=1, domeniu="vechi.ro")
+        db.add(ShopScanState(shop_domain="vechi.ro", last_status="ok"))
+        db.commit()
+
+        rezultat = run_deal_cleanup(db)
+
+        assert rezultat["orfane"] == ["vechi.ro"], "doar domeniul absent din registru"
+        assert rezultat["orfane_deals"] == 1        # doar `v_nou`
+        assert rezultat["orfane_mem"] == 1
+        assert rezultat["orfane_state"] == 1
+
+        ramase = {(d.shop_domain, d.external_id) for d in db.query(Deal).all()}
+        assert ("vechi.ro", "v_nou") not in ramase
+        assert ("vechi.ro", "v_promovat") in ramase, "promovatul nu se sterge"
+        assert ("vechi.ro", "v_refresh") in ramase, "refresh_diff nu se atinge"
+        assert ("a.ro", "a_activ") in ramase, "domeniul din registru e neatins"
+
+        assert db.query(ShopPriceMemory).filter(
+            ShopPriceMemory.shop_domain == "vechi.ro").count() == 0
+        assert db.query(ShopPriceMemory).filter(
+            ShopPriceMemory.shop_domain == "a.ro").count() == 1
+        assert db.query(ShopScanState).filter(
+            ShopScanState.shop_domain == "vechi.ro").count() == 0
+        assert db.query(ShopScanState).filter(
+            ShopScanState.shop_domain == "a.ro").count() == 1
+    finally:
+        db.close()
+
+
+def test_d4b_fara_orfane_nu_se_sterge_nimic(monkeypatch):
+    """T6 — cand toate domeniile sunt in registru, pasul e un no-op. Contorul zero e
+    la fel de important ca cel nenul: un `orfane` care iese nevid pe o baza sanatoasa
+    ar insemna ca stergem randuri bune."""
+    monkeypatch.setattr("app.services.shop_registry.SHOP_REGISTRY",
+                        {DOM: {"label": "Test", "category": "test"}})
+    db = SessionLocal()
+    try:
+        _deal(db, "p1", stare="nou")
+        _memorie(db, "m1", vazuta_acum_zile=1)
+        db.add(ShopScanState(shop_domain=DOM, last_status="ok"))
+        db.commit()
+
+        rezultat = run_deal_cleanup(db)
+
+        assert rezultat["orfane"] == []
+        assert rezultat["orfane_deals"] == 0
+        assert rezultat["orfane_mem"] == 0
+        assert rezultat["orfane_state"] == 0
+        assert db.query(Deal).count() == 1
+        assert db.query(ShopPriceMemory).count() == 1
+        assert db.query(ShopScanState).count() == 1
+    finally:
+        db.close()
+
+
+def test_d4_contractul_de_retur(monkeypatch):
+    """Forma COMPLETA a dict-ului intors, intr-un singur loc. Celelalte teste verifica
+    doar cheile care le privesc, ca sa nu pice toate cand se adauga un pas nou."""
+    monkeypatch.setattr("app.services.shop_registry.SHOP_REGISTRY",
+                        {DOM: {"label": "Test", "category": "test"}})
+    db = SessionLocal()
+    try:
+        rezultat = run_deal_cleanup(db)
+    finally:
+        db.close()
+
+    assert rezultat == {"stale_inchise": 0, "sterse": 0, "memorie_sterse": 0,
+                        "orfane_deals": 0, "orfane_mem": 0, "orfane_state": 0,
+                        "orfane": []}
