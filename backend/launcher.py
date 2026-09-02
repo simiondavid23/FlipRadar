@@ -293,6 +293,12 @@ def _selfcheck() -> int:
         from app.version import APP_VERSION
         from app.paths import get_data_dir
         dd = get_data_dir()
+        # LAUNCH-2b — selfcheck-ul e READ-ONLY si se ruleaza tipic exact cand ceva nu
+        # merge, deci cu serviciul pornit. Fara asta, importul de mai jos ar ridica
+        # `SystemExit(3)` din lock-ul de instanta (LAUNCH-2), iar `except Exception`
+        # de mai jos NU l-ar prinde: `SystemExit` vine din `BaseException`.
+        # `setdefault`, nu atribuire: daca userul a pus explicit o valoare, o respectam.
+        os.environ.setdefault("FLIPRADAR_INSTANCE_LOCK", "0")
         try:
             from app.main import FRONTEND_OUT
             fo = f"frontend_out={FRONTEND_OUT} (exista={FRONTEND_OUT.is_dir()})"

@@ -18,6 +18,8 @@ frontend/out/
 *.db
 *.db-shm
 *.db-wal
+# LAUNCH-2 — lock-ul de instanta, de langa baza
+*.db.lock
 # copii de backup BK-1
 backend/backups/
 
