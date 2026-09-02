@@ -398,6 +398,34 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[Scheduler] RE cleanup setup failed: {exc}")
 
+    # DEAL-4 — curatenia zilnica a feed-ului de deal-uri: garda de stale, apoi
+    # retentia celor incheiate. Ora e aleasa ca sa NU se suprapuna cu ceilalti
+    # scriitori de noapte: 03:00 cleanup-ul de log-uri, 03:30 coada Discord,
+    # 04:00 backup-ul. 03:15 e singura fereastra libera dintre ele, iar pe SQLite
+    # doi stergatori in masa simultan inseamna "database is locked".
+    try:
+        from app.services.deal_retention import run_deal_cleanup
+
+        def _run_deal_cleanup():
+            from app.database import SessionLocal
+            _db = SessionLocal()
+            try:
+                run_deal_cleanup(_db)
+            except Exception as exc:
+                print(f"[DealCleanup] eroare: {exc}")
+            finally:
+                _db.close()
+
+        # D11 — pornit implicit; se opreste doar setand explicit DEAL_CLEANUP=0.
+        if (os.getenv("DEAL_CLEANUP") or "1").strip().lower() not in ("0", "false"):
+            scheduler.add_job(_run_deal_cleanup, "cron", hour=3, minute=15,
+                              id="deal_daily_cleanup", replace_existing=True)
+            print("[Scheduler] Deal cleanup (03:15) inregistrat.")
+        else:
+            print("[Scheduler] Deal cleanup OPRIT (DEAL_CLEANUP=0).")
+    except Exception as exc:
+        print(f"[Scheduler] Deal cleanup setup failed: {exc}")
+
     # FlipRadar — cleanup zilnic (12:00): sterge definitiv anunturile disparute
     # de pe marketplace (404 / sold/removed), inclusiv cele salvate/ignorate.
     def _daily_radar_cleanup():
