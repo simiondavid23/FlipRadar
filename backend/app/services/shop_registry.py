@@ -523,16 +523,6 @@ SHOP_REGISTRY: dict[str, dict] = {
         "currency": "EUR",
         "notes": "SHOP-1a; ld+json rotunjeste pretul la intreg, nesigur ca sursa",
     },
-    "caliroots.com": {
-        "label": "Caliroots",
-        "category": "sneakers",
-        "country": "SE",
-        "delivery": "ro_confirmed",
-        "method": "shopify",
-        "status": "validated",
-        "currency": "SEK",
-        "notes": "SHOP-1a",
-    },
     "patta.nl": {
         "label": "Patta",
         "category": "sneakers",

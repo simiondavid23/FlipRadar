@@ -249,6 +249,9 @@ fara referinta — toate cele 13 publica ld+json cu pret. Monede masurate prin
 `/cart.js`, incrucisate cu `priceCurrency` din pagini, consistente peste tot:
 EUR x7, RON x5, SEK x1 (caliroots).
 
+> **2026-09-02 (REG-1):** caliroots.com eliminat din registru (nu livreaza in
+> Romania). Nu mai exista domenii in SEK.
+
 ### Descoperirea care a dictat implementarea: `.js`, nu `.json`
 
 Endpoint-ul per-produs `/products/<handle>.json` **nu poarta deloc campul

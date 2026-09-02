@@ -162,7 +162,7 @@ def test_validated_domains_santinela():
         "footshop.ro", "asos.com",                    # DISCOVERY-2
         "asphaltgold.com", "footdistrict.com",        # SHOP-1a
         "overkillshop.com", "nakedcph.com",           # SHOP-1a
-        "caliroots.com", "patta.nl", "slamjam.com",   # SHOP-1a
+        "patta.nl", "slamjam.com",                    # SHOP-1a
         "redgoblin.ro", "ada-shoes.ro",               # SHOP-1a
         "rocashoes.ro", "shopium.ro", "sosukicks.ro", # SHOP-1a
         "itgalaxy.ro", "carrefour.ro", "flip.ro",     # LOT1
