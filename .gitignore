@@ -30,6 +30,7 @@ Thumbs.db
 # FlipRadar — date locale sensibile (sesiuni scrapere etc.) + output health-check
 backend/data/
 backend/scripts/snapshot_out/
+backend/scripts/audit_out/
 **/scripts/diagnostics/
 # migrare one-shot PostgreSQL -> SQLite (SQLITE-2), ramane locala
 scripts/migrate_pg_to_sqlite.py

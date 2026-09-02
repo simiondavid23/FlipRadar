@@ -108,6 +108,15 @@ def test_just_a_moment_e_ancorat_pe_titlu():
     assert classify(status=200, body=cloudflare) is Outcome.BLOCKED
 
 
+def test_markerul_german_zugriff_verweigert_e_blocaj():
+    """SA-1: „zugriff verweigert" era in BLOCK_MARKERS de la NET-5.1, dar singurul lui
+    test traia in sectiunea mobile.de din test_rotation_triggers.py — si a cazut odata
+    cu ea la RC-1. Markerul NU e mort: lista e partajata de toate scraperele ramase,
+    iar Imperva serveste exact textul asta pe raspunsurile in germana."""
+    assert classify(status=200,
+                    body="<html>Zugriff verweigert</html>") is Outcome.BLOCKED
+
+
 def test_extra_markers_se_adauga_nu_inlocuiesc():
     body = "<html>acces restrictionat temporar</html>"
     assert classify(status=200, body=body) is Outcome.OK
