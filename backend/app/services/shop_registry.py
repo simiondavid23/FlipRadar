@@ -108,6 +108,36 @@ Campurile unei intrari:
                 profil trece dupa 95s (G2F-5). Absent = fara limitare, si niciun
                 cost — harta se deriva o data la import, iar domeniile care nu-s in
                 ea nu ating nici macar lacatul.
+  search      — OPTIONAL, descriptorul de CAUTARE DUPA TERMEN (SEARCH-1). Prezenta
+                cheii = domeniul apare in pagina „Scanare Magazine". Absenta = doar
+                prin link. `kind` alege mecanismul:
+                  * "shopify"    — Ajax Predictive Search `/search/suggest.json`.
+                                   Cere method == "shopify" (moneda vine din registru,
+                                   payload-ul n-o poarta). Plafon FIX de 10 rezultate,
+                                   masurat la SEARCH-0 pe 3 magazine (limit=50 intoarce
+                                   raspuns byte-identic cu limit=10) — fara alte chei.
+                  * "vtex"       — `?ft=` pe `catalog_api.endpoint`. Cere `catalog_api`.
+                  * "descriptor" — pagina HTML de cautare a magazinului, citita cu
+                                   `extrage_carduri`. Chei:
+                                     url_template — URL cu `{q}` (termenul, url-encodat
+                                                    de apelant), luat din <form>-ul real
+                                                    al magazinului (inclusiv hidden-urile
+                                                    lui — SEARCH-0 §5a);
+                                     selectorii de PRET — price_text SAU price_attr,
+                                                    optional compare_text/compare_attr,
+                                                    price_parse. OBLIGATORIU declarati
+                                                    aici chiar daca sunt identici cu cei
+                                                    din `listing`: acolo sunt scrisi pentru
+                                                    pagini de REDUCERI si pe pagina de
+                                                    cautare pot prinde 1 din 60 (noriel,
+                                                    SEARCH-0). Restul cardului (card, link,
+                                                    title, image, image_attr, currency) se
+                                                    MOSTENESTE din `listing`, deci cere
+                                                    `listing` prezent.
+                  * "custom"     — scraper de cautare scris de mana, in
+                                   scraper_service._SCRAPERS_BY_SOURCE (cele 5 istorice).
+                Domeniile cu method == "browser" NU pot avea `search` (D2: un browser
+                per query e prea scump pentru o pagina interactiva). Pinuit de test.
   notes       — valul/sonda de origine
 """
 import copy
@@ -176,6 +206,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        "search": {"kind": "custom"},
         "notes": "RETAIL-3a",
     },
     "emag.ro": {
@@ -186,7 +217,37 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "overrides": {"price_selector": ".product-new-price"},
+        "search": {"kind": "custom"},
         "notes": "RETAIL-3a",
+    },
+    # ── SEARCH-1 — ultimele doua magazine dinafara registrului ────────────────
+    # Pana aici traiau EXCLUSIV in `_SCRAPERS_BY_SOURCE`: aveau scraper de cautare,
+    # dar nicio metadata (label, categorie, tara). Intra acum ca sa poata fi randate
+    # de selectorul din „Scanare Magazine" ca oricare altul — pagina se construieste
+    # din registru, deci un magazin absent din el ar fi disparut din UI.
+    "sole.ro": {
+        "label": "Sole",
+        "category": "beauty",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "custom",
+        "status": "probed",
+        "search": {"kind": "custom"},
+        "notes": "SEARCH-1. Intra in registru DOAR cu scraperul de cautare istoric "
+                 "(_SCRAPERS_BY_SOURCE); NU exista extractor de pagina de produs, deci "
+                 "status ramane `probed` — validated ar pune domeniul in VALIDATED_DOMAINS "
+                 "si ar promite o extractie PDP care nu exista.",
+    },
+    "farmaciatei.ro": {
+        "label": "Farmacia Tei",
+        "category": "farmacie",
+        "country": "RO",
+        "delivery": "ro_confirmed",
+        "method": "custom",
+        "status": "probed",
+        "search": {"kind": "custom"},
+        "notes": "SEARCH-1. Ca sole.ro: doar cautare (comenzi.farmaciatei.ro), fara PDP, "
+                 "status `probed`.",
     },
 
     # ── RETAIL-5c ─────────────────────────────────────────────────────────────
@@ -365,6 +426,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "FASHION-2, SHOP-1a",
     },
 
@@ -493,6 +555,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "footdistrict.com": {
@@ -503,6 +566,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "overkillshop.com": {
@@ -513,6 +577,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a; livrare de reverificat periodic (nota lista master)",
     },
     "nakedcph.com": {
@@ -523,6 +588,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a; ld+json rotunjeste pretul la intreg, nesigur ca sursa",
     },
     "patta.nl": {
@@ -533,6 +599,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "slamjam.com": {
@@ -543,6 +610,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "EUR",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "redgoblin.ro": {
@@ -553,6 +621,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "RON",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "ada-shoes.ro": {
@@ -563,6 +632,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "RON",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "rocashoes.ro": {
@@ -573,6 +643,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "RON",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "shopium.ro": {
@@ -583,6 +654,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "RON",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
     "sosukicks.ro": {
@@ -593,6 +665,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "RON",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-1a",
     },
 
@@ -655,6 +728,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "microdata",
         "status": "validated",
+        "search": {"kind": "custom"},
         "notes": "LOT1; deblocat de scoparea nested; refresh migrat de pe calea "
                  "dedicata pe cea generica",
     },
@@ -819,6 +893,18 @@ SHOP_REGISTRY: dict[str, dict] = {
             # `!hidden`, gol si in spatele unui A/B test oprit. Taiatul e `uvp`,
             # etichetat "Original price" — deci referinta e PRP, nu minim 30 de zile.
             "reference_kind": "prp",
+        },
+        # SEARCH-1 — masurat la SEARCH-0: 72 de carduri la `salomon`, si TOATE 72
+        # cu pret (acoperire completa), iar termenul inexistent da 0 noduri-card pe
+        # 200. Selectorii de pret sunt aceiasi cu cei din `listing`, dar se declara
+        # explicit: `search_descriptor` nu mosteneste pretul (D6), tocmai ca sa nu
+        # devina o coincidenta tacuta daca unul din ei se schimba.
+        "search": {
+            "kind": "descriptor",
+            "url_template": "https://www.bergfreunde.eu/index.php?lang=10&cl=search&searchparam={q}",
+            "price_text": "[data-codecept='currentPrice']",
+            "compare_text": "[data-codecept='strokePrice']",
+            "price_parse": "eu_comma",
         },
     },
     "alternate.de": {
@@ -1454,6 +1540,10 @@ SHOP_REGISTRY: dict[str, dict] = {
                 "Card Cadou F64",
             ],
         },
+        # SEARCH-1 — cautarea refoloseste `catalog_api.endpoint` cu `?ft=`, masurat
+        # la SEARCH-0: 206 pe fereastra plina (50/50 la `sony alpha`), 200 cu `[]`
+        # pe termenul inexistent.
+        "search": {"kind": "vtex"},
     },
     "elefant.ro": {
         "label": "Elefant",
@@ -1641,7 +1731,9 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "notes": "LOT3b; ProductGroup cu hasVariant si variesBy=[size] — "
-                 "marimile ies deja ca variante",
+                 "marimile ies deja ca variante. SEARCH-0: pagina de cautare e "
+                 "schelet Nosto hidratat client-side, HTML independent de query "
+                 "(24 noduri si pe termen inexistent) — cautare exclusa peste HTTP.",
         # DEAL-2 — masurat in LST-1: Magento, 197 de pagini a 24 de produse.
         # Pagina 500 da 200 cu grila GOALA.
         "listing": {
@@ -1882,6 +1974,22 @@ SHOP_REGISTRY: dict[str, dict] = {
             # unul, `_pret_of` intoarce None pe compare (nod absent -> `.get`-ul de la
             # `select_one`, fara exceptie) si cardul ramane valid cu pretul lui.
         },
+        # SEARCH-1 — masurat la SEARCH-0: 20 de carduri la `catan`, toate cu pret,
+        # iar termenul inexistent da 0 noduri-card pe 200. Hidden-urile din URL
+        # (`controller`, `orderby`, `orderway`) sunt cele din <form>-ul real al
+        # magazinului, nu conventii PrestaShop presupuse.
+        #
+        # `compare_text` ramane declarat desi pe pagina de cautare a dat 0 noduri:
+        # acolo produsele sunt majoritar la pret intreg, deci absenta lui e normala
+        # si `compare_at` iese None. Cand exista o reducere, selectorul e cel corect
+        # — e acelasi nod pe care listarea il citeste de 20 din 20 de ori.
+        "search": {
+            "kind": "descriptor",
+            "url_template": "https://regatuljocurilor.ro/ro/cautare?controller=search&orderby=position&orderway=desc&search_query={q}",
+            "price_text": ".price",
+            "compare_text": ".regular-price",
+            "price_parse": "eu_comma",
+        },
     },
     "jucarii-vorbarete.ro": {
         "label": "Jucarii Vorbarete",
@@ -1891,6 +1999,7 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "shopify",
         "status": "validated",
         "currency": "RON",
+        "search": {"kind": "shopify"},
         "notes": "SHOP-3; migrat de la jsonld (LOT5) dupa sonda de enumerare: "
                  "SHOPIFY_DESCHIS, /products.json cu variants, .js cu available, "
                  "moneda RON din /cart.js incrucisata cu ld+json 3/3, datadome "
@@ -2455,6 +2564,75 @@ def catalog_api_descriptor(domain: str) -> dict | None:
     un bug de acolo sa rescrie registrul pentru tot procesul."""
     meta = SHOP_REGISTRY.get(domain) or {}
     return copy.deepcopy(meta["catalog_api"]) if "catalog_api" in meta else None
+
+
+def search_domains() -> set[str]:
+    """Domeniile care se pot cauta dupa termen (SEARCH-1).
+
+    Apartenenta se decide din PREZENTA cheii `search`, ca la `listing_domains` si
+    `catalog_api_domains`: cautarea e o capabilitate independenta de metoda de
+    citire a paginii de produs. Un magazin poate fi `jsonld` la nivel de PDP si,
+    separat, cautabil prin API-ul lui de platforma — sau invers, citibil doar prin
+    link, fara cautare.
+    """
+    return {domain for domain, meta in SHOP_REGISTRY.items() if "search" in meta}
+
+
+def search_kind_of(domain: str) -> str | None:
+    """Mecanismul de cautare al unui domeniu, sau None daca n-are `search`.
+
+    Lookup direct, fara copie — acelasi motiv ca la `url_identity_of`: valoarea e
+    un scalar imutabil, deci n-are cum sa fie mutata de apelant.
+    """
+    return ((SHOP_REGISTRY.get(domain) or {}).get("search") or {}).get("kind")
+
+
+# Cheile din `listing` care NU au voie sa ajunga in descriptorul de cautare.
+#
+# Primele patru sunt strict de LISTARE: descriu plimbarea prin paginile de reduceri
+# (`url` de intrare, sablonul de paginare, plafonul de pagini) si semantica referintei
+# de pret pe acele pagini. Pe o cautare n-au niciun sens — `url_template` ii ia locul
+# lui `url`, iar paginarea cautarii nici nu e masurata inca.
+_LISTING_DOAR_LISTARE = ("url", "page_url_template", "max_pages", "reference_kind")
+
+# Cheile de PRET se scot pe toate, chiar daca descriptorul de cautare declara doar
+# una. Motivul e D6 si e masurat la SEARCH-0: descriptorii de listare sunt scrisi
+# pentru pagini de REDUCERI, unde fiecare produs poarta un pret taiat. Pe o pagina de
+# CAUTARE majoritatea produselor sunt la pret intreg, iar selectorul de reduceri
+# prinde 1 din 60 (noriel) sau 0 din 24 (otter) — cardurile cad in tacere, fiindca
+# `extrage_carduri` arunca orice card fara pret valid.
+#
+# Se scot TOATE, nu doar cele redeclarate: altfel un `search` care declara `price_text`
+# ar mosteni `compare_attr` din listare si ar citi referinta cu selectorul paginii de
+# reduceri peste pretul citit cu al paginii de cautare — o pereche care n-a fost
+# masurata impreuna niciodata. Pretul se declara, nu se mosteneste.
+_LISTING_PRET = ("price_text", "price_attr", "compare_text", "compare_attr",
+                 "price_parse")
+
+
+def search_descriptor(domain: str) -> dict | None:
+    """Descriptorul EFECTIV de cautare, gata de folosit, copiat adanc.
+
+    Pe `kind != "descriptor"` e pur si simplu copia lui `search`. Pe "descriptor"
+    e `listing` (fara cheile de mai sus) suprascris de `search`: forma cardului
+    (card, link, title, image, image_attr, currency) se mosteneste, pentru ca acolo
+    e aceeasi grila de produse, dar pretul vine exclusiv din `search`.
+
+    Copia e obligatorie din acelasi motiv ca la `listing_descriptor`: consumatorul
+    il plimba prin functii, iar o referinta ar lasa un bug de acolo sa rescrie
+    registrul pentru tot procesul.
+    """
+    meta = SHOP_REGISTRY.get(domain) or {}
+    if "search" not in meta:
+        return None
+    descriptor = copy.deepcopy(meta["search"])
+    if descriptor.get("kind") != "descriptor":
+        return descriptor
+    baza = copy.deepcopy(meta.get("listing") or {})
+    for cheie in _LISTING_DOAR_LISTARE + _LISTING_PRET:
+        baza.pop(cheie, None)
+    baza.update(descriptor)
+    return baza
 
 
 def browser_domains() -> set[str]:

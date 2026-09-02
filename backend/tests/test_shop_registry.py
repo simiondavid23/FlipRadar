@@ -15,6 +15,9 @@ from app.services.shop_registry import (
     SHOP_REGISTRY,
     domain_overrides,
     impersonate_overrides,
+    search_descriptor,
+    search_domains,
+    search_kind_of,
     shopify_domains,
     validated_domains,
 )
@@ -27,10 +30,12 @@ _CATEGORII = {"electronice", "fashion", "sneakers", "incaltaminte", "tcg",
               "bricolaj",   # G2F-2 — unelte/atelier (toolnation; hornbach/action urmeaza)
               "pet",        # G2F-4 — pet shop (zooplus; fressnapf e in valul de browser)
               "biciclete",  # G2F-8 — biciclete & piese (biciclop vinde piese; veloteca e inaccesibil)
-              "bijuterii-ceasuri"}  # G2F-8 — bijuterii & ceasuri (cellini; bbcollection parcat)
+              "bijuterii-ceasuri",  # G2F-8 — bijuterii & ceasuri (cellini; bbcollection parcat)
+              "farmacie"}   # SEARCH-1 — farmacie (farmaciatei)
 _LIVRARI = {"ro_confirmed", "ro_storefront", "b2b_only", "unconfirmed"}
 _METODE = {"jsonld", "og", "microdata", "custom", "shopify", "browser"}
 _STARI = {"validated", "probed", "planned", "watchlist"}
+_SEARCH_KINDS = {"shopify", "vtex", "descriptor", "custom"}
 
 
 def test_registru_intrari_valide():
@@ -99,6 +104,44 @@ def test_registru_intrari_valide():
         if "ldjson_availability" in meta:
             assert meta["ldjson_availability"] == "untrusted",                 (f"{domain}: ldjson_availability accepta doar \"untrusted\" "
                  f"(are {meta['ldjson_availability']!r})")
+        # SEARCH-1 — forma descriptorului de cautare. Fiecare `kind` isi cere
+        # PRECONDITIILE de care depinde serviciul: shopify citeste moneda din
+        # registru, vtex are nevoie de endpoint-ul din catalog_api, iar descriptor
+        # mosteneste forma cardului din listare. Fara verificarile astea, o intrare
+        # scrisa gresit ar cadea abia in productie, pe un `KeyError` la prima cautare.
+        if "search" in meta:
+            cautare = meta["search"]
+            assert isinstance(cautare, dict) and cautare, \
+                f"{domain}: search trebuie sa fie dict nevid"
+            kind = cautare.get("kind")
+            assert kind in _SEARCH_KINDS, f"{domain}: search.kind={kind!r}"
+
+            if kind == "shopify":
+                assert meta["method"] == "shopify", \
+                    f"{domain}: search.kind=shopify cere method=shopify"
+                # Plafonul de 10 e fix si masurat; nu exista nimic de configurat.
+                assert set(cautare) == {"kind"}, \
+                    f"{domain}: search.kind=shopify nu accepta alte chei"
+            elif kind == "vtex":
+                assert "catalog_api" in meta, \
+                    f"{domain}: search.kind=vtex cere catalog_api"
+            elif kind == "custom":
+                assert set(cautare) == {"kind"}, \
+                    f"{domain}: search.kind=custom nu accepta alte chei"
+            elif kind == "descriptor":
+                assert "listing" in meta, \
+                    f"{domain}: search.kind=descriptor cere listing (forma cardului)"
+                sablon = cautare.get("url_template")
+                assert isinstance(sablon, str) and "{q}" in sablon, \
+                    f"{domain}: search.url_template trebuie sa fie str cu {{q}}"
+                # D6 — pretul se DECLARA in search, nu se mosteneste din listare.
+                assert "price_text" in cautare or "price_attr" in cautare, \
+                    (f"{domain}: search.kind=descriptor cere price_text sau "
+                     f"price_attr (pretul nu se mosteneste din listing)")
+
+            # D2 — un browser per query e prea scump pentru o pagina interactiva.
+            assert meta["method"] != "browser", \
+                f"{domain}: method=browser nu poate avea search"
 
 
 def test_derivarile_intorc_obiecte_proaspete():
@@ -150,6 +193,121 @@ def test_shopify_cere_moneda():
     intai, apoi = shopify_domains(), shopify_domains()
     assert intai == apoi
     assert intai is not apoi
+
+
+def test_search_custom_oglindeste_scraperele():
+    """SEARCH-1 — `search.kind == "custom"` si `_SCRAPERS_BY_SOURCE` sunt aceeasi
+    multime, in AMBELE sensuri.
+
+    Sora lui test_allow_list_e_derivata_din_scrapere, si din acelasi motiv: cele doua
+    structuri descriu acelasi lucru din doua unghiuri (registrul spune „magazinul asta
+    se cauta cu scraper de mana", harta spune „iata functia"). Divergenta ar fi TACUTA
+    in ambele directii — un scraper nou fara intrare in registru n-ar aparea in
+    selectorul din UI, iar o intrare fara scraper ar aparea si ar crapa cu KeyError la
+    primul click.
+    """
+    din_registru = {d for d in SHOP_REGISTRY if search_kind_of(d) == "custom"}
+    din_scrapere = set(ss._SCRAPERS_BY_SOURCE)
+
+    assert din_registru == din_scrapere, (
+        f"registru fara scraper: {sorted(din_registru - din_scrapere)}; "
+        f"scraper fara intrare in registru: {sorted(din_scrapere - din_registru)}")
+
+
+def test_search_descriptor_nu_mosteneste_pretul(monkeypatch):
+    """D6 — descriptorul efectiv mosteneste FORMA CARDULUI din listare, dar NICIODATA
+    pretul.
+
+    Registrul e monkeypatch-uit ca testul sa pinuiasca REGULA, nu intrarile curente:
+    daca maine bergfreunde isi schimba selectorii, testul asta trebuie sa ramana la fel.
+
+    Cazul critic e `compare_attr`: descriptorul de cautare declara doar `price_text`,
+    deci o implementare naiva `{**listing, **search}` l-ar lasa sa treaca din listare.
+    Ar iesi o pereche NEMASURATA — pretul citit cu selectorul paginii de cautare,
+    referinta cu al paginii de reduceri — adica exact genul de reducere fantoma pe
+    care D6 o interzice.
+    """
+    monkeypatch.setitem(SHOP_REGISTRY, "magazin-de-test.example", {
+        "label": "Test", "category": "electronice", "country": "RO",
+        "delivery": "ro_confirmed", "method": "jsonld", "status": "probed",
+        "notes": "fixture",
+        "listing": {
+            "url": "https://magazin-de-test.example/reduceri",
+            "page_url_template": "https://magazin-de-test.example/reduceri?p={n}",
+            "max_pages": 10,
+            "reference_kind": "prp",
+            "currency": "RON",
+            "card": "li.card",
+            "link": "a.link",
+            "title": "h2.titlu",
+            "price_attr": ("[data-pret]", "data-pret"),
+            "compare_attr": ("[data-vechi]", "data-vechi"),
+            "price_parse": "attr_float",
+        },
+        "search": {
+            "kind": "descriptor",
+            "url_template": "https://magazin-de-test.example/cauta?q={q}",
+            "price_text": ".pret-curent",
+            "price_parse": "eu_comma",
+        },
+    })
+
+    efectiv = search_descriptor("magazin-de-test.example")
+
+    # Pretul: DOAR ce declara `search`.
+    assert efectiv["price_text"] == ".pret-curent"
+    assert efectiv["price_parse"] == "eu_comma"
+    assert "price_attr" not in efectiv, "a mostenit price_attr din listare"
+    assert "compare_attr" not in efectiv, "a mostenit compare_attr din listare"
+    assert "compare_text" not in efectiv
+
+    # Forma cardului: mostenita din listare.
+    assert efectiv["card"] == "li.card"
+    assert efectiv["link"] == "a.link"
+    assert efectiv["title"] == "h2.titlu"
+    assert efectiv["currency"] == "RON"
+
+    # Cheile strict de LISTARE nu au ce cauta pe o cautare.
+    for cheie in ("url", "page_url_template", "max_pages", "reference_kind"):
+        assert cheie not in efectiv, f"{cheie} nu are sens pe descriptorul de cautare"
+
+
+def test_search_derivarile_intorc_obiecte_proaspete():
+    """Acelasi tipar ca test_derivarile_intorc_obiecte_proaspete, extins pe SEARCH-1:
+    serviciul plimba descriptorul prin functii, iar o referinta in registru ar lasa un
+    bug de acolo sa-l rescrie pentru tot procesul."""
+    intai, apoi = search_domains(), search_domains()
+    assert intai == apoi and intai is not apoi
+
+    intai.add("magazin-de-test.example")
+    assert "magazin-de-test.example" not in search_domains()
+
+    # Domeniul e ales din registru, nu scris de mana, ca testul sa nu depinda de o
+    # intrare anume.
+    domeniu = sorted(search_domains())[0]
+    unu, doi = search_descriptor(domeniu), search_descriptor(domeniu)
+    assert unu == doi and unu is not doi
+
+    unu["kind"] = "SABOTAT"
+    unu["cheie-noua"] = "x"
+    din_nou = search_descriptor(domeniu)
+    assert din_nou["kind"] != "SABOTAT"
+    assert "cheie-noua" not in din_nou
+
+    assert search_descriptor("domeniu-inexistent.example") is None
+
+
+def test_search_shopify_pe_toate_shopify():
+    """Un magazin Shopify nou trebuie sa primeasca si `search`, nu doar `method`.
+
+    Mecanismul e API de PLATFORMA (`/search/suggest.json`), nu de tema, deci e
+    disponibil pe orice magazin Shopify prin constructie — o intrare fara `search` ar
+    fi o omisiune, nu o decizie. Fara testul asta, magazinul ar intra in registru si
+    ar lipsi TACUT din pagina de cautare.
+    """
+    for domain in shopify_domains():
+        assert search_kind_of(domain) == "shopify", \
+            f"{domain}: magazin shopify fara search.kind=shopify"
 
 
 def test_harta_de_impersonate_e_pinuita():
