@@ -417,7 +417,7 @@ async def lifespan(app: FastAPI):
                 _db.close()
 
         # D11 — pornit implicit; se opreste doar setand explicit DEAL_CLEANUP=0.
-        if (os.getenv("DEAL_CLEANUP") or "1").strip().lower() not in ("0", "false"):
+        if (os.getenv("DEAL_CLEANUP") or "1").strip().lower() not in ("0", "false", "no", "off"):
             scheduler.add_job(_run_deal_cleanup, "cron", hour=3, minute=15,
                               id="deal_daily_cleanup", replace_existing=True)
             print("[Scheduler] Deal cleanup (03:15) inregistrat.")
