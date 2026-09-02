@@ -195,6 +195,41 @@ def _evalueaza(pret: float, compare_at, min_price_vechi, prag: float, prag_r1=No
     return None, None
 
 
+def preincarca_pagina(db, domain: str, ids: list[str]) -> tuple[dict, dict]:
+    """(memorie_dupa_id, deal_dupa_id) pentru o pagina. Doua SELECT-uri cu `IN`, nu
+    doua per produs.
+
+    D10 — pe scanul Shopify sunt 56.768 de produse, deci ~113.000 de interogari per
+    rulare (16 minute). Preincarcarea le aduce la doua pe pagina: ~460 in total.
+
+    E SIGUR fiindca `vazute` garanteaza deja ca un `external_id` e tratat o singura
+    data per scan (SCAN-1), deci un rand adaugat in cursul paginii nu trebuie sa fie
+    vizibil unei cautari ulterioare din aceeasi pagina — si nici nu era, `SessionLocal`
+    ruland cu `autoflush=False`. Preincarcarea nu schimba deci nimic din ce vedea codul
+    inainte; doar il vede o data, nu de N ori.
+
+    Constrangerea unica `(shop_domain, external_id)` exista pe amandoua tabelele, deci
+    dictionarele nu pot pierde randuri prin suprascriere: cel mult unul per cheie.
+
+    Pe PAGINA, nu pe tot domeniul, din doua motive: memoria (un domeniu ca
+    footdistrict are 8.000+ de produse, deci tot atatea obiecte ORM tinute degeaba) si
+    lungimea listei `IN` — 250 de id-uri la Shopify, 20-76 la listari, comod sub limita
+    SQLite de 32.766 de parametri, pe cand un domeniu intreg ar fi trecut-o.
+    """
+    if not ids:
+        return {}, {}
+    memorii = (db.query(ShopPriceMemory)
+               .filter(ShopPriceMemory.shop_domain == domain,
+                       ShopPriceMemory.external_id.in_(ids))
+               .all())
+    dealuri = (db.query(Deal)
+               .filter(Deal.shop_domain == domain,
+                       Deal.external_id.in_(ids))
+               .all())
+    return ({m.external_id: m for m in memorii},
+            {d.external_id: d for d in dealuri})
+
+
 def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
     """Scaneaza un magazin. Ridica exceptie doar pe esec de enumerare — apelantul o
     prinde si o scrie in ShopScanState, ca un magazin picat sa nu opreasca restul."""
@@ -213,6 +248,14 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
     de_notificat: list[Deal] = []
 
     for pagina in _pagini(domain):
+        # D10 — o singura trecere prin pagina ca sa strangem cheile, apoi doua
+        # interogari. Cele deja in `vazute` se sar: pentru ele bucla oricum face
+        # `continue` inainte de a citi ceva din dictionare.
+        ids_pagina = [str(p["id"]) for p in pagina
+                      if isinstance(p, dict) and p.get("id") is not None
+                      and str(p["id"]) not in vazute]
+        memorii, dealuri = preincarca_pagina(db, domain, ids_pagina)
+
         for produs in pagina:
             if not isinstance(produs, dict) or produs.get("id") is None:
                 continue
@@ -235,10 +278,7 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
             vazute.add(external_id)
 
             # --- memoria R2: se citeste minimul VECHI inainte de a-l actualiza ---
-            memorie = (db.query(ShopPriceMemory)
-                       .filter(ShopPriceMemory.shop_domain == domain,
-                               ShopPriceMemory.external_id == external_id)
-                       .first())
+            memorie = memorii.get(external_id)
             if memorie is None:
                 # Prima vedere n-are istoric, deci R2 nu se poate evalua.
                 min_price_vechi = None
@@ -256,10 +296,7 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
                 continue
             calificate.add(external_id)
 
-            deal = (db.query(Deal)
-                    .filter(Deal.shop_domain == domain,
-                            Deal.external_id == external_id)
-                    .first())
+            deal = dealuri.get(external_id)
             handle = produs.get("handle")
             url = f"https://{domain}/products/{handle}" if handle else f"https://{domain}"
             imagini = produs.get("images") or []

@@ -53,7 +53,7 @@ from app.services.log_manager import set_log_user
 # Shared with the Shopify scanner ON PURPOSE — see the module docstring. These are
 # imported, not copied, so DEAL-2 cannot drift from SHOP-2a on what a deal is.
 from app.services.deal_scanner import (
-    _evalueaza, _prag, _pret_strict, _scrie_stare, _settings,
+    _evalueaza, _prag, _pret_strict, _scrie_stare, _settings, preincarca_pagina,
 )
 from app.services.shop_registry import listing_descriptor, listing_domains
 
@@ -448,6 +448,13 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
         linkuri_vazute |= linkuri_pagina
         pagini += 1
 
+        # D10 — doua interogari pe pagina in loc de doua per card. Pozitia e DUPA
+        # conditiile de oprire de mai sus: pe o pagina care declanseaza `break` n-are
+        # rost sa mai intrebam baza de date nimic.
+        ids_pagina = [c["external_id"] for c in carduri
+                      if c["external_id"] not in vazute]
+        memorii, dealuri = preincarca_pagina(db, domain, ids_pagina)
+
         for card in carduri:
             external_id = card["external_id"]
             # SCAN-1 — a product ALREADY handled in this scan is skipped outright.
@@ -473,10 +480,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
             vazute.add(external_id)
 
             # --- R2 memory: the OLD minimum is read before being updated ---
-            memorie = (db.query(ShopPriceMemory)
-                       .filter(ShopPriceMemory.shop_domain == domain,
-                               ShopPriceMemory.external_id == external_id)
-                       .first())
+            memorie = memorii.get(external_id)
             if memorie is None:
                 min_price_vechi = None               # first sighting: R2 has no history
                 db.add(ShopPriceMemory(
@@ -496,10 +500,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 continue
             calificate.add(external_id)
 
-            deal = (db.query(Deal)
-                    .filter(Deal.shop_domain == domain,
-                            Deal.external_id == external_id)
-                    .first())
+            deal = dealuri.get(external_id)
             if deal is None:
                 deal = Deal(
                     shop_domain=domain, external_id=external_id,
