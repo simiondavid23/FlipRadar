@@ -241,10 +241,17 @@ def test_modelul_alertelor_nu_mai_e_inregistrat():
     assert "MarketplaceKeywordAlert" not in names
 
 
-def test_cautarile_live_marketplace_raman(auth_client):
-    # Garda de regresie: curatarea a atins DOAR alertele, nu si restul routerului.
+def test_ruta_marketplace_a_disparut_complet():
+    # MKT-DEAD: la MKT-CLEAN au cazut doar alertele, iar testul de atunci pazea
+    # restul routerului. Acum a cazut si restul — calea legacy nu mai are niciun
+    # consumator (zero potriviri pe `api/marketplace` in frontend/src), iar fiecare
+    # scraper al ei are un echivalent viu in Radar sau Auto.
     from app.main import app
-    paths = {r.path for r in app.routes}
-    assert "/api/marketplace/search-all" in paths
-    assert "/api/marketplace/saved" in paths
-    assert not any("keyword-alerts" in p for p in paths)
+    assert not [r.path for r in app.routes
+                if getattr(r, "path", "").startswith("/api/marketplace")]
+
+
+def test_modelul_marketplace_saved_nu_mai_e_inregistrat():
+    from app.database import Base
+    names = {m.class_.__name__ for m in Base.registry.mappers}
+    assert "MarketplaceSaved" not in names

@@ -21,11 +21,12 @@ _MODULE_NAMES = [
     "mobilede_scraper", "okazii_scraper", "olx_scraper", "publi24_scraper",
 ]
 
-# IMP-1b — cele patru module comune ale scraperelor din app/scrapers/.
+# IMP-1b — modulele comune ale scraperelor din app/scrapers/.
+# MKT-DEAD: `app.scrapers.marketplace._common` a cazut odata cu calea legacy, deci
+# lista a scazut de la patru la trei.
 _COMMON_MODULES = [
     "app.scrapers.auto.listings._common",
     "app.scrapers.auto.lots._common",
-    "app.scrapers.marketplace._common",
     "app.scrapers.real_estate._common",
 ]
 
@@ -89,7 +90,7 @@ def test_scraperele_iau_profilul_din_sursa_centrala(modul):
 
 @pytest.mark.parametrize("modul", _COMMON_MODULES)
 def test_modulele_comune_iau_profilul_din_sursa_centrala(modul):
-    """IMP-1b: cele patru `_common.py` isi defineau propriul IMPERSONATE = "chrome131"."""
+    """IMP-1b: fiecare `_common.py` isi definea propriul IMPERSONATE = "chrome131"."""
     import importlib
 
     mod = importlib.import_module(modul)

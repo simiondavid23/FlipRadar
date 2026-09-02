@@ -24,7 +24,6 @@ from app.routers import license  # KEY-1 — licentiere cu cheie de activare (mo
 from app.routers import scraping
 from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
-from app.routers import marketplace  # FlipRadar — Modulul 1 Marketplace (scrapere live)
 from app.routers import auto  # FlipRadar — Loturi & Licitatii (Copart/IAAI/SCA/OpenLane)
 from app.routers import real_estate  # FlipRadar — Modul Imobiliare (OLX/Storia/Imobiliare.ro)
 from app.routers import resale  # FASHION-3a — referinte de revanzare + profiluri de taxe
@@ -50,10 +49,6 @@ from app.models import vinted_catalog  # RP-2 — arbore dinamic de categorii Vi
 from app.models import radar_message_template, push_subscription
 # FlipRadar — tabele noi pentru modulele auto/imobiliare (doar schema, populate ulterior)
 from app.models import real_estate_listing, auto_lot, auto_listing
-# FlipRadar — Modulul 1 Marketplace: anunturi salvate
-# (alertele keyword marketplace au fost eliminate: cod mort fara UI si fara
-#  evaluator; functionalitatea e acoperita de Radar keywords)
-from app.models import marketplace_saved
 # FlipRadar — Grupuri Facebook (config + postari)
 from app.models import facebook_group_config, facebook_group_post
 # MODIFICARE 7 — coada Discord persistenta (tabel discord_queue)
@@ -779,7 +774,6 @@ app.include_router(sales.router)
 app.include_router(reports.router)
 app.include_router(radar.router)
 app.include_router(user_settings.router)
-app.include_router(marketplace.router)
 app.include_router(auto.router)
 app.include_router(real_estate.router)
 app.include_router(resale.router)  # FASHION-3a
