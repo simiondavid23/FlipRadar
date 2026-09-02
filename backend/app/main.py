@@ -14,6 +14,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
+from app.instance_lock import asigura_instanta_unica
+
+# LAUNCH-2 — inaintea lui create_all/run_migrations de mai jos: pana la lifespan
+# un al doilea proces ar fi scris deja in baza.
+asigura_instanta_unica()
 from app.routers import auth, products, alerts, dashboard
 from app.routers import license  # KEY-1 — licentiere cu cheie de activare (mod desktop)
 from app.routers import scraping
