@@ -29,10 +29,8 @@ from app.services.push_service import is_push_configured, notify_user_push
 from app.services.radar import health_watchdog
 from app.services.discord_service import send_radar_notification
 from app.services.log_manager import log_manager, set_log_user
-from app.services.radar.autovit_scraper import search_autovit
 from app.services.radar.facebook_scraper import search_facebook
 from app.services.radar.lajumate_scraper import search_lajumate
-from app.services.radar.mobilede_scraper import search_mobilede
 from app.services.radar.okazii_scraper import search_okazii
 from app.services.radar.olx_scraper import search_olx, fetch_olx_offer_details, fetch_olx_seller_rating
 from app.services.radar.publi24_scraper import search_publi24
@@ -68,12 +66,10 @@ _PLATFORM_DELAY_RANGES: dict[str, tuple[float, float]] = {
     "okazii":    (0.7, 1.5),
     "lajumate":  (0.7, 1.5),
     "facebook":  (1.5, 3.5),
-    "autovit":   (0.5, 1.3),
-    "mobilede":  (0.8, 1.8),
 }
 
 # SCHED-1 — platformele Radar Piata, fiecare cu jobul ei APScheduler (radar_scan_).
-RADAR_PLATFORMS = ["olx", "vinted", "okazii", "lajumate", "publi24", "facebook", "autovit", "mobilede"]
+RADAR_PLATFORMS = ["olx", "vinted", "okazii", "lajumate", "publi24", "facebook"]
 
 
 def _get_platform_delay(platform: str) -> float:
@@ -1726,10 +1722,6 @@ def _platform_enabled_in_settings(platform: str, settings: RadarSettings) -> boo
         return bool(getattr(settings, "platform_lajumate_enabled", True))
     if p == "publi24":
         return bool(getattr(settings, "platform_publi24_enabled", True))
-    if p == "autovit":
-        return bool(getattr(settings, "platform_autovit_enabled", True))
-    if p == "mobilede":
-        return bool(getattr(settings, "platform_mobilede_enabled", True))
     return False
 
 
@@ -1958,28 +1950,6 @@ def _run_scraper(
                 oras=keyword.oras,
                 category=keyword.category,
                 skip_enrich_ids=skip_enrich_ids,
-            )
-        if platform in ("autovit", "mobilede"):
-            try:
-                car_filters_dict = json.loads(keyword.car_filters) if keyword.car_filters else None
-            except (json.JSONDecodeError, TypeError):
-                car_filters_dict = None
-            if platform == "autovit":
-                return search_autovit(
-                    keyword=keyword.name,
-                    page=page,
-                    max_price=keyword.max_price,
-                    min_price=keyword.min_price,
-                    exclude_words=exclude_words,
-                    car_filters=car_filters_dict,
-                )
-            return search_mobilede(
-                keyword=keyword.name,
-                page=page,
-                max_price=keyword.max_price,
-                min_price=keyword.min_price,
-                exclude_words=exclude_words,
-                car_filters=car_filters_dict,
             )
     except Exception as exc:
         print(f"[RadarScanner] Scraperul {platform} a crapat: {exc}")

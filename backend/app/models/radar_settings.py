@@ -30,8 +30,6 @@ class RadarSettings(Base):
     platform_facebook_enabled = Column(Boolean, default=False, nullable=False)
     platform_lajumate_enabled = Column(Boolean, default=True, nullable=False)
     platform_publi24_enabled = Column(Boolean, default=True, nullable=False)
-    platform_autovit_enabled = Column(Boolean, default=True, nullable=False)
-    platform_mobilede_enabled = Column(Boolean, default=True, nullable=False)
     facebook_session_path = Column(String, nullable=True)
     # SHOP-2a — scannerul de deal-uri Shopify. Deal-urile sunt globale pe instanta,
     # dar setarile care le guverneaza raman per-user, ca tot restul.

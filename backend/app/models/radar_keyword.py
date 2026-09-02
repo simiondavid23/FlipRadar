@@ -42,7 +42,6 @@ class RadarKeyword(Base):
     grade_c_min = Column(Float, nullable=True)
     notify_email = Column(Boolean, default=True, nullable=False)
     notify_discord = Column(Boolean, default=True, nullable=False)
-    car_filters = Column(Text, nullable=True)
     # FlipRadar — config wizard marketplace (platform, categorie, subcategorie, filtre) serializat JSON
     marketplace_config = Column(Text, nullable=True)
     # RP-2 — engine de excluderi v2, opt-in per keyword. `simple` = comportamentul

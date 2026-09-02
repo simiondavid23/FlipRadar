@@ -82,7 +82,6 @@ class KeywordCreate(BaseModel):
     grade_c_min: Optional[float] = None
     notify_email: bool = True
     notify_discord: bool = True
-    car_filters: Optional[dict] = None
     marketplace_config: Optional[dict] = None
     # RP-2 — engine de excluderi v2 (opt-in).
     exclude_matching_mode: Optional[str] = None
@@ -114,7 +113,6 @@ class KeywordUpdate(BaseModel):
     grade_c_min: Optional[float] = None
     notify_email: Optional[bool] = None
     notify_discord: Optional[bool] = None
-    car_filters: Optional[dict] = None
     marketplace_config: Optional[dict] = None
     # RP-2 — engine de excluderi v2 (opt-in).
     exclude_matching_mode: Optional[str] = None
@@ -176,8 +174,6 @@ class SettingsUpdate(BaseModel):
     platform_facebook_enabled: Optional[bool] = None
     platform_lajumate_enabled: Optional[bool] = None
     platform_publi24_enabled: Optional[bool] = None
-    platform_autovit_enabled: Optional[bool] = None
-    platform_mobilede_enabled: Optional[bool] = None
     # SHOP-2a — scannerul de deal-uri Shopify.
     deal_discount_threshold: Optional[float] = None
     deal_scan_enabled: Optional[bool] = None
@@ -320,7 +316,6 @@ def _kw_to_dict(kw: RadarKeyword) -> dict:
         "grade_c_min": getattr(kw, "grade_c_min", None),
         "notify_email": bool(getattr(kw, "notify_email", True)),
         "notify_discord": bool(getattr(kw, "notify_discord", True)),
-        "car_filters": (json.loads(kw.car_filters) if getattr(kw, "car_filters", None) else None),
         "marketplace_config": _parse_json_obj(getattr(kw, "marketplace_config", None)),
         "exclude_matching_mode": getattr(kw, "exclude_matching_mode", "simple") or "simple",
         "exclude_exceptions": _parse_json_list(getattr(kw, "exclude_exceptions", None)),
@@ -461,8 +456,6 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "platform_facebook_enabled": s.platform_facebook_enabled,
         "platform_lajumate_enabled": bool(getattr(s, "platform_lajumate_enabled", True)),
         "platform_publi24_enabled": bool(getattr(s, "platform_publi24_enabled", True)),
-        "platform_autovit_enabled": bool(getattr(s, "platform_autovit_enabled", True)),
-        "platform_mobilede_enabled": bool(getattr(s, "platform_mobilede_enabled", True)),
         "facebook_session_path": s.facebook_session_path,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
@@ -507,8 +500,8 @@ def list_keywords(
 # FEED-AUDIT (A6) + FAST-1: platforme validate contra listei reale (un typo facea
 # keyword-ul mort tacut), ore active 0-23 (25-30 insemna "niciodata scanat"), iar
 # intervalele SUB 5 minute sunt permise DOAR pe platformele rapide — OLX (enrichment
-# per-rezultat), Facebook (Playwright) si mobile.de (Imperva) nu pot tine cadenta.
-FAST_SCAN_PLATFORMS = {"vinted", "okazii", "lajumate", "publi24", "autovit"}
+# per-rezultat) si Facebook (Playwright) nu pot tine cadenta.
+FAST_SCAN_PLATFORMS = {"vinted", "okazii", "lajumate", "publi24"}
 
 
 def _validate_keyword_fields(platforms, poll_interval, hours_start, hours_end):
@@ -573,7 +566,6 @@ def create_keyword(
         grade_c_min=data.grade_c_min,
         notify_email=bool(data.notify_email),
         notify_discord=bool(data.notify_discord),
-        car_filters=(json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None),
         marketplace_config=(json.dumps(data.marketplace_config, ensure_ascii=False) if data.marketplace_config else None),
         exclude_matching_mode=(data.exclude_matching_mode if data.exclude_matching_mode in ("simple", "advanced") else "simple"),
         exclude_exceptions=(json.dumps(data.exclude_exceptions, ensure_ascii=False) if data.exclude_exceptions else None),
@@ -658,8 +650,6 @@ def update_keyword(
         kw.notify_email = bool(data.notify_email)
     if data.notify_discord is not None:
         kw.notify_discord = bool(data.notify_discord)
-    if data.car_filters is not None:
-        kw.car_filters = json.dumps(data.car_filters, ensure_ascii=False) if data.car_filters else None
     if data.marketplace_config is not None:
         kw.marketplace_config = json.dumps(data.marketplace_config, ensure_ascii=False) if data.marketplace_config else None
     if data.exclude_matching_mode is not None:
@@ -1150,10 +1140,8 @@ def search_manual(
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from app.services.radar.autovit_scraper import search_autovit
     from app.services.radar.facebook_scraper import search_facebook
     from app.services.radar.lajumate_scraper import search_lajumate
-    from app.services.radar.mobilede_scraper import search_mobilede
     from app.services.radar.okazii_scraper import search_okazii
     from app.services.radar.olx_scraper import search_olx
     from app.services.radar.publi24_scraper import search_publi24
@@ -1198,12 +1186,6 @@ def search_manual(
             if platform == "publi24":
                 return search_publi24(keyword=keyword, max_price=max_price, min_price=min_price,
                                       condition="all", exclude_words=exclude_words, judet=None, oras=None)
-            if platform == "autovit":
-                return search_autovit(keyword=keyword, max_price=max_price, min_price=min_price,
-                                      exclude_words=exclude_words, car_filters=None)
-            if platform == "mobilede":
-                return search_mobilede(keyword=keyword, max_price=max_price, min_price=min_price,
-                                       exclude_words=exclude_words, car_filters=None)
         except Exception as exc:
             print(f"[RadarManualSearch] Scraperul {platform} a crapat: {exc}")
         return []
@@ -1318,10 +1300,6 @@ def update_settings(
         s.platform_lajumate_enabled = bool(data.platform_lajumate_enabled)
     if data.platform_publi24_enabled is not None:
         s.platform_publi24_enabled = bool(data.platform_publi24_enabled)
-    if data.platform_autovit_enabled is not None:
-        s.platform_autovit_enabled = bool(data.platform_autovit_enabled)
-    if data.platform_mobilede_enabled is not None:
-        s.platform_mobilede_enabled = bool(data.platform_mobilede_enabled)
     s.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(s)

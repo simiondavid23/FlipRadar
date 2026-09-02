@@ -8,7 +8,6 @@ import pytest
 from app.services.network import triggers
 from app.services.network.rotator import RotationResult
 from app.services.radar import health_watchdog as hw
-from app.services.radar import mobilede_scraper as mds
 from app.services.radar import vinted_html as vh
 from app.services.radar.base_scraper import Outcome
 
@@ -277,61 +276,6 @@ def test_textul_alertei_fara_rotatii_nu_are_sufix(monkeypatch):
     for _ in range(2):
         _blocked_cycle("mobilede")
     assert len(alerts) == 1 and "rotații" not in alerts[0]
-
-
-# ── bucla de retry din mobilede ──────────────────────────────────────────────────
-
-class _Resp:
-    def __init__(self, status, text=""):
-        self.status_code = status
-        self.text = text
-
-
-def _run_search(monkeypatch, responses, rotates):
-    """Ruleaza search_mobilede cu raspunsuri predefinite. `rotates` = ce intoarce
-    report_outcome (adica: rotatia a dat un IP nou sau nu)."""
-    calls, slept = [], []
-    monkeypatch.setattr(mds.binding, "curl_kwargs", lambda p: {})
-    monkeypatch.setattr(mds.curl_requests, "get",
-                        lambda url, **kw: (calls.append(url), responses.pop(0))[1])
-    monkeypatch.setattr(mds.time, "sleep", lambda s: slept.append(s))
-    monkeypatch.setattr(mds, "report_outcome", lambda p, o: rotates)
-    mds.search_mobilede("bmw", None)
-    return calls, slept
-
-
-def test_bucla_reia_fara_backoff_cand_rotatia_da_ip_nou(monkeypatch):
-    calls, slept = _run_search(
-        monkeypatch, [_Resp(403, "blocked"), _Resp(200, "<html>ok</html>")], rotates=True)
-    assert len(calls) == 2 and slept == []
-
-
-def test_bucla_face_backoff_cand_rotatia_nu_ajuta(monkeypatch):
-    calls, slept = _run_search(
-        monkeypatch, [_Resp(403, "blocked"), _Resp(200, "<html>ok</html>")], rotates=False)
-    assert len(calls) == 2 and len(slept) == 1
-
-
-def test_200_cu_marker_ia_aceeasi_cale_ca_403(monkeypatch):
-    # Interstitialul mobile.de vine si cu 200; fara asta l-am fi parsat ca pagina buna.
-    calls, slept = _run_search(
-        monkeypatch,
-        [_Resp(200, "<html>Zugriff verweigert</html>"), _Resp(200, "<html>ok</html>")],
-        rotates=True)
-    assert len(calls) == 2 and slept == []
-
-
-def test_401_ia_aceeasi_cale(monkeypatch):
-    calls, slept = _run_search(
-        monkeypatch, [_Resp(401, ""), _Resp(200, "<html>ok</html>")], rotates=True)
-    assert len(calls) == 2 and slept == []
-
-
-def test_bucla_nu_e_infinita_cand_rotatia_reuseste_mereu(monkeypatch):
-    # `continue` CONSUMA incercarea: 3 raspunsuri blocate = 3 apeluri, apoi iesire.
-    calls, slept = _run_search(
-        monkeypatch, [_Resp(403, "b"), _Resp(403, "b"), _Resp(403, "b")], rotates=True)
-    assert len(calls) == 3 and slept == []
 
 
 # ── §7 — recuperarea datelor la boot ─────────────────────────────────────────────

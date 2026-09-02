@@ -17,8 +17,8 @@ from app.utils.http_profile import (
 
 # Modulele care aveau profil propriu si acum trebuie sa-l ia din sursa centrala.
 _MODULE_NAMES = [
-    "autovit_scraper", "cleanup_service", "facebook_scraper", "lajumate_scraper",
-    "mobilede_scraper", "okazii_scraper", "olx_scraper", "publi24_scraper",
+    "cleanup_service", "facebook_scraper", "lajumate_scraper",
+    "okazii_scraper", "olx_scraper", "publi24_scraper",
 ]
 
 # IMP-1b — modulele comune ale scraperelor din app/scrapers/.

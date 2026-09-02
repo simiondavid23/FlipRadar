@@ -1,18 +1,19 @@
 """NET-5.3b — cablarea clasificatorului in restul allowlist-ului.
 
-`autovit`, `okazii`, `publi24`, `lajumate` ies prin modem din 5.2, dar pana la
+`okazii`, `publi24`, `lajumate` ies prin modem din 5.2, dar pana la
 etapa asta un 403 acolo era un `return []` / `return None` TACUT — nici watchdog,
 nici rotatie. Testele de aici verifica exact cablarea (clasificare -> raportare ->
 retry imediat pe IP nou / backoff altfel), cu `report_outcome` FALSIFICAT: politica
 de rotatie in sine e testata separat in test_rotation_triggers.py.
 
-Trei dintre platforme au un singur punct de intrare (`_request`, prin care trece si
-cautarea, si enrichment-ul) — se testeaza direct. `autovit` are doua, oglinda cu
-`mobilede` (bucla din search + fetch-ul de detalii).
+Toate trei au un singur punct de intrare (`_request`, prin care trece si cautarea,
+si enrichment-ul) — se testeaza direct.
+
+RC-1: sectiunile `autovit` (bucla din search + fetch de detalii) au disparut odata cu
+scraperul; comportamentele lor traiesc in testele parametrizate de mai jos.
 """
 import pytest
 
-from app.services.radar import autovit_scraper as avs
 from app.services.radar import okazii_scraper as oks
 from app.services.radar import publi24_scraper as pbs
 from app.services.radar import lajumate_scraper as ljs
@@ -96,6 +97,19 @@ def test_200_cu_marker_ia_aceeasi_cale_ca_403(monkeypatch, mod, platform):
 
 
 @pytest.mark.parametrize("mod,platform", _REQUEST_MODS)
+def test_401_ia_aceeasi_cale_ca_403(monkeypatch, mod, platform):
+    # RC-1: 401 era acoperit DOAR de `test_autovit_401_ia_aceeasi_cale`. `classify`
+    # trateaza 401 si 403 la fel (`status in (401, 403) -> BLOCKED`), dar pana aici
+    # nicio platforma ramasa nu proba ramura pe 401.
+    calls, slept, reported = _wire(
+        monkeypatch, mod, [_Resp(401, ""), _Resp(200, "<html>ok</html>")],
+        rotates=True)
+    assert mod._request("http://x") == "<html>ok</html>"
+    assert len(calls) == 2 and slept == []
+    assert reported[0] == (platform, Outcome.BLOCKED)
+
+
+@pytest.mark.parametrize("mod,platform", _REQUEST_MODS)
 def test_bucla_nu_e_infinita_cand_rotatia_reuseste_mereu(monkeypatch, mod, platform):
     # `continue` CONSUMA incercarea: 3 raspunsuri blocate = 3 apeluri, apoi None.
     calls, slept, _ = _wire(
@@ -147,104 +161,9 @@ def test_500_ramane_none_dupa_un_apel(monkeypatch, mod, platform):
     assert reported == [(platform, Outcome.TRANSIENT)]
 
 
-# ── autovit: bucla din search + fetch-ul de detalii, oglinda cu mobilede ─────────
-
-def _run_search_autovit(monkeypatch, responses, rotates):
-    calls, slept, reported = _wire(monkeypatch, avs, responses, rotates)
-    avs.search_autovit("bmw", None)
-    return calls, slept, reported
-
-
-def test_autovit_reia_fara_backoff_cand_rotatia_da_ip_nou(monkeypatch):
-    calls, slept, reported = _run_search_autovit(
-        monkeypatch, [_Resp(403, "blocked"), _Resp(200, "<html>ok</html>")], rotates=True)
-    assert len(calls) == 2 and slept == []
-    assert reported[0] == ("autovit", Outcome.BLOCKED)
-
-
-def test_autovit_face_backoff_cand_rotatia_nu_ajuta(monkeypatch):
-    calls, slept, _ = _run_search_autovit(
-        monkeypatch, [_Resp(403, "blocked"), _Resp(200, "<html>ok</html>")], rotates=False)
-    assert len(calls) == 2 and len(slept) == 1
-
-
-def test_autovit_200_cu_marker_ia_aceeasi_cale_ca_403(monkeypatch):
-    calls, slept, reported = _run_search_autovit(
-        monkeypatch, [_Resp(200, _MARKER_BODY), _Resp(200, "<html>ok</html>")], rotates=True)
-    assert len(calls) == 2 and slept == []
-    assert reported[0] == ("autovit", Outcome.BLOCKED)
-
-
-def test_autovit_401_ia_aceeasi_cale(monkeypatch):
-    calls, slept, reported = _run_search_autovit(
-        monkeypatch, [_Resp(401, ""), _Resp(200, "<html>ok</html>")], rotates=True)
-    assert len(calls) == 2 and slept == []
-    assert reported[0] == ("autovit", Outcome.BLOCKED)
-
-
-def test_autovit_bucla_nu_e_infinita(monkeypatch):
-    calls, slept, _ = _run_search_autovit(
-        monkeypatch, [_Resp(403, "b"), _Resp(403, "b"), _Resp(403, "b")], rotates=True)
-    assert len(calls) == 3 and slept == []
-
-
-def test_autovit_details_403_raporteaza_si_intoarce_gol(monkeypatch):
-    calls, _, reported = _wire(monkeypatch, avs, [_Resp(403, "blocked")], rotates=False)
-    assert avs.fetch_autovit_listing_details("http://x") == {
-        "images": [], "description": None, "specs": {}}
-    assert len(calls) == 1
-    assert reported == [("autovit", Outcome.BLOCKED)]
-
-
-def test_autovit_details_200_cu_marker_nu_se_parseaza(monkeypatch):
-    # Interstitialul cu 200 ar fi fost parsat ca pagina buna -> imagini/descriere gunoi.
-    _, _, reported = _wire(monkeypatch, avs, [_Resp(200, _MARKER_BODY)], rotates=False)
-    assert avs.fetch_autovit_listing_details("http://x") == {
-        "images": [], "description": None, "specs": {}}
-    assert reported == [("autovit", Outcome.BLOCKED)]
-
-
-def test_autovit_details_200_curat_se_parseaza_si_raporteaza_ok(monkeypatch):
-    # Audit 5.3c: aserteaza CONTINUT extras, nu doar cheile — dict-ul gol de garda
-    # are aceleasi chei, deci un guard care refuza totul ar fi trecut neobservat.
-    html = ('<html><body>'
-            '<img src="https://apollo.olxcdn.com/v1/files/abc;s=320x240">'
-            '<div data-testid="ad-description">Stare foarte buna, unic proprietar.</div>'
-            '</body></html>')
-    _, _, reported = _wire(monkeypatch, avs, [_Resp(200, html)], rotates=False)
-    out = avs.fetch_autovit_listing_details("http://x")
-    assert out["images"] == ["https://apollo.olxcdn.com/v1/files/abc;s=1000x1000"]
-    assert out["description"] == "Stare foarte buna, unic proprietar."
-    assert reported == [("autovit", Outcome.OK)]
-
-
-# ── autovit search: caile ne-blocate (audit 5.3c — inainte doar BLOCKED era testat) ──
-
-def test_autovit_429_ramane_rate_limited_nu_blocked(monkeypatch):
-    calls, slept, reported = _run_search_autovit(
-        monkeypatch, [_Resp(429, _MARKER_BODY), _Resp(200, "<html>ok</html>")], rotates=True)
-    assert len(calls) == 2 and len(slept) == 1
-    assert [o for _, o in reported] == [Outcome.RATE_LIMITED, Outcome.OK]
-
-
-def test_autovit_exceptia_se_raporteaza_transient(monkeypatch):
-    calls, slept, reported = _run_search_autovit(
-        monkeypatch, [ConnectionError("reset"), _Resp(200, "<html>ok</html>")], rotates=False)
-    assert len(calls) == 2 and len(slept) == 1
-    assert reported[0] == ("autovit", Outcome.TRANSIENT)
-
-
-def test_autovit_500_intoarce_gol_dupa_un_apel(monkeypatch):
-    calls, slept, reported = _wire(monkeypatch, avs, [_Resp(500, "")], rotates=True)
-    assert avs.search_autovit("bmw", None) == []
-    assert len(calls) == 1 and slept == []
-    assert reported == [("autovit", Outcome.TRANSIENT)]
-
-
 # ── calea de detalii e single-shot pe blocaj (audit 5.3c) ────────────────────────
 # Un blocaj e PERSISTENT (spre deosebire de 429): backoff-ul l-ar plati fiecare item
-# din enrichment — 36 iteme × ~15s = ~10 minute de sleep per pagina. Oglinda cu
-# fetch_mobilede_listing_details, care e single-shot de la 5.3.
+# din enrichment — 36 iteme × ~15s = ~10 minute de sleep per pagina.
 
 _DETAILS = [
     pytest.param(oks, "okazii", "fetch_okazii_listing_details", id="okazii"),
@@ -264,8 +183,7 @@ def test_detaliile_blocate_nu_fac_backoff(monkeypatch, mod, platform, fn):
 
 @pytest.mark.parametrize("mod,platform,fn", _DETAILS)
 def test_detaliile_blocate_reiau_imediat_pe_ip_nou(monkeypatch, mod, platform, fn):
-    # Rotatia reusita salveaza itemul curent — gratis (fara sleep), spre deosebire
-    # de mobilede details care pierde itemul. Superset benign al referintei.
+    # Rotatia reusita salveaza itemul curent — gratis, fara sleep.
     calls, slept, reported = _wire(
         monkeypatch, mod, [_Resp(403, "blocked"), _Resp(200, "<html>ok</html>")], rotates=True)
     getattr(mod, fn)("http://x")
@@ -282,3 +200,37 @@ def test_detaliile_pastreaza_retry_pe_429(monkeypatch, mod, platform, fn):
     getattr(mod, fn)("http://x")
     assert len(calls) == 2 and len(slept) == 1
     assert reported[0] == (platform, Outcome.RATE_LIMITED)
+
+
+@pytest.mark.parametrize("mod,platform,fn", _DETAILS)
+def test_detaliile_200_cu_marker_nu_se_parseaza(monkeypatch, mod, platform, fn):
+    # RC-1: portat de la `test_autovit_details_200_cu_marker_nu_se_parseaza`, singurul
+    # care proba interstitialul pe CALEA DE DETALII. Fara clasificare, pagina de blocaj
+    # ar fi fost parsata ca pagina buna -> imagini/descriere gunoi in feed.
+    _, _, reported = _wire(monkeypatch, mod, [_Resp(200, _MARKER_BODY)], rotates=False)
+    out = getattr(mod, fn)("http://x")
+    assert out.get("images") == [] and out.get("description") is None
+    assert reported == [(platform, Outcome.BLOCKED)]
+
+
+def test_detaliile_200_curat_se_parseaza_si_raporteaza_ok(monkeypatch):
+    """RC-1: portat de la `test_autovit_details_200_curat_se_parseaza_si_raporteaza_ok`.
+
+    Aserteaza CONTINUT extras, nu doar cheile: dict-ul gol de garda are aceleasi chei,
+    deci un guard care refuza totul ar fi trecut neobservat prin testele de mai sus.
+    Ramane ne-parametrizat fiindca fiecare platforma isi are propriul format de pagina
+    (aici `__NEXT_DATA__` -> props.pageProps.adData).
+    """
+    payload = (
+        '<html><body><script id="__NEXT_DATA__" type="application/json">'
+        '{"props": {"pageProps": {"adData": {'
+        '"description": "<p>Stare foarte buna, unic proprietar.</p>",'
+        '"images": [{"path": "media/i/big/1/170/17014725_test_0.webp"}]'
+        '}}}}'
+        '</script></body></html>'
+    )
+    _, _, reported = _wire(monkeypatch, ljs, [_Resp(200, payload)], rotates=False)
+    out = ljs.fetch_lajumate_listing_details("http://x")
+    assert out["images"] == [ljs._IMG_BASE + "media/i/big/1/170/17014725_test_0.webp"]
+    assert out["description"] == "Stare foarte buna, unic proprietar."
+    assert reported == [("lajumate", Outcome.OK)]

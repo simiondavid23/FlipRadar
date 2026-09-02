@@ -149,4 +149,21 @@ def test_radar_platforms_sincron_cu_delay_ranges():
 
 
 def test_radar_platforms_fara_duplicate():
-    assert len(RADAR_PLATFORMS) == len(set(RADAR_PLATFORMS)) == 8
+    assert len(RADAR_PLATFORMS) == len(set(RADAR_PLATFORMS)) == 6
+
+
+def test_platformele_auto_nu_mai_sunt_in_radar():
+    """RC-1: masinile raman DOAR in modulul Auto — de asta au fost separate modulele.
+
+    Implementarile Radar pentru autovit/mobile.de erau oricum moarte (sonda de sanatate
+    2026-09-02: ambele GOL), iar cele din Auto merg si au filtre tehnice mult mai bune.
+    """
+    from app.models.radar_settings import RadarSettings
+    from app.utils.radar_scanner import _platform_enabled_in_settings
+
+    for platforma in ("autovit", "mobilede"):
+        assert platforma not in RADAR_PLATFORMS
+        assert platforma not in _PLATFORM_DELAY_RANGES
+        # Platforma necunoscuta = dezactivata: garda care sare tacut un keyword vechi
+        # ramas in baza (coloanele platform_*_enabled traiesc pana la DB-CLEAN).
+        assert _platform_enabled_in_settings(platforma, RadarSettings()) is False

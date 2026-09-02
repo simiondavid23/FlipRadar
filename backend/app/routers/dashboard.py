@@ -34,8 +34,6 @@ def scheduler_status(current_user: User = Depends(get_current_user)):
         "radar_scan_lajumate": "Radar Piață — LaJumate",
         "radar_scan_publi24": "Radar Piață — Publi24",
         "radar_scan_facebook": "Radar Piață — Facebook",
-        "radar_scan_autovit": "Radar Piață — Autovit",
-        "radar_scan_mobilede": "Radar Piață — Mobile.de",
         "auto_scan_autovit": "Auto — Autovit",
         "auto_scan_olx_auto": "Auto — OLX Auto",
         "auto_scan_mobile_de": "Auto — Mobile.de",

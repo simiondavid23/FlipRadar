@@ -665,7 +665,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
     print(
-        "[Scheduler] Started - check_alerts (15m) + radar_scan_<platforma> (8 joburi, 5m)"
+        "[Scheduler] Started - check_alerts (15m) + radar_scan_<platforma> (6 joburi, 5m)"
         + (" + facebook_group_checks (30m) + cookie_expiry (09:00)." if _fb_jobs_ok else ".")
     )
 
