@@ -391,6 +391,48 @@ def _suma_units_scale(obiect) -> float | None:
     return round(float(unitati) / (10 ** scara), 2)
 
 
+# IMG-1c — sablonul CDN al imaginilor bonami, derivat pe pagina de PRODUS.
+#
+# Starea listarii poarta doar hash-uri, deci sonda IMG-1c a deschis doua PDP-uri si a
+# cautat acolo hash-urile produsului: 74 de URL-uri, TOATE de forma de mai jos, zero
+# exceptii. Sursele care confirma primul URL sunt cele autoritative ale paginii —
+# `og:image` si `image` din ld+json (`@type=Product`, o lista in ordinea din
+# `productImages`).
+#
+# Sardul NU e o constanta: cele doua segmente hex de dinaintea numelui de fisier sunt
+# chiar primele doua perechi ALE hash-ului (`ed39fe55…` -> `/ed/39/`). Verificat pe
+# 74/74. O derivare care ar trata `/ed/39/` ca literal ar lipi hash-ul unui produs de
+# sardul altuia si ar produce 404-uri — greseala e usor de facut, sonda a facut-o
+# prima data.
+#
+# 600x600 e dimensiunea pe care PDP-ul o pune el insusi in `<img src>`; cardul de feed
+# afiseaza imaginea pe 168 px inaltime, deci e amplu si nu platim un 1200x1200 degeaba.
+# CDN-ul serveste si `.webp`, dar `.jpeg` e forma din `og:image`/ld+json, deci si cea
+# mai probabil stabila.
+#
+# Verificat LIVE la implementare: trei HEAD-uri pe primele trei produse din dump-ul de
+# listare -> 200 + `image/jpeg` pe toate trei.
+_BONAMI_IMG = "https://1.bonami.ro/images/fit-crop-fill/{h0}/{h1}/{hash}-600x600.jpeg"
+
+
+def _bonami_imagine(p: dict) -> str | None:
+    """URL-ul imaginii principale din hash, sau None.
+
+    `imageHash` intai, `productImages[0].hash` ca rezerva — la produsele masurate
+    coincid, dar sunt campuri diferite si nimic nu garanteaza ca vor coincide mereu.
+
+    Forma hash-ului se VERIFICA (40 de hex): un camp lipsa, gol sau de alt tip ar
+    produce altfel un URL sintactic valid care da 404, iar feed-ul ar arata rame
+    goale in loc sa cada pe placeholderul „FARA FOTO". Mai bine None decat un URL rupt.
+    """
+    hash_ = p.get("imageHash") or next(
+        (i.get("hash") for i in (p.get("productImages") or [])
+         if isinstance(i, dict) and i.get("hash")), None)
+    if not isinstance(hash_, str) or not re.fullmatch(r"[0-9a-f]{40}", hash_):
+        return None
+    return _BONAMI_IMG.format(h0=hash_[:2], h1=hash_[2:4], hash=hash_)
+
+
 def bonami_next(html: str, descriptor: dict) -> list[dict]:
     """bonami.ro — `/c/oferte-speciale-si-reduceri`, listare din `__NEXT_DATA__`.
 
@@ -440,13 +482,13 @@ def bonami_next(html: str, descriptor: dict) -> list[dict]:
             pret = _suma_units_scale(p.get("customerPrice"))
             if pret is None or pret <= 0:
                 continue
-            # IMG-1b — image_url ramane None, DELIBERAT. Starea poarta doar HASH-uri
-            # (`imageHash`, `contextImageHash`, `productImages[].hash`), nu URL-uri, iar
-            # sonda IMG-1a2 a cautat hash-ul primului produs in tot dump-ul: apare de
-            # doua ori, ambele in JSON, in ZERO atribute `src`/`srcset`/`data-src`.
-            # Sablonul de URL nu e deci deductibil din pagina — ramane pentru IMG-1c.
+            # IMG-1c — poza se CONSTRUIESTE din hash, vezi `_bonami_imagine` si
+            # sablonul de mai sus. Pagina de listare tot n-are URL-uri de imagine
+            # (IMG-1a2: hash-ul apare de doua ori, ambele in JSON, in zero atribute
+            # `src`/`srcset`), dar nici nu mai e nevoie sa aiba.
             iesire.append(_card(f"{baza}/p/{slug}", p.get("name"), pret,
-                                _suma_units_scale(p.get("retailPrice")), None))
+                                _suma_units_scale(p.get("retailPrice")),
+                                _bonami_imagine(p)))
     return iesire
 
 

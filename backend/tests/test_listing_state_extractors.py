@@ -15,6 +15,7 @@ import os
 
 import pytest
 
+from app.services import listing_state_extractors
 from app.services.listing_scanner import extrage_carduri
 from app.services.listing_state_extractors import (
     LISTING_STATE_EXTRACTORS, ldjson_product_list,
@@ -397,13 +398,42 @@ def test_img1b_toolnation_poza_e_none_fiindca_magazinul_da_placeholder():
     assert all(c["image_url"] is None for c in carduri)
 
 
-def test_img1b_bonami_poza_e_none_fiindca_starea_are_hash_uri():
-    """T3 — bonami nu poarta URL-uri de imagine in stare, ci HASH-uri (`imageHash`,
-    `productImages[].hash`). Sonda IMG-1a2 a cautat hash-ul primului produs in tot
-    dump-ul: doua aparitii, ambele in JSON, ZERO in `src`/`srcset`/`data-src`, deci
-    sablonul de URL nu e deductibil din pagina. Ramane pentru IMG-1c."""
+def test_img1c_bonami_poza_construita_din_hash():
+    """IMG-1c — poza NU se citeste, se CONSTRUIESTE. Sablonul e cel derivat pe doua
+    pagini de produs (74/74 URL-uri conforme) si verificat live cu trei HEAD-uri:
+    200 + `image/jpeg` pe toate trei.
+
+    Valorile de mai jos sunt `imageHash`-urile REALE ale primelor doua produse din
+    fixture, iar sardul e derivat din ele — `c584cc…` -> `/c5/84/`. Un test care ar
+    fixa sardul ca literal n-ar prinde tocmai greseala care conteaza: lipirea
+    hash-ului unui produs de sardul altuia.
+    """
     carduri = extrage_carduri(_fixture("bonami.ro"),
                               listing_descriptor("bonami.ro"), "bonami.ro")
 
-    assert carduri, "extractorul trebuie sa produca oricum carduri"
-    assert all(c["image_url"] is None for c in carduri)
+    baza = "https://1.bonami.ro/images/fit-crop-fill"
+    assert carduri[0]["image_url"] == (
+        f"{baza}/c5/84/c584cc304980e9e6bf104b91e37ebf5de6c1b62f-600x600.jpeg")
+    assert carduri[1]["image_url"] == (
+        f"{baza}/38/4b/384b1fbcd8f059d570cbeb17678b79b94d82090d-600x600.jpeg")
+    assert all(c["image_url"] for c in carduri), "poza pe 48/48"
+
+
+@pytest.mark.parametrize("produs, asteptat", [
+    # `imageHash` are prioritate.
+    ({"imageHash": "a" * 40}, "https://1.bonami.ro/images/fit-crop-fill/aa/aa/"
+                              + "a" * 40 + "-600x600.jpeg"),
+    # Fara `imageHash`, se cade pe primul hash din `productImages`.
+    ({"productImages": [{"hash": "b" * 40, "position": 1}]},
+     "https://1.bonami.ro/images/fit-crop-fill/bb/bb/" + "b" * 40 + "-600x600.jpeg"),
+    # Intrari care NU pot da un URL valid: mai bine None decat un 404 sigur.
+    ({"imageHash": "abc"}, None),
+    ({"imageHash": "A" * 40}, None),                  # hex-ul CDN-ului e minuscul
+    ({"imageHash": None}, None),
+    ({"productImages": [{"position": 1}]}, None),     # element fara `hash`
+    ({}, None),
+])
+def test_img1c_bonami_imagine_din_hash(produs, asteptat):
+    """IMG-1c — helperul, direct. Validarea formei nu e paranoia: `_card` ar accepta
+    orice sir, iar un hash trunchiat ar da un URL care arata bine si da 404."""
+    assert listing_state_extractors._bonami_imagine(produs) == asteptat
