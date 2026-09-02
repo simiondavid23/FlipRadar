@@ -1186,6 +1186,12 @@ def test_img1b_toate_cardurile_css_au_poza(domeniu):
     ("//cdn.x/b.jpg", "https://cdn.x/b.jpg"),
     ("/files/b.jpg", "https://exemplu.ro/files/b.jpg"),
     ("https://a/b.jpg?lm=deadbeef", "https://a/b.jpg?lm=deadbeef"),
+    # IMG-1b2 — markerii se potrivesc pe TOKEN, deci un cuvant care doar ii CONTINE
+    # nu mai respinge poza. Amandoua erau respinse inainte, tacut.
+    ("https://x/media/sleeping-blanket-blue.jpg",
+     "https://x/media/sleeping-blanket-blue.jpg"),          # „blank" in „blanket"
+    ("https://x/a/unloading-dock.jpg",
+     "https://x/a/unloading-dock.jpg"),                     # „loading" in „unloading"
 ])
 def test_img1b_normalizator_forme_acceptate(brut, asteptat):
     """T2 — cele patru forme masurate de sonde ajung la acelasi URL absolut."""
@@ -1200,6 +1206,11 @@ def test_img1b_normalizator_forme_acceptate(brut, asteptat):
     "https://a/b.svg",                                    # caseking, eticheta energetica
     "https://a/b.gif",
     "poza.jpg",                                           # nume gol, fara baza masurata
+    # IMG-1b2 — token-ul CHIAR delimitat ramane respins, pe toti delimitatorii.
+    "https://x/img/blank.gif",                            # respins de extensie
+    "https://x/img/blank.jpg",                            # respins de token
+    "https://x/lazyimage/photogallerynormal.jpg",         # token intre doua `/`
+    "https://x/no-image.jpg",                             # token cu cratima
 ])
 def test_img1b_normalizator_respinge(brut):
     """T2 — tot ce nu e o fotografie de produs utilizabila iese None, nu un URL rupt."""

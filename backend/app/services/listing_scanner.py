@@ -219,12 +219,20 @@ def _in_stoc(card, descriptor) -> bool:
     return (nod.get(atribut) or "").strip() == asteptat
 
 
-# IMG-1b — respinse ca imagine de produs. `no-image`/`noimage`/`no_image` vin de la
-# toolnation, unde ld+json poarta `.../placeholder/default/toolnation-no-image-2_3.jpg`
-# pe TOATE produsele; `lazyimage` de la intersport, care are acelasi fisier fix in
-# `src` pe fiecare card.
-_RESPINSE_IMG = ("placeholder", "lazyimage", "blank", "1x1", "loading",
-                 "no-image", "noimage", "no_image")
+# IMG-1b — respinse ca imagine de produs. `no-image` vine de la toolnation, unde
+# ld+json poarta `.../placeholder/default/toolnation-no-image-2_3.jpg` pe TOATE
+# produsele; `lazyimage` de la intersport, care are acelasi fisier fix in `src` pe
+# fiecare card.
+#
+# IMG-1b2 — potrivire pe TOKEN, nu ca subsir, si numai in CALEA URL-ului. Ca subsir,
+# `blank` respingea `sleeping-blanket-blue.jpg` si `loading` respingea
+# `unloading-dock.jpg` — poze de produs perfect valide, aruncate tacut. Delimitatorii
+# sunt exact separatorii care apar in numele de fisiere de pe CDN-uri (`/`, `_`, `-`,
+# `.`) plus capetele de sir. Query-string-ul e in afara potrivirii: acolo stau
+# parametri de redimensionare si cache-busting (intersport are `?lm=<hash>`), care nu
+# spun nimic despre ce ARATA poza.
+_RESPINSE_IMG_RE = re.compile(
+    r"(?:^|[/_\-.])(?:placeholder|lazyimage|blank|1x1|loading|no[-_]?image)(?:$|[/_\-.])")
 
 # `Deal.image_url` e `Text`, deci nu exista o lungime de coloana de respectat. Plafonul
 # e defensiv, in spiritul trunchierilor vecine (`handle` 255, `title` 500): un URL de
@@ -269,7 +277,7 @@ def normalizeaza_imagine(valoare, domain: str) -> str | None:
     cale = urllib.parse.urlsplit(scazut).path or scazut
     if cale.endswith(".svg") or cale.endswith(".gif"):
         return None
-    if any(s in scazut for s in _RESPINSE_IMG):
+    if _RESPINSE_IMG_RE.search(cale):
         return None
 
     if v.startswith("//"):
