@@ -410,6 +410,10 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
     calificate: set[str] = set()
     produse_vazute = 0
     alerte = 0
+    # DEAL-SCAN-2 — deal-urile noi ale ferestrei curente, in asteptarea commit-ului.
+    # Lista se MUTEAZA pe loc (append/clear), niciodata nu se re-leaga, deci `inghite`
+    # o vede fara `nonlocal`.
+    de_notificat: list[Deal] = []
     jurnal = {"liniare": 0, "descinse": 0, "cu_benzi": 0, "fallback": 0,
               "partiale": 0, "benzi_indisponibile": False,
               "retry_5xx": 0, "abandonate_5xx": 0,
@@ -542,9 +546,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                     deal_source="api_enum", first_seen_at=acum, last_seen_at=acum)
                 db.add(deal)
                 db.flush()
-                if not primul_scan and alerte < _MAX_ALERTE:
-                    if send_deal_notification(deal, settings):
-                        alerte += 1
+                de_notificat.append(deal)
             else:
                 # D7: starea apartine USERULUI, deci ramane neatinsa.
                 deal.title = produs["title"]
@@ -556,6 +558,33 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 deal.reason = reason
                 deal.min_price_seen = min_price_vechi
                 deal.last_seen_at = acum
+
+        # DEAL-SCAN-2 — commit la finalul FIECAREI ferestre, nu o data la finalul
+        # descinderii. Tiparul reparat in DEAL-SCAN-1 pe ceilalti doi scanneri era
+        # aici in forma cea mai grava: o descindere in arbore tine 33-48 de minute si
+        # pana la 1.600 de cereri, deci lock-ul de scriere SQLite se tinea TOT acest
+        # timp, iar busy_timeout-ul celorlalti scriitori (30s) expira de mult inainte.
+        # Acum se tine cat o fereastra de 50 de produse — sub o secunda — si se
+        # elibereaza inaintea urmatoarei cereri HTTP.
+        #
+        # Consecinta asumata: `db.rollback()`-ul din `run_api_scan` anuleaza acum doar
+        # fereastra curenta, nu toata descinderea. E acceptabil, si chiar de dorit:
+        # `_inchide_dealurile` ruleaza abia la final, pe `calificate`, deci un domeniu
+        # picat la jumatate nu inchide nimic gresit, iar ce s-a scris pana atunci era
+        # oricum corect. Inainte, un esec la a 1.500-a cerere arunca tot.
+        db.commit()
+        # Notificarea pleaca DOAR pentru randuri deja comise: altfel am putea anunta
+        # un deal pe care un rollback ulterior l-ar face sa nu fi existat.
+        #
+        # Plafonul se verifica AICI, la trimitere, nu la `append`: in cursul ferestrei
+        # `alerte` nu se mai incrementeaza, deci verificat la adaugare ar lasa o
+        # fereastra intreaga sa treaca peste plafon. Acelasi tipar ca in
+        # listing_scanner dupa DEAL-SCAN-1.
+        for deal in de_notificat:
+            if not primul_scan and alerte < _MAX_ALERTE:
+                if send_deal_notification(deal, settings):
+                    alerte += 1
+        de_notificat.clear()
 
     def enumereaza(**param) -> int:
         """Parcurge liniar un segment. Intoarce cate ferestre a citit.
