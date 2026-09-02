@@ -262,13 +262,11 @@ const _scrapeParams = (query, max, searchType) => {
   return params;
 };
 
+// SEARCH-2 — peste rutele generice din SEARCH-1b; rutele /altex … /search-all raman alias in backend pana la cleanup.
 export const scrapingAPI = {
-  searchAltex: (query, max, searchType) => api.get("/api/scraping/altex", { params: _scrapeParams(query, max, searchType) }),
-  searchSole: (query, max, searchType) => api.get("/api/scraping/sole", { params: _scrapeParams(query, max, searchType) }),
-  searchFarmaciatei: (query, max, searchType) => api.get("/api/scraping/farmaciatei", { params: _scrapeParams(query, max, searchType) }),
-  searchEmag: (query, max, searchType) => api.get("/api/scraping/emag", { params: _scrapeParams(query, max, searchType) }),
-  searchPcgarage: (query, max, searchType) => api.get("/api/scraping/pcgarage", { params: _scrapeParams(query, max, searchType) }),
-  searchAll: (query, max, searchType) => api.get("/api/scraping/search-all", { params: _scrapeParams(query, max, searchType) }),
+  getSources: () => api.get("/api/scraping/sources"),
+  searchOne: (domain, query, max, searchType) =>
+    api.get("/api/scraping/search", { params: { domain, ..._scrapeParams(query, max, searchType) } }),
 };
 
 // Valute (cursuri BNR)
