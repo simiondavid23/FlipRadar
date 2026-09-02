@@ -24,44 +24,7 @@ const PLATFORM_OPTIONS = [
   { value: "facebook", label: "Facebook" },
   { value: "lajumate", label: "Lajumate" },
   { value: "publi24", label: "Publi24" },
-  { value: "autovit", label: "Autovit" },
-  { value: "mobilede", label: "Mobile.de" },
 ];
-
-const CAR_FUEL_OPTIONS = [
-  { value: "", label: "Orice" },
-  { value: "benzina", label: "Benzină" },
-  { value: "diesel", label: "Diesel" },
-  { value: "hibrid", label: "Hibrid" },
-  { value: "electric", label: "Electric" },
-  { value: "gpl", label: "GPL" },
-  { value: "gnc", label: "GNC" },
-];
-
-const CAR_BODY_OPTIONS = [
-  { value: "", label: "Orice" },
-  { value: "sedan", label: "Berlină" },
-  { value: "suv", label: "SUV" },
-  { value: "break", label: "Break" },
-  { value: "hatchback", label: "Hatchback" },
-  { value: "coupe", label: "Coupe" },
-  { value: "cabrio", label: "Cabrio" },
-  { value: "van", label: "Van" },
-  { value: "pickup", label: "Pickup" },
-];
-
-const CAR_GEARBOX_OPTIONS = [
-  { value: "", label: "Orice" },
-  { value: "manuala", label: "Manuală" },
-  { value: "automata", label: "Automată" },
-];
-
-const EMPTY_CAR_FILTERS = {
-  marca: "", model: "",
-  an_de_la: "", an_pana_la: "",
-  km_maxim: "",
-  combustibil: "", caroserie: "", cutie_viteze: "",
-};
 
 const CONDITION_OPTIONS = [
   { value: "all", label: "Toate" },
@@ -100,7 +63,6 @@ const EMPTY_FORM = {
   use_active_hours: false,
   active_hours_start: 8,
   active_hours_end: 22,
-  car_filters: { ...EMPTY_CAR_FILTERS },
 };
 
 function feeCeiling(resale, platform) {
@@ -655,7 +617,6 @@ export default function RadarKeywordsPage() {
       use_active_hours: kw.active_hours_start != null && kw.active_hours_end != null,
       active_hours_start: kw.active_hours_start ?? 8,
       active_hours_end: kw.active_hours_end ?? 22,
-      car_filters: { ...EMPTY_CAR_FILTERS, ...(kw.car_filters || {}) },
     });
     setExcludeChips(parseExcludeWords(kw.exclude_words));
     setChipInput("");
@@ -722,20 +683,6 @@ export default function RadarKeywordsPage() {
   const submit = async (e) => {
     e?.preventDefault();
     const minPriceVal = form.min_price === "" || form.min_price === null ? null : parseFloat(form.min_price);
-    // Compactează filtrele auto: trimite null dacă niciun câmp nu e completat.
-    const cfRaw = form.car_filters || {};
-    const cfCompact = {};
-    for (const [k, v] of Object.entries(cfRaw)) {
-      if (v === null || v === undefined) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      if (["an_de_la", "an_pana_la", "km_maxim"].includes(k)) {
-        const n = parseInt(v);
-        if (!Number.isNaN(n) && n > 0) cfCompact[k] = n;
-      } else {
-        cfCompact[k] = String(v).trim();
-      }
-    }
-    const carFiltersForSend = Object.keys(cfCompact).length > 0 ? cfCompact : null;
     // Categoria principala poate avea o cheie sintetica (__d:...) pentru
     // departamentele Okazii cu value=null. Rezolvam valoarea reala inainte de submit
     // ca sa NU trimitem cheia sintetica la backend (dept singur => category null).
@@ -766,7 +713,6 @@ export default function RadarKeywordsPage() {
       notify_discord: !!form.notify_discord,
       active_hours_start: form.use_active_hours ? (form.active_hours_start ?? 8) : null,
       active_hours_end: form.use_active_hours ? (form.active_hours_end ?? 22) : null,
-      car_filters: carFiltersForSend,
       // RP-2 — mod excluderi v2 + excepții (linii → listă)
       exclude_matching_mode: excludeMode,
       exclude_exceptions: exceptionsText.split("\n").map((s) => s.trim()).filter(Boolean),
@@ -1664,14 +1610,6 @@ export default function RadarKeywordsPage() {
                 </div>
               )}
 
-              {(form.platforms.includes("autovit") || form.platforms.includes("mobilede")) && (
-                <CarFiltersSection
-                  value={form.car_filters || EMPTY_CAR_FILTERS}
-                  onChange={(cf) => setForm({ ...form, car_filters: cf })}
-                  inputStyle={inputStyle}
-                />
-              )}
-
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                 <Field label="Interval verificare">
                   <select value={form.poll_interval_minutes} onChange={(e) => setForm({ ...form, poll_interval_minutes: parseInt(e.target.value) })} style={inputStyle}>
@@ -2141,63 +2079,3 @@ const bulkBtn = {
   transition: "all .15s ease",
 };
 
-function CarFiltersSection({ value, onChange, inputStyle }) {
-  const set = (k, v) => onChange({ ...value, [k]: v });
-  return (
-    <div style={{
-      background: "rgba(4,9,18,.45)",
-      border: "1px solid rgba(94,140,255,.13)",
-      borderRadius: "10px",
-      padding: "0.875rem",
-      display: "flex",
-      flexDirection: "column",
-      gap: "0.625rem",
-    }}>
-      <div>
-        <div style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-          Filtre specifice platformelor auto
-        </div>
-        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>
-          Aceste filtre se aplică doar pentru Autovit și Mobile.de.
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
-        <Field label="Marcă">
-          <input type="text" value={value.marca || ""} onChange={(e) => set("marca", e.target.value)} placeholder="ex: BMW, Audi, Dacia..." style={inputStyle} />
-        </Field>
-        <Field label="Model">
-          <input type="text" value={value.model || ""} onChange={(e) => set("model", e.target.value)} placeholder="ex: X5, Golf, Logan..." style={inputStyle} />
-        </Field>
-        <Field label="An fabricație de la">
-          <input type="number" min="1980" max="2030" value={value.an_de_la || ""} onChange={(e) => set("an_de_la", e.target.value)} placeholder="ex: 2018" style={inputStyle} />
-        </Field>
-        <Field label="An fabricație până la">
-          <input type="number" min="1980" max="2030" value={value.an_pana_la || ""} onChange={(e) => set("an_pana_la", e.target.value)} placeholder="ex: 2023" style={inputStyle} />
-        </Field>
-        <Field label="Kilometri maximi">
-          <input type="number" min="0" value={value.km_maxim || ""} onChange={(e) => set("km_maxim", e.target.value)} placeholder="ex: 150000" style={inputStyle} />
-        </Field>
-        <Field label="Combustibil">
-          <select value={value.combustibil || ""} onChange={(e) => set("combustibil", e.target.value)} style={inputStyle}>
-            {CAR_FUEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Caroserie">
-          <select value={value.caroserie || ""} onChange={(e) => set("caroserie", e.target.value)} style={inputStyle}>
-            {CAR_BODY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Cutie viteze">
-          <select value={value.cutie_viteze || ""} onChange={(e) => set("cutie_viteze", e.target.value)} style={inputStyle}>
-            {CAR_GEARBOX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </Field>
-      </div>
-
-      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-        Câmpurile de mai sus nu sunt obligatorii. Cu cât adaugi mai multe filtre, cu atât rezultatele vor fi mai precise și mai puțin zgomot în feed.
-      </div>
-    </div>
-  );
-}

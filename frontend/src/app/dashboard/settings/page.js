@@ -407,18 +407,6 @@ export default function SettingsPage() {
               enabled={!!settings.platform_publi24_enabled}
               onToggle={() => togglePlatform("platform_publi24_enabled")}
             />
-            <PlatformToggle
-              label="Autovit.ro"
-              subtitle="Mașini second-hand România"
-              enabled={!!settings.platform_autovit_enabled}
-              onToggle={() => togglePlatform("platform_autovit_enabled")}
-            />
-            <PlatformToggle
-              label="Mobile.de"
-              subtitle="Mașini second-hand Germania — prețuri în EUR"
-              enabled={!!settings.platform_mobilede_enabled}
-              onToggle={() => togglePlatform("platform_mobilede_enabled")}
-            />
 
             <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", background: "rgba(4,9,18,.45)", borderRadius: "10px", border: "1px solid var(--border-color)" }}>
               {fbStatus.status === "active" ? (
