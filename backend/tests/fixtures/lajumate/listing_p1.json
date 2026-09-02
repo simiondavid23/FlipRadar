@@ -1,0 +1,271 @@
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 17014725,
+      "title": "Clona iPhone 15 Pro Max Nefolosit",
+      "slug": "clona-iphone-15-pro-max-nefolosit",
+      "description": "<p><span style=\"color: rgb(2, 40, 44);\">Vând Clonă iPhone 15 Pro Max nefolosit.</span></p><p><span style=\"color: rgb(2, 40, 44);\">este 1 la 1</span></p><p><span style=\"color: rgb(2, 40, 44);\">Doar Bucuresti</span></p><p><span style=\"color: rgb(2, 40, 44);\">Nu negociez</span></p>",
+      "price": "800.00",
+      "currency": "lei",
+      "media": "0.webp,1.webp,2.webp,3.webp,4",
+      "user_id": 4472179,
+      "category_id": 869,
+      "city_id": 9812,
+      "approved_at": "2026-08-29T06:34:45.000000Z",
+      "valid_from": "2026-08-29T06:34:45.000000Z",
+      "valid_to": "2026-09-28T06:34:45.000000Z",
+      "listed_at": "2026-08-29 06:34:45",
+      "created_at": "2026-08-29T06:33:54.000000Z",
+      "updated_at": "2026-08-29T06:33:56.000000Z",
+      "images": [
+        {
+          "order": 1,
+          "is_main": true,
+          "temp": 0,
+          "name": "0.webp",
+          "path": "media/i/big/5/170/17014725_clona-iphone-15-pro-max-nefolosit_0.webp"
+        },
+        {
+          "order": 2,
+          "is_main": false,
+          "temp": 0,
+          "name": "1.webp",
+          "path": "media/i/big/5/170/17014725_clona-iphone-15-pro-max-nefolosit_1.webp"
+        },
+        {
+          "order": 3,
+          "is_main": false,
+          "temp": 0,
+          "name": "2.webp",
+          "path": "media/i/big/5/170/17014725_clona-iphone-15-pro-max-nefolosit_2.webp"
+        },
+        {
+          "order": 4,
+          "is_main": false,
+          "temp": 0,
+          "name": "3.webp",
+          "path": "media/i/big/5/170/17014725_clona-iphone-15-pro-max-nefolosit_3.webp"
+        }
+      ],
+      "mainImage": {
+        "order": 1,
+        "is_main": true,
+        "temp": 0,
+        "name": "0.webp",
+        "path": "media/i/big/5/170/17014725_clona-iphone-15-pro-max-nefolosit_0.webp"
+      },
+      "isCopy": false,
+      "is_promoted": [],
+      "city": {
+        "id": 9812,
+        "name": "Bucuresti",
+        "slug": "bucuresti",
+        "county_code": "IF",
+        "importance": 0,
+        "postal_code": 0,
+        "lat": "44.4547353",
+        "lng": "26.0950591",
+        "county": {
+          "id": 25,
+          "name": "Bucuresti-Ilfov",
+          "code": "IF",
+          "slug": "bucuresti-ilfov"
+        }
+      },
+      "user": {
+        "id": 4472179,
+        "name": "Marius Cazacu"
+      },
+      "aosom_product": null,
+      "promotion_details": [],
+      "has_offer": false
+    },
+    {
+      "id": 17013436,
+      "title": "Telefon iPhone 11 Verde 64 gb",
+      "slug": "telefon-iphone-11-verde-64-gb",
+      "description": "<p><span style=\"color: rgb(34, 34, 34);\">Vand iPhone 11 verde</span></p><p><span style=\"color: rgb(34, 34, 34);\">Dețin factura magazin !!!</span></p><p><span style=\"color: rgb(34, 34, 34);\">Stocare 64 gb</span></p><p><span style=\"color: rgb(34, 34, 34);\">Sănătate baterie 73% ( tine o zi la o utilizare normală)</span></p><p><span style=\"color: rgb(34, 34, 34);\">Dețin cutie</span></p><p><span style=\"color: rgb(34, 34, 34);\">Funcționalitate 10 10</span></p><p><span style=\"color: rgb(34, 34, 34);\">Ercan 10 10</span></p><p><span style=\"color: rgb(34, 34, 34);\">Spate 10 10</span></p><p><span style=\"color: rgb(34, 34, 34);\">Rama 9,5 10</span></p><p><span style=\"color: rgb(34, 34, 34);\">Vine însoțit de mai multe huse</span></p><p><span style=\"color: rgb(34, 34, 34);\">Preț negociabil</span></p>",
+      "price": "700.00",
+      "currency": "lei",
+      "media": "0.webp,1.webp,2.webp,3.webp,4.webp,5.webp,6",
+      "user_id": 179221,
+      "category_id": 869,
+      "city_id": 6754,
+      "approved_at": "2026-08-27T13:40:09.000000Z",
+      "valid_from": "2026-08-27T13:40:09.000000Z",
+      "valid_to": "2026-09-26T13:40:09.000000Z",
+      "listed_at": "2026-08-27 13:40:09",
+      "created_at": "2026-08-27T13:39:48.000000Z",
+      "updated_at": "2026-08-27T13:39:51.000000Z",
+      "images": [
+        {
+          "order": 1,
+          "is_main": true,
+          "temp": 0,
+          "name": "0.webp",
+          "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_0.webp"
+        },
+        {
+          "order": 2,
+          "is_main": false,
+          "temp": 0,
+          "name": "1.webp",
+          "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_1.webp"
+        },
+        {
+          "order": 3,
+          "is_main": false,
+          "temp": 0,
+          "name": "2.webp",
+          "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_2.webp"
+        },
+        {
+          "order": 4,
+          "is_main": false,
+          "temp": 0,
+          "name": "3.webp",
+          "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_3.webp"
+        },
+        {
+          "order": 5,
+          "is_main": false,
+          "temp": 0,
+          "name": "4.webp",
+          "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_4.webp"
+        },
+        {
+          "order": 6,
+          "is_main": false,
+          "temp": 0,
+          "name": "5.webp",
+          "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_5.webp"
+        }
+      ],
+      "mainImage": {
+        "order": 1,
+        "is_main": true,
+        "temp": 0,
+        "name": "0.webp",
+        "path": "media/i/big/6/170/17013436_telefon-iphone-11-verde-64-gb_0.webp"
+      },
+      "isCopy": false,
+      "is_promoted": [],
+      "city": {
+        "id": 6754,
+        "name": "Piatra-Neamt",
+        "slug": "piatra-neamt",
+        "county_code": "NT",
+        "importance": 0,
+        "postal_code": 0,
+        "lat": "46.93",
+        "lng": "26.37",
+        "county": {
+          "id": 29,
+          "name": "Neamt",
+          "code": "NT",
+          "slug": "neamt"
+        }
+      },
+      "user": {
+        "id": 179221,
+        "name": "Andrei Marius76"
+      },
+      "aosom_product": null,
+      "promotion_details": [],
+      "has_offer": false
+    },
+    {
+      "id": 17013412,
+      "title": "Telefon Apple iPhone 14 Mov 128GB bat 79 Zeus Amanet Rahova 36632",
+      "slug": "telefon-apple-iphone-14-mov-128gb-bat-79-zeus-amanet-rahova-36632",
+      "description": "<p><span style=\"color: rgb(2, 40, 44);\">Telefon Apple iPhone 14 Mov 128GB bat 79 Zeus Amanet Rahova 36632</span></p><p><br></p><p><span style=\"color: rgb(2, 40, 44);\">Se vinde telefonul, fara alte accesorii</span></p><p><span style=\"color: rgb(2, 40, 44);\">Liber de retea</span></p><p><span style=\"color: rgb(2, 40, 44);\">Aspect 9.5/10, cateva urme de folosire pe rama camerei</span></p><p><span style=\"color: rgb(2, 40, 44);\">Sanatate baterie 79%</span></p><p><span style=\"color: rgb(2, 40, 44);\">Dimensiune Display: 6.1 inch</span></p><p><span style=\"color: rgb(2, 40, 44);\">Spatiu Stocare: 128 GB</span></p><p><span style=\"color: rgb(2, 40, 44);\">Memorie Ram: 6 GB</span></p><p><span style=\"color: rgb(2, 40, 44);\">Culoare: Mov</span></p><p><span style=\"color: rgb(2, 40, 44);\">Camere Rezolutie : 12 MP, f/1.5, 26mm (wide), 1/1.7\", 1.9µm, dual pixel PDAF, sensor-shift OIS</span></p><p><span style=\"color: rgb(2, 40, 44);\">Procesor: Apple A15 Bionic (5 nm)</span></p><p><span style=\"color: rgb(2, 40, 44);\">Baterie: 3279 mAh</span></p><p><span style=\"color: rgb(2, 40, 44);\">Model Lansat in Septembrie 2022</span></p><p><br></p><p><span style=\"color: rgb(2, 40, 44);\">*Nu facem schimburi!</span></p><p><br></p><p><span style=\"color: rgb(2, 40, 44);\">*Oferim servicii de amanet, vanzare electronice</span></p><p><span style=\"color: rgb(2, 40, 44);\">*Pentru o gama mai larga de produse, vizitati magazinul nostru,</span></p><p><span style=\"color: rgb(2, 40, 44);\">sau anunturile utilizatorului.</span></p><p><span style=\"color: rgb(2, 40, 44);\">*Ne puteti gasi la adresa:</span></p><p><span style=\"color: rgb(2, 40, 44);\">Calea Rahovei Nr.358 zona Piata Rahova Sector 5 Bucuresti</span></p>",
+      "price": "1299.00",
+      "currency": "lei",
+      "media": "0.webp,1.webp,2.webp,3.webp,4",
+      "user_id": 3762536,
+      "category_id": 869,
+      "city_id": 9812,
+      "approved_at": "2026-08-27T13:13:20.000000Z",
+      "valid_from": "2026-08-27T13:13:20.000000Z",
+      "valid_to": "2026-09-26T13:13:20.000000Z",
+      "listed_at": "2026-08-27 13:13:20",
+      "created_at": "2026-08-27T13:13:20.000000Z",
+      "updated_at": "2026-08-27T13:13:23.000000Z",
+      "images": [
+        {
+          "order": 1,
+          "is_main": true,
+          "temp": 0,
+          "name": "0.webp",
+          "path": "media/i/big/2/170/17013412_telefon-apple-iphone-14-mov-128gb-bat-79-zeus-amanet-rahova-36632_0.webp"
+        },
+        {
+          "order": 2,
+          "is_main": false,
+          "temp": 0,
+          "name": "1.webp",
+          "path": "media/i/big/2/170/17013412_telefon-apple-iphone-14-mov-128gb-bat-79-zeus-amanet-rahova-36632_1.webp"
+        },
+        {
+          "order": 3,
+          "is_main": false,
+          "temp": 0,
+          "name": "2.webp",
+          "path": "media/i/big/2/170/17013412_telefon-apple-iphone-14-mov-128gb-bat-79-zeus-amanet-rahova-36632_2.webp"
+        },
+        {
+          "order": 4,
+          "is_main": false,
+          "temp": 0,
+          "name": "3.webp",
+          "path": "media/i/big/2/170/17013412_telefon-apple-iphone-14-mov-128gb-bat-79-zeus-amanet-rahova-36632_3.webp"
+        }
+      ],
+      "mainImage": {
+        "order": 1,
+        "is_main": true,
+        "temp": 0,
+        "name": "0.webp",
+        "path": "media/i/big/2/170/17013412_telefon-apple-iphone-14-mov-128gb-bat-79-zeus-amanet-rahova-36632_0.webp"
+      },
+      "isCopy": false,
+      "is_promoted": [],
+      "city": {
+        "id": 9812,
+        "name": "Bucuresti",
+        "slug": "bucuresti",
+        "county_code": "IF",
+        "importance": 0,
+        "postal_code": 0,
+        "lat": "44.4547353",
+        "lng": "26.0950591",
+        "county": {
+          "id": 25,
+          "name": "Bucuresti-Ilfov",
+          "code": "IF",
+          "slug": "bucuresti-ilfov"
+        }
+      },
+      "user": {
+        "id": 3762536,
+        "name": "Zeus Amanet Rahova"
+      },
+      "aosom_product": null,
+      "promotion_details": [],
+      "has_offer": false
+    }
+  ],
+  "first_page_url": "https://api-preprod.lajumate.ro/api/listing/1?page=1",
+  "from": 1,
+  "last_page": 2,
+  "last_page_url": "https://api-preprod.lajumate.ro/api/listing/1?page=2",
+  "next_page_url": "https://api-preprod.lajumate.ro/api/listing/1?page=2",
+  "path": "https://api-preprod.lajumate.ro/api/listing/1",
+  "per_page": 28,
+  "prev_page_url": null,
+  "to": 28,
+  "total": 34,
+  "anchor_links": null,
+  "city_tags": []
+}

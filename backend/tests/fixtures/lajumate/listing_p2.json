@@ -1,0 +1,191 @@
+{
+  "current_page": 2,
+  "data": [
+    {
+      "id": 16832164,
+      "title": "IPHONE Xs 512 GB stare foarte buna",
+      "slug": "iphone-xs-512-gb-stare-foarte-buna",
+      "description": "<p>Iphone Xs cu 512 GB in stare foarte buna. Telefonul are doar componente originale si nu a fost reparat niciodata.</p><p><br></p><p>Bateria 72%</p><p><br></p><p>512 GB</p><p><br></p><p>Husa inclusa. </p>",
+      "price": "780.00",
+      "currency": "lei",
+      "media": "0.webp,1.webp,2.webp,3.webp,4",
+      "user_id": 500853,
+      "category_id": 869,
+      "city_id": 9812,
+      "approved_at": "2026-05-11T11:30:07.000000Z",
+      "valid_from": "2026-05-11T11:30:07.000000Z",
+      "valid_to": "2026-09-08T11:30:07.000000Z",
+      "listed_at": "2026-05-11 11:30:07",
+      "created_at": "2026-05-11T11:30:07.000000Z",
+      "updated_at": "2026-08-08T11:40:01.000000Z",
+      "images": [
+        {
+          "order": 1,
+          "is_main": true,
+          "temp": 0,
+          "name": "0.webp",
+          "path": "media/i/big/4/168/16832164_iphone-xs-512-gb-stare-foarte-buna_0.webp"
+        },
+        {
+          "order": 2,
+          "is_main": false,
+          "temp": 0,
+          "name": "1.webp",
+          "path": "media/i/big/4/168/16832164_iphone-xs-512-gb-stare-foarte-buna_1.webp"
+        },
+        {
+          "order": 3,
+          "is_main": false,
+          "temp": 0,
+          "name": "2.webp",
+          "path": "media/i/big/4/168/16832164_iphone-xs-512-gb-stare-foarte-buna_2.webp"
+        },
+        {
+          "order": 4,
+          "is_main": false,
+          "temp": 0,
+          "name": "3.webp",
+          "path": "media/i/big/4/168/16832164_iphone-xs-512-gb-stare-foarte-buna_3.webp"
+        }
+      ],
+      "mainImage": {
+        "order": 1,
+        "is_main": true,
+        "temp": 0,
+        "name": "0.webp",
+        "path": "media/i/big/4/168/16832164_iphone-xs-512-gb-stare-foarte-buna_0.webp"
+      },
+      "isCopy": false,
+      "is_promoted": [],
+      "city": {
+        "id": 9812,
+        "name": "Bucuresti",
+        "slug": "bucuresti",
+        "county_code": "IF",
+        "importance": 0,
+        "postal_code": 0,
+        "lat": "44.4547353",
+        "lng": "26.0950591",
+        "county": {
+          "id": 25,
+          "name": "Bucuresti-Ilfov",
+          "code": "IF",
+          "slug": "bucuresti-ilfov"
+        }
+      },
+      "user": {
+        "id": 500853,
+        "name": "Gheorghescu Lucian"
+      },
+      "aosom_product": null,
+      "promotion_details": [],
+      "has_offer": false
+    },
+    {
+      "id": 16820388,
+      "title": "Iphone 13-256 gb",
+      "slug": "iphone-13-256-gb",
+      "description": "<p>iPhone 13 256GB(culoare midnight )stare foarte bună</p><p>Ecran impecabil, a fost folosit mereu cu folie de protecție, iar în prezent are folie de sticlă aplicată. Telefonul funcționează perfect, fără probleme la butoane, cameră sau alte componente. Camera este în stare foarte bună, fără defecte.</p><p><br></p><p>Aspect general foarte bun, cu o singură zgârietură foarte mică pe spate. Bateria are 78% sănătate.</p><p>Vine cu cutie și accesoriu pentru SIM.</p><p>Se poate vedea și testa în București.</p><p><br></p><p>Preț: 1.300 lei, negociabil.</p><p><br></p><p><br></p>",
+      "price": "1300.00",
+      "currency": "lei",
+      "media": "0.webp,1.webp,2.webp,3.webp,4.webp,5.webp,7",
+      "user_id": 4474980,
+      "category_id": 869,
+      "city_id": 9812,
+      "approved_at": "2026-04-27T07:12:18.000000Z",
+      "valid_from": "2026-04-27T07:12:18.000000Z",
+      "valid_to": "2026-09-24T07:12:18.000000Z",
+      "listed_at": "2026-04-27 07:12:18",
+      "created_at": "2026-04-27T07:11:21.000000Z",
+      "updated_at": "2026-08-24T07:20:02.000000Z",
+      "images": [
+        {
+          "order": 1,
+          "is_main": true,
+          "temp": 0,
+          "name": "0.webp",
+          "path": "media/i/big/8/168/16820388_iphone-13-256-gb_0.webp"
+        },
+        {
+          "order": 2,
+          "is_main": false,
+          "temp": 0,
+          "name": "1.webp",
+          "path": "media/i/big/8/168/16820388_iphone-13-256-gb_1.webp"
+        },
+        {
+          "order": 3,
+          "is_main": false,
+          "temp": 0,
+          "name": "2.webp",
+          "path": "media/i/big/8/168/16820388_iphone-13-256-gb_2.webp"
+        },
+        {
+          "order": 4,
+          "is_main": false,
+          "temp": 0,
+          "name": "3.webp",
+          "path": "media/i/big/8/168/16820388_iphone-13-256-gb_3.webp"
+        },
+        {
+          "order": 5,
+          "is_main": false,
+          "temp": 0,
+          "name": "4.webp",
+          "path": "media/i/big/8/168/16820388_iphone-13-256-gb_4.webp"
+        },
+        {
+          "order": 6,
+          "is_main": false,
+          "temp": 0,
+          "name": "5.webp",
+          "path": "media/i/big/8/168/16820388_iphone-13-256-gb_5.webp"
+        }
+      ],
+      "mainImage": {
+        "order": 1,
+        "is_main": true,
+        "temp": 0,
+        "name": "0.webp",
+        "path": "media/i/big/8/168/16820388_iphone-13-256-gb_0.webp"
+      },
+      "isCopy": false,
+      "is_promoted": [],
+      "city": {
+        "id": 9812,
+        "name": "Bucuresti",
+        "slug": "bucuresti",
+        "county_code": "IF",
+        "importance": 0,
+        "postal_code": 0,
+        "lat": "44.4547353",
+        "lng": "26.0950591",
+        "county": {
+          "id": 25,
+          "name": "Bucuresti-Ilfov",
+          "code": "IF",
+          "slug": "bucuresti-ilfov"
+        }
+      },
+      "user": {
+        "id": 4474980,
+        "name": "Vasilescu Ana-Maria"
+      },
+      "aosom_product": null,
+      "promotion_details": [],
+      "has_offer": false
+    }
+  ],
+  "first_page_url": "https://api-preprod.lajumate.ro/api/listing/2?page=1",
+  "from": 29,
+  "last_page": 2,
+  "last_page_url": "https://api-preprod.lajumate.ro/api/listing/2?page=2",
+  "next_page_url": null,
+  "path": "https://api-preprod.lajumate.ro/api/listing/2",
+  "per_page": 28,
+  "prev_page_url": "https://api-preprod.lajumate.ro/api/listing/2?page=1",
+  "to": 34,
+  "total": 34,
+  "anchor_links": null,
+  "city_tags": []
+}

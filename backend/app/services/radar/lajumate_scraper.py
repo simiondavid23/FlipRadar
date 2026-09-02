@@ -6,17 +6,33 @@ LaJumate e o aplicatie Next.js: fiecare pagina SSR contine
 la OLX). Parsam acel JSON — robust, fara selectoare CSS fragile. Filozofia e ca
 la Vinted: consumam raspunsul JSON al serverului, nu HTML.
 
-Structura confirmata prin fetch-uri reale:
-- Cautare full-text (canal principal):  https://lajumate.ro/anunturi/c/{kw}
-  (relevanta reala pentru orice keyword; /anunturi/t/{kw} redirect -> /anunturi/c/{kw})
-- Pagina categorie (fallback pe 0 rezultate): https://lajumate.ro/anunturi/{cat-slug}
-- Pret:      ?price_min={int}&price_max={int}
-- Stare:     ?condition=nou | ?condition=utilizat
-- Judet:     ?county={slug}   (slug din countiesServer)
-- Paginare:  ?page={N}   (28 anunturi/pagina)
-- Ad -> props.pageProps.adsServer[] (id, title, slug, price(str), currency, city,
-  user, images[].path, listed_at). URL anunt = /ad/{slug}-{id}.
+CAUTAREA merge pe API-ul JSON public (LJ-1, masurat 2026-09-03). Pagina SSR
+`/anunturi/c/{kw}` NU MAI FILTREAZA prin parametrii de URL: `?price_min`, `?price_max`,
+`?condition` si `?county` sunt IGNORATI, iar raspunsul e mereu aceleasi ~28 de anunturi
+nefiltrate. Cu filtrarea facuta local doar pe prima pagina, un keyword cu prag de pret
+strans nu gasea niciodata nimic (masurat: "iphone" 700-2000 RON, zero randuri in
+productie, ciclu de ciclu). API-ul face filtrarea server-side si intoarce si `total`.
+
+Structura confirmata prin fetch-uri reale (2026-09-03):
+- Cautare (canal UNIC):  https://api-preprod.lajumate.ro/api/listing/{pagina}
+  Public: fara cookie, fara cheie, insensibil la amprenta TLS (raspuns identic
+  octet cu octet cu si fara profil de impersonare).
+- Pret:      ?filters[price_min][0]={int}&filters[price_max][0]={int}&currency=lei
+             (`currency` spune in ce moneda se CITESC pragurile; preturile din raspuns
+              raman mereu in lei)
+- Categorie: ?parent_id={principala}&category_id={subcategorie}   (slug-uri)
+- Stare:     ?filters[condition][0]=nou | utilizat
+- Judet:     ?filters[county][0]={slug}
+- Sortare:   ?sort=date_desc
+- Paginare:  pagina e in PATH (/listing/2), nu in query. Raspunsul are
+  `current_page`, `last_page`, `per_page` (28) si `total`.
+- Ad -> data[] (id, title, slug, price(str "800.00"), currency("lei"), city, user,
+  images[].path, mainImage.path, description, listed_at "2026-08-29 06:34:45").
+  URL anunt = /ad/{slug}-{id}.
 - Imagini:   https://api-preprod.lajumate.ro/opt-image/{image.path}
+
+DETALIILE raman pe HTML: pagina individuala a anuntului, `<script id="__NEXT_DATA__">`
+-> props.pageProps.adData (ca `__PRERENDERED_STATE__` la OLX).
 """
 import random
 import re
@@ -40,7 +56,13 @@ from app.utils.http_profile import DEFAULT_IMPERSONATE
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
 _BASE = "https://lajumate.ro"
 _IMG_BASE = "https://api-preprod.lajumate.ro/opt-image/"
+_API_BASE = "https://api-preprod.lajumate.ro/api"
+# Headerele pe care le trimite si browserul catre API (fara ele merge, cu ele suntem
+# identici cu clientul real). `Referer` il pune _request, comun cu calea de detalii.
+_API_HEADERS = {"Accept": "application/json", "Origin": _BASE}
 
+# Garda: API-ul are `last_page`, deci paginarea se opreste singura. Plafonul ramane
+# ca plasa impotriva unui `last_page` absurd sau lipsa.
 _LAJUMATE_MAX_PAGES = 20
 
 
@@ -79,14 +101,30 @@ def _condition_param(condition: str) -> Optional[str]:
 
 
 def _parse_price(price, currency) -> tuple[Optional[float], str]:
+    """Pretul ca float + moneda normalizata ("lei" -> RON).
+
+    LJ-1: API-ul coteaza preturile cu doua zecimale, ca string ("800.00"). Varianta
+    veche stergea TOT ce nu era cifra, deci "800.00" devenea 80000 — de o suta de ori
+    prea mult, iar `_post_filter` arunca apoi fiecare anunt. Aici separatorul zecimal
+    (`.` sau `,` urmat de 1-2 cifre la final) se pastreaza, iar separatorul de mii
+    ("1.300") ramane tratat ca inainte, fiindca are trei cifre dupa el.
+    """
     cur = "EUR" if str(currency or "").strip().lower() in ("euro", "eur", "€") else "RON"
     if price is None:
         return None, cur
-    digits = re.sub(r"[^\d]", "", str(price))
-    if not digits:
+    brut = re.sub(r"[^\d.,]", "", str(price))
+    if not brut:
+        return None, cur
+    zecimal = re.search(r"[.,](\d{1,2})$", brut)
+    if zecimal:
+        intreg = re.sub(r"[^\d]", "", brut[:zecimal.start()]) or "0"
+        text = f"{intreg}.{zecimal.group(1)}"
+    else:
+        text = re.sub(r"[^\d]", "", brut)
+    if not text:
         return None, cur
     try:
-        return float(digits), cur
+        return float(text), cur
     except ValueError:
         return None, cur
 
@@ -175,6 +213,11 @@ def _extract_page_props(html: str) -> dict:
         else:
             raw = tag.string
         if not raw:
+            # Tacut pana la LJ-1: cand site-ul schimba forma paginii de anunt,
+            # enrichment-ul returna {"images": [], "description": None} fara niciun
+            # semnal, deci degradarea era invizibila in jurnal.
+            log_manager.emit("radar", "WARN",
+                             "LaJumate: __NEXT_DATA__ lipseste din pagina (site schimbat?)")
             return {}
         import json
         data = json.loads(raw)
@@ -184,8 +227,16 @@ def _extract_page_props(html: str) -> dict:
         return {}
 
 
-def _request(url: str, retry_blocked: bool = True) -> Optional[str]:
-    headers = build_headers({"Referer": _BASE + "/"})
+def _request(url: str, retry_blocked: bool = True,
+             extra_headers: Optional[dict] = None) -> Optional[str]:
+    """Poarta UNICA de retea a scraperului: si cautarea pe API, si detaliile pe HTML.
+
+    `extra_headers` doar se adauga peste setul comun (LJ-1: `Accept`/`Origin` pentru
+    API). Restul — bucla de retry, clasificarea, `report_outcome`, `retry_blocked`,
+    backoff-urile — ramane neschimbat, ca toata cablarea NET-5 sa treaca prin acelasi
+    loc indiferent de canal.
+    """
+    headers = build_headers({"Referer": _BASE + "/", **(extra_headers or {})})
     proxy_cfg = get_proxy_config()
     req_kwargs = {"headers": headers, "impersonate": _IMPERSONATE, "timeout": 20}
     if proxy_cfg:
@@ -237,38 +288,70 @@ def _request(url: str, retry_blocked: bool = True) -> Optional[str]:
     return None
 
 
-def _build_query(max_price, min_price, condition, judet, page) -> str:
-    params = {}
-    if max_price and max_price > 0:
-        params["price_max"] = int(max_price)
+def _build_query(keyword, max_price, min_price, condition, judet, category) -> str:
+    """Query-ul API-ului. Pagina NU intra aici — ea sta in path (/listing/{N}).
+
+    Ordinea cheilor e cea din captura browserului. Parantezele se encodeaza
+    (`filters%5Bname%5D%5B0%5D`); API-ul le accepta asa, browserul le trimite la fel.
+    `oras` ramane nefolosit — API-ul filtreaza pe judet, nu pe localitate.
+    """
+    params = {"filters[name][0]": keyword}
     if min_price and min_price > 0:
-        params["price_min"] = int(min_price)
+        params["filters[price_min][0]"] = int(min_price)
+    if max_price and max_price > 0:
+        params["filters[price_max][0]"] = int(max_price)
     cond = _condition_param(condition)
     if cond:
-        params["condition"] = cond
+        params["filters[condition][0]"] = cond
     county = _county_slug(judet)
     if county:
-        params["county"] = county
-    if page and page > 1:
-        params["page"] = int(page)
+        params["filters[county][0]"] = county
+    # Categoria noastra e slug-ul `principala/subcategorie`. API-ul o cere despartita:
+    # subcategoria e optionala, `parent_id` singur filtreaza pe intreaga categorie mare.
+    parti = [p for p in (category or "").strip("/").split("/") if p]
+    if parti:
+        params["parent_id"] = parti[0]
+        if len(parti) > 1:
+            params["category_id"] = parti[1]
+    params["sort"] = "date_desc"
+    # `currency` spune in ce moneda se citesc pragurile de pret, NU in ce moneda vin
+    # preturile inapoi (raspunsul e mereu in lei). Pragurile noastre sunt in RON.
+    params["currency"] = "lei"
     return urllib.parse.urlencode(params)
 
 
-def _fetch_ads(url: str, channel: str) -> list[dict]:
-    html = _request(url)
-    if not html:
-        return []
-    pp = _extract_page_props(html)
-    ads = pp.get("adsServer") or []
+def _fetch_page(url: str) -> tuple[list[dict], dict]:
+    """(anunturi mapate, metadate de paginare) de pe o pagina de API.
+
+    Metadatele sunt `current_page`/`last_page`/`total`, tolerant cu `.get`. Orice
+    esec (retea, corp non-JSON, `data` care nu e lista) da ([], {}) — apelantul
+    trateaza lipsa la fel ca sfarsitul paginarii.
+    """
+    body = _request(url, extra_headers=_API_HEADERS)
+    if not body:
+        return [], {}
+    import json
+    try:
+        payload = json.loads(body)
+    except Exception:
+        payload = None
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        log_manager.emit("radar", "WARN", "LaJumate: raspuns API neasteptat (fara 'data')")
+        return [], {}
     mapped = []
-    for ad in ads:
+    for ad in payload["data"]:
         try:
             m = _map_ad(ad)
             if m:
                 mapped.append(m)
         except Exception as exc:
-            log_manager.emit("radar", "WARN", f"LaJumate: ad invalid ignorat ({channel}): {str(exc)[:80]}")
-    return mapped
+            log_manager.emit("radar", "WARN", f"LaJumate: ad invalid ignorat: {str(exc)[:80]}")
+    meta = {
+        "current_page": payload.get("current_page"),
+        "last_page": payload.get("last_page"),
+        "total": payload.get("total"),
+    }
+    return mapped, meta
 
 
 def _post_filter(results: list[dict], max_price, min_price, exclude_words: list) -> list[dict]:
@@ -285,28 +368,6 @@ def _post_filter(results: list[dict], max_price, min_price, exclude_words: list)
             continue
         out.append(r)
     return out
-
-
-def _apply_keyword_filter(results: list[dict], keyword: str) -> list[dict]:
-    """Filtru local pe keyword (canal categorie), aceeasi logica ca Vinted:
-    substring accent-insensitive pe titlu/descriere + stem pe primul cuvant.
-    Non-destructiv: daca 0 potriviri, pastreaza rezultatele brute din categorie."""
-    full = _strip_accents(keyword)
-    if not full:
-        return results
-    first = full.split()[0] if full.split() else full
-    stem = first[:5] if len(first) >= 5 else first
-
-    def _matches(r: dict) -> bool:
-        hay = _strip_accents(r.get("title")) + " " + _strip_accents(r.get("description"))
-        return (full in hay) or (len(stem) >= 4 and stem in hay)
-
-    filtered = [r for r in results if _matches(r)]
-    if not filtered and results:
-        log_manager.emit("radar", "WARN",
-                         f"LaJumate categorie: 0 potriviri pe '{keyword}' — pastrez rezultatele brute din categorie")
-        return results
-    return filtered
 
 
 def fetch_lajumate_listing_details(url: str) -> dict:
@@ -372,10 +433,12 @@ def search_lajumate(
 ) -> list[dict]:
     """Cauta pe LaJumate; returneaza listinguri in format standard.
 
-    Canal principal: cautare full-text `/anunturi/c/{keyword}` (relevanta reala,
-    confirmata pentru orice keyword). Fallback (doar pe pagina 1, cand full-text da
-    0 rezultate) si daca exista categorie: pagina de categorie filtrata local pe
-    keyword (stil Vinted). Fara categorie + full-text gol -> [] cu WARN.
+    Canal UNIC: API-ul JSON public, cu pretul, categoria, starea si judetul filtrate
+    SERVER-SIDE. Nu mai exista fallback pe pagina de categorie: categoria e acum un
+    filtru care se combina cu keyword-ul in aceeasi cerere, deci canalul de rezerva
+    (cu filtrarea lui locala pe keyword) n-ar mai avea ce sa adauge.
+
+    Paginarea se opreste la `last_page` din raspuns; `_LAJUMATE_MAX_PAGES` ramane garda.
     """
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
@@ -384,35 +447,27 @@ def search_lajumate(
     if page > _LAJUMATE_MAX_PAGES:
         return []
 
-    query = _build_query(max_price, min_price, condition, judet, page)
-    ft_url = f"{_BASE}/anunturi/c/{urllib.parse.quote(keyword_clean)}"
-    if query:
-        ft_url += "?" + query
+    query = _build_query(keyword_clean, max_price, min_price, condition, judet, category)
+    url = f"{_API_BASE}/listing/{page}?{query}"
     log_manager.emit("radar", "SCAN", f'LaJumate "{keyword_clean}" (pag {page})')
 
-    results = _fetch_ads(ft_url, "full-text")
+    results, meta = _fetch_page(url)
+    last_page = meta.get("last_page")
+    current_page = meta.get("current_page")
+    peste_ultima = (isinstance(current_page, int) and isinstance(last_page, int)
+                    and current_page > last_page)
+    if not results or peste_ultima:
+        # Sfarsit normal de paginare, nu defect: INFO, nu WARN. (Un esec de retea a
+        # emis deja WARN-ul lui in `_request`/`_fetch_page`.)
+        log_manager.emit("radar", "INFO",
+                         f'LaJumate: pagina {page} peste ultima ({last_page}) pentru "{keyword_clean}"')
+        return []
+
+    # Plasa locala: API-ul filtreaza corect, dar un pret neparsabil sau un cuvant
+    # exclus tot trebuie sa cada, iar excluderile n-au echivalent server-side.
     results = _post_filter(results, max_price, min_price, exclude_words)
-
-    if results:
-        _enrich_details(results, skip_enrich_ids)
-        log_manager.emit("radar", "OK", f'LaJumate: {len(results)} rezultate pentru "{keyword_clean}" (pag {page})')
-        return results
-
-    # Fallback (doar pagina 1): pagina de categorie + filtru local pe keyword.
-    if page == 1 and category:
-        cat_slug = category.strip("/")
-        cat_url = f"{_BASE}/anunturi/{cat_slug}"
-        if query:
-            cat_url += "?" + query
-        cat_results = _fetch_ads(cat_url, "categorie")
-        cat_results = _post_filter(cat_results, max_price, min_price, exclude_words)
-        cat_results = _apply_keyword_filter(cat_results, keyword_clean)
-        _enrich_details(cat_results, skip_enrich_ids)
-        log_manager.emit("radar", "OK",
-                         f'LaJumate (categorie {cat_slug}): {len(cat_results)} rezultate pentru "{keyword_clean}"')
-        return cat_results
-
-    if page == 1 and not category:
-        log_manager.emit("radar", "WARN",
-                         f'LaJumate: 0 rezultate full-text pentru "{keyword_clean}" si fara categorie de fallback')
-    return []
+    _enrich_details(results, skip_enrich_ids)
+    log_manager.emit("radar", "OK",
+                     f'LaJumate: {len(results)} rezultate pentru "{keyword_clean}" '
+                     f'(pag {page}/{last_page} · total {meta.get("total")})')
+    return results
