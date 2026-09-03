@@ -89,20 +89,28 @@ MOBILE_DE_MAKE_ALIASES = {
 }
 
 
+# KA-1 — indexul case-insensitive, calculat O DATA la import (nu la fiecare apel).
+_MAKE_IDS_LOWER = {k.lower(): v for k, v in MOBILE_DE_MAKE_IDS.items()}
+
+
 def _resolve_make(make: str) -> str:
     """Numele marcii -> ID numeric mobile.de, sau "" daca nu se mapeaza. Functie pura.
-    Ordine: strip -> potrivire exacta -> alias pe lowercase -> .title() -> "".
+    Ordine: strip -> alias pe lowercase -> potrivire case-insensitive -> "".
     (Un make_id deja numeric NU trece pe aici — search_mobile_de il paseaza direct.)
+
+    KA-1: treapta finala era `.get(make.title())`, care rezolva "volkswagen" (-> cheia
+    "Volkswagen") dar NU si "bmw": `.title()` da "Bmw", iar cheia din dictionar e "BMW".
+    Masurat pe 2026-09-03: `_resolve_make("bmw")` intorcea "", deci `makeModelVariant1.
+    makeId` nu se seta niciodata si cautarea mergea pe TOATE marcile, tacut. Cazul lovea
+    orice cheie care nu e title-case.
     """
     make = (make or "").strip()
     if not make:
         return ""
-    if make in MOBILE_DE_MAKE_IDS:
-        return MOBILE_DE_MAKE_IDS[make]
     alias = MOBILE_DE_MAKE_ALIASES.get(make.lower())
     if alias:
         return MOBILE_DE_MAKE_IDS.get(alias, "")
-    return MOBILE_DE_MAKE_IDS.get(make.title(), "")
+    return _MAKE_IDS_LOWER.get(make.lower(), "")
 
 
 def _build_params(make_id: str, filters: dict, page: int) -> dict:
