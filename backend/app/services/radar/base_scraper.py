@@ -194,6 +194,12 @@ class Outcome(str, Enum):
 BLOCK_MARKERS: tuple[str, ...] = (
     "captcha-delivery", "cf-challenge", "<title>just a moment",
     "imperva", "incapsula", "access denied", "zugriff verweigert",
+    # CLS-1 — provocarea JS Akamai Bot Manager, servita cu HTTP 200 (masurat pe
+    # mobile.de, SONDA-AUTO 2026-09-03: ~2,7 KB, deci sub prag, dar niciun marker
+    # vechi nu o prindea si `classify` o dadea OK). Doar id-uri/clase proprii ale
+    # paginii de provocare: „akamai" singur apare si pe pagini bune (CDN/SDK), la
+    # fel ca „datadome", iar „protected by" e proza.
+    "sec-if-cpt-container", "scf-akamai-protected-by",
 )
 # „just a moment" e ancorat pe <title> pentru ca e singura expresie englezeasca
 # obisnuita din lista: intr-o descriere de vanzator sub 40 KB ar clasifica pagina

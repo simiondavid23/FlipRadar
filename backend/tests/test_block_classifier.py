@@ -7,7 +7,13 @@ am trata un rate-limit ca pe un ban si am reincerca gresit.
 Ultimul test pazeste delegarea din `vinted_html._looks_blocked`: daca vreunul din cele
 4 cazuri de acolo cade, clasificatorul e gresit, nu testul.
 """
-from app.services.radar.base_scraper import Outcome, classify
+import os
+
+import pytest
+
+from app.services.radar.base_scraper import (
+    INTERSTITIAL_MAX_BYTES, Outcome, classify,
+)
 
 
 def _pad(body: str, size: int) -> str:
@@ -97,6 +103,44 @@ def test_datadome_singur_nu_e_marker():
     # SDK-ul client DataDome apare si pe pagina buna — singur nu dovedeste nimic.
     assert classify(status=200, body="<script src='js.datadome.co/tags.js'></script>") is Outcome.OK
     assert classify(status=200, body="datadome ... please solve the captcha") is Outcome.BLOCKED
+
+
+# ── CLS-1: interstitialul Akamai Bot Manager, servit cu 200 ─────────────────────
+
+_AKAMAI = os.path.join(os.path.dirname(__file__), "fixtures", "akamai_interstitial.html")
+_MARKERI_AKAMAI = ("sec-if-cpt-container", "scf-akamai-protected-by")
+
+
+def test_pagina_akamai_reala_e_blocaj():
+    """Mostra REALA de pe mobile.de (SONDA-AUTO, 2026-09-03): 2,7 KB, HTTP 200, zero
+    markeri vechi — `classify` o dadea OK, adica un zid anti-bot trecea drept pagina
+    buna prin watchdog, prin rotatia NET-5 si prin audit."""
+    with open(_AKAMAI, encoding="utf-8") as f:
+        body = f.read()
+    assert len(body) < INTERSTITIAL_MAX_BYTES      # pragul chiar lasa markerii sa fie verificati
+    assert classify(status=200, body=body) is Outcome.BLOCKED
+
+
+@pytest.mark.parametrize("marker", _MARKERI_AKAMAI)
+def test_fiecare_marker_akamai_singur_e_suficient(marker):
+    assert classify(status=200, body=f"<div id={marker}>") is Outcome.BLOCKED
+
+
+@pytest.mark.parametrize("marker", _MARKERI_AKAMAI)
+def test_markerii_akamai_respecta_pragul_de_dimensiune(marker):
+    """Contractul existent se aplica si markerilor noi: peste prag, prezenta lor nu mai
+    e concludenta (o pagina mare poate mentiona sirul accidental)."""
+    body = _pad(f"<div id={marker}>", 50_000)
+    assert len(body) > INTERSTITIAL_MAX_BYTES
+    assert classify(status=200, body=body) is Outcome.OK
+
+
+def test_akamai_singur_nu_e_marker():
+    """Oglinda lui `datadome`: infrastructura Akamai (CDN, SDK, imagini) apare si pe
+    pagini perfect bune — doar id-urile/clasele paginii de provocare dovedesc ceva."""
+    assert classify(status=200,
+                    body="<img src='https://www.akamai.com/logo.svg'>") is Outcome.OK
+    assert classify(status=200, body="powered by akamai") is Outcome.OK
 
 
 def test_just_a_moment_e_ancorat_pe_titlu():
