@@ -1,13 +1,15 @@
 """Mobile.de — anunturi auto (Germania). platform="mobile_de".
 
-Mobile.de e protejat anti-bot (Imperva). Strategie: incercam intai curl_cffi (rapid),
-apoi cadem pe patchright cu Chrome real (executa JS).
+Mobile.de e protejat anti-bot: Akamai Bot Manager (identificat 2026-09; istoric Imperva).
+Strategie: incercam intai curl_cffi (rapid), apoi cadem pe patchright cu Chrome real
+(executa JS). MDE-1: calea HTTP e INCHISA — Akamai serveste o provocare JS de ~2,7 KB cu
+HTTP 200 pe tot domeniul (CLS-1 o clasifica BLOCKED). Calea de browser trece complet.
 
 Blocajul istoric NU era la nivel de IP: era detectie de AUTOMATIZARE — leak-uri CDP +
 un user_agent hardcodat inconsistent cu Client Hints (Sec-Ch-Ua) trimise de Chrome real,
-exact consistenta pe care o verifica Imperva. Rezolvat prin patchright (patch la nivel de
+exact consistenta pe care o verifica zidul. Rezolvat prin patchright (patch la nivel de
 binar) cu context MINIMAL fara stealth; confirmat live 2026-07 (pagina reala, zero markeri
-de blocare). Proxy rezidential NU e necesar. Headless e detectat de Imperva -> ruleaza
+de blocare). Proxy rezidential NU e necesar. Headless e detectat -> ruleaza
 headed (pe VPS: xvfb-run).
 
 Datele publice disponibile: titlu, an, km, pret (EUR), locatie, URL, thumbnail.
@@ -27,6 +29,8 @@ from app.services.log_manager import log_manager
 from app.services.radar.base_scraper import get_proxy_config
 
 _SEARCH_URL = "https://suchen.mobile.de/fahrzeuge/search.html"
+# „DE-14513 Teltow" din `seller-info`; se opreste la prima cifra (urmeaza „4 Sterne").
+_RE_LOC_DE = re.compile(r"\bDE-(\d{5})\s+([^\d|•]+)")
 # vehicleClass confirmat pe interfata publica (vc=Car). Doar valorile confirmate (Car/Motorbike).
 _MOBILEDE_CATEGORIES = {c["value"] for c in AUTO_PLATFORM_CATEGORIES["mobile_de"] if c.get("value")}
 
@@ -155,6 +159,19 @@ def _parse_mobilede_html(html: str) -> list:
     cardul e ANCORA <a href="/fahrzeuge/details.html?id=...>; selectorii/atributele vechi
     (.cBox-body--resultitem, [data-testid=result-list-item], [data-listing-id]) sunt MOARTE
     (mobile.de a trecut la clase ofuscate). [] daca pagina n-are carduri (challenge/gol).
+
+    MDE-1 (masurat 2026-09-03, SONDA-MDE-B): ancora cardului a REZISTAT, dar ancora de
+    TITLU a murit — `img.alt` e sirul gol pe toate cardurile si `aria-labelledby` nu mai
+    exista, deci garda `if not titlu: continue` arunca tot. Efectul: pagina buna (1,36 MB,
+    24 de carduri, zero markeri anti-bot) producea ZERO anunturi, tacut. Azi campurile
+    stau pe `data-testid`, TOATE in interiorul ancorei (verificat: exact o ancora de
+    detalii per <article>, deci ancora e containerul corect si cel mai ingust):
+        [data-testid$="-title"]           -> "BMW X4 xDrive 20iA 184PS M-Paket ..."
+        [data-testid="price-label"]       -> "27.999 €"
+        [data-testid="listing-details"]   -> "EZ 01/2017 • 81.833 km • 135 kW (184 PS) • Benzin"
+        [data-testid="seller-info"]       -> "Autohaus Klann GmbH DE-14513 Teltow 4 Sterne ( 172 )"
+    Fallback-urile vechi (alt / aria-labelledby) RAMAN: DOM-ul din iulie e inca posibil
+    pe alte pagini si e acoperit de testele AA-4.
     """
     soup = safe_soup(html)
     cards = (
@@ -165,6 +182,7 @@ def _parse_mobilede_html(html: str) -> list:
         or soup.select("[data-listing-id]")
     )
     results, seen = [], set()
+    fara_titlu = 0
     for card in cards:
         try:
             # cardul poate fi ANCORA insasi (selectorul nou) sau un container (fallback vechi)
@@ -180,19 +198,29 @@ def _parse_mobilede_html(html: str) -> list:
             if ext_id and ext_id in seen:
                 continue
 
-            # Titlu: alt-ul imaginii (curat) cu fallback pe elementul aria-labelledby.
+            # Titlu: `data-testid` care se termina in "-title" (DOM 2026-09), apoi
+            # fallback-urile din iulie — alt-ul imaginii, apoi aria-labelledby.
             img = link.find("img")
-            titlu = (img.get("alt") or "").strip() if img else ""
+            tnode = link.select_one('[data-testid$="-title"]')
+            titlu = tnode.get_text(" ", strip=True) if tnode else ""
+            if not titlu:
+                titlu = (img.get("alt") or "").strip() if img else ""
             if not titlu:
                 lb = link.get("aria-labelledby")
-                tnode = link.find(id=lb) if lb else None
-                titlu = tnode.get_text(" ", strip=True) if tnode else ""
+                lnode = link.find(id=lb) if lb else None
+                titlu = lnode.get_text(" ", strip=True) if lnode else ""
             if not titlu:
+                fara_titlu += 1
                 continue
             if ext_id:
                 seen.add(ext_id)
 
+            # Specificatiile (an/km) stau in `listing-details`; il concatenam explicit,
+            # ca extractia sa mearga si daca intr-un DOM viitor iese din card.
             card_text = card.get_text(" ", strip=True)
+            spec = link.select_one('[data-testid="listing-details"]')
+            if spec is not None:
+                card_text = f"{card_text} {spec.get_text(' ', strip=True)}"
             pret, moneda = _extract_price_mobile_de(link)
             # Km: scoate consumul "N l/100km" INAINTE de extractie, altfel "5,7 l/100km"
             # produce km=100 fals (confirmat pe DOM real la un Neuwagen fara kilometraj).
@@ -202,7 +230,7 @@ def _parse_mobilede_html(html: str) -> list:
                 platform="mobile_de", external_id=ext_id, titlu=titlu,
                 year=extract_year(titlu) or extract_year(card_text),
                 km=extract_km(km_text), pret=pret, moneda=moneda,
-                locatie="Germania", source_url=href,
+                locatie=_locatie_din_card(link), source_url=href,
                 thumbnail_url=thumb_from_img(img) or None,
             ))
             if len(results) >= MAX_LISTINGS:
@@ -210,11 +238,26 @@ def _parse_mobilede_html(html: str) -> list:
         except Exception as exc:
             print(f"[mobile_de] card parse error: {exc}")
             continue
+    if fara_titlu and not results:
+        # Semnalul lipsea la MDE-1: pagina buna, 24 de carduri, toate aruncate pe garda
+        # de titlu — si niciun cuvant nicaieri. Acum ajunge in `zgomot`-ul auditului.
+        print(f"[mobile_de] {fara_titlu} carduri fara titlu (markup schimbat?)")
     return results[:MAX_LISTINGS]
 
 
+def _locatie_din_card(link) -> str:
+    """„14513 Teltow" din `seller-info` („Autohaus Klann GmbH DE-14513 Teltow 4 Sterne").
+    Numele dealerului NU se pastreaza — n-avem camp pentru el si nu-l vrem."""
+    el = link.select_one('[data-testid="seller-info"]')
+    if el is not None:
+        m = _RE_LOC_DE.search(el.get_text(" ", strip=True))
+        if m:
+            return f"{m.group(1)} {m.group(2).strip()}"
+    return "Germania"
+
+
 def _search_mobile_de_playwright(url: str, page: int) -> list:
-    """Fallback patchright — executa JS si trece de detectia anti-bot Imperva.
+    """Fallback patchright — executa JS si trece de detectia anti-bot.
 
     Blocajul istoric era detectie de AUTOMATIZARE (leak-uri CDP + user_agent hardcodat
     inconsistent cu Client Hints), NU blocaj de IP. Rezolvat prin patchright cu Chrome real
@@ -250,8 +293,8 @@ def _search_mobile_de_playwright(url: str, page: int) -> list:
                 log_manager.emit("auto_listings", "INFO",
                     "Mobile.de: Chrome real indisponibil, fallback Chromium bundled")
             # Context minimal intentionat: UA custom strica consistenta cu Client Hints
-            # (Sec-Ch-Ua) verificata de Imperva; configul asta e cel validat live 2026-07.
-            # headless=False obligatoriu: Imperva detecteaza headless (confirmat live) — pe VPS
+            # (Sec-Ch-Ua) verificata de zid; configul asta e cel validat live 2026-07.
+            # headless=False obligatoriu: zidul detecteaza headless (confirmat live) — pe VPS
             # ruleaza cu xvfb-run; pe PC-ul de dev apare o fereastra Chrome la scanarile mobile.de.
             context = browser.new_context(**context_kwargs)
             pw_page = context.new_page()
@@ -263,11 +306,11 @@ def _search_mobile_de_playwright(url: str, page: int) -> list:
                 except Exception:
                     pass
 
-                # Pagina de blocare Imperva -> 0 rezultate.
+                # Pagina de blocare -> 0 rezultate.
                 body_head = pw_page.inner_text("body")[:400].lower()
                 if any(m in body_head for m in ("access denied", "zugriff verweigert", "captcha")):
                     log_manager.emit("auto_listings", "WARN",
-                        "Mobile.de: blocat de Imperva (fingerprint automatizare) "
+                        "Mobile.de: blocat (fingerprint automatizare) "
                         "— verifica versiunile patchright/Chrome")
                     return results
 
