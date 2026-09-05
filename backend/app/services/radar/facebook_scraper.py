@@ -42,6 +42,7 @@ from app.services.log_manager import log_manager
 from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
     report_outcome, Outcome, moneda_convertibila, pret_comparabil_ron,
+    normalizeaza_moneda,
 )
 # FBS-8 — helper PUR (fara DB, fara mediu); sta langa celelalte reguli de potrivire
 # pe titlu, nu in scraper, ca sa fie testabil table-driven ca restul motorului.
@@ -490,6 +491,7 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
     cifre_lipsa = 0
     ferma_taiate = 0
     moneda_necunoscuta = 0
+    coduri_necunoscute: set[str] = set()   # CUR-1 — ca INFO-ul sa le numeasca
     curs_indisponibil = 0
     for c in canonice:
         # FBS-9b — prima poarta, INAINTEA tuturor celorlalte: verdictul de ferma e pe
@@ -525,6 +527,7 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
                 curs_indisponibil += 1        # D3 — cursul n-a raspuns
             else:
                 moneda_necunoscuta += 1       # D2 — moneda pe care n-o stim
+                coduri_necunoscute.add(normalizeaza_moneda(c.get("currency")))
         else:
             if max_price and max_price > 0 and pret_ron > max_price:
                 continue
@@ -572,7 +575,8 @@ def _din_canonice(canonice, keyword, max_price, exclude_words, min_price,
     if moneda_necunoscuta:
         log_manager.emit("radar", "INFO",
             f"Facebook: {moneda_necunoscuta} anunturi au trecut de filtrele de pret "
-            f"fara verificare — moneda lor nu se poate aduce in RON")
+            f"fara verificare — moneda lor nu se poate aduce in RON "
+            f"({', '.join(sorted(coduri_necunoscute))})")
     if curs_indisponibil:
         # UN singur WARN per apel de formator, nu unul per anunt (D3).
         log_manager.emit("radar", "WARN",
@@ -763,6 +767,7 @@ def _search_sesiune(
             excluded_sold = 0
             fara_categorie = 0      # A6/A7 — pastrate desi cardul nu poarta categorie
             moneda_necunoscuta = 0  # FBS-11 — trecute fara verificare de pret
+            coduri_necunoscute: set[str] = set()   # CUR-1
             curs_indisponibil = 0
             for oid, o in by_id.items():
                 if not _is_active(o):
@@ -790,6 +795,7 @@ def _search_sesiune(
                         curs_indisponibil += 1
                     else:
                         moneda_necunoscuta += 1
+                        coduri_necunoscute.add(normalizeaza_moneda(currency))
                 else:
                     if max_price and max_price > 0 and pret_ron > max_price:
                         continue
@@ -853,7 +859,8 @@ def _search_sesiune(
             if moneda_necunoscuta:
                 log_manager.emit("radar", "INFO",
                     f"Facebook: {moneda_necunoscuta} anunturi au trecut de filtrele de "
-                    f"pret fara verificare — moneda lor nu se poate aduce in RON")
+                    f"pret fara verificare — moneda lor nu se poate aduce in RON "
+                    f"({', '.join(sorted(coduri_necunoscute))})")
             if curs_indisponibil:
                 # UN singur WARN per apel, nu unul per anunt (D3).
                 log_manager.emit("radar", "WARN",

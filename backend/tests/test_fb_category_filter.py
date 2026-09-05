@@ -154,6 +154,14 @@ def curs(monkeypatch):
     from app.services import bnr_exchange
     monkeypatch.setattr(bnr_exchange, "get_eur_ron", lambda: 5.0)
     monkeypatch.setattr(bnr_exchange, "get_usd_ron", lambda: 4.5)
+    # CUR-1: de cand `pret_comparabil_ron` cauta codurile din afara EUR/USD in
+    # catalogul BNR, si acel lant incepe cu un FETCH — deci se pinuieste la fel.
+    # Catalog gol = orice cod non-EUR/USD ramane „necunoscut", ca inainte de CUR-1.
+    from app.services import currency_service
+    monkeypatch.setattr(currency_service, "_fetch_cu_backoff", lambda now: None)
+    monkeypatch.setattr(currency_service, "_disk_rates", lambda: {})
+    currency_service._CACHE.clear()
+    currency_service._CACHE_TIMESTAMP.clear()
 
 
 def _pret_obj(oid: str, titlu: str, suma: str, formatted: str) -> dict:
@@ -188,12 +196,15 @@ def test_sesiune_usd_se_converteste(monkeypatch, curs):
 
 def test_sesiune_moneda_necunoscuta_trece_cu_contor(monkeypatch, curs):
     """D2 pe calea de sesiune, devenita EFECTIVA de cand parserul spune adevarul: pana
-    la FBS-12 un „9000 GBP" era etichetat RON si taiat de `max_price`."""
+    la FBS-12 un „9000 GBP" era etichetat RON si taiat de `max_price`.
+
+    CUR-1: exemplul a trecut de la GBP la „XXX" — GBP e in catalogul BNR si se
+    CONVERTESTE acum, deci nu mai exercita poarta permisiva."""
     logs = []
-    out = _radar(monkeypatch, [_pret_obj("1", "Geaca", "9000", "9000 GBP")], logs=logs)
+    out = _radar(monkeypatch, [_pret_obj("1", "Geaca", "9000", "9000 XXX")], logs=logs)
 
     assert [r["external_id"] for r in out] == ["fb_1"]
-    assert out[0]["currency"] == "GBP"
+    assert out[0]["currency"] == "XXX"
     assert any("moneda lor nu se poate aduce in RON" in m
                for niv, m in logs if niv == "INFO"), logs
 

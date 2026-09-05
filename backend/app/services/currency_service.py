@@ -230,22 +230,16 @@ def _fetch_cu_backoff(now: float) -> Optional[Dict[str, float]]:
 
 # ── Lantul de rezerva ───────────────────────────────────────────────────────────
 
-def _get_rate(currency: str) -> float:
-    """Returnează rata de conversie valută -> RON (ex: EUR -> 5.24 înseamnă 1 EUR = 5.24 RON)."""
-    currency = (currency or "").upper()
-    if currency == "RON":
-        return 1.0
+def _rate_din_surse(currency: str, now: float) -> Optional[float]:
+    """Treptele (a)-(d) ale lantului: cache proaspat > fetch BNR > cache EXPIRAT > disc.
+    None daca moneda nu apare in NICIUNA dintre ele.
 
-    now = time.time()
+    Extras la CUR-1 ca `_get_rate` (care mai adauga peste el fallback-ul static si 1.0,
+    de care depinde `convert`) si `get_rate_strict` (care NU adauga nimic) sa imparta
+    exact acelasi lant, in loc sa-l duplice si sa divergheze in timp.
+    """
     cached = _CACHE.get(currency)
     ts = _CACHE_TIMESTAMP.get(currency, 0)
-
-    # Lantul de rezerva, de la cea mai buna informatie la cea mai slaba:
-    #   (a) cache proaspat > (b) fetch BNR > (c) cache EXPIRAT > (d) disc > (e) static > 1.0
-    # Cache-ul expirat e apararea reala pentru un proces care ruleaza de mult: ratele
-    # valutare se misca lent, deci o rata de acum cateva ore bate orice constanta din cod.
-    # Cache-ul de pe disc e aceeasi idee, dar peste repornire: acopera pornirea LA RECE.
-    # Fallback-ul static ramane doar pentru cazul in care nu exista NIMIC masurat.
 
     # (a) cache in memorie, proaspat
     if cached is not None and (now - ts) < _CACHE_TTL_SECONDS:
@@ -277,6 +271,73 @@ def _get_rate(currency: str) -> float:
             f"(vechi de {_DISK_AGE_DAYS} zile)",
         )
         return pe_disc
+
+    return None
+
+
+def get_rate_strict(currency) -> Optional[float]:
+    """Cursul moneda -> RON din SURSE REALE, sau None daca moneda nu e in nicio sursa.
+
+    CUR-1. Diferenta fata de `_get_rate` e tot ce nu face: fara fallback static, fara
+    1.0 la final. `_get_rate` are voie sa spuna „1:1" fiindca `convert` prefera o suma
+    nealterata unei exceptii; portile de pret si scorarea NU au voie sa confunde „nu
+    stiu moneda asta" cu „valoreaza cat un leu" — un anunt de 800 GBP tratat 1:1 ar
+    trece drept 800 RON si ar primi un grad fals.
+    """
+    cod = (currency or "").strip().upper()
+    if not cod:
+        return None
+    if cod == "RON":
+        return 1.0
+    return _rate_din_surse(cod, time.time())
+
+
+def catalog_ron() -> Dict[str, float]:
+    """Tot ce stim ACUM sa aducem in RON: {cod: curs}, cu "RON": 1.0 inclus.
+
+    CUR-1. Sursa e cache-ul proaspat; daca e gol sau expirat, un fetch cu backoff; daca
+    nici acela nu raspunde, discul. Fara static si fara 1.0 — un cod care lipseste de
+    aici e un cod pe care apelantul TREBUIE sa-l trateze ca necunoscut.
+
+    Spre deosebire de `_rate_din_surse`, treapta „cache EXPIRAT" nu are corespondent:
+    pentru un instantaneu al INTREGULUI catalog, discul poarta acelasi continut ca
+    ultimul fetch reusit, deci n-ar adauga informatie. In cel mai rau caz intoarce
+    {"RON": 1.0}, iar apelantul decide (scorarea cade pe cursurile EUR/USD ale scanului).
+    """
+    now = time.time()
+    proaspete = {c: r for c, r in _CACHE.items()
+                 if (now - _CACHE_TIMESTAMP.get(c, 0)) < _CACHE_TTL_SECONDS}
+    if not proaspete:
+        rates = _fetch_cu_backoff(now)
+        if rates:
+            for cur, rate in rates.items():
+                _CACHE[cur] = rate
+                _CACHE_TIMESTAMP[cur] = now
+            proaspete = dict(rates)
+        else:
+            proaspete = _disk_rates()
+    catalog = {c: float(r) for c, r in proaspete.items()
+               if isinstance(r, (int, float)) and r > 0}
+    catalog["RON"] = 1.0
+    return catalog
+
+
+def _get_rate(currency: str) -> float:
+    """Returnează rata de conversie valută -> RON (ex: EUR -> 5.24 înseamnă 1 EUR = 5.24 RON)."""
+    currency = (currency or "").upper()
+    if currency == "RON":
+        return 1.0
+
+    # Lantul de rezerva, de la cea mai buna informatie la cea mai slaba:
+    #   (a) cache proaspat > (b) fetch BNR > (c) cache EXPIRAT > (d) disc > (e) static > 1.0
+    # Cache-ul expirat e apararea reala pentru un proces care ruleaza de mult: ratele
+    # valutare se misca lent, deci o rata de acum cateva ore bate orice constanta din cod.
+    # Cache-ul de pe disc e aceeasi idee, dar peste repornire: acopera pornirea LA RECE.
+    # Fallback-ul static ramane doar pentru cazul in care nu exista NIMIC masurat.
+    # (a)-(d) stau in `_rate_din_surse`, partajat cu `get_rate_strict` (CUR-1).
+    din_surse = _rate_din_surse(currency, time.time())
+    if din_surse is not None:
+        return din_surse
 
     # (e) fallback static
     if currency in ("EUR", "USD", "SEK"):

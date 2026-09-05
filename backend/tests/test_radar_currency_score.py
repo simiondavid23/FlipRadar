@@ -167,13 +167,19 @@ def _fb_listing(ext: str, price: float, currency: str) -> dict:
     }
 
 
-def _scan(monkeypatch, uid: int, listing: dict, eur_ron: float = 5.0) -> None:
-    """Ruleaza _scan_user cu scraperul si cursul BNR inlocuite (fara retea)."""
+def _scan(monkeypatch, uid: int, listing: dict, eur_ron: float = 5.0,
+          cursuri: dict | None = None) -> None:
+    """Ruleaza _scan_user cu scraperul si cursul BNR inlocuite (fara retea).
+
+    CUR-1 — `cursuri` pinuieste catalogul BNR pe care `_scan_user` il ia o data pe scan
+    (`currency_service.catalog_ron()`); fara el, lantul catalogului ar incepe cu un fetch.
+    """
     from app.database import SessionLocal
     from app.models.user import User
-    from app.services import bnr_exchange
+    from app.services import bnr_exchange, currency_service
 
     monkeypatch.setattr(bnr_exchange, "get_eur_ron", lambda: eur_ron)
+    monkeypatch.setattr(currency_service, "catalog_ron", lambda: dict(cursuri or {}))
     monkeypatch.setattr(rs, "_run_scraper",
                         lambda *a, **k: [dict(listing)] if k.get("page", 1) == 1 else [])
     monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
@@ -231,6 +237,29 @@ def test_anunt_in_eur_e_scorat_pe_valoarea_in_ron(auth_client, monkeypatch):
     assert row is not None                                  # anuntul E in feed
     assert row.price == 500.0 and row.currency == "EUR"     # pretul persistat ramane BRUT
     assert row.margin_pct == pytest.approx(37.5)            # (4000 - 2500) / 4000
+    assert row.score == "B"
+
+
+def test_anunt_intr_o_moneda_din_catalog_e_scorat_convertit(auth_client, monkeypatch):
+    """CUR-1, CABLAREA: `_scan_user` chiar paseaza catalogul mai departe la scorare.
+
+    Testul de unitate de mai sus arata ca `_price_to_ron` STIE sa foloseasca un catalog;
+    asta arata ca il si PRIMESTE — fara `cursuri=cursuri` in apel, 450 GBP ar intra in
+    scorare ca 450 (marja 88.75%, grad A fals) in loc de 2700 RON (marja 32.5%, grad B).
+    GBP e ales anume: e in catalogul BNR real, dar NU are adaptor propriu ca EUR/USD.
+    """
+    uid = auth_client.get("/api/auth/me").json()["id"]
+    _enable_facebook(uid)
+    _mk_keyword(auth_client, resale_price=4000.0)
+    ext = f"fb_{uuid.uuid4().hex[:10]}"
+
+    _scan(monkeypatch, uid, _fb_listing(ext, price=450.0, currency="GBP"),
+          cursuri={"GBP": 6.0, "RON": 1.0})
+
+    row = _feed_row(uid, ext)
+    assert row is not None
+    assert row.price == 450.0 and row.currency == "GBP"     # pretul persistat ramane BRUT
+    assert row.margin_pct == pytest.approx(32.5)            # (4000 - 2700) / 4000
     assert row.score == "B"
 
 

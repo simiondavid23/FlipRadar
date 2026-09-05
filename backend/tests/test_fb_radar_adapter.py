@@ -48,6 +48,14 @@ def curs_fix(monkeypatch):
     # FBS-12: si USD, din acelasi motiv — de cand helper-ul il converteste, un anunt
     # in USD ar chema cursul REAL, al carui lant incepe cu un fetch la BNR.
     monkeypatch.setattr(bnr_exchange, "get_usd_ron", lambda: 4.5)
+    # CUR-1: de cand `pret_comparabil_ron` cauta codurile din afara EUR/USD in
+    # catalogul BNR, si acel lant incepe cu un FETCH — deci se pinuieste la fel.
+    # Catalog gol = orice cod non-EUR/USD ramane „necunoscut", ca inainte de CUR-1.
+    from app.services import currency_service
+    monkeypatch.setattr(currency_service, "_fetch_cu_backoff", lambda now: None)
+    monkeypatch.setattr(currency_service, "_disk_rates", lambda: {})
+    currency_service._CACHE.clear()
+    currency_service._CACHE_TIMESTAMP.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -375,11 +383,13 @@ def test_helperul_converteste_ron_si_eur_si_normalizeaza_moneda(monkeypatch):
     assert bs.pret_comparabil_ron(500, "EUR") == 2500.0       # D1
     assert bs.pret_comparabil_ron(500, "eur ") == 2500.0      # normalizare
     assert bs.pret_comparabil_ron(100, "USD") == 450.0        # D1, FBS-12
-    assert bs.pret_comparabil_ron(200, "GBP") is None          # D2
+    # CUR-1: GBP a INTRAT in catalogul BNR, deci nu mai e exemplul de „necunoscut".
+    # „XXX" e codul ISO 4217 pentru „fara moneda" — garantat in afara catalogului.
+    assert bs.pret_comparabil_ron(200, "XXX") is None          # D2
     assert bs.pret_comparabil_ron(None, "RON") is None
     assert bs.moneda_convertibila("RON") and bs.moneda_convertibila(" eur")
     assert bs.moneda_convertibila("usd ")                      # FBS-12
-    assert not bs.moneda_convertibila("GBP")
+    assert not bs.moneda_convertibila("XXX")                   # CUR-1, vezi mai sus
 
 
 def test_helperul_da_none_daca_cursul_ridica(monkeypatch):
@@ -417,14 +427,12 @@ def test_moneda_necunoscuta_trece_si_se_numara(monkeypatch, nucleu, logs):
     """D2 — permisiv, dar numarat: anuntul trece de praguri care l-ar fi taiat daca ar
     fi fost citit ca RON.
 
-    GBP e ales ca sa exercite CONTRACTUL formatorului pe o moneda oarecare. De stiut ca
-    azi el n-ar veni asa din parser: si `parse.parse_price`, si `_parse_price` eticheteaza
-    RON orice nu recunosc (masurat: GBP si CHF ies amandoua „RON"), deci singura moneda
-    care ajunge REAL pe calea asta e USD — vezi testul urmator. Poarta permisiva ramane
-    corecta indiferent, si devine efectiva in clipa in care parserele vor spune adevarul
-    despre moneda."""
+    CUR-1: exemplul a trecut de la GBP la „XXX" (codul ISO pentru „fara moneda"),
+    fiindca GBP se CONVERTESTE acum — e in catalogul BNR, ca inca ~30 de coduri. Poarta
+    permisiva ramane pentru ce chiar nu se poate aduce in RON: coduri din afara
+    catalogului, etichete gresite, monede pe care BNR nu le coteaza."""
     monkeypatch.setenv("FB_MOD", "logout")
-    nucleu.raspuns.append(_canonic("1", price=200.0, currency="GBP"))
+    nucleu.raspuns.append(_canonic("1", price=200.0, currency="XXX"))
 
     rez = fb.search_facebook("geaca", max_price=0, min_price=3000)
 

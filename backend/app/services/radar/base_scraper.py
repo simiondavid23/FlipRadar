@@ -112,7 +112,10 @@ def is_excluded(title: str, exclude_words: list[str]) -> bool:
 # facuta in RON — nu in numere fara unitate.
 # FBS-12: USD a intrat aici odata cu `bnr_exchange.get_usd_ron` — era deja emis de
 # parsere si deja suportat de `currency_service`, lipsea doar adaptorul.
-_MONEDE_CONVERTIBILE = {"RON", "EUR", "USD"}
+# CUR-1: lista fixa a devenit doar nucleul cu adaptor propriu (`bnr_exchange`, cu
+# cache pe zi si fallback). Restul monedelor nu mai sunt „necunoscute" prin definitie:
+# se cauta in catalogul BNR prin `currency_service.get_rate_strict`.
+_MONEDE_CU_ADAPTOR = {"RON", "EUR", "USD"}
 
 
 def normalizeaza_moneda(currency) -> str:
@@ -121,13 +124,27 @@ def normalizeaza_moneda(currency) -> str:
 
 
 def moneda_convertibila(currency) -> bool:
-    """True daca stim sa aducem moneda in RON: RON prin identitate, EUR si USD prin curs.
+    """True daca stim sa aducem moneda in RON.
+
+    RON prin identitate, EUR/USD prin adaptorul lor dedicat, ORICE alt cod daca apare
+    in catalogul BNR (CUR-1). Un cod din afara catalogului — „XXX", o eticheta gresita,
+    o moneda pe care BNR n-o coteaza — ramane False.
 
     Exista ca apelantul sa poata DEOSEBI cele doua motive pentru care
     `pret_comparabil_ron` intoarce None — moneda pe care n-o stim (D2) fata de cursul
     care n-a raspuns (D3) — fara sa-si tina o a doua lista de monede, care ar diverge.
+    Distinctia ramane INTACTA pentru EUR/USD (singurele pe care D3 chiar le poate lovi
+    separat); pentru restul catalogului cele doua cazuri se confunda, fiindca acolo
+    „curs indisponibil" si „cod necunoscut" ies amandoua ca None din `get_rate_strict`.
     """
-    return normalizeaza_moneda(currency) in _MONEDE_CONVERTIBILE
+    moneda = normalizeaza_moneda(currency)
+    if moneda in _MONEDE_CU_ADAPTOR:
+        return True
+    from app.services import currency_service      # local: evita ciclul la import
+    try:
+        return currency_service.get_rate_strict(moneda) is not None
+    except Exception:                              # noqa: BLE001 — la fel ca D3
+        return False
 
 
 def pret_comparabil_ron(price, currency):
@@ -138,10 +155,11 @@ def pret_comparabil_ron(price, currency):
         pragurile; RON trece prin identitate. Pragurile raman semantic RON, cum sunt
         azi. (USD s-a adaugat la FBS-12, odata cu parserele care spun adevarul despre
         moneda — pana atunci trecea permisiv.)
-      * D2 — o moneda pe care n-o stim (GBP, CHF, orice cod de trei litere pe care
-        parserele il raporteaza acum onest) da None, iar apelantul lasa anuntul sa
-        TREACA de portile de pret. „Prefer sa nu pierd nimic daca exista sansa sa fie
-        un deal bun" — permisiv, dar numarat.
+      * D2 — o moneda pe care n-o stim da None, iar apelantul lasa anuntul sa TREACA
+        de portile de pret. „Prefer sa nu pierd nimic daca exista sansa sa fie un deal
+        bun" — permisiv, dar numarat. CUR-1 a restrans mult multimea asta: GBP, CHF,
+        MDL si celelalte ~30 de coduri BNR se CONVERTESC acum; raman permisive doar
+        codurile din afara catalogului.
       * D3 — daca cursul nu raspunde, tot None: filtrarea nu are voie sa pice fiindca
         BNR-ul e indisponibil. E o garda DEFENSIVA, nu reproducerea unui esec observat:
         lantul din `currency_service` se termina in fallback static si apoi in 1.0, deci
@@ -154,20 +172,33 @@ def pret_comparabil_ron(price, currency):
     Apelul e prin MODUL (`bnr_exchange.get_eur_ron()`), nu printr-un nume importat: e
     exact avertismentul din docstring-ul lui `bnr_exchange`, si tot el face cursul
     inlocuibil din teste.
+
+    CUR-1 — DOUA cai de curs, deliberat:
+      * EUR/USD raman pe `bnr_exchange` (cache pe zi, fallback propriu). Asa D3 ramane
+        un caz DISTINCT de D2, si asa pinuirea cursului din teste continua sa prinda.
+      * orice alt cod trece prin `currency_service.get_rate_strict`, deci prin catalogul
+        BNR intreg. None de acolo inseamna „nu e in nicio sursa reala" — niciodata 1:1.
     """
     if not isinstance(price, (int, float)):
         return None
     moneda = normalizeaza_moneda(currency)
     if moneda == "RON":
         return float(price)
-    if moneda not in _MONEDE_CONVERTIBILE:
-        return None                                   # D2
-    from app.services import bnr_exchange             # local: evita ciclul la import
-    try:
-        curs = (bnr_exchange.get_eur_ron() if moneda == "EUR"
-                else bnr_exchange.get_usd_ron())
-    except Exception:                                 # noqa: BLE001 — D3, orice esec
-        return None
+    if moneda in _MONEDE_CU_ADAPTOR:
+        from app.services import bnr_exchange         # local: evita ciclul la import
+        try:
+            curs = (bnr_exchange.get_eur_ron() if moneda == "EUR"
+                    else bnr_exchange.get_usd_ron())
+        except Exception:                             # noqa: BLE001 — D3, orice esec
+            return None
+    else:
+        from app.services import currency_service     # local: acelasi motiv
+        try:
+            curs = currency_service.get_rate_strict(moneda)
+        except Exception:                             # noqa: BLE001 — D3
+            return None
+        if curs is None:
+            return None                               # D2 — nu e in catalogul BNR
     if not isinstance(curs, (int, float)) or curs <= 0:
         return None                                   # curs absurd = curs indisponibil
     return float(price) * float(curs)

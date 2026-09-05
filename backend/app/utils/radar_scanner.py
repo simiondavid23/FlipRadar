@@ -1797,7 +1797,7 @@ def _too_old(listed_at, max_age_days, now=None) -> bool:
 _unknown_currency_warned: set[str] = set()
 
 
-def _price_to_ron(price, currency, eur_ron, usd_ron=None) -> Optional[float]:
+def _price_to_ron(price, currency, eur_ron, usd_ron=None, cursuri=None) -> Optional[float]:
     """Pretul anuntului adus in RON pentru scorare. Functie PURA (fara DB/retea):
     pentru aceleasi argumente intoarce mereu aceeasi valoare, cursurile se paseaza.
 
@@ -1820,6 +1820,14 @@ def _price_to_ron(price, currency, eur_ron, usd_ron=None) -> Optional[float]:
     price_f if rate > 0 else price_f`, deci un BNR cazut nu se vedea in jurnal.
 
     WARN-ul e unul pe scan PER MONEDA (`_unknown_currency_warned`), nu unul per anunt.
+
+    CUR-1 — `cursuri` e catalogul BNR intreg ({cod: curs}), luat o data pe scan prin
+    `currency_service.catalog_ron()`. Acopera codurile PESTE EUR/USD, deci 800 GBP nu
+    mai intra in scorare ca 800 RON (marja falsa, grad fals). EUR/USD raman pe
+    `eur_ron`/`usd_ron` chiar si cand catalogul le contine: sunt aceeasi sursa, dar
+    cursurile scanului sunt cele pe care le citesc si celelalte parti ale lui. Fara
+    catalog — gol, BNR cazut, apelant care nu-l paseaza — comportamentul e EXACT cel
+    dinainte. Functia ramane PURA: catalogul se paseaza, nu se citeste de aici.
     """
     try:
         price_f = float(price)
@@ -1829,17 +1837,33 @@ def _price_to_ron(price, currency, eur_ron, usd_ron=None) -> Optional[float]:
     if cur in ("", "RON"):
         return price_f
 
-    cursuri = {"EUR": eur_ron, "USD": usd_ron}
-    if cur in cursuri:
+    # CUR-1, ruta hibrida (oglinda lui `base_scraper.pret_comparabil_ron`): EUR/USD
+    # raman pe cursurile scanului, catalogul BNR acopera restul codurilor. Ordinea
+    # conteaza: cursurile scanului si catalogul vin din ACEEASI sursa, dar numai primele
+    # sunt pinuite in teste, iar `eur_ron` e ce citesc si celelalte parti ale scanului —
+    # deci EUR/USD trebuie sa ramana consecvente cu ele, nu sa fie suprascrise aici.
+    adaptor = {"EUR": eur_ron, "USD": usd_ron}
+    if cur in adaptor:
         try:
-            rate = float(cursuri[cur] or 0)
+            rate = float(adaptor[cur] or 0)
         except (TypeError, ValueError):
             rate = 0.0
         if rate > 0:
             return price_f * rate
+
+    if cursuri:
+        try:
+            din_catalog = float(cursuri.get(cur) or 0)
+        except (TypeError, ValueError):
+            din_catalog = 0.0
+        if din_catalog > 0:
+            return price_f * din_catalog
+
+    if cur in adaptor:
         motiv = f"Curs indisponibil pentru {cur} la scorare — preț lăsat neconvertit"
     else:
-        motiv = f"Monedă necunoscută la scorare: {cur} — preț lăsat neconvertit"
+        motiv = (f"Monedă necunoscută la scorare: {cur} (nu e în catalogul BNR) — "
+                 f"preț lăsat neconvertit")
 
     if cur not in _unknown_currency_warned:
         _unknown_currency_warned.add(cur)
@@ -2372,6 +2396,18 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
         usd_ron = bnr_exchange.get_usd_ron()
     except Exception:
         usd_ron = None
+    # CUR-1 — catalogul BNR INTREG, tot o data pe scan: cu el, o moneda ca GBP sau MDL
+    # intra in scorare convertita, nu ca numar brut. Acelasi cache din `currency_service`
+    # pe care il folosesc si cele doua apeluri de mai sus, deci nu e un fetch in plus.
+    # Esecul nu opreste scanul: {} inseamna „cade pe fallback-ul EUR/USD", ca inainte.
+    from app.services import currency_service
+    try:
+        cursuri = currency_service.catalog_ron()
+    except Exception as exc:
+        cursuri = {}
+        log_manager.emit("radar", "WARN",
+                         f"Catalogul BNR nu s-a putut citi ({type(exc).__name__}) — "
+                         f"scorarea converteste doar EUR/USD in scanul asta")
     _unknown_currency_warned.clear()   # WARN de moneda necunoscuta: o data pe scan
     keywords = (
         db.query(RadarKeyword)
@@ -2549,7 +2585,8 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     # anunt cotat in EUR se converteste cu cursul scanului. Pretul
                     # persistat mai jos ramane cel BRUT, cu moneda lui.
                     _price_ron = _price_to_ron(listing.get("price"),
-                                               listing.get("currency"), eur_ron, usd_ron)
+                                               listing.get("currency"), eur_ron, usd_ron,
+                                               cursuri=cursuri)
                     score_data = calculate_score(
                         listing_price=_price_ron or 0,
                         resale_price=kw.resale_price,
