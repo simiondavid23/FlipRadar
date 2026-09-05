@@ -136,6 +136,13 @@ def _call_scraper(kw: AutoKeyword, page: int = 1, db=None) -> list:
     return []
 
 
+# SEEN-3 — prag identic cu Radar (`radar_scanner._PRICE_DROP_MIN`) si cu Imobiliare
+# (literal in `real_estate_scanner`). Declarat LOCAL, nu importat: modulele sunt separate
+# si un import Auto -> Radar ar lega doua subsisteme doar pentru o constanta. Un test
+# compara cele doua valori, ca sa nu divergheze in tacere.
+_PRICE_DROP_MIN = 0.05
+
+
 def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
                   resale_price_ron: Optional[float]) -> bool:
     """Persist new listing. Returns True if new (not seen before).
@@ -157,6 +164,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     ).first()
     if existing:
         existing.last_checked_at = datetime.now(timezone.utc)
+        _alerta = False
         # SAVED-BRIDGE: reaparitia unui anunt cunoscut aduce pretul curent —
         # actualizam randul (pret + grad recalculat) in loc sa-l lasam inghetat
         # la valoarea de la prima vedere. Monede diferite nu se compara.
@@ -168,6 +176,9 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         if (_new_price and _new_price > 0
                 and (existing.currency or "RON").upper() == _new_cur
                 and float(existing.price or 0) != _new_price):
+            # SEEN-3 — scaderea se masoara INAINTE de a suprascrie pretul.
+            _old_price = float(existing.price or 0)
+            _drop = (_old_price - _new_price) / _old_price if _old_price > 0 else 0.0
             existing.price = _new_price
             if resale_price_ron is not None:
                 _price_ron = _new_price * (get_eur_ron() if _new_cur == "EUR" else 1.0)
@@ -183,7 +194,24 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
                 _mp = _sd["margin_pct"]
                 existing.score = int(round(_mp)) if _mp is not None else None
                 existing.margin_value = _sd["margin_value"]
+
+            # SEEN-3 — „de la X" pentru feed, doar cand scaderea conteaza. ATENTIE la
+            # semantica: pe Auto referinta e pretul dinaintea ACESTEI scaderi, deci o a
+            # doua scadere >= 5% o suprascrie. Pe Radar e PRIMUL pret vazut, fiindca
+            # acolo exista `radar_seen_ids` care supravietuieste si cand anuntul n-are
+            # rand in feed; aici randul e mereu viu si n-avem a doua memorie.
+            _alerta = False
+            if _drop >= _PRICE_DROP_MIN:
+                existing.pret_anterior = _old_price
+                # D-S4, paritate cu Radar: pe langa randurile SALVATE (orice scadere
+                # peste prag), alerteaza si cele active cand scaderea le-a urcat intr-un
+                # grad. Un anunt de grad D care scade 15% si devine A era tacut.
+                _alerta = (existing.status == "saved"
+                           or existing.grade in ("A", "B", "C"))
         db.commit()
+        # Notificarea e IREVERSIBILA — pleaca DUPA commit (paritate N1 cu Radar).
+        if _alerta:
+            _notify_pret_scazut(kw, existing, _old_price, _drop, db)
         return False
 
     # Paritate SCRAPE-1a / FBM-1a (Radar + Imobiliare sar anunturile fara pret la
@@ -258,9 +286,18 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     return True
 
 
-def _notify(kw: AutoKeyword, saved_listing, db: Session):
+def _notify(kw: AutoKeyword, saved_listing, db: Session,
+            title_prefix=None, listing_id=None):
     """Trimite notificari: Discord pe orice grad (rutarea per canal decide —
-    canalul auto_all primeste si C/D, NOTIF-AUDIT N11); email doar pe A/B."""
+    canalul auto_all primeste si C/D, NOTIF-AUDIT N11); email doar pe A/B.
+
+    SEEN-3 — cele doua argumente optionale exista ca alerta de scadere de pret sa
+    refoloseasca EXACT acest bloc, nu o copie a lui: `title_prefix` intra in titlul
+    trimis pe Discord, `listing_id` inlocuieste cheia de dedup. Default-urile pastreaza
+    comportamentul de pana acum, deci apelul din `run_auto_scan` nu se schimba.
+    Emailul foloseste `listing.title` din ORM, deci prefixul NU ajunge acolo — la fel
+    ca pe calea echivalenta din Radar.
+    """
     if saved_listing.grade not in ("A", "B", "C", "D"):
         return
 
@@ -274,9 +311,12 @@ def _notify(kw: AutoKeyword, saved_listing, db: Session):
                 listing_dict = {c.name: getattr(saved_listing, c.name)
                                 for c in saved_listing.__table__.columns}
                 listing_dict["price"] = float(saved_listing.price or 0)
+                if title_prefix:
+                    listing_dict["title"] = f"{title_prefix}{listing_dict.get('title') or ''}"
                 send_auto_notification(
                     listing_dict, saved_listing.grade, saved_listing.score,
-                    kw.name, settings, f"auto_{saved_listing.id}", db)
+                    kw.name, settings,
+                    listing_id or f"auto_{saved_listing.id}", db)
         except Exception as exc:
             log_manager.emit("auto_listings", "WARN",
                 f"Notificare Discord auto esuata: {str(exc)[:80]}")
@@ -291,6 +331,25 @@ def _notify(kw: AutoKeyword, saved_listing, db: Session):
         except Exception as exc:
             log_manager.emit("auto_listings", "WARN",
                 f"Email auto esuat: {str(exc)[:80]}")
+
+
+def _notify_pret_scazut(kw: AutoKeyword, existing, old_price: float,
+                        drop: float, db: Session) -> None:
+    """SEEN-3 — alerta de scadere de pret pe un anunt DEJA in feed.
+
+    Nu duplica nimic: trece prin `_notify`, cu titlul prefixat si cu o cheie de dedup
+    per NIVEL DE PRET (`auto-pricedrop-{id}-{pret}`), ca aceeasi scadere sa nu se
+    re-notifice ciclu de ciclu, dar o scadere ulterioara sa treaca — acelasi tipar ca
+    `pricedrop-{row.id}-{pret}` din Radar.
+    """
+    pct = int(round(drop * 100))
+    pret_nou = int(float(existing.price or 0))
+    log_manager.emit("auto_listings", "OK",
+        f"Preț scăzut {pct}%: {(existing.title or '')[:60]} — "
+        f"{int(old_price)} → {pret_nou} {existing.currency or 'RON'}")
+    _notify(kw, existing, db,
+            title_prefix=f"Pret scazut {pct}%: ",
+            listing_id=f"auto-pricedrop-{existing.id}-{pret_nou}")
 
 
 def _send_email_alert_auto(user, kw, listing, send_email) -> None:

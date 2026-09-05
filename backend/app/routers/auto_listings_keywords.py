@@ -182,6 +182,11 @@ def get_feed(
         # keyword-ul nu are resale (margin_value NULL) -> UI nu afiseaza nimic despre marja.
         mv = d.get("margin_value")
         d["margin_value"] = float(mv) if mv is not None else None
+        # SEEN-3 — `Numeric` ajunge Decimal, care nu e serializabil JSON. Aceeasi
+        # conversie ca la `price`/`margin_value`. Cheia exista MEREU (None cand n-a
+        # scazut), ca badge-ul comun UI-1 sa n-o trateze ca pe un camp optional.
+        pa = d.get("pret_anterior")
+        d["pret_anterior"] = float(pa) if pa is not None else None
         if d["margin_value"] is not None and d["price"]:
             price_ron = d["price"] * (eur_ron if (d.get("currency") or "RON") == "EUR" else 1.0)
             resale_ron = price_ron + d["margin_value"]
@@ -378,6 +383,8 @@ def get_listing_detail(
 
     d = {c.name: getattr(listing, c.name) for c in listing.__table__.columns}
     d["price"] = float(d["price"]) if d["price"] else None
+    pa = d.get("pret_anterior")                      # SEEN-3, ca in feed
+    d["pret_anterior"] = float(pa) if pa is not None else None
     return d
 
 

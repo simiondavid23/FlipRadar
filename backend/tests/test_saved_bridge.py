@@ -202,10 +202,14 @@ def _mk_auto_row(auth_client, price=200.0, currency="RON"):
         db.close()
 
 
-def _auto_kw(uid):
+def _auto_kw(uid, notify_discord=False):
+    """SEEN-3: stub-ul are nevoie si de campurile de notificare. Pana acum reaparitia
+    nu ajungea niciodata la `_notify`; de la D-S4 ajunge, cand scaderea urca gradul."""
     return types.SimpleNamespace(user_id=uid, platform="autovit",
                                  min_margin_pct=None, grade_a_min=None,
-                                 grade_b_min=None, grade_c_min=None)
+                                 grade_b_min=None, grade_c_min=None,
+                                 notify_discord=notify_discord, notify_email=False,
+                                 name="kw-test")
 
 
 def test_auto_reaparitia_actualizeaza_pret_si_grad(auth_client):
@@ -222,6 +226,8 @@ def test_auto_reaparitia_actualizeaza_pret_si_grad(auth_client):
         row = db.query(AutoFeedListing).get(rid)
         assert row.price == 100.0
         assert row.grade == "A" and row.score == 80
+        # SEEN-3: scaderea de 75% trece pragul, deci se retine referinta pentru badge.
+        assert float(row.pret_anterior) == 400.0
     finally:
         db.close()
 

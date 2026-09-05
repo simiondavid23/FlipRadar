@@ -30,6 +30,9 @@ class AutoFeedListing(Base):
     # Marja absoluta (RON) fata de pretul de revanzare al keyword-ului — paritate cu Radar.
     # NULL cand keyword-ul nu are resale_price setat (listing fara scor/grad).
     margin_value      = Column(Numeric(10, 2), nullable=True)
+    # SEEN-3 — pretul de dinaintea ULTIMEI scaderi semnificative (>= 5%), ca feed-ul
+    # sa poata arata „de la X" (badge-ul comun UI-1). NULL cand n-a scazut niciodata.
+    pret_anterior     = Column(Numeric(10, 2), nullable=True)
     import_score_json = Column(JSON)
     # Review AI on-demand (paritate cu RadarListing.ai_review) — generat din generate_ai_review.
     ai_review         = Column(Text, nullable=True)

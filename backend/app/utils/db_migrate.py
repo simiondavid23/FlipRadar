@@ -271,6 +271,13 @@ def _portable_migrations(conn, inspector):
         _migrate(conn, "add_radar_listings_pret_anterior",
                  "ALTER TABLE radar_listings ADD COLUMN pret_anterior FLOAT")
 
+    # SEEN-3 — acelasi camp pe feed-ul Auto. NUMERIC(10,2), ca `price`/`margin_value`
+    # din acelasi tabel; garda _column_exists, o singura actiune per ALTER.
+    if (_table_exists(inspector, "auto_feed_listings")
+            and not _column_exists(inspector, "auto_feed_listings", "pret_anterior")):
+        _migrate(conn, "add_auto_feed_listings_pret_anterior",
+                 "ALTER TABLE auto_feed_listings ADD COLUMN pret_anterior NUMERIC(10, 2)")
+
     # SHOP-2a — setarile scannerului de deal-uri Shopify, pe radar_settings.
     # Tabelele noi (deals, shop_price_memory, shop_scan_state) au modele ORM, deci
     # le creeaza create_all(); aici intra doar coloanele adaugate pe o tabela
