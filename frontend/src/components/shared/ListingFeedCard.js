@@ -9,39 +9,8 @@
 //   onToggleCompare      — daca lipseste, butonul de comparare nu apare (opt-in)
 import { useState } from "react";
 import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel } from "./listingHelpers";
-import { GRADE_COLORS } from "@/lib/uiStyles";
-
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge } from "./listingHelpers";
 const CARD_BORDER = "rgba(94,140,255,.13)";
-
-// SEEN-2b — „↓ de la X" pe anunturile care au intrat sau au fost alertate printr-o
-// scadere de pret (backend: SEEN-2, `radar_listings.pret_anterior`).
-//
-// Garda e `anterior > curent`, STRICT: componentele astea sunt partajate cu Auto,
-// Imobiliare si Deals, ale caror serializari nu trimit deloc cheia `pret_anterior`.
-// Un `>=` ar aprinde badge-ul si pe valori egale, adica pe „n-a scazut nimic"; iar
-// `Number(undefined)` = NaN pica pe `Number.isFinite`, deci pentru ceilalti consumatori
-// componenta e inerta prin date, nu printr-o ramura separata.
-export function PretAnteriorBadge({ listing, size = "10.5px" }) {
-  const anterior = Number(listing?.pret_anterior);
-  const curent = Number(listing?.price);
-  if (!Number.isFinite(anterior) || !Number.isFinite(curent) || !(anterior > curent)) return null;
-  const pct = Math.round(((anterior - curent) / anterior) * 100);
-  return (
-    <span
-      title={`Preț scăzut cu ${pct}% față de prima vedere`}
-      style={{
-        fontSize: size, fontWeight: 600, whiteSpace: "nowrap",
-        padding: "1px 6px", borderRadius: "999px",
-        background: GRADE_COLORS.A.bg,
-        border: `1px solid ${GRADE_COLORS.A.border}`,
-        color: GRADE_COLORS.A.text,
-      }}
-    >
-      ↓ de la {Math.round(anterior)}
-    </span>
-  );
-}
 
 export default function ListingFeedCard({
   listing, scoreCfg, scoreBadge, platformCfg, platformBadge, image, openLabel,
@@ -221,7 +190,7 @@ export default function ListingFeedCard({
               <span style={{ fontSize: "11.5px", fontWeight: 500, color: "var(--text-tertiary)" }}>{listing.currency}</span>
             </>
           )}
-          <PretAnteriorBadge listing={listing} />
+          <PretScazutBadge listing={listing} />
         </div>
 
         {showMarginLine && (

@@ -421,23 +421,12 @@ function priceLine(listing) {
   if (!listing.price) return "Preț la cerere";
   return `${Math.round(listing.price).toLocaleString("ro-RO")} ${listing.currency || "EUR"}/lună`;
 }
-function priceDropPct(listing) {
-  const h = listing.price_history;
-  if (!Array.isArray(h) || h.length === 0 || !listing.price) return null;
-  const first = h[0]?.price;
-  if (!first || first <= listing.price) return null;
-  return Math.round((first - listing.price) / first * 100);
-}
-
-// Preț + „↓ drop%” (reutilizat în card + modal via priceNode).
+// UI-1: pretul, atat. Badge-ul de scadere vine acum din `PretScazutBadge` (helpers),
+// randat de ListingFeedCard/ListingDetailModal langa `priceNode`, din `pret_anterior`
+// — pe care backendul il deriva din `price_history[0]`. `priceDropPct` a fost stearsa
+// odata cu el: nu mai avea alt consumator.
 function rePriceNode(listing) {
-  const drop = priceDropPct(listing);
-  return (
-    <>
-      {priceLine(listing)}
-      {drop !== null && <span style={{ fontSize: "0.7rem", color: "#fb923c", marginLeft: "0.375rem" }}>↓ {drop}%</span>}
-    </>
-  );
+  return <>{priceLine(listing)}</>;
 }
 
 // Specificații imobiliar (camere/mp/etaj + zonă normalizată + oraș + preț/mp) — mirror pe AutoSpecs.

@@ -148,7 +148,34 @@ def _listing_dict(listing) -> dict:
     d = {c.name: getattr(listing, c.name) for c in listing.__table__.columns}
     d["price"] = float(d["price"]) if d["price"] is not None else None
     d["price_per_sqm"] = float(d["price_per_sqm"]) if d["price_per_sqm"] is not None else None
+    d["pret_anterior"] = _pret_anterior(d.get("price_history"), d["price"])
     return d
+
+
+def _pret_anterior(istoric, pret_curent):
+    """UI-1 — PRIMUL pret vazut, cand anuntul a ieftinit; None altfel.
+
+    Cheia asta e contractul UNIC pe care il consuma badge-ul comun de scadere
+    (`PretScazutBadge`), pe toate modulele. Imobiliare n-o are in tabela: o deriva din
+    `price_history`, unde scannerul face `append` cu pretul VECHI la fiecare scadere
+    >= 5% (real_estate_scanner.py) — deci `istoric[0]["price"]` e primul pret vazut, la
+    fel ca `pret_initial` din `radar_seen_ids`. `price_history` ramane serializat:
+    modalul isi tipareste istoricul complet din el.
+
+    Garda oglindeste badge-ul: strict mai mare decat pretul curent, altfel None.
+    """
+    if not isinstance(istoric, list) or not istoric:
+        return None
+    prim = istoric[0]
+    if not isinstance(prim, dict):
+        return None
+    try:
+        valoare = float(prim.get("price"))
+    except (TypeError, ValueError):
+        return None
+    if pret_curent is None or valoare <= float(pret_curent):
+        return None
+    return valoare
 
 
 @router.get("/feed")
