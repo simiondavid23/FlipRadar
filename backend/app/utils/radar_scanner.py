@@ -1821,6 +1821,16 @@ def _price_to_ron(price, currency, eur_ron, usd_ron=None, cursuri=None) -> Optio
 
     WARN-ul e unul pe scan PER MONEDA (`_unknown_currency_warned`), nu unul per anunt.
 
+    CONV-1 — functia asta NU delegheaza la `app/services/conversie.py`, desi regula e
+    aceeasi. Doua motive, amandoua de contract:
+      * e PURA: nu atinge niciodata reteaua, toate cursurile se paseaza. `conversie.in_ron`
+        cade pe `bnr_exchange` cand cursul nu e pasat, deci `_price_to_ron(100, "EUR", None)`
+        ar converti in loc sa intoarca 100.0 (fail-open, cu WARN) — comportament testat;
+      * fail-open-ul cu doua mesaje distincte („curs indisponibil" pentru EUR/USD vs „nu e
+        in catalogul BNR") tine de scorare, nu de conversie: `conversie` spune doar „nu se
+        poate", politica e a apelantului (D2).
+    Regula in sine ramane documentata o singura data, in `conversie.py`.
+
     CUR-1 — `cursuri` e catalogul BNR intreg ({cod: curs}), luat o data pe scan prin
     `currency_service.catalog_ron()`. Acopera codurile PESTE EUR/USD, deci 800 GBP nu
     mai intra in scorare ca 800 RON (marja falsa, grad fals). EUR/USD raman pe

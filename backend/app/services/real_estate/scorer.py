@@ -86,29 +86,11 @@ def _in_eur(valoare, moneda, eur_ron, cursuri=None):
     scanului — PINUIT in teste, deci nu-l inlocuim cu catalogul), USD prin adaptorul lui,
     orice alt cod prin catalogul BNR (RON -> EUR la final). Un cod necunoscut da None.
     """
-    try:
-        v = float(valoare)
-    except (TypeError, ValueError):
-        return None
-    if v <= 0:
-        return None
-    cod = (moneda or "EUR").strip().upper()
-    if cod == "EUR":
-        return v
-    if not eur_ron or float(eur_ron) <= 0:
-        return None
-    if cod == "RON":
-        return v / float(eur_ron)
-    if cod == "USD":
-        from app.services.bnr_exchange import get_usd_ron
-        curs = get_usd_ron()
-    else:
-        curs = (cursuri or {}).get(cod)
-    try:
-        curs = float(curs or 0)
-    except (TypeError, ValueError):
-        return None
-    return (v * curs) / float(eur_ron) if curs > 0 else None
+    # CONV-1 — regula unica in `app/services/conversie.py`. `cursuri or {}`: un catalog
+    # gol inseamna „doar RON/EUR/USD", nu „intreaba `currency_service` per anunt" —
+    # scanul si-a luat deja catalogul o data (`run_real_estate_scan`).
+    from app.services import conversie
+    return conversie.in_eur(valoare, moneda, eur_ron=eur_ron, cursuri=cursuri or {})
 
 
 def compute_re_score(price: float, currency: str, area_sqm: int,

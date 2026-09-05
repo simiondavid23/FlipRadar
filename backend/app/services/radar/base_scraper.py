@@ -115,12 +115,15 @@ def is_excluded(title: str, exclude_words: list[str]) -> bool:
 # CUR-1: lista fixa a devenit doar nucleul cu adaptor propriu (`bnr_exchange`, cu
 # cache pe zi si fallback). Restul monedelor nu mai sunt „necunoscute" prin definitie:
 # se cauta in catalogul BNR prin `currency_service.get_rate_strict`.
-_MONEDE_CU_ADAPTOR = {"RON", "EUR", "USD"}
+# CONV-1: regula si nucleul s-au mutat in `app/services/conversie.py` — cele doua functii
+# de mai jos raman ca puncte de intrare ale scraperelor (`facebook_scraper` le importa
+# de aici), dar nu mai contin logica.
 
 
 def normalizeaza_moneda(currency) -> str:
     """Codul de moneda, majuscule si fara spatii: „eur ", „EUR", „ Eur" -> „EUR"."""
-    return (currency or "").strip().upper()
+    from app.services import conversie             # CONV-1: definitia traieste acolo
+    return conversie.normalizeaza_moneda(currency)
 
 
 def moneda_convertibila(currency) -> bool:
@@ -137,14 +140,8 @@ def moneda_convertibila(currency) -> bool:
     separat); pentru restul catalogului cele doua cazuri se confunda, fiindca acolo
     „curs indisponibil" si „cod necunoscut" ies amandoua ca None din `get_rate_strict`.
     """
-    moneda = normalizeaza_moneda(currency)
-    if moneda in _MONEDE_CU_ADAPTOR:
-        return True
-    from app.services import currency_service      # local: evita ciclul la import
-    try:
-        return currency_service.get_rate_strict(moneda) is not None
-    except Exception:                              # noqa: BLE001 — la fel ca D3
-        return False
+    from app.services import conversie             # CONV-1: regula unica
+    return conversie.moneda_convertibila(currency)
 
 
 def pret_comparabil_ron(price, currency):
@@ -179,29 +176,14 @@ def pret_comparabil_ron(price, currency):
       * orice alt cod trece prin `currency_service.get_rate_strict`, deci prin catalogul
         BNR intreg. None de acolo inseamna „nu e in nicio sursa reala" — niciodata 1:1.
     """
-    if not isinstance(price, (int, float)):
-        return None
-    moneda = normalizeaza_moneda(currency)
-    if moneda == "RON":
-        return float(price)
-    if moneda in _MONEDE_CU_ADAPTOR:
-        from app.services import bnr_exchange         # local: evita ciclul la import
-        try:
-            curs = (bnr_exchange.get_eur_ron() if moneda == "EUR"
-                    else bnr_exchange.get_usd_ron())
-        except Exception:                             # noqa: BLE001 — D3, orice esec
-            return None
-    else:
-        from app.services import currency_service     # local: acelasi motiv
-        try:
-            curs = currency_service.get_rate_strict(moneda)
-        except Exception:                             # noqa: BLE001 — D3
-            return None
-        if curs is None:
-            return None                               # D2 — nu e in catalogul BNR
-    if not isinstance(curs, (int, float)) or curs <= 0:
-        return None                                   # curs absurd = curs indisponibil
-    return float(price) * float(curs)
+    # CONV-1 — regula si sursele de curs stau in `app/services/conversie.py`; aici raman
+    # doar POLITICILE de intrare ale portilor de pret, care difera de ale scorarii:
+    #   accepta_text=False   — un text in campul de pret inseamna parser rupt, nu pret;
+    #   cere_pozitiv=False   — un 0 se compara cu pragurile ca azi, nu devine „necunoscut";
+    #   moneda_implicita=""  — un anunt fara moneda e D2 (permisiv, numarat), NU RON.
+    from app.services import conversie
+    return conversie.in_ron(price, currency, accepta_text=False,
+                            cere_pozitiv=False, moneda_implicita="")
 
 
 # ── NET-5.1 — clasificator de blocaje ────────────────────────────────────────────

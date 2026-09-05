@@ -70,27 +70,18 @@ def _in_ron(valoare, moneda, cursuri=None) -> Optional[float]:
     Un cod din afara catalogului da None. NU 1.0: pana la CUR-2, `else 1.0` facea din
     15 000 GBP un pret de 15 000 RON, adica marja uriasa, grad A fals si alerta.
     """
-    try:
-        v = float(valoare)
-    except (TypeError, ValueError):
-        return None
-    if v <= 0:
-        return None
-    cod = (moneda or "RON").strip().upper()
-    if cod == "RON":
-        return v
-    if cod == "EUR":
-        curs = get_eur_ron()
-    elif cod == "USD":
-        from app.services.bnr_exchange import get_usd_ron
-        curs = get_usd_ron()
-    else:
-        curs = (cursuri or {}).get(cod)
-    try:
-        curs = float(curs or 0)
-    except (TypeError, ValueError):
-        return None
-    return v * curs if curs > 0 else None
+    # CONV-1 — regula unica in `app/services/conversie.py`. Doua lucruri raman AICI,
+    # amandoua deliberate:
+    #   * cursul EUR se ia prin `get_eur_ron` — numele importat in ACEST modul — si se
+    #     paseaza mai departe, fiindca testele Auto pinuiesc exact numele asta
+    #     (`setattr(auto_listings_scanner, "get_eur_ron", ...)`). Se cheama doar cand
+    #     chiar e nevoie, ca sa nu adaugam un apel de curs pe anunturile in RON.
+    #   * `cursuri or {}` — un catalog gol inseamna „doar EUR/USD", nu „intreaba
+    #     `currency_service` per anunt". Scanul si-a luat deja catalogul o data.
+    from app.services import conversie
+    cod = conversie.normalizeaza_moneda(moneda) or "RON"
+    return conversie.in_ron(valoare, cod, cursuri=cursuri or {},
+                            eur_ron=get_eur_ron() if cod == "EUR" else None)
 
 
 def _resale_price_ron(kw: AutoKeyword, cursuri=None) -> Optional[float]:
