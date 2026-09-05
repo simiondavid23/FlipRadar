@@ -171,6 +171,9 @@ discord_service = DiscordNotificationService()
 # ── Embed builders ─────────────────────────────────────────────────
 
 GRADE_COLORS = {"A": 0x22c55e, "B": 0x3b82f6, "C": 0xf59e0b, "D": 0xef4444}
+# AUTO-GRADE — gri neutru pentru anunturile fara grad calculabil (nu e un grad slab,
+# e absenta unui grad). Separat de `GRADE_COLORS`, ca `[grade]` sa ramana strict.
+_CULOARE_FARA_GRAD = 0x6b7280
 GRADE_EMOJI  = {"A": "🏆", "B": "⭐", "C": "📌", "D": "📋"}
 
 MODULE_EMOJI = {
@@ -270,11 +273,15 @@ def build_auto_embed(listing: dict, grade: str, score: int,
             fields.append({"name": "🌍 Import pe roți",
                            "value": import_str, "inline": False})
 
+    # AUTO-GRADE — `grade=None` inseamna „nu s-a putut calcula" (keyword fara pret de
+    # revanzare sau moneda neconvertibila), nu „grad slab": eticheta o spune, culoarea e
+    # neutra, iar scorul se afiseaza ca „—" in loc de „None/100".
     embed = {
-        "title": f"🚗 [{grade}] {title_text}",
-        "color": GRADE_COLORS[grade],
+        "title": f"🚗 [{grade if grade else 'Fără grad'}] {title_text}",
+        "color": GRADE_COLORS.get(grade, _CULOARE_FARA_GRAD),
         "fields": fields,
-        "footer": {"text": f"FlipRadar Auto Anunțuri · Score {score}/100"},
+        "footer": {"text": "FlipRadar Auto Anunțuri · Score "
+                           + (f"{score}/100" if score is not None else "—")},
     }
     if listing.get("url"):
         embed["url"] = listing["url"]
@@ -564,13 +571,15 @@ def send_auto_notification(listing: dict, grade: str, score: int,
                            listing_id: str, db: Session) -> None:
     # NOTIF-AUDIT (N11): early-return-ul pe A/B facea canalul "auto_all" (declarat
     # A/B/C/D) sa nu primeasca NICIODATA C/D. Rutarea per canal decide singura.
-    if grade not in ("A", "B", "C", "D"):
+    # AUTO-GRADE: `None` (anunt fara grad) e acceptat si rutat DOAR pe `auto_all` —
+    # canalele de A si B raman curate, iar `@here` nu se declanseaza niciodata pe el.
+    if grade not in ("A", "B", "C", "D", None):
         return
     embed = build_auto_embed(listing, grade, score, keyword_name)
     mention = getattr(settings, "discord_here_auto", False) and grade == "A"
 
     for wh_attr, allowed_grades in [
-        ("discord_webhook_auto_all",  ("A", "B", "C", "D")),
+        ("discord_webhook_auto_all",  ("A", "B", "C", "D", None)),
         ("discord_webhook_auto_b",    ("B",)),
         ("discord_webhook_auto",      ("A",)),
     ]:

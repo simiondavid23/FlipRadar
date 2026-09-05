@@ -339,17 +339,8 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     )
     db.add(listing)
     db.commit()
-    # CUR-2 — `grade`/`score` au DEFAULT-uri in model ("C"/50), care se aplica si cand
-    # trimitem None la INSERT. Pentru un anunt a carui moneda nu se poate converti, un
-    # grad "C" nu e doar cosmetic: `_notify` alerteaza pe A/B/C/D, deci ar pleca o alerta
-    # de deal pe o cifra care nu inseamna nimic. Le golim EXPLICIT dupa insert, ca garda
-    # existenta din `_notify` sa faca restul — o singura regula („fara grad = fara
-    # alerta"), nu un al doilea mecanism paralel.
-    if resale_price_ron is not None and price_ron is None:
-        listing.grade = None
-        listing.score = None
-        listing.margin_value = None
-        db.commit()
+    # AUTO-GRADE — golirea explicita de la CUR-2 a disparut de aici: modelul nu mai are
+    # default-uri, deci `None` trimis la INSERT ramane `None`. O cale mai putin.
     return True
 
 
@@ -365,7 +356,12 @@ def _notify(kw: AutoKeyword, saved_listing, db: Session,
     Emailul foloseste `listing.title` din ORM, deci prefixul NU ajunge acolo — la fel
     ca pe calea echivalenta din Radar.
     """
-    if saved_listing.grade not in ("A", "B", "C", "D"):
+    # AUTO-GRADE — `None` TRECE de aici. Un anunt fara grad (keyword fara pret de
+    # revanzare, sau moneda neconvertibila) merge tot pe canalul `auto_all`, marcat ca
+    # atare: notificarile de tip „anunta-ma la orice X5 nou" nu trebuie sa dispara doar
+    # fiindca userul n-a completat un pret de revanzare. Rutarea per canal (mai jos, in
+    # `send_auto_notification`) tine `None` DEPARTE de canalele de A si B.
+    if saved_listing.grade not in ("A", "B", "C", "D", None):
         return
 
     if kw.notify_discord:
@@ -378,8 +374,12 @@ def _notify(kw: AutoKeyword, saved_listing, db: Session,
                 listing_dict = {c.name: getattr(saved_listing, c.name)
                                 for c in saved_listing.__table__.columns}
                 listing_dict["price"] = float(saved_listing.price or 0)
-                if title_prefix:
-                    listing_dict["title"] = f"{title_prefix}{listing_dict.get('title') or ''}"
+                # AUTO-GRADE — prefixul explicit (ex. „Pret scazut 15%: " de la SEEN-3) are
+                # PRIORITATE; „Fara grad: " se pune doar cand nu exista altul, ca titlul sa
+                # nu adune doua marcaje. Embed-ul spune oricum „Fără grad" la câmpul de grad.
+                _prefix = title_prefix or ("Fara grad: " if saved_listing.grade is None else None)
+                if _prefix:
+                    listing_dict["title"] = f"{_prefix}{listing_dict.get('title') or ''}"
                 send_auto_notification(
                     listing_dict, saved_listing.grade, saved_listing.score,
                     kw.name, settings,

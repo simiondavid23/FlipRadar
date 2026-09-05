@@ -25,8 +25,13 @@ class AutoFeedListing(Base):
     images_json       = Column(JSON, default=list)
     url               = Column(Text)
     description       = Column(Text)
-    score             = Column(Integer, default=50)
-    grade             = Column(String(5), default="C")
+    # AUTO-GRADE — FARA default. Un keyword fara `resale_price` (sau un anunt intr-o
+    # moneda neconvertibila) nu poate produce marja, deci nu poate produce grad: NULL
+    # spune asta cinstit, in timp ce vechiul default "C"/50 arata ca un grad calculat —
+    # aparea asa in feed, in statistici si in alertele Discord.
+    # D-AG1: randurile existente cu C/50 din default RAMAN; se repara doar de acum incolo.
+    score             = Column(Integer, nullable=True)
+    grade             = Column(String(5), nullable=True)
     # Marja absoluta (RON) fata de pretul de revanzare al keyword-ului — paritate cu Radar.
     # NULL cand keyword-ul nu are resale_price setat (listing fara scor/grad).
     margin_value      = Column(Numeric(10, 2), nullable=True)

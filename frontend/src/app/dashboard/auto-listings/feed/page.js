@@ -23,7 +23,11 @@ const PLATFORM_LABELS = {
 };
 const IMPORT_PLATFORMS = ["mobile_de", "autoscout24", "kleinanzeigen_auto"];
 
-function gradeCfg(g) { return GRADE_COLORS[g] || GRADE_COLORS.C; }
+// AUTO-GRADE — gri neutru pentru anunturile FARA grad calculabil (keyword fara pret de
+// revanzare, sau moneda neconvertibila). Fallback-ul vechi pe `GRADE_COLORS.C` le facea
+// sa arate ca un C calculat. Local in pagina: `uiStyles.GRADE_COLORS` e partajat.
+const GRADE_NONE = { bg: "rgba(107,114,128,0.14)", border: "rgba(107,114,128,0.45)", text: "#9ca3af" };
+function gradeCfg(g) { return GRADE_COLORS[g] || GRADE_NONE; }
 // Doar URL-uri http reale sunt imagini valide; placeholderele (relative/"no_thumbnail" OLX)
 // sau valorile goale -> null, ca sa se afiseze fallback-ul ImageOff. Garda generica (toate platformele).
 const validImg = (u) => (typeof u === "string" && u.startsWith("http")) ? u : null;
@@ -278,6 +282,7 @@ export default function AutoFeedPage() {
         <select value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} style={selectStyle}>
           <option value="">Toate gradele</option>
           {["A", "B", "C", "D"].map((g) => <option key={g} value={g}>Grad {g}</option>)}
+          <option value="none">Fără grad</option>
         </select>
         <select value={filters.keyword_id} onChange={(e) => setFilters((f) => ({ ...f, keyword_id: e.target.value }))} style={selectStyle}>
           <option value="">Toate keyword-urile</option>
@@ -482,7 +487,7 @@ export function AutoListingCard({ listing, onOpen, onSave, onIgnore, onDelete, i
     <ListingFeedCard
       listing={listing}
       scoreCfg={gradeCfg(listing.grade)}
-      scoreBadge={listing.grade}
+      scoreBadge={listing.grade ?? "—"}
       platformCfg={AUTO_PLATFORM_CFG}
       platformBadge={label}
       image={img}
@@ -603,7 +608,7 @@ export function AutoListingModal({ listing, onClose, onSave, onIgnore, templates
       listing={enriched}
       images={gallery}
       scoreCfg={gradeCfg(enriched.grade)}
-      scoreBadge={enriched.grade}
+      scoreBadge={enriched.grade ?? "—"}
       scoreExplanation={SCORE_EXPLANATIONS[enriched.grade]}
       platformCfg={AUTO_PLATFORM_CFG}
       platformBadge={label}

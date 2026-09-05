@@ -168,7 +168,10 @@ def get_feed(
         AutoFeedListing.status == status,
     )
     if platform: q = q.filter(AutoFeedListing.platform == platform)
-    if grade:    q = q.filter(AutoFeedListing.grade == grade)
+    # AUTO-GRADE — „none" filtreaza anunturile fara grad calculabil.
+    if grade:    q = (q.filter(AutoFeedListing.grade.is_(None))
+                      if grade.lower() == "none"
+                      else q.filter(AutoFeedListing.grade == grade))
     if keyword_id: q = q.filter(AutoFeedListing.keyword_id == keyword_id)
     total = q.count()
     items = q.order_by(AutoFeedListing.found_at.desc())\
@@ -215,7 +218,8 @@ def export_feed(
     if platform:
         q = q.filter(AutoFeedListing.platform == platform)
     if grade:
-        q = q.filter(AutoFeedListing.grade == grade)
+        q = (q.filter(AutoFeedListing.grade.is_(None)) if grade.lower() == "none"
+             else q.filter(AutoFeedListing.grade == grade))   # AUTO-GRADE
     if status and status != "all":
         q = q.filter(AutoFeedListing.status == status)
     if keyword_id:
@@ -600,7 +604,9 @@ def get_stats(
     return {
         "total_listings": total,
         "active_keywords": kw_count,
-        "by_grade": {g: c for g, c in by_grade},
+        # AUTO-GRADE — gradul lipsa devine cheia "none", ca frontendul sa-l poata
+        # afisa si ca JSON-ul sa n-aiba o cheie `null`.
+        "by_grade": {(g if g else "none"): c for g, c in by_grade},
         "facebook_session_valid": fb_session_valid,
         "has_facebook_keywords": has_fb_keyword,
     }

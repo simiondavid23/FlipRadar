@@ -123,7 +123,15 @@ def test_auto_moneda_necunoscuta_da_rand_fara_grad(monkeypatch, db):
         assert rand is not None, "anuntul RAMANE in feed, vizibil"
         assert rand.grade is None and rand.score is None
         assert rand.margin_value is None
-    assert notif == [], "fara grad nu pleaca nicio alerta"
+    # AUTO-GRADE (D-AG2b) a schimbat asta deliberat: un anunt fara grad NU mai e tacut —
+    # merge pe canalul `auto_all`, marcat „Fara grad", ca notificarile de tip „anunta-ma
+    # la orice X5 nou" sa nu dispara. Ce ramane adevarat, si e partea importanta: nu se
+    # pretinde niciun grad si nicio marja.
+    assert len(notif) == 2, "cate o alerta per anunt, fara grad"
+    for apel in notif:
+        listing_dict, grad = apel[0], apel[1]
+        assert grad is None
+        assert listing_dict["title"].startswith("Fara grad: ")
     xxx = [w for w in warns if "XXX" in w]
     assert len(xxx) == 1, f"un singur WARN per moneda per scan, nu unul per anunt: {warns}"
 
@@ -153,10 +161,11 @@ def test_auto_resale_in_moneda_necunoscuta(monkeypatch, db):
     assert rand is not None
     assert rand.margin_value is None, "niciun prag utilizabil -> nicio marja calculata"
     assert any("XXX" in w and "resale_price" in w for w in warns), warns
-    # `grade` ramane default-ul modelului ("C"), ca la ORICE keyword fara resale_price —
-    # comportament dinainte de CUR-2, neschimbat aici. Ce conteaza e ca marja lipseste,
-    # deci nu se pretinde niciun deal.
-    assert rand.grade == "C"
+    # AUTO-GRADE a reparat exact asta: pana atunci `grade` ramanea default-ul modelului
+    # ("C"), adica o valoare de umplere care arata ca un grad calculat — in feed, in
+    # statistici si in alertele Discord. Acum e NULL, care spune adevarul.
+    assert rand.grade is None
+    assert rand.score is None
 
 
 # ── 5. re-scorarea de la reaparitie (SEEN-3) trece tot prin catalog ────────────
