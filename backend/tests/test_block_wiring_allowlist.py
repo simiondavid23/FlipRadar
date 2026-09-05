@@ -168,8 +168,10 @@ def test_500_ramane_none_dupa_un_apel(monkeypatch, mod, platform):
 _DETAILS = [
     pytest.param(oks, "okazii", "fetch_okazii_listing_details", id="okazii"),
     pytest.param(pbs, "publi24", "fetch_publi24_listing_details", id="publi24"),
-    pytest.param(ljs, "lajumate", "fetch_lajumate_listing_details", id="lajumate"),
 ]
+# LJ-2: LaJumate nu mai are cale de detalii (enrichment scos, masurat redundant in
+# SONDA-LJ4). Ramane in `_REQUEST_MODS` de mai sus — cautarea lui trece prin acelasi
+# `_request`, deci toata cablarea de blocaje ii ramane testata.
 
 
 @pytest.mark.parametrize("mod,platform,fn", _DETAILS)
@@ -211,26 +213,3 @@ def test_detaliile_200_cu_marker_nu_se_parseaza(monkeypatch, mod, platform, fn):
     out = getattr(mod, fn)("http://x")
     assert out.get("images") == [] and out.get("description") is None
     assert reported == [(platform, Outcome.BLOCKED)]
-
-
-def test_detaliile_200_curat_se_parseaza_si_raporteaza_ok(monkeypatch):
-    """RC-1: portat de la `test_autovit_details_200_curat_se_parseaza_si_raporteaza_ok`.
-
-    Aserteaza CONTINUT extras, nu doar cheile: dict-ul gol de garda are aceleasi chei,
-    deci un guard care refuza totul ar fi trecut neobservat prin testele de mai sus.
-    Ramane ne-parametrizat fiindca fiecare platforma isi are propriul format de pagina
-    (aici `__NEXT_DATA__` -> props.pageProps.adData).
-    """
-    payload = (
-        '<html><body><script id="__NEXT_DATA__" type="application/json">'
-        '{"props": {"pageProps": {"adData": {'
-        '"description": "<p>Stare foarte buna, unic proprietar.</p>",'
-        '"images": [{"path": "media/i/big/1/170/17014725_test_0.webp"}]'
-        '}}}}'
-        '</script></body></html>'
-    )
-    _, _, reported = _wire(monkeypatch, ljs, [_Resp(200, payload)], rotates=False)
-    out = ljs.fetch_lajumate_listing_details("http://x")
-    assert out["images"] == [ljs._IMG_BASE + "media/i/big/1/170/17014725_test_0.webp"]
-    assert out["description"] == "Stare foarte buna, unic proprietar."
-    assert reported == [("lajumate", Outcome.OK)]

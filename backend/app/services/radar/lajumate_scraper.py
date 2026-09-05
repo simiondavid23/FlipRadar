@@ -1,10 +1,8 @@
 """Scraper LaJumate.ro — anunturi clasificate (aplicatie Next.js).
 
 Rescris complet de la zero (Faza 0 — diagnostic live, fara Playwright/cookie).
-LaJumate e o aplicatie Next.js: fiecare pagina SSR contine
-`<script id="__NEXT_DATA__">` cu datele complete in JSON (ca `__PRERENDERED_STATE__`
-la OLX). Parsam acel JSON — robust, fara selectoare CSS fragile. Filozofia e ca
-la Vinted: consumam raspunsul JSON al serverului, nu HTML.
+Filozofia e ca la Vinted: consumam raspunsul JSON al serverului, nu HTML — de la LJ-2
+canalul e UNUL SINGUR, API-ul de lista (vezi mai jos de ce nu mai exista detalii).
 
 CAUTAREA merge pe API-ul JSON public (LJ-1, masurat 2026-09-03). Pagina SSR
 `/anunturi/c/{kw}` NU MAI FILTREAZA prin parametrii de URL: `?price_min`, `?price_max`,
@@ -31,10 +29,13 @@ Structura confirmata prin fetch-uri reale (2026-09-03):
   URL anunt = /ad/{slug}-{id}.
 - Imagini:   https://api-preprod.lajumate.ro/opt-image/{image.path}
 
-DETALIILE raman pe HTML: pagina individuala a anuntului, `<script id="__NEXT_DATA__">`
--> props.pageProps.adData (ca `__PRERENDERED_STATE__` la OLX).
+NU EXISTA cale de detalii (LJ-2). Enrichment-ul de pagina individuala a fost scos:
+SONDA-LJ4 (2026-09-05) a masurat pe 5 anunturi reale ca `description` si `images` din
+lista API sunt IDENTICE cu cele din `adData` — 5/5 pe descriere (420/66/607/775/714
+caractere, fara trunchiere) si 5/5 pe imagini, ca liste ORDONATE. Enrichment-ul scria
+exact aceste doua campuri, deci cele ~28 de fetch-uri de pagina per keyword nou nu
+aduceau nimic. Odata cu el a plecat si singura cale pe `__NEXT_DATA__` a scraperului.
 """
-import random
 import re
 import time
 import urllib.parse
@@ -158,6 +159,29 @@ def _image_urls(ad: dict) -> list[str]:
     return out
 
 
+def _conditie_din_ad_fields(ad: dict) -> Optional[str]:
+    """Starea anuntului din `ad_fields`, normalizata ca la celelalte scrapere Radar
+    ("nou" / "second hand"). None daca lipseste sau e o valoare necunoscuta.
+
+    Se cheiaza pe `name == "condition"`, NU pe `field_key`: SONDA-LJ4 a gasit ACEEASI
+    stare sub doua etichete diferite — `Stare` (Nou/Utilizat, 13 din 28 de anunturi) si
+    `Starea` (Nou, 10 din 28). Un filtru pe `field_key` ar fi pierdut tacut a doua
+    treime. 5 din 28 au `ad_fields` gol (cheia insa nu lipseste niciodata).
+
+    Doar raportam: filtrarea pe stare ramane server-side (`filters[condition][0]`).
+    """
+    for camp in (ad.get("ad_fields") or []):
+        if not isinstance(camp, dict) or camp.get("name") != "condition":
+            continue
+        val = str(camp.get("value") or "").strip().lower()
+        if val.startswith("nou"):
+            return "nou"
+        if val.startswith(("utilizat", "folosit", "second")):
+            return "second hand"
+        return None
+    return None
+
+
 def _map_ad(ad: dict) -> Optional[dict]:
     if not isinstance(ad, dict):
         return None
@@ -189,7 +213,7 @@ def _map_ad(ad: dict) -> Optional[dict]:
         "title": title,
         "price": price,
         "currency": currency,
-        "condition": None,  # nu e expus per-anunt in lista (doar filtru URL)
+        "condition": _conditie_din_ad_fields(ad),   # LJ-2: din `ad_fields`
         "location": location,
         "url": url,
         "images": _image_urls(ad),
@@ -198,33 +222,6 @@ def _map_ad(ad: dict) -> Optional[dict]:
         "seller_id": seller_id,
         "listed_at": _parse_dt(ad.get("listed_at")),
     }
-
-
-def _extract_page_props(html: str) -> dict:
-    """Extrage props.pageProps din <script id="__NEXT_DATA__">. {} la orice esec."""
-    if not html:
-        return {}
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        tag = soup.find("script", id="__NEXT_DATA__")
-        if not tag or not tag.string:
-            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
-            raw = m.group(1) if m else None
-        else:
-            raw = tag.string
-        if not raw:
-            # Tacut pana la LJ-1: cand site-ul schimba forma paginii de anunt,
-            # enrichment-ul returna {"images": [], "description": None} fara niciun
-            # semnal, deci degradarea era invizibila in jurnal.
-            log_manager.emit("radar", "WARN",
-                             "LaJumate: __NEXT_DATA__ lipseste din pagina (site schimbat?)")
-            return {}
-        import json
-        data = json.loads(raw)
-        return (data.get("props") or {}).get("pageProps") or {}
-    except Exception as exc:
-        log_manager.emit("radar", "WARN", f"LaJumate: __NEXT_DATA__ parse esuat: {str(exc)[:100]}")
-        return {}
 
 
 def _request(url: str, retry_blocked: bool = True,
@@ -370,55 +367,6 @@ def _post_filter(results: list[dict], max_price, min_price, exclude_words: list)
     return out
 
 
-def fetch_lajumate_listing_details(url: str) -> dict:
-    """Pagina individuala anunt -> descriere completa + toate imaginile, din
-    props.pageProps.adData (__NEXT_DATA__). {"images": [...], "description": str|None}.
-    Oferita pentru vizualizarea detaliata din app (paritate cu fetch_olx_listing_details).
-    """
-    if not url:
-        return {"images": [], "description": None}
-    html = _request(url, retry_blocked=False)
-    if not html:
-        return {"images": [], "description": None}
-    pp = _extract_page_props(html)
-    ad = pp.get("adData") or {}
-    if not isinstance(ad, dict):
-        return {"images": [], "description": None}
-    return {
-        "images": _image_urls(ad),
-        "description": _clean_text(ad.get("description")),
-    }
-
-
-def _enrich_details(results: list[dict], skip_external_ids: Optional[set] = None) -> tuple[int, int]:
-    """Imbogateste fiecare rezultat cu toate imaginile + descrierea completa din
-    pagina individuala a anuntului (adData), secvential cu delay aleator — la fel ca
-    OLX/Publi24/Okazii. Modifica lista pe loc; esecul unui anunt nu opreste restul.
-    RP-3: imbogateste DOAR itemele care nu sunt in skip_external_ids (anunturi deja
-    vazute de scanner). Returneaza (fetched, skipped)."""
-    fetched = 0
-    skipped = 0
-    for item in results:
-        if skip_external_ids and item.get("external_id") in skip_external_ids:
-            skipped += 1
-            continue
-        if fetched > 0:
-            time.sleep(random.uniform(0.4, 0.8))
-        fetched += 1
-        try:
-            details = fetch_lajumate_listing_details(item["url"])
-            if details.get("images"):
-                item["images"] = details["images"]
-            if details.get("description"):
-                item["description"] = details["description"]
-        except Exception as exc:
-            log_manager.emit("radar", "WARN", f"LaJumate details {item['external_id']}: {str(exc)[:100]}")
-            continue
-    if skipped > 0:
-        log_manager.emit("radar", "INFO", f"LaJumate: enrichment {fetched} noi · {skipped} sărite (deja văzute)")
-    return fetched, skipped
-
-
 def search_lajumate(
     keyword: str,
     max_price: Optional[float] = None,
@@ -439,6 +387,12 @@ def search_lajumate(
     (cu filtrarea lui locala pe keyword) n-ar mai avea ce sa adauge.
 
     Paginarea se opreste la `last_page` din raspuns; `_LAJUMATE_MAX_PAGES` ramane garda.
+
+    `skip_enrich_ids` e acceptat pentru compatibilitate cu scannerul (RP-3) si IGNORAT:
+    LaJumate nu mai face enrichment — lista API aduce descrierea si imaginile complete
+    (SONDA-LJ4). Parametrul ramane in semnatura ca `radar_scanner` sa nu aiba nevoie de
+    nicio schimbare; celelalte doua platforme cu enrichment (Okazii, Publi24) il
+    folosesc mai departe.
     """
     exclude_words = exclude_words or []
     keyword_clean = (keyword or "").strip()
@@ -466,7 +420,6 @@ def search_lajumate(
     # Plasa locala: API-ul filtreaza corect, dar un pret neparsabil sau un cuvant
     # exclus tot trebuie sa cada, iar excluderile n-au echivalent server-side.
     results = _post_filter(results, max_price, min_price, exclude_words)
-    _enrich_details(results, skip_enrich_ids)
     log_manager.emit("radar", "OK",
                      f'LaJumate: {len(results)} rezultate pentru "{keyword_clean}" '
                      f'(pag {page}/{last_page} · total {meta.get("total")})')

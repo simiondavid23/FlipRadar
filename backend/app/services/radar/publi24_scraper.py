@@ -64,16 +64,32 @@ def _judet_slug(judet: Optional[str]) -> Optional[str]:
 
 
 def _parse_price(raw: str) -> tuple[Optional[float], str]:
-    """Publi24 afiseaza intregi cu spatiu/punct/virgula ca separator de mii
-    ('3 144 RON', '1.300 RON', '73,297 RON'). Returneaza (valoare, moneda)."""
+    """Pretul ca (float, moneda). '3 144 RON' -> 3144.0, '149,99' -> 149.99.
+
+    SONDA-LJ4 (2026-09-05): varianta veche pastra DOAR cifrele, deci orice pret cu
+    zecimale se inmultea cu 100 — "149,99" -> 14999, "2.500,00 Lei" -> 250000,
+    "1.300,50" -> 130050. Separatorii de mii (spatiu/punct/virgula) raman tratati la fel.
+    """
     if not raw:
         return None, "RON"
     currency = "EUR" if ("EUR" in raw.upper() or "€" in raw) else "RON"
-    digits = re.sub(r"[^\d]", "", raw)
-    if not digits:
+    # LJ-2 — aceeasi regula ca in lajumate_scraper._parse_price (LJ-1), copiata
+    # intentionat: separatorul zecimal e `.` sau `,` urmat de EXACT 1-2 cifre la
+    # finalul numarului; orice alt separator e de mii. Varianta veche pastra
+    # DOAR cifrele, deci "149,99" iesea 14999.
+    brut = re.sub(r"[^\d.,]", "", raw)
+    if not brut:
+        return None, currency
+    zecimal = re.search(r"[.,](\d{1,2})$", brut)
+    if zecimal:
+        intreg = re.sub(r"[^\d]", "", brut[:zecimal.start()]) or "0"
+        text = f"{intreg}.{zecimal.group(1)}"
+    else:
+        text = re.sub(r"[^\d]", "", brut)
+    if not text:
         return None, currency
     try:
-        return float(digits), currency
+        return float(text), currency
     except ValueError:
         return None, currency
 

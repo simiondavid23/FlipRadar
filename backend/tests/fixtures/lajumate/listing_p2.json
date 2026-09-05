@@ -79,7 +79,41 @@
       },
       "aosom_product": null,
       "promotion_details": [],
-      "has_offer": false
+      "has_offer": false,
+      "ad_fields": [
+        {
+          "id": 444449018,
+          "ad_id": 16832164,
+          "field_key": "Starea",
+          "name": "condition",
+          "original_value": "1",
+          "value": "Nou"
+        },
+        {
+          "id": 444449019,
+          "ad_id": 16832164,
+          "field_key": "Marime",
+          "name": "size",
+          "value": "36 / S,38-40 / M,42-44 / L,46-48 / XL,50-54 / XXL",
+          "frontEndSearch": true
+        },
+        {
+          "id": 444449020,
+          "ad_id": 16832164,
+          "field_key": "Culoare",
+          "name": "color",
+          "original_value": "9",
+          "value": "Roșu"
+        },
+        {
+          "id": 444449021,
+          "ad_id": 16832164,
+          "field_key": "Marca/ Brand",
+          "name": "brand",
+          "value": "Kolorama",
+          "frontEndSearch": true
+        }
+      ]
     },
     {
       "id": 16820388,
@@ -173,7 +207,8 @@
       },
       "aosom_product": null,
       "promotion_details": [],
-      "has_offer": false
+      "has_offer": false,
+      "ad_fields": []
     }
   ],
   "first_page_url": "https://api-preprod.lajumate.ro/api/listing/2?page=1",

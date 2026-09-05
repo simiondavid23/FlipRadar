@@ -7,11 +7,13 @@ niciodata nimic ("iphone" 700-2000 RON: zero randuri in productie, ciclu de cicl
 Testele de aici tin cablat contractul API-ului: numele exacte ale filtrelor, pagina
 in PATH (nu in query), lista la `data` si metadatele de paginare.
 
-Fara retea: `_request` e monkeypatch-uit sa intoarca textul unui fixture, iar
-`_enrich_details` e un no-op (altfel ar trage pagina fiecarui anunt).
+Fara retea: `_request` e monkeypatch-uit sa intoarca textul unui fixture. LJ-2 a scos
+enrichment-ul de detaliu, deci nu mai e nimic de stubuit peste el — cautarea face fix
+o cerere, iar `test_search_nu_face_nicio_cerere_de_detaliu` tine asta cablat.
 
 Fixture-urile sunt mostre REALE din sonda SONDA-LJ3 (2026-09-03), curatate: `user` e
-redus la {id, name} si `ad_fields` sters, ca sa nu intre date de vanzatori in repo.
+redus la {id, name}, ca sa nu intre date de vanzatori in repo. `ad_fields` a fost pus
+inapoi la LJ-2 (SONDA-LJ4): poarta starea anuntului si NU contine date personale.
 """
 import json
 import os
@@ -33,21 +35,16 @@ def _fixture(nume: str) -> str:
 
 @pytest.fixture
 def captura(monkeypatch):
-    """Prinde URL-urile cerute si serveste un fixture. `_enrich_details` devine un
-    stub care isi retine argumentele (testul 10 asereaza pe ele)."""
-    stare = {"urls": [], "headers": [], "enrich": [], "corp": ""}
+    """Prinde URL-urile cerute si serveste un fixture. Nimic de stubuit peste
+    enrichment: LJ-2 l-a scos, `_request` e singura poarta ramasa."""
+    stare = {"urls": [], "headers": [], "corp": ""}
 
     def _fals_request(url, retry_blocked=True, extra_headers=None):
         stare["urls"].append(url)
         stare["headers"].append(extra_headers)
         return stare["corp"]
 
-    def _fals_enrich(results, skip_external_ids=None):
-        stare["enrich"].append((results, skip_external_ids))
-        return 0, 0
-
     monkeypatch.setattr(ljs, "_request", _fals_request)
-    monkeypatch.setattr(ljs, "_enrich_details", _fals_enrich)
     return stare
 
 
@@ -185,21 +182,55 @@ def test_pretul_pastreaza_zecimalele(brut, asteptat):
     assert ljs._parse_price(brut, "lei")[0] == asteptat
 
 
-# ── 9: D6 — WARN cand lipseste __NEXT_DATA__ ─────────────────────────────────
-def test_extract_page_props_fara_tag_emite_warn(loguri):
-    assert ljs._extract_page_props("<html><body>fara tag</body></html>") == {}
-    warn = [m for mod, niv, m in loguri if niv == "WARN"]
-    assert any("__NEXT_DATA__" in m for m in warn)
-
-
-# ── 10: skip_enrich_ids ajunge la enrichment ─────────────────────────────────
-def test_skip_enrich_ids_ajunge_la_enrich_details(captura):
+# ── 9 (LJ-2): skip_enrich_ids e acceptat si ignorat ──────────────────────────
+def test_skip_enrich_ids_e_acceptat_si_ignorat(captura):
+    """Parametrul ramane in semnatura ca `radar_scanner` sa nu aiba nevoie de nicio
+    schimbare (D7). Nu mai are consumator, deci nu poate schimba rezultatul."""
     captura["corp"] = _fixture("listing_p1")
-    skip = {"lajumate_17014725"}
-    ljs.search_lajumate("iphone", skip_enrich_ids=skip)
-    assert len(captura["enrich"]) == 1
-    _rezultate, primit = captura["enrich"][0]
-    assert primit is skip
+    fara = ljs.search_lajumate("iphone")
+    captura["urls"].clear()
+    cu = ljs.search_lajumate("iphone", skip_enrich_ids={"lajumate_17014725", "x"})
+    assert [r["external_id"] for r in cu] == [r["external_id"] for r in fara]
+    assert len(captura["urls"]) == 1
+
+
+# ── 10 (LJ-2): cautarea face EXACT o cerere, cea de lista ────────────────────
+def test_search_nu_face_nicio_cerere_de_detaliu(captura):
+    """Masuratoarea din SONDA-LJ4: descrierea si imaginile din lista sunt identice cu
+    cele din pagina de detaliu, deci fetch-urile per anunt au disparut. Aici se vede
+    daca revin: orice cerere in plus fata de cea de lista pica testul."""
+    captura["corp"] = _fixture("listing_p1")
+    rezultate = ljs.search_lajumate("iphone")
+    assert len(rezultate) == 3
+    assert len(captura["urls"]) == 1
+    assert captura["urls"][0].startswith(f"{ljs._API_BASE}/listing/1?")
+
+
+# ── 11 (LJ-2): starea vine din ad_fields, cheiata pe `name` ──────────────────
+def test_conditia_din_ad_fields(captura):
+    """Cele doua `field_key` (`Stare` si `Starea`) poarta ACEEASI stare — SONDA-LJ4 le-a
+    gasit pe 13, respectiv 10 din 28 de anunturi. Cheia e `name == "condition"`."""
+    captura["corp"] = _fixture("listing_p1")
+    p1 = {r["external_id"]: r["condition"] for r in ljs.search_lajumate("iphone")}
+    assert p1["lajumate_17013436"] == "second hand"      # field_key "Stare",  "Utilizat"
+    assert p1["lajumate_17014725"] == "nou"              # field_key "Stare",  "Nou"
+
+    captura["corp"] = _fixture("listing_p2")
+    p2 = {r["external_id"]: r["condition"] for r in ljs.search_lajumate("iphone")}
+    assert p2["lajumate_16832164"] == "nou"              # field_key "Starea", "Nou"
+    assert p2["lajumate_16820388"] is None               # ad_fields: []
+
+
+# ── 12 (LJ-2): descrierea si imaginile vin din LISTA, fara niciun fetch ──────
+def test_description_si_images_vin_din_lista(captura):
+    captura["corp"] = _fixture("listing_p1")
+    rezultate = ljs.search_lajumate("iphone")
+    dupa_id = {r["external_id"]: r for r in rezultate}
+    r = dupa_id["lajumate_17014725"]
+    assert r["description"] and len(r["description"]) > 20
+    assert "<p>" not in r["description"]                  # _clean_text a scos HTML-ul
+    assert r["images"] and all(u.startswith(ljs._IMG_BASE) for u in r["images"])
+    assert len(captura["urls"]) == 1
 
 
 # ── garda: fixture-urile n-au date de vanzatori ──────────────────────────────
@@ -207,6 +238,14 @@ def test_skip_enrich_ids_ajunge_la_enrich_details(captura):
 def test_fixturile_sunt_curatate_de_date_personale(nume):
     date = json.loads(_fixture(nume))
     for ad in date["data"]:
-        assert "ad_fields" not in ad
         assert set(ad["user"].keys()) == {"id", "name"}
+        # LJ-2: `ad_fields` e din nou in fixture (poarta starea anuntului). Nu e date
+        # personale — sunt atribute de produs — dar tinem lista inchisa, ca o mostra
+        # viitoare sa nu strecoare un camp de vanzator pe canalul asta.
+        assert isinstance(ad["ad_fields"], list)
+        for camp in ad["ad_fields"]:
+            assert set(camp.keys()) <= {"id", "ad_id", "field_key", "name",
+                                        "value", "original_value", "frontEndSearch"}
+            assert camp["name"] in {"condition", "color", "size", "brand",
+                                    "currency", "negotiable_price", "person_type"}
     assert "@" not in _fixture(nume)

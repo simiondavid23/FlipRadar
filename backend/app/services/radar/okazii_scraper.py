@@ -55,13 +55,32 @@ def _condition_modifier(condition: str) -> str:
 
 
 def _parse_price(raw: str) -> tuple[Optional[float], str]:
-    """Format RO: '.' separator de mii, ',' zecimale — '1.200,00 Lei' -> 1200.0."""
+    """Pretul ca (float, moneda). '1.200,00 Lei' -> 1200.0, '800.00' -> 800.0.
+
+    SONDA-LJ4 (2026-09-05): varianta veche stergea punctul INAINTE de a trata virgula,
+    deci trata orice punct ca separator de mii — corect pe formatul RO, dar "800.00"
+    (zecimala cu punct) devenea 80000, de o suta de ori prea mult.
+    """
     if not raw:
         return None, "RON"
     currency = "EUR" if ("EUR" in raw.upper() or "€" in raw) else "RON"
-    cleaned = re.sub(r"[^\d.,]", "", raw).replace(".", "").replace(",", ".")
+    # LJ-2 — aceeasi regula ca in lajumate_scraper._parse_price (LJ-1), copiata
+    # intentionat: separatorul zecimal e `.` sau `,` urmat de EXACT 1-2 cifre la
+    # finalul numarului; orice alt separator e de mii. Varianta veche trata
+    # ORICE punct ca separator de mii, deci "800.00" iesea 80000.
+    brut = re.sub(r"[^\d.,]", "", raw)
+    if not brut:
+        return None, currency
+    zecimal = re.search(r"[.,](\d{1,2})$", brut)
+    if zecimal:
+        intreg = re.sub(r"[^\d]", "", brut[:zecimal.start()]) or "0"
+        text = f"{intreg}.{zecimal.group(1)}"
+    else:
+        text = re.sub(r"[^\d]", "", brut)
+    if not text:
+        return None, currency
     try:
-        return (float(cleaned) if cleaned else None), currency
+        return float(text), currency
     except ValueError:
         return None, currency
 

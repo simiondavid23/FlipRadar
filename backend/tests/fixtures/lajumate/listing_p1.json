@@ -79,7 +79,17 @@
       },
       "aosom_product": null,
       "promotion_details": [],
-      "has_offer": false
+      "has_offer": false,
+      "ad_fields": [
+        {
+          "id": 445095542,
+          "ad_id": 17014725,
+          "field_key": "Stare",
+          "name": "condition",
+          "original_value": "1",
+          "value": "Nou"
+        }
+      ]
     },
     {
       "id": 17013436,
@@ -173,7 +183,49 @@
       },
       "aosom_product": null,
       "promotion_details": [],
-      "has_offer": false
+      "has_offer": false,
+      "ad_fields": [
+        {
+          "id": 445082511,
+          "ad_id": 17013436,
+          "field_key": "Tip vanzator",
+          "name": "person_type",
+          "original_value": "1",
+          "value": "Persoană fizică"
+        },
+        {
+          "id": 445082513,
+          "ad_id": 17013436,
+          "field_key": "Pret Negociabil",
+          "name": "negotiable_price",
+          "value": "0",
+          "frontEndSearch": true
+        },
+        {
+          "id": 445082516,
+          "ad_id": 17013436,
+          "field_key": "Stare",
+          "name": "condition",
+          "original_value": "2",
+          "value": "Utilizat"
+        },
+        {
+          "id": 445082517,
+          "ad_id": 17013436,
+          "field_key": "Brand",
+          "name": "brand",
+          "original_value": "4",
+          "value": "iPhone"
+        },
+        {
+          "id": 445082521,
+          "ad_id": 17013436,
+          "field_key": "Moneda",
+          "name": "currency",
+          "value": "lei",
+          "frontEndSearch": true
+        }
+      ]
     },
     {
       "id": 17013412,
@@ -253,7 +305,49 @@
       },
       "aosom_product": null,
       "promotion_details": [],
-      "has_offer": false
+      "has_offer": false,
+      "ad_fields": [
+        {
+          "id": 445082271,
+          "ad_id": 17013412,
+          "field_key": "Tip vanzator",
+          "name": "person_type",
+          "original_value": "2",
+          "value": "Companie"
+        },
+        {
+          "id": 445082273,
+          "ad_id": 17013412,
+          "field_key": "Pret Negociabil",
+          "name": "negotiable_price",
+          "value": "0",
+          "frontEndSearch": true
+        },
+        {
+          "id": 445082276,
+          "ad_id": 17013412,
+          "field_key": "Moneda",
+          "name": "currency",
+          "value": "lei",
+          "frontEndSearch": true
+        },
+        {
+          "id": 445082277,
+          "ad_id": 17013412,
+          "field_key": "Stare",
+          "name": "condition",
+          "original_value": "2",
+          "value": "Utilizat"
+        },
+        {
+          "id": 445082278,
+          "ad_id": 17013412,
+          "field_key": "Brand",
+          "name": "brand",
+          "original_value": "4",
+          "value": "iPhone"
+        }
+      ]
     }
   ],
   "first_page_url": "https://api-preprod.lajumate.ro/api/listing/1?page=1",
