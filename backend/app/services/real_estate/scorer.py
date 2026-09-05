@@ -77,10 +77,54 @@ def get_ref_ppm(city: str, zone: str, rooms: int = None) -> Optional[float]:
     return sum(ref.values()) / len(ref)
 
 
+def _in_eur(valoare, moneda, eur_ron, cursuri=None):
+    """Valoarea adusa in EUR, sau None daca moneda nu se poate converti (CUR-2).
+
+    Oglinda regulii din `app/services/radar/base_scraper.pret_comparabil_ron` (CUR-1),
+    care ramane sursa de adevar; scrisa local fiindca `base_scraper` e in afara
+    whitelist-ului rundei. Ruta e HIBRIDA: EUR identitate, RON prin `eur_ron` (cursul
+    scanului — PINUIT in teste, deci nu-l inlocuim cu catalogul), USD prin adaptorul lui,
+    orice alt cod prin catalogul BNR (RON -> EUR la final). Un cod necunoscut da None.
+    """
+    try:
+        v = float(valoare)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    cod = (moneda or "EUR").strip().upper()
+    if cod == "EUR":
+        return v
+    if not eur_ron or float(eur_ron) <= 0:
+        return None
+    if cod == "RON":
+        return v / float(eur_ron)
+    if cod == "USD":
+        from app.services.bnr_exchange import get_usd_ron
+        curs = get_usd_ron()
+    else:
+        curs = (cursuri or {}).get(cod)
+    try:
+        curs = float(curs or 0)
+    except (TypeError, ValueError):
+        return None
+    return (v * curs) / float(eur_ron) if curs > 0 else None
+
+
 def compute_re_score(price: float, currency: str, area_sqm: int,
                      rooms: int, zone_normalized: str, city: str,
                      zone_avg_ppm: float = None,
-                     tip_anunt: str | None = None) -> tuple:
+                     tip_anunt: str | None = None,
+                     cursuri: dict | None = None) -> tuple:
+    """Scor + grad pentru un anunt de chirie. `cursuri` = catalogul BNR (CUR-2).
+
+    Pana la CUR-2, `price_eur` era `price` pentru ORICE moneda diferita de RON — adica
+    un anunt in USD/GBP/MDL era scorat ca si cum ar fi fost in EUR. Pe imobiliare
+    romanesti apar mai ales EUR si RON, deci suprafata era mica; dar codul nu spunea
+    „nu stiu", spunea „e EUR". Acum: RON si EUR ca inainte, restul catalogului convertit
+    prin RON, iar un cod din afara catalogului intoarce scorul neutru (50, "C") — acelasi
+    default ca la vanzari si la lipsa de suprafata.
+    """
     if (tip_anunt or "vanzare") != "inchiriere":
         # Referintele (_REFS) si mediile sunt de CHIRIE; vanzarile primesc scor
         # neutru pana exista referinte de vanzare (post-licenta).
@@ -89,7 +133,11 @@ def compute_re_score(price: float, currency: str, area_sqm: int,
     score = 50
 
     eur_ron = get_eur_ron()
-    price_eur = price / eur_ron if currency == "RON" else price
+    price_eur = _in_eur(price, currency, eur_ron, cursuri)
+    if price_eur is None:
+        # Moneda pe care n-o putem aduce in EUR: nu inventam un scor pe o cifra care nu
+        # inseamna nimic. Neutru, ca in celelalte cazuri de „nu se poate calcula".
+        return 50, "C"
 
     if area_sqm and area_sqm > 0:
         ppm = price_eur / area_sqm

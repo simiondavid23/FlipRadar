@@ -43,17 +43,74 @@ def _within_hours(kw: AutoKeyword) -> bool:
     return in_ore_active(kw)
 
 
-def _resale_price_ron(kw: AutoKeyword) -> Optional[float]:
+# CUR-2 — monedele necunoscute se semnaleaza O SINGURA DATA per scan, per situatie
+# (cheia e "context:COD"), nu o data per anunt. Golit la inceputul lui `run_auto_scan`,
+# ca la Radar (`_unknown_currency_warned`).
+_monede_necunoscute_warned: set = set()
+
+
+def _warn_moneda(cheie: str, mesaj: str) -> None:
+    if cheie in _monede_necunoscute_warned:
+        return
+    _monede_necunoscute_warned.add(cheie)
+    log_manager.emit("auto_listings", "WARN", mesaj)
+
+
+def _in_ron(valoare, moneda, cursuri=None) -> Optional[float]:
+    """Valoarea adusa in RON, sau None daca moneda nu se poate converti.
+
+    CUR-2. Regula e OGLINDA celei din `app/services/radar/base_scraper.pret_comparabil_ron`
+    (CUR-1), care ramane sursa de adevar; helperul e rescris local fiindca `base_scraper`
+    e in afara whitelist-ului rundei, iar un import Auto -> Radar ar lega doua subsisteme
+    pentru cincisprezece linii. Ruta e HIBRIDA, ca la Radar:
+      * RON       — identitate;
+      * EUR/USD   — prin adaptorul `bnr_exchange` (numele `get_eur_ron` e importat la
+                    nivel de modul ANUME ca monkeypatch-ul din teste sa prinda);
+      * orice alt cod — din catalogul BNR pasat in `cursuri` (`currency_service.catalog_ron`).
+    Un cod din afara catalogului da None. NU 1.0: pana la CUR-2, `else 1.0` facea din
+    15 000 GBP un pret de 15 000 RON, adica marja uriasa, grad A fals si alerta.
+    """
+    try:
+        v = float(valoare)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    cod = (moneda or "RON").strip().upper()
+    if cod == "RON":
+        return v
+    if cod == "EUR":
+        curs = get_eur_ron()
+    elif cod == "USD":
+        from app.services.bnr_exchange import get_usd_ron
+        curs = get_usd_ron()
+    else:
+        curs = (cursuri or {}).get(cod)
+    try:
+        curs = float(curs or 0)
+    except (TypeError, ValueError):
+        return None
+    return v * curs if curs > 0 else None
+
+
+def _resale_price_ron(kw: AutoKeyword, cursuri=None) -> Optional[float]:
     """Pretul de revanzare al keyword-ului convertit in RON (sau None daca necompletat).
 
-    resale_price_currency e implicit "EUR"; conversia foloseste cursul BNR (get_eur_ron)
-    ca sa fie comparabil cu preturile listingurilor tot in RON. Vezi [[flipradar-layout]].
+    resale_price_currency e implicit "EUR". CUR-2: conversia trece prin `_in_ron`, deci
+    si un prag cotat in GBP/CHF/MDL e adus corect in RON — inainte, orice cod diferit de
+    EUR era luat ca si cum ar fi fost deja RON. Un cod din afara catalogului da None,
+    adica listingurile keyword-ului raman FARA grad (stare de prima clasa pe Auto), in
+    loc sa primeasca note calculate pe un prag inventat. Vezi [[flipradar-layout]].
     """
     if kw.resale_price is None:
         return None
-    rp = float(kw.resale_price)
-    cur = (getattr(kw, "resale_price_currency", None) or "EUR").upper()
-    return rp * get_eur_ron() if cur == "EUR" else rp
+    cod = (getattr(kw, "resale_price_currency", None) or "EUR").upper()
+    ron = _in_ron(kw.resale_price, cod, cursuri)
+    if ron is None and float(kw.resale_price or 0) > 0:
+        _warn_moneda("resale:" + cod,
+                     f"resale_price in moneda necunoscuta {cod} — anunturile "
+                     f"keyword-ului raman fara grad")
+    return ron
 
 
 # SCHED-2 — platformele Auto, fiecare cu jobul ei APScheduler (auto_scan_).
@@ -144,7 +201,7 @@ _PRICE_DROP_MIN = 0.05
 
 
 def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
-                  resale_price_ron: Optional[float]) -> bool:
+                  resale_price_ron: Optional[float], cursuri=None) -> bool:
     """Persist new listing. Returns True if new (not seen before).
 
     Gradare identica cu Radar: marja fata de pretul de revanzare (RON) al
@@ -180,8 +237,12 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
             _old_price = float(existing.price or 0)
             _drop = (_old_price - _new_price) / _old_price if _old_price > 0 else 0.0
             existing.price = _new_price
-            if resale_price_ron is not None:
-                _price_ron = _new_price * (get_eur_ron() if _new_cur == "EUR" else 1.0)
+            _price_ron = _in_ron(_new_price, _new_cur, cursuri)      # CUR-2
+            if _price_ron is None:
+                _warn_moneda("listing:" + _new_cur,
+                             f"Moneda necunoscuta la re-scorare: {_new_cur} "
+                             f"(nu e in catalogul BNR) — anuntul ramane fara grad nou")
+            if resale_price_ron is not None and _price_ron is not None:
                 _sd = calculate_score(
                     listing_price=_price_ron,
                     resale_price=resale_price_ron,
@@ -235,8 +296,12 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     score = None
     grade = None
     margin_value = None
-    if resale_price_ron is not None:
-        price_ron = (price or 0) * (get_eur_ron() if cur == "EUR" else 1.0)
+    price_ron = _in_ron(price, cur, cursuri)                          # CUR-2
+    if price_ron is None:
+        _warn_moneda("listing:" + cur,
+                     f"Moneda necunoscuta la scorare: {cur} (nu e in catalogul BNR) — "
+                     f"anuntul intra in feed FARA grad, deci si fara alerta")
+    if resale_price_ron is not None and price_ron is not None:
         sd = calculate_score(
             listing_price=price_ron,
             resale_price=resale_price_ron,
@@ -283,6 +348,17 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
     )
     db.add(listing)
     db.commit()
+    # CUR-2 — `grade`/`score` au DEFAULT-uri in model ("C"/50), care se aplica si cand
+    # trimitem None la INSERT. Pentru un anunt a carui moneda nu se poate converti, un
+    # grad "C" nu e doar cosmetic: `_notify` alerteaza pe A/B/C/D, deci ar pleca o alerta
+    # de deal pe o cifra care nu inseamna nimic. Le golim EXPLICIT dupa insert, ca garda
+    # existenta din `_notify` sa faca restul — o singura regula („fara grad = fara
+    # alerta"), nu un al doilea mecanism paralel.
+    if resale_price_ron is not None and price_ron is None:
+        listing.grade = None
+        listing.score = None
+        listing.margin_value = None
+        db.commit()
     return True
 
 
@@ -392,6 +468,19 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None,
         f"Auto scan pornit: {len(keywords)} keyword-uri active "
         f"({platform if platform else 'toate platformele'})")
 
+    # CUR-2 — catalogul BNR intreg, O SINGURA DATA pe scan (acelasi cache pe care il
+    # foloseste si `get_eur_ron`, deci nu e un fetch in plus). Esecul nu opreste scanul:
+    # {} inseamna „doar EUR/USD se convertesc", adica exact comportamentul dinainte.
+    _monede_necunoscute_warned.clear()
+    from app.services import currency_service
+    try:
+        cursuri = currency_service.catalog_ron()
+    except Exception as exc:
+        cursuri = {}
+        log_manager.emit("auto_listings", "WARN",
+            f"Catalogul BNR nu s-a putut citi ({type(exc).__name__}) — "
+            f"in scanul asta se convertesc doar EUR/USD")
+
     for kw in keywords:
         set_log_user(kw.user_id)  # MON-4 — jurnalele acestui keyword apartin user-ului lui
         # TASK 1 — logging REAL in consola (log_manager.emit NU apare in consola) la
@@ -412,7 +501,7 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None,
 
             # Pretul de revanzare (RON) al keyword-ului — referinta de gradare, constant
             # peste toate listingurile keyword-ului. None => listingurile raman fara grad.
-            resale_price_ron = _resale_price_ron(kw)
+            resale_price_ron = _resale_price_ron(kw, cursuri)
 
             # MODULE 3 — paginare: aduna pagini pana cand una nu mai aduce anunturi noi.
             page = 1
@@ -441,7 +530,7 @@ def run_auto_scan(db: Session, user_id: Optional[int] = None,
                             continue
                     except (TypeError, ValueError):
                         pass
-                    is_new = _save_listing(db, kw, r, resale_price_ron)
+                    is_new = _save_listing(db, kw, r, resale_price_ron, cursuri)
                     if is_new:
                         new_on_page += 1
                         total_new += 1

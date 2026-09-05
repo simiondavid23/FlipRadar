@@ -251,7 +251,8 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None, db=Non
 def _save_listing(db: Session, kw: RealEstateKeyword,
                   raw: dict, ai,
                   custom_aliases: dict,
-                  eur_ron: Optional[float] = None) -> tuple:
+                  eur_ron: Optional[float] = None,
+                  cursuri: Optional[dict] = None) -> tuple:
     """Salveaza un anunt de platforma. Intoarce (listing | None, motiv) cu motiv in
     {"nou","duplicat","respins","invalid"} — scanner-ul numara dupa motiv."""
     ext_id = str(raw.get("external_id") or raw.get("platform_id") or "")
@@ -338,7 +339,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     # zona normalizata e injectata pentru comparatie; monedele diferite se normalizeaza cu
     # eur_ron in _matches_re_keyword.
     extracted["zone_normalized"] = zone_norm
-    if not _matches_re_keyword(extracted, kw, eur_ron):
+    if not _matches_re_keyword(extracted, kw, eur_ron, cursuri):
         return None, "respins"
 
     # Scoring
@@ -352,7 +353,8 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
     if price and extracted.get("area_sqm"):
         score, grade = compute_re_score(
             price, currency, extracted["area_sqm"],
-            extracted.get("rooms"), zone_norm, kw.city, zone_avg, tip_anunt=kw.tip_anunt)
+            extracted.get("rooms"), zone_norm, kw.city, zone_avg,
+            tip_anunt=kw.tip_anunt, cursuri=cursuri)
 
     listing = RealEstateListing(
         user_id         = kw.user_id,
@@ -409,8 +411,20 @@ def _parse_floor(val) -> Optional[int]:
     return None
 
 
+# CUR-2 — o singura avertizare per pereche de monede per scan (nu una per anunt).
+_monede_necunoscute_warned: set = set()
+
+
+def _warn_moneda_re(cheie: str, mesaj: str) -> None:
+    if cheie in _monede_necunoscute_warned:
+        return
+    _monede_necunoscute_warned.add(cheie)
+    log_manager.emit("real_estate", "WARN", mesaj)
+
+
 def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
-                        eur_ron: Optional[float] = None) -> bool:
+                        eur_ron: Optional[float] = None,
+                        cursuri: Optional[dict] = None) -> bool:
     """True daca valorile extrase NU contrazic criteriile keyword-ului.
 
     TOLERANTA: un criteriu setat pe kw dar cu valoare extrasa necunoscuta (None) e tratat
@@ -419,8 +433,14 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
     nu pot fi verificate din text (raman necontrolate).
 
     Pret: cand monedele coincid, comparatie directa (comportamentul de dinainte). Cand DIFERA
-    si `eur_ron` e dat (>0), ambele parti se normalizeaza in EUR (valoare_ron / eur_ron)
-    inainte de comparatie. Cand difera si eur_ron e None -> tolerant (nu respinge).
+    si `eur_ron` e dat (>0), ambele parti se normalizeaza in EUR inainte de comparatie.
+    Cand difera si eur_ron e None -> tolerant (nu respinge).
+
+    CUR-2: normalizarea trece prin `_in_eur` (scorer), deci si un cod din catalogul BNR
+    (GBP, MDL, ...) e adus corect. Pana acum ramura `p_eur = p` trata ORICE non-RON ca
+    si cum ar fi fost EUR — un anunt de 900 GBP (1080 EUR) trecea de un plafon de 1000
+    EUR. Un cod din afara catalogului ramane TOLERANT, ca azi pe `eur_ron=None`: filtrul
+    nu are voie sa respinga pe ceva ce nu poate compara.
     """
     # Pret.
     price = extracted.get("price")
@@ -436,16 +456,23 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
                     return False
             elif eur_ron and eur_ron > 0:
                 # normalizeaza AMBELE parti in EUR si compara
-                p_eur = p / eur_ron if ext_cur == "RON" else p
+                from app.services.real_estate.scorer import _in_eur
+                p_eur = _in_eur(p, ext_cur, eur_ron, cursuri)
                 kmin = kmax = None
                 if kw.price_min is not None:
-                    kmin = float(kw.price_min) / eur_ron if kw_cur == "RON" else float(kw.price_min)
+                    kmin = _in_eur(kw.price_min, kw_cur, eur_ron, cursuri)
                 if kw.price_max is not None:
-                    kmax = float(kw.price_max) / eur_ron if kw_cur == "RON" else float(kw.price_max)
-                if kmin is not None and p_eur < kmin:
-                    return False
-                if kmax is not None and p_eur > kmax:
-                    return False
+                    kmax = _in_eur(kw.price_max, kw_cur, eur_ron, cursuri)
+                if p_eur is None or (kw.price_min is not None and kmin is None) \
+                        or (kw.price_max is not None and kmax is None):
+                    _warn_moneda_re(f"{ext_cur}/{kw_cur}",
+                        f"Filtru de pret: nu pot compara {ext_cur} cu {kw_cur} "
+                        f"(cod in afara catalogului BNR) — anuntul trece netestat")
+                else:
+                    if kmin is not None and p_eur < kmin:
+                        return False
+                    if kmax is not None and p_eur > kmax:
+                        return False
             # else: monede diferite fara curs -> tolerant, nu respinge.
         except (TypeError, ValueError):
             pass
@@ -511,7 +538,8 @@ def _matches_re_keyword(extracted: dict, kw: RealEstateKeyword,
 def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
                         ai,
                         custom_aliases: dict,
-                        eur_ron: Optional[float] = None) -> Optional[RealEstateListing]:
+                        eur_ron: Optional[float] = None,
+                        cursuri: Optional[dict] = None) -> Optional[RealEstateListing]:
     """Convert facebook_group_post -> real_estate_listing pentru un keyword anume.
 
     FIX confiscare: postarea se salveaza DOAR daca datele extrase se POTRIVESC criteriilor
@@ -581,7 +609,7 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
     # nu contrazic criteriile lui (zona normalizata e injectata pentru comparatie; monedele
     # diferite se normalizeaza cu eur_ron).
     extracted["zone_normalized"] = zone_norm
-    if not _matches_re_keyword(extracted, kw, eur_ron):
+    if not _matches_re_keyword(extracted, kw, eur_ron, cursuri):
         return None
 
     # FBG-2 (M1): post["pret"]/post["moneda"] au intrat deja in `extracted` ca seed
@@ -596,7 +624,8 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
             extracted.get("rooms"), tip_anunt=kw.tip_anunt)
         score, grade = compute_re_score(
             price, currency, extracted["area_sqm"],
-            extracted.get("rooms"), zone_norm, kw.city, zone_avg, tip_anunt=kw.tip_anunt)
+            extracted.get("rooms"), zone_norm, kw.city, zone_avg,
+            tip_anunt=kw.tip_anunt, cursuri=cursuri)
 
     listing = RealEstateListing(
         user_id         = kw.user_id,
@@ -671,6 +700,19 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
     except Exception:
         eur_ron = None
 
+    # CUR-2 — catalogul BNR intreg, tot o data pe scan (acelasi cache ca `get_eur_ron`,
+    # deci nu e un fetch in plus). {} inseamna „doar RON/EUR/USD se convertesc", adica
+    # exact comportamentul dinainte; scanul nu se opreste pentru asta.
+    _monede_necunoscute_warned.clear()
+    try:
+        from app.services import currency_service
+        cursuri = currency_service.catalog_ron()
+    except Exception as exc:
+        cursuri = {}
+        log_manager.emit("real_estate", "WARN",
+            f"Catalogul BNR nu s-a putut citi ({type(exc).__name__}) — "
+            f"in scanul asta se compara doar RON/EUR/USD")
+
     ai_disabled_scan = False  # PKG-2 — la prima AIConfigError: un WARN, apoi AI off pe restul scanului
     for kw in keywords:
         set_log_user(kw.user_id)  # MON-4 — jurnalele acestui keyword apartin user-ului lui
@@ -724,7 +766,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                         post_dict = {c.name: getattr(post, c.name)
                                      for c in post.__table__.columns}
                         saved = _save_fb_group_post(
-                            db, post_dict, kw, ai, custom_aliases, eur_ron)
+                            db, post_dict, kw, ai, custom_aliases, eur_ron, cursuri)
                         if saved:
                             new_count += 1
                             _notify_re(saved, kw, settings, db)
@@ -759,7 +801,8 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                 # la comit concurent etc.) omora run-ul intreg — keyword-urile
                 # ramase nu se mai scanau. Ramura FB groups avea deja plasa asta.
                 try:
-                    saved, motiv = _save_listing(db, kw, r, ai, custom_aliases, eur_ron)
+                    saved, motiv = _save_listing(db, kw, r, ai, custom_aliases,
+                                                 eur_ron, cursuri)
                     if motiv == "nou":
                         noi += 1
                         _notify_re(saved, kw, settings, db)

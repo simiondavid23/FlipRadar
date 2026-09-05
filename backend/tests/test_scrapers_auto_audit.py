@@ -197,8 +197,12 @@ def _prin_plasa(monkeypatch, carduri: list[dict], **campuri) -> list[str]:
     ajunse: list[str] = []
     monkeypatch.setattr(als, "_call_scraper",
                         lambda kw, *a, **k: [dict(c) for c in carduri] if k.get("page", 1) == 1 else [])
+    # CUR-2: `_save_listing` a primit `cursuri` (catalogul BNR, pasat de `run_auto_scan`).
+    # Fara el in stub, apelul arunca TypeError, prins de try/except-ul per anunt — deci
+    # testul ar fi picat cu „nimic n-a trecut de plasa", nu cu eroarea reala.
     monkeypatch.setattr(als, "_save_listing",
-                        lambda db, kw, raw, resale: (ajunse.append(raw["external_id"]), False)[1])
+                        lambda db, kw, raw, resale, cursuri=None:
+                        (ajunse.append(raw["external_id"]), False)[1])
     monkeypatch.setattr(als.log_manager, "emit", lambda *a, **k: None)
 
     db = SessionLocal()
