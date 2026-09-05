@@ -232,6 +232,30 @@ def _portable_migrations(conn, inspector):
         _migrate(conn, "drop_fbg_posts_is_read",
                  "ALTER TABLE facebook_group_posts DROP COLUMN is_read")
 
+    # DB-CLEAN — coloane si tabela ramase orfane dupa ce modelele lor au murit:
+    # radar_keywords.car_filters + toggle-urile autovit/mobilede (RC-1) si tabela
+    # marketplace_saved (MKT-DEAD). Nimeni nu le mai citeste. Acelasi tipar ca
+    # drop_fbg_posts_is_read de mai sus: fara IF EXISTS pe DROP COLUMN (neportabil),
+    # garda e introspectia, o singura actiune per ALTER, inregistrare prin _migrate.
+    if (_table_exists(inspector, "radar_keywords")
+            and _column_exists(inspector, "radar_keywords", "car_filters")):
+        _migrate(conn, "drop_radar_keywords_car_filters",
+                 "ALTER TABLE radar_keywords DROP COLUMN car_filters")
+
+    for _col in ("platform_autovit_enabled", "platform_mobilede_enabled"):
+        if (_table_exists(inspector, "radar_settings")
+                and _column_exists(inspector, "radar_settings", _col)):
+            _migrate(conn, f"drop_radar_settings_{_col}",
+                     f"ALTER TABLE radar_settings DROP COLUMN {_col}")
+
+    # Tabela n-are model ORM din MKT-DEAD, deci create_all() n-o mai creeaza; pe
+    # bazele vechi ramane goala. DROP TABLE IF EXISTS e portabil (precedentul
+    # NOTIF-1 / AI-1 / ML-1), garda de introspectie se pastreaza ca migrarea sa nu
+    # se inregistreze degeaba pe o baza proaspata.
+    if _table_exists(inspector, "marketplace_saved"):
+        _migrate(conn, "drop_marketplace_saved_table",
+                 "DROP TABLE IF EXISTS marketplace_saved")
+
     # SHOP-2a — setarile scannerului de deal-uri Shopify, pe radar_settings.
     # Tabelele noi (deals, shop_price_memory, shop_scan_state) au modele ORM, deci
     # le creeaza create_all(); aici intra doar coloanele adaugate pe o tabela
@@ -534,11 +558,8 @@ def run_migrations():
         _migrate(conn, "create_ix_vinted_catalogs_parent_id",
                  "CREATE INDEX IF NOT EXISTS ix_vinted_catalogs_parent_id ON vinted_catalogs (parent_id)")
 
-        # Radar keywords: car_filters (JSON serializat) + extensii pentru scrapere auto
+        # Radar keywords: extensii pentru wizard-ul de marketplace si praguri
         if _table_exists(inspector, "radar_keywords"):
-            if not _column_exists(inspector, "radar_keywords", "car_filters"):
-                _migrate(conn, "add_radar_keywords_car_filters",
-                         "ALTER TABLE radar_keywords ADD COLUMN car_filters TEXT")
             # FlipRadar — config wizard marketplace (platform/categorie/subcategorie/filtre) JSON
             if not _column_exists(inspector, "radar_keywords", "marketplace_config"):
                 _migrate(conn, "add_radar_keywords_marketplace_config",
@@ -590,8 +611,7 @@ def run_migrations():
 
         # Radar settings: noi toggle-uri pentru platforme
         if _table_exists(inspector, "radar_settings"):
-            for col in ("platform_lajumate_enabled", "platform_publi24_enabled",
-                        "platform_autovit_enabled", "platform_mobilede_enabled"):
+            for col in ("platform_lajumate_enabled", "platform_publi24_enabled"):
                 if not _column_exists(inspector, "radar_settings", col):
                     _migrate(conn, f"add_radar_settings_{col}",
                              f"ALTER TABLE radar_settings ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT TRUE")
