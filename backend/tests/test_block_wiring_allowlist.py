@@ -12,6 +12,9 @@ si enrichment-ul) — se testeaza direct.
 RC-1: sectiunile `autovit` (bucla din search + fetch de detalii) au disparut odata cu
 scraperul; comportamentele lor traiesc in testele parametrizate de mai jos.
 """
+import os
+from datetime import datetime
+
 import pytest
 
 from app.services.radar import okazii_scraper as oks
@@ -213,3 +216,42 @@ def test_detaliile_200_cu_marker_nu_se_parseaza(monkeypatch, mod, platform, fn):
     out = getattr(mod, fn)("http://x")
     assert out.get("images") == [] and out.get("description") is None
     assert reported == [(platform, Outcome.BLOCKED)]
+
+
+# ── TIDY-1: 200 CURAT pe calea de detalii chiar se parseaza ─────────────────────
+# Golul lasat de LJ-2: testul echivalent era lajumate-specific (parsa `__NEXT_DATA__`)
+# si a plecat odata cu enrichment-ul LaJumate. Fara el, o garda anti-blocaj prea larga
+# ar refuza si paginile bune, iar testele de mai sus — toate pe raspunsuri REFUZATE —
+# ar trece fericite. Ramane ne-parametrizat: fiecare platforma are alt format de pagina.
+#
+# Fixture-urile sunt FRAGMENTE reale de pagina (RP-DIAG-2), nu pagini complete: acopera
+# exact blocul pe care fiecare extractor il citeste. De aceea `description`/`images` ies
+# goale prin constructie — campul NEVID probat e vanzatorul la Okazii si data la Publi24.
+
+def _fixture(nume: str) -> str:
+    cale = os.path.join(os.path.dirname(__file__), "fixtures", nume)
+    with open(cale, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_okazii_detaliu_200_curat_se_parseaza_si_raporteaza_ok(monkeypatch):
+    calls, slept, reported = _wire(
+        monkeypatch, oks, [_Resp(200, _fixture("okazii_info_seller.html"))], rotates=False)
+
+    out = oks.fetch_okazii_listing_details("http://x")
+
+    assert out["seller_name"] == "Service Boutique SRL"
+    assert out["seller_reviews"] == 6382
+    assert len(calls) == 1 and slept == []
+    assert reported == [("okazii", Outcome.OK)]
+
+
+def test_publi24_detaliu_200_curat_se_parseaza_si_raporteaza_ok(monkeypatch):
+    calls, slept, reported = _wire(
+        monkeypatch, pbs, [_Resp(200, _fixture("publi24_valabil.html"))], rotates=False)
+
+    out = pbs.fetch_publi24_listing_details("http://x")
+
+    assert out["listed_at"] == datetime(2026, 7, 9, 19, 14, 42)
+    assert len(calls) == 1 and slept == []
+    assert reported == [("publi24", Outcome.OK)]

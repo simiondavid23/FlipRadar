@@ -355,3 +355,92 @@ def test_refresh_seen_recalculeaza_scorul_pe_valoarea_in_ron(auth_client, monkey
         assert row.score == "B"
     finally:
         db.close()
+
+
+def test_scan_paseaza_catalogul_puntii_saved_bridge(auth_client, monkeypatch):
+    """TIDY-1, CABLAREA: `_scan_user` chiar da catalogul mai departe puntii SAVED-BRIDGE.
+
+    Fratele de mai jos arata ca `_refresh_seen_listing` STIE sa foloseasca un catalog;
+    asta arata ca il si PRIMESTE. Anuntul e marcat `seen`, deci scanul intra pe ramura
+    de re-verificare, nu pe cea de salvare. Fara `cursuri=cursuri` in apel, 140 GBP ar fi
+    re-scorat pe 140 (marja 86%, grad A fals) in loc de 840 RON (marja 16%, grad C).
+    """
+    from app.database import SessionLocal
+    from app.models.radar_listing import RadarListing
+    from app.models.radar_seen_id import RadarSeenId
+
+    uid = auth_client.get("/api/auth/me").json()["id"]
+    _enable_facebook(uid)
+    kid = _mk_keyword(auth_client, resale_price=1000.0)
+    ext = f"fb_{uuid.uuid4().hex[:10]}"
+
+    db = SessionLocal()
+    try:
+        db.add(RadarListing(user_id=uid, keyword_id=kid, external_id=ext,
+                            platform="facebook", title="Bicicleta de test",
+                            price=200.0, currency="GBP",
+                            url="https://facebook.com/marketplace/item/3",
+                            images=json.dumps(["https://img/x.jpg"]),
+                            score="A", margin_pct=86.0, status="active"))
+        db.add(RadarSeenId(user_id=uid, platform="facebook", external_id=ext))
+        db.commit()
+    finally:
+        db.close()
+
+    _scan(monkeypatch, uid, _fb_listing(ext, price=140.0, currency="GBP"),
+          cursuri={"GBP": 6.0, "RON": 1.0})
+
+    row = _feed_row(uid, ext)
+    assert row is not None
+    assert row.price == 140.0                     # pretul persistat ramane BRUT (GBP)
+    assert row.margin_pct == pytest.approx(16.0)  # (1000 - 840) / 1000
+    assert row.score == "C"
+
+
+def test_refresh_seen_foloseste_catalogul_pentru_alte_monede(auth_client, monkeypatch):
+    """TIDY-1 — puntea SAVED-BRIDGE re-scoreaza si monedele din afara EUR/USD.
+
+    Un anunt cunoscut in GBP care IEFTINESTE: 140 GBP × 6.0 = 840 RON fata de 1000 RON
+    revanzare -> marja 16% -> grad C. Fara catalog (cum era pana la TIDY-1), cifra bruta
+    140 dadea 86% -> grad A fals, exact bug-ul reparat la CUR-1 pe bucla principala si
+    ramas pe calea asta. GBP e in catalogul BNR real, dar n-are adaptor ca EUR/USD.
+    """
+    from app.database import SessionLocal
+    from app.models.radar_listing import RadarListing
+
+    uid = auth_client.get("/api/auth/me").json()["id"]
+    kid = _mk_keyword(auth_client, resale_price=1000.0)
+    ext = f"fb_{uuid.uuid4().hex[:10]}"
+
+    db = SessionLocal()
+    try:
+        row = RadarListing(user_id=uid, keyword_id=kid, external_id=ext,
+                           platform="facebook", title="Bicicleta de test",
+                           price=200.0, currency="GBP",
+                           url="https://facebook.com/marketplace/item/2",
+                           images=json.dumps(["https://img/x.jpg"]),
+                           score="A", margin_pct=85.0, status="active")
+        db.add(row); db.commit(); db.refresh(row)
+        rid = row.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
+    db = SessionLocal()
+    try:
+        out = rs._refresh_seen_listing(
+            db, types.SimpleNamespace(id=uid), _KwStub(resale_price=1000.0),
+            "facebook", {"external_id": ext, "price": 140.0, "currency": "GBP"},
+            settings=None, eur_ron=5.0, cursuri={"GBP": 6.0, "RON": 1.0})
+    finally:
+        db.close()
+    assert out == "updated"
+
+    db = SessionLocal()
+    try:
+        row = db.query(RadarListing).get(rid)
+        assert row.price == 140.0                     # pretul persistat ramane BRUT (GBP)
+        assert row.margin_pct == pytest.approx(16.0)  # (1000 - 840) / 1000
+        assert row.score == "C"
+    finally:
+        db.close()

@@ -2018,7 +2018,7 @@ def _first_image(images_raw) -> str:
 
 def _refresh_seen_listing(db: Session, user, kw, platform: str,
                           listing: dict, settings, eur_ron=None,
-                          usd_ron=None) -> Optional[str]:
+                          usd_ron=None, cursuri=None) -> Optional[str]:
     """Actualizeaza randul existent la reaparitia unui anunt cunoscut.
 
     Intoarce un marcaj pentru observabilitate/teste:
@@ -2065,7 +2065,10 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
     # fiindca kw.resale_price e in RON.
     drop = (old_price - new_price) / old_price if old_price > 0 else 0.0
     row.price = new_price
-    _new_price_ron = _price_to_ron(new_price, new_cur, eur_ron, usd_ron)
+    # TIDY-1 — si aici catalogul BNR, nu doar EUR/USD: reaparitia unui anunt in GBP
+    # care ieftineste era re-scorata pe pretul BRUT, adica exact bug-ul reparat la
+    # CUR-1 pe bucla principala, ramas pe calea asta.
+    _new_price_ron = _price_to_ron(new_price, new_cur, eur_ron, usd_ron, cursuri=cursuri)
     sd = calculate_score(
         listing_price=_new_price_ron or 0,
         resale_price=kw.resale_price,
@@ -2572,7 +2575,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                         # SAVED-BRIDGE: reaparitia unui anunt cunoscut = re-verificare
                         # gratuita — pret/scor la zi + alerta de scadere pe salvate.
                         _refresh_seen_listing(db, user, kw, platform, listing, settings,
-                                              eur_ron, usd_ron)
+                                              eur_ron, usd_ron, cursuri=cursuri)
                         continue
 
                     # RAD-1 — filtru de vechime per keyword: anunturile prea vechi se marcheaza

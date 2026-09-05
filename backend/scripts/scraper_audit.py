@@ -134,8 +134,10 @@ def probe_radar(kw: str, max_price: float) -> list:
     from app.services.radar.publi24_scraper import search_publi24
     from app.services.radar.vinted_scraper import search_vinted
 
-    # Fara `skip_enrich_ids`: la un keyword NOU productia imbogateste fiecare rezultat,
-    # deci masuram si calea aia, nu doar cautarea.
+    # Fara `skip_enrich_ids`: la un keyword NOU, olx/okazii/publi24 imbogatesc fiecare
+    # rezultat cu un fetch de pagina, deci pentru ele proba masoara si calea aia, nu doar
+    # cautarea. LaJumate NU mai are enrichment (LJ-2): lista API aduce deja descrierea si
+    # imaginile complete, deci acolo se masoara doar cererea de lista.
     return [
         ("radar", "olx", lambda: search_olx(kw, max_price=max_price, judet=None, oras=None,
                                             condition="all", exclude_words=[], min_price=None,
