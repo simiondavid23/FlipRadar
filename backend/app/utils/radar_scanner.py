@@ -1994,8 +1994,21 @@ def _already_seen(db: Session, user_id: int, platform: str, external_id: str) ->
     return seen is not None
 
 
-def _mark_seen(db: Session, user_id: int, platform: str, external_id: str) -> None:
-    db.add(RadarSeenId(user_id=user_id, platform=platform, external_id=external_id))
+def _mark_seen(db: Session, user_id: int, platform: str, external_id: str,
+               price=None, currency=None) -> None:
+    """SEEN-2 — pe langa id, retine si PRETUL de la prima vedere.
+
+    `pret_initial` e referinta fata de care se judeca o scadere ulterioara, chiar daca
+    anuntul n-a ajuns niciodata in feed (aruncat pe vechime sau pe marja negativa).
+    Fata de PRIMUL pret, nu de ultimul: asa scaderile treptate se cumuleaza.
+    """
+    try:
+        pret = float(price) if price is not None else None
+    except (TypeError, ValueError):
+        pret = None
+    db.add(RadarSeenId(user_id=user_id, platform=platform, external_id=external_id,
+                       pret_initial=pret, pret_ultim=pret,
+                       moneda=(currency or None)))
 
 
 # ── SAVED-BRIDGE: puntea salvate -> monitorizare ─────────────────────────────────
@@ -2016,14 +2029,198 @@ def _first_image(images_raw) -> str:
         return ""
 
 
+def _salveaza_rand_nou(db: Session, user, kw, platform: str, listing: dict,
+                       score_data: dict, pret_anterior=None) -> RadarListing:
+    """Creeaza randul de feed pentru un anunt care intra ACUM. Persistat (commit) la
+    intoarcere, ca apelantul sa poata notifica pe un rand care exista sigur (N1).
+
+    SEEN-2 l-a extras din bucla lui `_scan_user` fiindca a doua cale de intrare in feed
+    — anuntul respins care revine dupa o scadere de pret — trebuie sa produca EXACT
+    acelasi rand. Doua constructii tinute sincronizate cu atentie ar fi divergat.
+    `pret_anterior` e singura diferenta: NULL pe calea normala, pretul de la care s-a
+    scazut pe calea de revenire.
+    """
+    # RP-1 — OLX: enrichment inline INAINTE de save+notify (numele vanzatorului, data
+    # exacta, member_since, descrierea -> in alerta si badge).
+    if platform == "olx":
+        _maybe_enrich_olx_inline(listing)
+    # Campuri vanzator + badge de risc (recalculat la enrichment Vinted).
+    _srev, _srat, _srisk, _sattr = _seller_persist_fields(listing, kw)
+
+    rand = RadarListing(
+        user_id=user.id,
+        keyword_id=kw.id,
+        external_id=listing.get("external_id"),
+        platform=platform,
+        title=listing.get("title", "")[:500],
+        price=float(listing.get("price") or 0),
+        currency=listing.get("currency") or "RON",
+        condition=listing.get("condition"),
+        location=listing.get("location"),
+        url=listing.get("url", ""),
+        images=json.dumps(listing.get("images") or [], ensure_ascii=False),
+        description=listing.get("description"),
+        seller_name=listing.get("seller_name"),
+        seller_id=listing.get("seller_id"),
+        score=score_data["score"],
+        margin_pct=score_data["margin_pct"],
+        status="active",
+        ai_review=None,
+        listed_at=listing.get("listed_at"),
+        seller_reviews=_srev,
+        seller_rating=_srat,
+        seller_risk=_srisk,
+        attributes_json=_sattr,
+        pret_anterior=pret_anterior,
+    )
+    db.add(rand)
+    db.flush()
+    # NOTIF-AUDIT (N1): notificarea de dupa pleaca imediat si e IREVERSIBILA; fara
+    # commit aici, un rollback pe un listing ulterior pierdea tot batch-ul deja
+    # notificat -> reprocesare la ciclul urmator cu ID-uri noi -> notificari
+    # DUPLICATE + link mort.
+    db.commit()
+    return rand
+
+
+def _reaparitie_fara_rand(db: Session, user, kw, platform: str, listing: dict,
+                          settings, eur_ron=None, usd_ron=None, cursuri=None):
+    """SEEN-2, calea (2): anuntul e VAZUT dar n-are rand in feed — a fost aruncat pe
+    vechime (`max_age_days`) sau pe marja negativa. Pana acum nu se intampla nimic,
+    niciodata: un anunt de grad D care scadea 15% si devenea A ramanea tacut.
+
+    Referinta e `pret_initial` din `radar_seen_ids`, NU ultimul pret vazut (D-S1): asa
+    o coborare treptata 6900 -> 6700 -> 6400 -> 5900 se cumuleaza in loc sa fie de
+    fiecare data „prea mica". Vechimea NU se reverifica (D-S2) — un anunt vechi care a
+    ieftinit destul e exact ce vrea userul sa vada. Marja se recalculeaza pe pretul nou
+    (D-S3), deci si respinsii pe marja negativa pot reveni.
+    """
+    ext_id = listing.get("external_id")
+    seen = (
+        db.query(RadarSeenId)
+        .filter(RadarSeenId.user_id == user.id,
+                RadarSeenId.platform == platform,
+                RadarSeenId.external_id == ext_id)
+        .first()
+    )
+    if seen is None:
+        return None                 # n-am fi ajuns aici; nu inventam o referinta
+
+    try:
+        pret_nou = float(listing.get("price")) if listing.get("price") else None
+    except (TypeError, ValueError):
+        pret_nou = None
+    if not pret_nou or pret_nou <= 0:
+        return "bumped"
+    moneda_noua = (listing.get("currency") or "RON").upper()
+
+    seen.pret_ultim = pret_nou
+    if not seen.moneda:
+        # Backfill de moneda: nu suprascriem o moneda deja cunoscuta, ca un cod aparut
+        # gresit sa nu rescrie tacit referinta (aceeasi regula ca pe calea cu rand).
+        seen.moneda = moneda_noua
+
+    if seen.pret_initial is None:
+        # Rand de dinainte de SEEN-2: prima reaparitie doar stabileste referinta.
+        # Scaderile se vad de la a doua — spus explicit in nota de deploy.
+        seen.pret_initial = pret_nou
+        db.commit()
+        return "seen_backfill"
+
+    db.commit()
+    if (seen.moneda or "RON").upper() != moneda_noua:
+        return "bumped"             # monede diferite nu se compara (ca pe calea cu rand)
+
+    initial = float(seen.pret_initial)
+    if initial <= 0:
+        return "bumped"
+    drop = (initial - pret_nou) / initial
+    if drop < _PRICE_DROP_MIN:
+        return "bumped"
+
+    pret_ron = _price_to_ron(pret_nou, moneda_noua, eur_ron, usd_ron, cursuri=cursuri)
+    score_data = calculate_score(
+        listing_price=pret_ron or 0,
+        resale_price=kw.resale_price,
+        min_margin_pct=kw.min_margin_pct or 10.0,
+        grade_a_min=kw.grade_a_min,
+        grade_b_min=kw.grade_b_min,
+        grade_c_min=kw.grade_c_min,
+    )
+    if score_data["filtered"] and score_data["score"] is None:
+        return "bumped"             # a scazut, dar tot nu e deal
+
+    rand = _salveaza_rand_nou(db, user, kw, platform, listing, score_data,
+                              pret_anterior=initial)
+    log_manager.emit("radar", "OK",
+        f"Preț scăzut {drop*100:.0f}%: {(listing.get('title') or '')[:60]} — "
+        f"{int(initial)} → {int(pret_nou)} {moneda_noua} (anunț revenit în feed)")
+
+    # Fara conditia `_first_scan` de la anunturile noi: asta NU e istoric adus la prima
+    # scanare, e o scadere masurata intre doua scanari — exact evenimentul de notificat.
+    if getattr(kw, "notify_discord", False):
+        _resale = float(kw.resale_price or 0)
+        send_radar_notification(
+            listing={
+                "title": f"Pret scazut {int(round(drop * 100))}%: {listing.get('title') or ''}",
+                "price": pret_nou,
+                "currency": moneda_noua,
+                "url": listing.get("url") or "",
+                "image_url": (listing.get("images") or [None])[0] or "",
+                "location": listing.get("location") or "",
+                "platform": platform,
+                "resale_price": int(_resale) if _resale else None,
+                "margin": int(_resale - pret_nou) if _resale else None,
+            },
+            grade=score_data["score"],
+            score=int(round(score_data.get("margin_pct") or 0)),
+            keyword_name=kw.name,
+            settings=settings,
+            # Dedup pe (anunt, nivel de pret): randul abia s-a creat, deci nu ne putem
+            # sprijini pe id-ul lui ca la calea cu rand — cheia e external_id-ul.
+            listing_id=f"pricedrop-seen-{user.id}-{platform}-{ext_id}-{int(pret_nou)}",
+            db=db,
+        )
+    # Email/push: aceleasi conditii ca la un anunt nou de grad A/B din bucla. Apelurile
+    # sunt repetate aici, nu extrase din bucla: extragerea ar fi atins blocul de
+    # notificari al caii normale, care nu se schimba in runda asta.
+    if score_data["score"] in ("A", "B") and getattr(kw, "notify_email", False):
+        _send_email_alert(user, listing, kw, score_data["score"],
+                          score_data["margin_pct"],
+                          listed_at=listing.get("listed_at"), found_at=rand.found_at)
+    if score_data["score"] in ("A", "B") and is_push_configured():
+        try:
+            notify_user_push(
+                db, user.id,
+                title=f"Preț scăzut: {(listing.get('title') or '')[:50]}",
+                body=(f"{int(initial)} → {int(pret_nou)} {moneda_noua} · {platform}"),
+                url=f"/dashboard/radar?listing={rand.id}",
+            )
+        except Exception as exc:
+            print(f"[RadarScanner] Push esuat: {exc}")
+    return "revived"
+
+
 def _refresh_seen_listing(db: Session, user, kw, platform: str,
                           listing: dict, settings, eur_ron=None,
                           usd_ron=None, cursuri=None) -> Optional[str]:
     """Actualizeaza randul existent la reaparitia unui anunt cunoscut.
 
     Intoarce un marcaj pentru observabilitate/teste:
-    None = fara rand in feed; "bumped" = doar last_checked_at;
-    "updated" = pret+scor actualizate; "notified" = si notificare de scadere.
+    "bumped" = nimic de facut (pret neschimbat, moneda alta, scadere sub prag);
+    "updated" = pret+scor actualizate; "notified" = si notificare de scadere;
+    "seen_backfill" = anunt fara rand, dinainte de SEEN-2 — s-a stabilit referinta;
+    "revived" = anunt fara rand care a scazut destul si e deal ACUM -> intra in feed.
+    None = nu se poate decide (fara external_id, fara rand de `seen`).
+
+    SEEN-2 — puntea are DOUA cai, si e punctul UNIC prin care trece o reaparitie:
+      (1) exista rand in feed -> pret/scor la zi, `pret_anterior` cand scaderea trece
+          pragul, alerta cand randul e `saved` (ca inainte) SAU cand scaderea l-a urcat
+          intr-un grad A/B/C (D-S4: o scadere care face dintr-un D un A nu mai e tacuta);
+      (2) NU exista rand -> anuntul fusese respins pe vechime sau pe marja negativa.
+          Se compara cu `pret_initial` din `radar_seen_ids` (nu cu ultimul pret, ca
+          scaderile treptate sa se cumuleze) si, daca a scazut >= pragul SI trece ACUM
+          de marja, revine in feed — ocolind filtrul de vechime (D-S2).
 
     `eur_ron`/`usd_ron` sunt cursurile scanului (vezi _scan_user) — se folosesc DOAR
     ca sa aducem pretul in RON pentru calculate_score; preturile persistate/comparate
@@ -2043,7 +2240,8 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
         .first()
     )
     if row is None:
-        return None                 # vazut, dar niciodata salvat in feed (marja negativa / prea vechi)
+        return _reaparitie_fara_rand(db, user, kw, platform, listing, settings,
+                                     eur_ron, usd_ron, cursuri)
 
     row.last_checked_at = datetime.now(timezone.utc)
 
@@ -2079,10 +2277,18 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
     )
     row.score = sd["score"]
     row.margin_pct = sd["margin_pct"]
+    # SEEN-2 — „de la X" pentru feed, DOAR cand scaderea conteaza; altfel neatins, ca o
+    # fluctuatie de 1% sa nu stearga referinta unei scaderi reale de acum doua cicluri.
+    if drop >= _PRICE_DROP_MIN:
+        row.pret_anterior = old_price
     # Notificarile de mai jos sunt IREVERSIBILE — intai persistam (paritate N1).
     db.commit()
 
-    if drop < _PRICE_DROP_MIN or row.status != "saved":
+    # D-S4 — pe langa randurile SALVATE (orice scadere >= prag), alerteaza si randurile
+    # ACTIVE cand scaderea le-a urcat intr-un grad. Un anunt de grad D care scade 15% si
+    # devine A era tacut: nimeni nu se uita in feed la gradele mici.
+    if drop < _PRICE_DROP_MIN or not (row.status == "saved"
+                                      or sd["score"] in ("A", "B", "C")):
         return "updated"
 
     log_manager.emit("radar", "OK",
@@ -2581,7 +2787,8 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     # RAD-1 — filtru de vechime per keyword: anunturile prea vechi se marcheaza
                     # seen (ca la marja negativa) ca sa nu fie reprocesate ciclu de ciclu.
                     if _too_old(listing.get("listed_at"), getattr(kw, "max_age_days", None)):
-                        _mark_seen(db, user.id, platform, ext_id)
+                        _mark_seen(db, user.id, platform, ext_id,
+                                   listing.get("price"), listing.get("currency"))
                         continue
 
                     # Scorul se calculeaza in RON (kw.resale_price e in RON), deci un
@@ -2600,50 +2807,16 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     )
                     if score_data["filtered"] and score_data["score"] is None:
                         # marja negativa — nici nu salvam, e zgomot
-                        _mark_seen(db, user.id, platform, ext_id)
+                        _mark_seen(db, user.id, platform, ext_id,
+                                   listing.get("price"), listing.get("currency"))
                         continue
 
-                    _mark_seen(db, user.id, platform, ext_id)
+                    _mark_seen(db, user.id, platform, ext_id,
+                                   listing.get("price"), listing.get("currency"))
 
-                    # RP-1 — OLX: enrichment inline INAINTE de save+notify (numele
-                    # vanzatorului, data exacta, member_since, descrierea -> in alerta si badge).
-                    if platform == "olx":
-                        _maybe_enrich_olx_inline(listing)
-                    # Campuri vanzator + badge de risc (recalculat la enrichment Vinted).
-                    _srev, _srat, _srisk, _sattr = _seller_persist_fields(listing, kw)
-
-                    listing_db = RadarListing(
-                        user_id=user.id,
-                        keyword_id=kw.id,
-                        external_id=ext_id,
-                        platform=platform,
-                        title=listing.get("title", "")[:500],
-                        price=float(listing.get("price") or 0),
-                        currency=listing.get("currency") or "RON",
-                        condition=listing.get("condition"),
-                        location=listing.get("location"),
-                        url=listing.get("url", ""),
-                        images=json.dumps(listing.get("images") or [], ensure_ascii=False),
-                        description=listing.get("description"),
-                        seller_name=listing.get("seller_name"),
-                        seller_id=listing.get("seller_id"),
-                        score=score_data["score"],
-                        margin_pct=score_data["margin_pct"],
-                        status="active",
-                        ai_review=None,
-                        listed_at=listing.get("listed_at"),
-                        seller_reviews=_srev,
-                        seller_rating=_srat,
-                        seller_risk=_srisk,
-                        attributes_json=_sattr,
-                    )
-                    db.add(listing_db)
-                    db.flush()
-                    # NOTIF-AUDIT (N1): notificarea de mai jos pleaca imediat si e
-                    # IREVERSIBILA; fara commit aici, un rollback pe un listing
-                    # ulterior pierdea tot batch-ul deja notificat -> reprocesare la
-                    # ciclul urmator cu ID-uri noi -> notificari DUPLICATE + link mort.
-                    db.commit()
+                    # SEEN-2: constructia randului sta in `_salveaza_rand_nou`, partajata
+                    # cu calea de revenire dupa scadere de pret (add + flush + commit incluse).
+                    listing_db = _salveaza_rand_nou(db, user, kw, platform, listing, score_data)
                     stats["new_listings"] += 1
 
                     if score_data["score"] == "A":

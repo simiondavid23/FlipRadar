@@ -24,9 +24,9 @@ from app.utils import radar_scanner as rs
 
 class _KwStub:
     """Stub minimal pentru RadarKeyword — doar atributele citite de punte."""
-    def __init__(self, resale_price=500.0, notify_discord=False):
+    def __init__(self, resale_price=500.0, notify_discord=False, min_margin_pct=10.0):
         self.resale_price = resale_price
-        self.min_margin_pct = 10.0
+        self.min_margin_pct = min_margin_pct
         self.grade_a_min = None
         self.grade_b_min = None
         self.grade_c_min = None
@@ -93,7 +93,11 @@ def _refresh(uid, ext, listing_over=None, kw=None, monkeypatch=None,
 
 # ── Radar: puntea propriu-zisa ───────────────────────────────────────────────────
 
-def test_reaparitia_fara_rand_in_feed_nu_face_nimic(auth_client, monkeypatch):
+def test_reaparitia_fara_rand_si_fara_seen_nu_face_nimic(auth_client, monkeypatch):
+    """SEEN-2: „fara rand in feed" nu mai inseamna automat „nimic de facut" — exista
+    calea de revenire dupa scadere. Ramane None doar cand nu exista NICI rand de `seen`,
+    adica o stare care in productie nu se poate atinge (puntea se cheama doar dupa
+    `_already_seen`). Cazul viu e acoperit in test_seen2_pret_scazut.py."""
     me = auth_client.get("/api/auth/me").json()["id"]
     out = _refresh(me, f"vinted_{uuid.uuid4().hex[:10]}", monkeypatch=monkeypatch)
     assert out is None
@@ -108,13 +112,17 @@ def test_pret_neschimbat_face_doar_bump(auth_client, monkeypatch):
 
 
 def test_pretul_nou_actualizeaza_pret_si_scor(auth_client, monkeypatch):
+    """SEEN-2 (D-S4): scaderea e de 50% si urca randul la grad A, deci ACUM se notifica
+    — inainte, un rand `active` tacea indiferent de cat scadea. Ce verifica testul mai
+    departe (pret + scor persistate) e neschimbat."""
     uid, rid, ext = _mk_radar_row(auth_client, price=200.0)
     out = _refresh(uid, ext, {"price": 100.0}, monkeypatch=monkeypatch)
-    assert out == "updated"                       # activ, nu salvat -> fara notificare
+    assert out == "notified"                      # D-S4: activ + grad A -> alerta
     row = _row(rid)
     assert row.price == 100.0
     assert row.score == "A"                       # marja 80% fata de resale 500
     assert abs(row.margin_pct - 80.0) < 0.01
+    assert row.pret_anterior == 200.0             # SEEN-2: „de la X" pentru feed
 
 
 def test_moneda_diferita_nu_se_compara(auth_client, monkeypatch):
@@ -139,12 +147,20 @@ def test_scadere_pe_salvat_notifica_discord_si_push(auth_client, monkeypatch):
     assert _row(rid).price == 180.0
 
 
-def test_scadere_pe_activ_nu_notifica(auth_client, monkeypatch):
+def test_scadere_pe_activ_ramas_grad_d_nu_notifica(auth_client, monkeypatch):
+    """SEEN-2 (D-S4): un rand `active` alerteaza doar daca scaderea l-a urcat intr-un
+    GRAD (A/B/C). Aici scade 10% dar ramane D (marja 5.3%, sub pragul de grad C de 10%),
+    deci tacerea de dinainte se pastreaza — si se pastreaza din motivul corect.
+    `pret_anterior` se seteaza oricum: scaderea a fost reala, doar n-a meritat o alerta."""
     notif = []
     uid, rid, ext = _mk_radar_row(auth_client, price=200.0, status="active")
-    out = _refresh(uid, ext, {"price": 180.0}, kw=_KwStub(notify_discord=True),
+    out = _refresh(uid, ext, {"price": 180.0},
+                   kw=_KwStub(notify_discord=True, resale_price=190.0, min_margin_pct=5.0),
                    monkeypatch=monkeypatch, notif_calls=notif)
     assert out == "updated" and notif == []
+    row = _row(rid)
+    assert row.score == "D"
+    assert row.pret_anterior == 200.0
 
 
 def test_scadere_sub_prag_pe_salvat_nu_notifica(auth_client, monkeypatch):
@@ -155,6 +171,7 @@ def test_scadere_sub_prag_pe_salvat_nu_notifica(auth_client, monkeypatch):
                    notif_calls=notif)
     assert out == "updated" and notif == []
     assert _row(rid).price == 195.0               # pretul tot se actualizeaza
+    assert _row(rid).pret_anterior is None        # SEEN-2: sub prag, referinta neatinsa
 
 
 def test_call_site_ul_din_bucla_apeleaza_puntea():

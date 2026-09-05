@@ -256,6 +256,21 @@ def _portable_migrations(conn, inspector):
         _migrate(conn, "drop_marketplace_saved_table",
                  "DROP TABLE IF EXISTS marketplace_saved")
 
+    # SEEN-2 — memoria de pret pe anunturile vazute + pretul anterior pe randul de
+    # feed. Acelasi tipar ca blocurile de mai jos: garda _column_exists, fara
+    # IF NOT EXISTS, o singura actiune per ALTER, inregistrare prin _migrate.
+    for _col, _tip in (("pret_initial", "FLOAT"), ("pret_ultim", "FLOAT"),
+                       ("moneda", "VARCHAR")):
+        if (_table_exists(inspector, "radar_seen_ids")
+                and not _column_exists(inspector, "radar_seen_ids", _col)):
+            _migrate(conn, f"add_radar_seen_ids_{_col}",
+                     f"ALTER TABLE radar_seen_ids ADD COLUMN {_col} {_tip}")
+
+    if (_table_exists(inspector, "radar_listings")
+            and not _column_exists(inspector, "radar_listings", "pret_anterior")):
+        _migrate(conn, "add_radar_listings_pret_anterior",
+                 "ALTER TABLE radar_listings ADD COLUMN pret_anterior FLOAT")
+
     # SHOP-2a — setarile scannerului de deal-uri Shopify, pe radar_settings.
     # Tabelele noi (deals, shop_price_memory, shop_scan_state) au modele ORM, deci
     # le creeaza create_all(); aici intra doar coloanele adaugate pe o tabela

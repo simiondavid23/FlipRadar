@@ -83,11 +83,21 @@ def test_prima_scanare_nu_notifica_structural():
 # ── N1: commit inainte de notificare ─────────────────────────────────────────────
 
 def test_commit_inainte_de_notificare_structural():
+    # SEEN-2: constructia randului s-a mutat in `_salveaza_rand_nou`, partajata cu calea
+    # de revenire dupa scadere de pret. Invarianta e aceeasi, dar se intinde acum peste
+    # doua functii: helperul comita INAINTE de a intoarce randul, iar bucla notifica abia
+    # dupa ce l-a primit.
+    helper = inspect.getsource(rs._salveaza_rand_nou)
+    i_add = helper.index("db.add(rand)")
+    i_flush = helper.index("db.flush()", i_add)
+    i_commit = helper.index("db.commit()", i_flush)
+    i_return = helper.index("return rand", i_commit)
+    assert i_add < i_flush < i_commit < i_return     # commit-ul precede intoarcerea
+
     src = inspect.getsource(rs)
-    i_flush = src.index("db.add(listing_db)\n                    db.flush()")
-    i_commit = src.index("db.commit()", i_flush)
-    i_notify = src.index("send_radar_notification(", i_flush)
-    assert i_commit < i_notify                      # commit-ul precede enqueue-ul
+    i_salveaza = src.index("listing_db = _salveaza_rand_nou(")
+    i_notify = src.index("send_radar_notification(", i_salveaza)
+    assert i_salveaza < i_notify                     # ...deci si enqueue-ul
 
 
 # ── FAST-1: enrichment plafonat la 5 minute ──────────────────────────────────────

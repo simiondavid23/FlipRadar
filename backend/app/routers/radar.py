@@ -338,6 +338,9 @@ def _listing_to_dict(listing: RadarListing, keyword: Optional[RadarKeyword] = No
         _attrs = {}
     return {
         "id": listing.id,
+        # SEEN-2 — pretul de la care a scazut anuntul (None cand n-a scazut). Badge-ul
+        # „de la X" e SEEN-2b, pe frontend.
+        "pret_anterior": listing.pret_anterior,
         "keyword_id": listing.keyword_id,
         "keyword_name": keyword.name if keyword else None,
         "external_id": listing.external_id,

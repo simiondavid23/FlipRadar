@@ -28,6 +28,9 @@ class RadarListing(Base):
     listed_at = Column(DateTime, nullable=True)
     found_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     last_checked_at = Column(DateTime, nullable=True)
+    # SEEN-2 — pretul de la care a scazut, ca feed-ul sa poata arata „de la X".
+    # Setat DOAR cand scaderea trece pragul; altfel ramane NULL. Badge-ul e SEEN-2b.
+    pret_anterior = Column(Float, nullable=True)
     # Vinted: detaliul complet (poze/descriere/data) a fost adus on-demand o singura data.
     vinted_detail_fetched = Column(Boolean, default=False, nullable=False)
     # Facebook: detaliul complet (descriere/galerie) a fost adus on-demand o singura data.

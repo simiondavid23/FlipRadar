@@ -345,7 +345,7 @@ def test_refresh_seen_recalculeaza_scorul_pe_valoarea_in_ron(auth_client, monkey
             settings=None, eur_ron=5.0)
     finally:
         db.close()
-    assert out == "updated"
+    assert out == "notified"      # SEEN-2 (D-S4): 30% e grad B, deci randul activ alerteaza
 
     db = SessionLocal()
     try:
@@ -434,7 +434,7 @@ def test_refresh_seen_foloseste_catalogul_pentru_alte_monede(auth_client, monkey
             settings=None, eur_ron=5.0, cursuri={"GBP": 6.0, "RON": 1.0})
     finally:
         db.close()
-    assert out == "updated"
+    assert out == "notified"      # SEEN-2 (D-S4): 16% e grad C, deci randul activ alerteaza
 
     db = SessionLocal()
     try:
