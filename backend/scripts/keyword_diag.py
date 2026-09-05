@@ -123,44 +123,79 @@ def _incarca_modelele():
 
 
 # ── decizia per anunt, PURA ─────────────────────────────────────────────────────
-def decide(listing: dict, kw, seen: bool, eur_ron, usd_ron=None, cursuri=None) -> str:
+def decide(listing: dict, kw, seen_row, are_rand_in_feed: bool = False,
+           eur_ron=None, usd_ron=None, cursuri=None) -> str:
     """Ce ar face `_scan_user` cu acest anunt, ca text care INCEPE cu verdictul.
 
-    Ordinea e cea din scanner si CONTEAZA: un anunt si vazut, si vechi iese `SEEN`,
-    fiindca `_already_seen` se verifica INAINTEA lui `_too_old` (radar_scanner.py:2571
-    vs. filtrul de vechime de dupa). Inversarea ar da alt verdict pe aceleasi date.
+    Ordinea e cea din scanner si CONTEAZA: un anunt si vazut, si vechi iese pe ramura
+    `SEEN*`, fiindca `_already_seen` se verifica INAINTEA lui `_too_old`. Inversarea ar
+    da alt verdict pe aceleasi date.
 
-    Pura: nu atinge baza (`seen` se paseaza gata calculat) si nu atinge reteaua
-    (cursurile se paseaza). Importurile sunt locale din acelasi motiv ca la
-    `platforme_valide`.
+    SEEN-2b — „vazut" nu mai e un singur lucru. `seen_row` e randul `RadarSeenId` (sau
+    None), iar de el atarna patru stari diferite, exact cele patru cai din
+    `_refresh_seen_listing`:
+      SEEN (rand in feed)          — reaparitie normala, puntea actualizeaza randul;
+      SEEN_BACKFILL                — rand de dinainte de SEEN-2, fara `pret_initial`:
+                                     reaparitia doar stabileste referinta;
+      SEEN_SUB_PRAG                — a scazut, dar sub `_PRICE_DROP_MIN`;
+      REVIVED                      — a scazut destul SI e deal acum: revine in feed.
+    Pragul si regula de comparatie NU se reimplementeaza aici — `_PRICE_DROP_MIN` se
+    importa din scanner, iar referinta e `pret_initial` (nu ultimul pret), ca la D-S1.
+
+    Pura: nu atinge baza (`seen_row` si `are_rand_in_feed` se paseaza gata calculate) si
+    nu atinge reteaua (cursurile se paseaza).
     """
     from app.services.radar.scorer import calculate_score
     from app.utils import radar_scanner as RS
 
     if not listing.get("external_id"):
         return "FARA_EXTERNAL_ID"
-    if seen:
-        return "SEEN"
+
+    def _scor(pret, moneda):
+        pret_ron = RS._price_to_ron(pret, moneda, eur_ron, usd_ron, cursuri=cursuri)
+        return calculate_score(
+            listing_price=pret_ron or 0,
+            resale_price=kw.resale_price,
+            min_margin_pct=kw.min_margin_pct or 10.0,
+            grade_a_min=kw.grade_a_min,
+            grade_b_min=kw.grade_b_min,
+            grade_c_min=kw.grade_c_min,
+        )
+
+    if seen_row is not None:
+        if are_rand_in_feed:
+            return "SEEN (rand in feed)"
+        initial = getattr(seen_row, "pret_initial", None)
+        if initial is None:
+            return "SEEN_BACKFILL (fara pret initial)"
+        try:
+            pret_nou = float(listing.get("price"))
+            initial = float(initial)
+        except (TypeError, ValueError):
+            return "SEEN_SUB_PRAG (pret neparsabil)"
+        moneda_noua = (listing.get("currency") or "RON").upper()
+        moneda_veche = (getattr(seen_row, "moneda", None) or "RON").upper()
+        if moneda_veche != moneda_noua:
+            return f"SEEN_SUB_PRAG (moneda difera: {moneda_veche} vs {moneda_noua})"
+        if initial <= 0 or pret_nou <= 0:
+            return "SEEN_SUB_PRAG (pret invalid)"
+        drop = (initial - pret_nou) / initial
+        if drop < RS._PRICE_DROP_MIN:
+            return f"SEEN_SUB_PRAG (-{drop*100:.1f}% fata de {initial:.0f})"
+        sd = _scor(pret_nou, moneda_noua)
+        if sd["filtered"] and sd["score"] is None:
+            return f"SEEN_SUB_PRAG (-{drop*100:.1f}%, dar marja negativa)"
+        return f"REVIVED (-{drop*100:.1f}%, grad {sd['score']})"
+
     if RS._too_old(listing.get("listed_at"), getattr(kw, "max_age_days", None)):
         return f"TOO_OLD (max_age_days={getattr(kw, 'max_age_days', None)})"
 
-    pret_ron = RS._price_to_ron(listing.get("price"), listing.get("currency"),
-                               eur_ron, usd_ron, cursuri=cursuri)
-    sd = calculate_score(
-        listing_price=pret_ron or 0,
-        resale_price=kw.resale_price,
-        min_margin_pct=kw.min_margin_pct or 10.0,
-        grade_a_min=kw.grade_a_min,
-        grade_b_min=kw.grade_b_min,
-        grade_c_min=kw.grade_c_min,
-    )
+    sd = _scor(listing.get("price"), listing.get("currency"))
     marja = sd.get("margin_pct")
     marja_s = f"{marja:.1f}%" if isinstance(marja, (int, float)) else str(marja)
     if sd["filtered"] and sd["score"] is None:
-        return (f"FILTRAT_MARJA (marja {marja_s}, pret_ron={pret_ron}, "
-                f"resale={kw.resale_price})")
-    return (f"KEPT grad {sd['score']} marja {marja_s} "
-            f"(pret_ron={pret_ron}, filtered={sd['filtered']})")
+        return (f"FILTRAT_MARJA (marja {marja_s}, resale={kw.resale_price})")
+    return f"KEPT grad {sd['score']} marja {marja_s}"
 
 
 # =============================================================================
@@ -498,12 +533,20 @@ def main(argv=None):
                 dt = time.time() - t0
                 print(f"len(rezultate) = {len(rezultate)}  ({dt:.1f}s)")
 
-                hist = {"SEEN": 0, "TOO_OLD": 0, "FILTRAT_MARJA": 0, "KEPT": 0,
-                        "FARA_EXTERNAL_ID": 0}
+                hist = {"SEEN": 0, "SEEN_BACKFILL": 0, "SEEN_SUB_PRAG": 0, "REVIVED": 0,
+                        "TOO_OLD": 0, "FILTRAT_MARJA": 0, "KEPT": 0, "FARA_EXTERNAL_ID": 0}
                 for r in rezultate:
                     ext = r.get("external_id")
-                    seen = bool(ext) and RS._already_seen(db, k.user_id, platforma, ext)
-                    verdict = decide(r, k, seen, eur_ron, usd_ron, cursuri)
+                    seen_row = (db.query(RadarSeenId)
+                                .filter(RadarSeenId.user_id == k.user_id,
+                                        RadarSeenId.platform == platforma,
+                                        RadarSeenId.external_id == ext).first()) if ext else None
+                    are_rand = bool(ext) and (
+                        db.query(RadarListing)
+                        .filter(RadarListing.user_id == k.user_id,
+                                RadarListing.platform == platforma,
+                                RadarListing.external_id == ext).first() is not None)
+                    verdict = decide(r, k, seen_row, are_rand, eur_ron, usd_ron, cursuri)
                     hist[verdict.split()[0].split("(")[0]] += 1
                     print(f"  {str(ext)[:22]:<22} | {r.get('price')} {r.get('currency')} | "
                           f"{r.get('listed_at')} | {(r.get('title') or '')[:50]}")
@@ -517,8 +560,15 @@ def main(argv=None):
                     verdicte[k.id] = "scraperul a intors 0 rezultate BRUTE"
                 elif hist["KEPT"]:
                     verdicte[k.id] = f"OK — {hist['KEPT']} anunturi ar intra in feed"
-                elif hist["SEEN"] == len(rezultate):
-                    verdicte[k.id] = "toate anunturile sunt deja marcate SEEN"
+                elif hist["REVIVED"]:
+                    # SEEN-2b: „toate SEEN" nu mai inseamna „nu se intampla nimic".
+                    verdicte[k.id] = (f"{hist['REVIVED']} anunturi ar REVENI in feed la "
+                                      f"urmatorul ciclu (pret scazut)")
+                elif hist["SEEN"] + hist["SEEN_BACKFILL"] + hist["SEEN_SUB_PRAG"] == len(rezultate):
+                    verdicte[k.id] = (f"toate anunturile sunt deja vazute "
+                                      f"(rand in feed {hist['SEEN']} · backfill "
+                                      f"{hist['SEEN_BACKFILL']} · scadere sub prag "
+                                      f"{hist['SEEN_SUB_PRAG']})")
                 elif hist["TOO_OLD"] == len(rezultate):
                     verdicte[k.id] = f"toate anunturile sunt TOO_OLD (max_age_days={k.max_age_days})"
                 elif hist["FILTRAT_MARJA"] == len(rezultate):

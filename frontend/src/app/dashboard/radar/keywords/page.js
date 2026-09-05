@@ -1633,7 +1633,7 @@ export default function RadarKeywordsPage() {
                   style={inputStyle}
                 />
                 <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-                  Anunțurile mai vechi sunt ignorate (unde platforma expune data). Gol sau 0 = fără limită.
+                  Anunțurile mai vechi sunt ignorate la prima vedere (unde platforma expune data). Dacă prețul le scade cu cel puțin 5% față de prima vedere, revin în feed cu alertă. Gol sau 0 = fără limită.
                 </div>
               </Field>
 

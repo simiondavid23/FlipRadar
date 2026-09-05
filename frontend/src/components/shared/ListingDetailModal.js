@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel } from "./listingHelpers";
 import { modalOverlayStyle, modalPanelStyle } from "@/lib/uiStyles";
+// SEEN-2b — acelasi badge ca pe card, ca „de la X" sa nu dispara la deschiderea detaliului.
+import { PretAnteriorBadge } from "./ListingFeedCard";
 
 // Eticheta mono de deasupra fiecarei valori din coloana de detalii.
 const fieldLabel = {
@@ -157,8 +159,10 @@ export default function ListingDetailModal({
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div>
               <div style={fieldLabel}>Preț cerut</div>
-              <div style={{ fontSize: "24px", fontWeight: 700, letterSpacing: "-.5px", color: "#ffffff" }}>
+              <div style={{ fontSize: "24px", fontWeight: 700, letterSpacing: "-.5px", color: "#ffffff",
+                            display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
                 {priceNode || <>{Math.round(listing.price)} <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-tertiary)" }}>{listing.currency}</span></>}
+                <PretAnteriorBadge listing={listing} size="11.5px" />
               </div>
             </div>
 

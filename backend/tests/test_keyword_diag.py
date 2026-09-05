@@ -73,59 +73,103 @@ def test_platforma_invalida_da_cod_2_cu_lista(capsys):
 
 
 # ── 3: decizia per anunt, in ordinea din scanner ────────────────────────────────
-def test_decide_seen():
-    assert diag.decide({"external_id": "x", "price": 100.0, "currency": "RON"},
-                       _kw(), seen=True, eur_ron=5.0).startswith("SEEN")
+def _seen(pret_initial=None, pret_ultim=None, moneda="RON"):
+    """Forma minima de RadarSeenId citita de `decide` (SEEN-2b)."""
+    return types.SimpleNamespace(pret_initial=pret_initial, pret_ultim=pret_ultim,
+                                 moneda=moneda)
+
+
+def _anunt(price=100.0, currency="RON", listed_at=None, ext="x"):
+    return {"external_id": ext, "price": price, "currency": currency,
+            "listed_at": listed_at}
+
+
+def test_decide_seen_cu_rand_in_feed():
+    verdict = diag.decide(_anunt(), _kw(), _seen(pret_initial=100.0),
+                          are_rand_in_feed=True, eur_ron=5.0)
+    assert verdict == "SEEN (rand in feed)"
+
+
+def test_decide_seen_backfill():
+    """Rand de dinainte de SEEN-2: fara `pret_initial` nu exista referinta, deci
+    reaparitia doar o stabileste — nu se poate vorbi de scadere."""
+    verdict = diag.decide(_anunt(6900.0), _kw(), _seen(pret_initial=None), eur_ron=5.0)
+    assert verdict.startswith("SEEN_BACKFILL"), verdict
+
+
+def test_decide_seen_sub_prag():
+    verdict = diag.decide(_anunt(6700.0), _kw(resale_price=20000.0),
+                          _seen(pret_initial=6900.0), eur_ron=5.0)
+    assert verdict.startswith("SEEN_SUB_PRAG"), verdict
+    assert "6900" in verdict
+
+
+def test_decide_revived():
+    """-14.5% fata de primul pret + marja buna -> anuntul ar reveni in feed."""
+    verdict = diag.decide(_anunt(5900.0), _kw(resale_price=20000.0),
+                          _seen(pret_initial=6900.0), eur_ron=5.0)
+    assert verdict.startswith("REVIVED"), verdict
+    assert "grad A" in verdict
+
+
+def test_decide_scaderea_se_masoara_fata_de_pret_initial():
+    """D-S1 in unealta: 6400 e -7.2% fata de PRIMUL (6900), dar doar -4.5% fata de
+    ultimul (6700). Verdictul trebuie sa fie REVIVED — daca s-ar compara cu `pret_ultim`
+    ar iesi SEEN_SUB_PRAG si diagnosticul ar minti exact pe cazul pentru care exista."""
+    verdict = diag.decide(_anunt(6400.0), _kw(resale_price=20000.0),
+                          _seen(pret_initial=6900.0, pret_ultim=6700.0), eur_ron=5.0)
+    assert verdict.startswith("REVIVED"), verdict
+
+
+def test_decide_seen_moneda_diferita():
+    verdict = diag.decide(_anunt(900.0, currency="GBP"), _kw(),
+                          _seen(pret_initial=6900.0, moneda="RON"), eur_ron=5.0)
+    assert "moneda difera" in verdict, verdict
 
 
 def test_decide_too_old():
     from datetime import datetime, timedelta
     vechi = datetime.utcnow() - timedelta(days=30)
-    verdict = diag.decide({"external_id": "x", "price": 100.0, "currency": "RON",
-                           "listed_at": vechi},
-                          _kw(max_age_days=7), seen=False, eur_ron=5.0)
+    verdict = diag.decide(_anunt(listed_at=vechi), _kw(max_age_days=7), None, eur_ron=5.0)
     assert verdict.startswith("TOO_OLD"), verdict
 
 
 def test_decide_seen_bate_too_old():
     """Ordinea din `_scan_user`: `_already_seen` INAINTEA lui `_too_old`. Un anunt si
-    vazut, si vechi iese `SEEN` — inversarea ar da alt verdict pe aceleasi date."""
+    vazut, si vechi iese pe ramura SEEN* — inversarea ar da alt verdict pe aceleasi date."""
     from datetime import datetime, timedelta
     vechi = datetime.utcnow() - timedelta(days=30)
-    verdict = diag.decide({"external_id": "x", "price": 100.0, "currency": "RON",
-                           "listed_at": vechi},
-                          _kw(max_age_days=7), seen=True, eur_ron=5.0)
+    verdict = diag.decide(_anunt(listed_at=vechi), _kw(max_age_days=7),
+                          _seen(pret_initial=100.0), are_rand_in_feed=True, eur_ron=5.0)
     assert verdict.startswith("SEEN"), verdict
 
 
 def test_decide_filtrat_marja():
     """1500 RON fata de 1000 RON revanzare -> marja negativa -> nu intra in feed."""
-    verdict = diag.decide({"external_id": "x", "price": 1500.0, "currency": "RON"},
-                          _kw(resale_price=1000.0), seen=False, eur_ron=5.0)
+    verdict = diag.decide(_anunt(1500.0), _kw(resale_price=1000.0), None, eur_ron=5.0)
     assert verdict.startswith("FILTRAT_MARJA"), verdict
 
 
 def test_decide_kept_cu_grad():
     """400 RON fata de 1000 -> marja 60% -> grad A."""
-    verdict = diag.decide({"external_id": "x", "price": 400.0, "currency": "RON"},
-                          _kw(resale_price=1000.0), seen=False, eur_ron=5.0)
+    verdict = diag.decide(_anunt(400.0), _kw(resale_price=1000.0), None, eur_ron=5.0)
     assert verdict.startswith("KEPT grad A"), verdict
 
 
 def test_decide_foloseste_catalogul_de_monede():
     """CUR-1/TIDY-1: `decide` paseaza `cursuri` mai departe, deci un anunt in GBP se
     scoreaza convertit. Fara catalog, 100 GBP ar fi citit ca 100 RON (grad A fals)."""
-    listing = {"external_id": "x", "price": 100.0, "currency": "GBP"}
-    cu = diag.decide(listing, _kw(resale_price=1000.0), seen=False,
+    listing = _anunt(100.0, currency="GBP")
+    cu = diag.decide(listing, _kw(resale_price=1000.0), None,
                      eur_ron=5.0, usd_ron=4.5, cursuri={"GBP": 6.0})
-    fara = diag.decide(listing, _kw(resale_price=1000.0), seen=False, eur_ron=5.0)
-    assert "pret_ron=600.0" in cu, cu
-    assert "pret_ron=100.0" in fara, fara
+    fara = diag.decide(listing, _kw(resale_price=1000.0), None, eur_ron=5.0)
+    assert "40.0%" in cu, cu          # 600 RON fata de 1000 -> marja 40%
+    assert "90.0%" in fara, fara      # 100 citit ca RON -> marja 90%
 
 
 def test_decide_fara_external_id():
-    assert diag.decide({"price": 100.0, "currency": "RON"},
-                       _kw(), seen=False, eur_ron=5.0) == "FARA_EXTERNAL_ID"
+    assert diag.decide({"price": 100.0, "currency": "RON"}, _kw(), None,
+                       eur_ron=5.0) == "FARA_EXTERNAL_ID"
 
 
 # ── 4: sincronizare cu scannerul ────────────────────────────────────────────────
