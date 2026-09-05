@@ -210,22 +210,45 @@ def probe_facebook() -> list:
 
 
 def _stare_sesiuni() -> str:
-    """Cate fisiere `facebook_session*.json` din directorul de date sunt valide."""
+    """Cate fisiere `facebook_session*.json` din DATA_DIR/data sunt valide.
+
+    SA-1b: directorul e DATA_DIR/**data**, nu DATA_DIR. Acolo scrie aplicatia
+    sesiunile — `app/routers/radar.py:_default_facebook_session_path` face
+    `base_dir = DATA_DIR / "data"`. Sufixul e replicat literal aici, nu importat
+    din router: auditul nu are voie sa depinda de routere. Varianta veche cauta
+    un nivel mai sus si raporta "niciun fisier de sesiune" chiar dupa un login
+    manual reusit — verdictul Facebook era fals-negativ prin constructie (bug
+    mostenit din sonda `platform_health_probe.py`).
+
+    Motivul intors poarta MEREU calea absoluta cautata, ca urmatorul fals-negativ
+    de acest fel sa se vada din prima citire a raportului. "Directorul nu exista"
+    si "niciun fisier in el" sunt stari diferite, cu mesaje diferite.
+
+    Limita asumata: auditul NU deschide baza de date (principiu SA-1), deci vede
+    DOAR calea default. Un user care are `RadarSettings.facebook_session_path`
+    setat pe alta cale (vezi `app/services/facebook_session.py:
+    resolve_facebook_session_path`, care prefera setarea) ii scapa acestei
+    functii. Nu se "repara" adaugand aici acces la DB.
+    """
     try:
+        from pathlib import Path
         from app.paths import get_data_dir
-        fisiere = sorted(glob.glob(os.path.join(str(get_data_dir()), "facebook_session*.json")))
+        director = Path(get_data_dir()) / "data"
     except Exception as exc:
         return f"nu pot citi directorul de date: {type(exc).__name__}"
+    if not director.is_dir():
+        return f"directorul {director} nu exista (niciun login manual pe masina asta)"
+    fisiere = sorted(glob.glob(os.path.join(str(director), "facebook_session*.json")))
     if not fisiere:
-        return "niciun fisier de sesiune (login manual din Setari Radar -> Facebook)"
+        return f"niciun fisier de sesiune in {director} (login manual din Setari Radar -> Facebook)"
     try:
         from app.services.radar.facebook_scraper import is_facebook_session_valid
         valide = [f for f in fisiere if is_facebook_session_valid(f)]
     except Exception as exc:
-        return f"{len(fisiere)} sesiuni, validarea a crapat: {type(exc).__name__}"
+        return f"{len(fisiere)} sesiuni in {director}, validarea a crapat: {type(exc).__name__}"
     if valide:
-        return f"{len(valide)}/{len(fisiere)} sesiuni valide"
-    return f"{len(fisiere)} sesiuni, niciuna valida (expirate)"
+        return f"{len(valide)}/{len(fisiere)} sesiuni valide in {director}"
+    return f"{len(fisiere)} sesiuni in {director}, niciuna valida (expirate)"
 
 
 # ── Rularea ──────────────────────────────────────────────────────────────────────

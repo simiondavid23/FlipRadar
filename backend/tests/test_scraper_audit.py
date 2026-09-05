@@ -109,3 +109,51 @@ def test_exclusele_nu_sunt_probe_live():
         for n in nume:
             assert n not in audit.GRUPURI_LIVE[modul]
             assert n != audit.FACEBOOK[modul]
+
+
+# ── 7 (SA-1b): sesiunile se cauta in DATA_DIR/data, unde le scrie aplicatia ──────
+# Aplicatia salveaza in `DATA_DIR / "data"` (routers/radar._default_facebook_session_path);
+# auditul cauta un nivel mai sus si raporta mereu "niciun fisier de sesiune".
+_SESIUNE_MINIMA = '{"cookies": [{"name": "c_user", "value": "1"}]}'
+
+
+def _pune_sesiune(director, nume="facebook_session_1.json"):
+    """Fisier de sesiune proaspat = valid pentru is_facebook_session_valid
+    (cookie `c_user` + mtime sub cele 30 de zile ale validatorului)."""
+    director.mkdir(parents=True, exist_ok=True)
+    f = director / nume
+    f.write_text(_SESIUNE_MINIMA, encoding="utf-8")
+    return f
+
+
+def test_sesiunile_se_gasesc_in_subdirectorul_data(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLIPRADAR_DATA_DIR", str(tmp_path))
+    _pune_sesiune(tmp_path / "data")
+
+    motiv = audit._stare_sesiuni()
+
+    assert "1/1 sesiuni valide" in motiv
+    assert str(tmp_path / "data") in motiv
+
+
+def test_sesiunea_din_locul_vechi_nu_se_mai_numara(monkeypatch, tmp_path):
+    """Acelasi fisier, pus unde cauta codul VECHI (direct in DATA_DIR): 0 gasite.
+    Fara asta, un glob dublu ar face testul de mai sus sa treaca degeaba."""
+    monkeypatch.setenv("FLIPRADAR_DATA_DIR", str(tmp_path))
+    _pune_sesiune(tmp_path)                      # DATA_DIR, nu DATA_DIR/data
+    (tmp_path / "data").mkdir()                  # subdirectorul exista, dar e gol
+
+    motiv = audit._stare_sesiuni()
+
+    assert "niciun fisier de sesiune" in motiv
+    assert str(tmp_path / "data") in motiv
+
+
+def test_directorul_lipsa_e_alt_motiv_decat_lipsa_fisierelor(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLIPRADAR_DATA_DIR", str(tmp_path))
+    assert not (tmp_path / "data").exists()
+
+    motiv = audit._stare_sesiuni()
+
+    assert "nu exista" in motiv
+    assert str(tmp_path / "data") in motiv
