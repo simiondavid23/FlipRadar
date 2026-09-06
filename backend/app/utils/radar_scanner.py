@@ -2173,19 +2173,18 @@ def _reaparitie_fara_rand(db: Session, user, kw, platform: str, listing: dict,
     # Fara conditia `_first_scan` de la anunturile noi: asta NU e istoric adus la prima
     # scanare, e o scadere masurata intre doua scanari — exact evenimentul de notificat.
     if getattr(kw, "notify_discord", False):
-        _resale = float(kw.resale_price or 0)
+        # FRONT-1c — acelasi dict ca la alerta de anunt nou, deci si aceleasi trei date
+        # (`listed_at` / `refreshed_at` / `found_at`). `rand` e randul abia salvat mai
+        # sus, echivalentul lui `listing_db` de pe cealalta cale. Masurat pe un listing
+        # real de scraper: singura valoare care difera fata de dictul inline de dinainte
+        # e titlul — restul cheilor ies identice, deci nu se suprascrie nimic altceva.
+        listing_dict = _listing_dict_pentru_discord(listing, rand, kw, platform)
+        # Prefixul de pret scazut, verbatim: acelasi text, acelasi procent, aceeasi
+        # rotunjire (`int(round(...))`) ca inainte.
+        listing_dict["title"] = (
+            f"Pret scazut {int(round(drop * 100))}%: {listing.get('title') or ''}")
         send_radar_notification(
-            listing={
-                "title": f"Pret scazut {int(round(drop * 100))}%: {listing.get('title') or ''}",
-                "price": pret_nou,
-                "currency": moneda_noua,
-                "url": listing.get("url") or "",
-                "image_url": (listing.get("images") or [None])[0] or "",
-                "location": listing.get("location") or "",
-                "platform": platform,
-                "resale_price": int(_resale) if _resale else None,
-                "margin": int(_resale - pret_nou) if _resale else None,
-            },
+            listing=listing_dict,
             grade=score_data["score"],
             score=int(round(score_data.get("margin_pct") or 0)),
             keyword_name=kw.name,

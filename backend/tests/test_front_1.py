@@ -312,3 +312,111 @@ def test_t8b_formatarea_de_data_traieste_pe_calea_vie():
     assert _fmt_dt(_POSTAT) == "01.06.2026 10:00"
     assert _fmt_dt(None) == ""
     assert _fmt_dt("nu-i datetime") == ""
+
+
+# ── T9 — FRONT-1c: alerta Discord de PRET SCAZUT primeste aceleasi trei date ────
+
+_LISTING_SCADERE = {
+    "external_id": "olx_scadere", "title": "iPhone 12 Pro",
+    "price": 1200.0, "currency": "RON", "platform": "olx",
+    "url": "https://www.olx.ro/x", "images": ["https://x/y.jpg"], "location": "Cluj",
+    "listed_at": _POSTAT, "refreshed_at": _BUMPAT,
+}
+# Referinta din `radar_seen_ids`: 2000 -> 1200 = scadere de 40%, peste _PRICE_DROP_MIN.
+_PRET_INITIAL = 2000.0
+_DROP_PCT = int(round(((_PRET_INITIAL - 1200.0) / _PRET_INITIAL) * 100))   # 40
+
+
+def _alerta_pret_scazut(monkeypatch, listing: dict) -> dict:
+    """Ruleaza `_reaparitie_fara_rand` (SEEN-3) si intoarce dict-ul trimis pe Discord."""
+    import uuid
+
+    from app.database import SessionLocal
+    from app.models.radar_keyword import RadarKeyword
+    from app.models.radar_seen_id import RadarSeenId
+    from app.models.user import User
+    from app.utils import radar_scanner as rs
+
+    notificari = []
+    monkeypatch.setattr(rs, "send_radar_notification",
+                        lambda **kw: notificari.append(kw) or 1)
+    monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(rs, "is_push_configured", lambda: False)
+    monkeypatch.setattr(rs, "smtp_configured", lambda: False)
+
+    db = SessionLocal()
+    try:
+        email = f"f1c_{uuid.uuid4().hex[:10]}@example.com"
+        user = User(email=email, username=email.split("@")[0],
+                    hashed_password="x", is_active=True)
+        db.add(user)
+        db.flush()
+        kw = RadarKeyword(user_id=user.id, name="iphone", max_price=5000.0,
+                          resale_price=3000.0, platform="olx", notify_discord=True)
+        db.add(kw)
+        db.add(RadarSeenId(user_id=user.id, platform="olx",
+                           external_id=listing["external_id"],
+                           pret_initial=_PRET_INITIAL, moneda="RON"))
+        db.commit()
+
+        rs._reaparitie_fara_rand(db, user, kw, "olx", dict(listing),
+                                 settings=type("S", (), {})(),
+                                 eur_ron=5.0, usd_ron=4.5, cursuri={"RON": 1.0})
+    finally:
+        db.close()
+
+    assert notificari, "alerta de pret scazut n-a plecat"
+    return notificari[0]["listing"]
+
+
+def test_t9_alerta_de_pret_scazut_are_cele_trei_date_si_prefixul(monkeypatch):
+    trimis = _alerta_pret_scazut(monkeypatch, _LISTING_SCADERE)
+
+    # cele trei date, ca la alerta de anunt nou
+    assert trimis["listed_at"] == _POSTAT
+    assert trimis["refreshed_at"] == _BUMPAT
+    assert trimis["found_at"] is not None          # din randul abia salvat
+
+    # prefixul, caracter cu caracter — acelasi text, acelasi procent, aceeasi rotunjire
+    assert trimis["title"] == f"Pret scazut {_DROP_PCT}%: iPhone 12 Pro"
+    assert trimis["title"].startswith("Pret scazut 40%: ")
+    assert trimis["title"].endswith(_LISTING_SCADERE["title"])
+
+
+def test_t9b_embedul_de_pret_scazut_arata_reactualizarea_doar_la_bump(monkeypatch):
+    from app.services.discord_service import build_radar_embed
+
+    bumpat = _alerta_pret_scazut(monkeypatch, _LISTING_SCADERE)
+    nume = [f["name"] for f in build_radar_embed(bumpat, "A", 40, "iphone")["fields"]]
+    assert "🔁 Reactualizat pe platformă" in nume
+    assert "📅 Postat pe platformă" in nume
+
+    # acelasi anunt, dar reactualizat la o ora dupa publicare -> sub pragul de 24 h
+    fara_bump = _alerta_pret_scazut(
+        monkeypatch,
+        {**_LISTING_SCADERE, "external_id": "olx_scadere2",
+         "refreshed_at": _POSTAT + timedelta(hours=1)})
+    nume2 = [f["name"] for f in build_radar_embed(fara_bump, "A", 40, "iphone")["fields"]]
+    assert "📅 Postat pe platformă" in nume2
+    assert not any("Reactualizat" in n for n in nume2)
+
+
+def test_t9c_restul_cheilor_au_ramas_cu_aceleasi_valori(monkeypatch):
+    """Regresie pe restul alertei: dict-ul inline de dinainte de FRONT-1c, reconstruit
+    aici din aceleasi surse, trebuie sa se regaseasca intact — masurat, singura valoare
+    care difera intre el si `_listing_dict_pentru_discord` era titlul."""
+    trimis = _alerta_pret_scazut(monkeypatch, _LISTING_SCADERE)
+    resale = 3000.0
+    pret = 1200.0
+    vechi = {
+        "price": pret,
+        "currency": "RON",
+        "url": "https://www.olx.ro/x",
+        "image_url": "https://x/y.jpg",
+        "location": "Cluj",
+        "platform": "olx",
+        "resale_price": int(resale),
+        "margin": int(resale - pret),
+    }
+    for cheie, valoare in vechi.items():
+        assert trimis[cheie] == valoare, (cheie, trimis[cheie], valoare)
