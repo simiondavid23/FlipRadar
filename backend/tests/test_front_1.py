@@ -420,3 +420,111 @@ def test_t9c_restul_cheilor_au_ramas_cu_aceleasi_valori(monkeypatch):
     }
     for cheie, valoare in vechi.items():
         assert trimis[cheie] == valoare, (cheie, trimis[cheie], valoare)
+
+
+# ── T10 — FRONT-1d: a treia alerta Discord (scadere pe un rand EXISTENT) ────────
+
+def _alerta_scadere_pe_rand(monkeypatch, *, listed_at, refreshed_at,
+                            pret_vechi=2000.0, pret_nou=1200.0) -> dict:
+    """Ruleaza `_refresh_seen_listing` pe calea (1) — anuntul ARE rand in feed — si
+    intoarce dict-ul trimis pe Discord.
+
+    Aici sursa e randul ORM (`row.title`, `row.images` serializat JSON, ...), nu
+    listing-ul scraperului, de-aia dict-ul ramane construit inline.
+    """
+    import json
+    import uuid
+
+    from app.database import SessionLocal
+    from app.models.radar_keyword import RadarKeyword
+    from app.models.radar_listing import RadarListing
+    from app.models.radar_seen_id import RadarSeenId
+    from app.models.user import User
+    from app.utils import radar_scanner as rs
+
+    notificari = []
+    monkeypatch.setattr(rs, "send_radar_notification",
+                        lambda **kw: notificari.append(kw) or 1)
+    monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(rs, "is_push_configured", lambda: False)
+
+    db = SessionLocal()
+    try:
+        email = f"f1d_{uuid.uuid4().hex[:10]}@example.com"
+        user = User(email=email, username=email.split("@")[0],
+                    hashed_password="x", is_active=True)
+        db.add(user)
+        db.flush()
+        kw = RadarKeyword(user_id=user.id, name="iphone", max_price=5000.0,
+                          resale_price=3000.0, platform="olx", notify_discord=True)
+        db.add(kw)
+        db.flush()
+        ext = f"olx_{uuid.uuid4().hex[:8]}"
+        db.add(RadarListing(
+            user_id=user.id, keyword_id=kw.id, platform="olx", external_id=ext,
+            title="iPhone 12 Pro", price=pret_vechi, currency="RON",
+            url="https://www.olx.ro/x",
+            images=json.dumps(["https://x/y.jpg"]),
+            location="Cluj", status="active",
+            listed_at=listed_at, refreshed_at=refreshed_at,
+        ))
+        db.add(RadarSeenId(user_id=user.id, platform="olx", external_id=ext,
+                           pret_initial=pret_vechi, moneda="RON"))
+        db.commit()
+
+        marcaj = rs._refresh_seen_listing(
+            db, user, kw, "olx",
+            {"external_id": ext, "title": "iPhone 12 Pro", "price": pret_nou,
+             "currency": "RON", "platform": "olx"},
+            settings=type("S", (), {})(),
+            eur_ron=5.0, usd_ron=4.5, cursuri={"RON": 1.0})
+        assert marcaj == "notified", marcaj
+    finally:
+        db.close()
+
+    assert notificari, "alerta de scadere pe rand existent n-a plecat"
+    return notificari[0]["listing"]
+
+
+def test_t10_scaderea_pe_rand_existent_are_cele_trei_date_si_prefixul(monkeypatch):
+    trimis = _alerta_scadere_pe_rand(monkeypatch,
+                                     listed_at=_POSTAT, refreshed_at=_BUMPAT)
+
+    assert trimis["listed_at"] == _POSTAT
+    assert trimis["refreshed_at"] == _BUMPAT
+    assert trimis["found_at"] is not None        # coloana randului, populata la insert
+
+    # prefixul, neschimbat: 2000 -> 1200 = 40%
+    assert trimis["title"] == "Pret scazut 40%: iPhone 12 Pro"
+    # restul dict-ului, neatins de FRONT-1d
+    assert trimis["price"] == 1200.0 and trimis["currency"] == "RON"
+    assert trimis["image_url"] == "https://x/y.jpg"
+    assert trimis["location"] == "Cluj" and trimis["platform"] == "olx"
+
+
+def test_t10b_embedul_arata_reactualizarea_doar_la_bump(monkeypatch):
+    from app.services.discord_service import build_radar_embed
+
+    bumpat = _alerta_scadere_pe_rand(monkeypatch,
+                                     listed_at=_POSTAT, refreshed_at=_BUMPAT)
+    nume = [f["name"] for f in build_radar_embed(bumpat, "A", 40, "iphone")["fields"]]
+    assert "🔁 Reactualizat pe platformă" in nume
+    assert "📅 Postat pe platformă" in nume and "🔍 Găsit de FlipRadar" in nume
+
+    # reactualizat la o ora dupa publicare -> sub pragul de 24 h
+    fara_bump = _alerta_scadere_pe_rand(
+        monkeypatch, listed_at=_POSTAT, refreshed_at=_POSTAT + timedelta(hours=1))
+    nume2 = [f["name"] for f in build_radar_embed(fara_bump, "A", 40, "iphone")["fields"]]
+    assert "📅 Postat pe platformă" in nume2
+    assert not any("Reactualizat" in n for n in nume2)
+
+
+def test_t10c_rand_fara_date_nu_produce_campuri(monkeypatch):
+    """Randuri vechi, dinainte de DATE-1: cheile pleaca None, embed-ul le ignora."""
+    from app.services.discord_service import build_radar_embed
+
+    trimis = _alerta_scadere_pe_rand(monkeypatch, listed_at=None, refreshed_at=None)
+    assert trimis["listed_at"] is None and trimis["refreshed_at"] is None
+    nume = [f["name"] for f in build_radar_embed(trimis, "A", 40, "iphone")["fields"]]
+    assert not any("Postat" in n or "Reactualizat" in n for n in nume)
+    assert "🔍 Găsit de FlipRadar" in nume     # found_at exista mereu pe rand

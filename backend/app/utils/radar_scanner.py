@@ -2321,6 +2321,14 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
                 "platform": platform,
                 "resale_price": int(_resale) if _resale else None,
                 "margin": int(_resale - new_price) if _resale else None,
+                # FRONT-1d — ultima cale de alerta Radar fara date. Aici sursa e randul
+                # ORM, nu listing-ul scraperului, deci NU se poate refolosi
+                # `_listing_dict_pentru_discord` (asteapta forma de scraper: `images`
+                # lista, nu JSON serializat). Cele trei coloane exista pe rand din
+                # DATE-1, deci ajung direct. `build_radar_embed` decide ce afiseaza.
+                "listed_at": row.listed_at,
+                "refreshed_at": row.refreshed_at,
+                "found_at": row.found_at,
             },
             grade=sd["score"],
             score=int(round(sd.get("margin_pct") or 0)),
