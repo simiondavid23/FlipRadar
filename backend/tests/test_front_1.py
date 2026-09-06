@@ -528,3 +528,222 @@ def test_t10c_rand_fara_date_nu_produce_campuri(monkeypatch):
     nume = [f["name"] for f in build_radar_embed(trimis, "A", 40, "iphone")["fields"]]
     assert not any("Postat" in n or "Reactualizat" in n for n in nume)
     assert "🔍 Găsit de FlipRadar" in nume     # found_at exista mereu pe rand
+
+
+# ── T11/T12 — FRONT-1e: paritate Discord pe Auto si Imobiliare ─────────────────
+
+_AUTO_BAZA = {"title": "BMW 320d", "price": 7500.0, "currency": "EUR",
+              "year": 2015, "km": 180000, "platform": "olx_auto",
+              "location": "Cluj", "url": "https://www.olx.ro/bmw"}
+_IMOB_BAZA = {"title": "Apartament 2 camere", "price": 85000.0, "currency": "EUR",
+              "rooms": 2, "area_sqm": 55.0, "platform": "olx",
+              "zone_normalized": "Gheorgheni", "url": "https://www.olx.ro/ap"}
+
+_NUME_DATE = ("📅 Postat pe platformă", "🔁 Reactualizat pe platformă",
+              "🔍 Găsit de FlipRadar")
+
+
+def _nume(embed) -> list:
+    return [f["name"] for f in embed["fields"]]
+
+
+def _verifica_paritate(builder, baza):
+    """Aceleasi trei cazuri pentru oricare builder: bump / fara bump / fara date."""
+    cu_bump = builder({**baza, "listed_at": _POSTAT, "refreshed_at": _BUMPAT,
+                       "found_at": _BUMPAT})
+    nume = _nume(cu_bump)
+    for eticheta in _NUME_DATE:
+        assert eticheta in nume, (eticheta, nume)
+    # aceeasi ORDINE ca la Radar: Postat -> Reactualizat -> Gasit, ultimele campuri
+    assert nume[-3:] == list(_NUME_DATE), nume
+    valoare = next(f["value"] for f in cu_bump["fields"] if "Reactualizat" in f["name"])
+    assert valoare == "03.09.2026 17:30"
+
+    # sub pragul de 24 h -> fara „Reactualizat", restul neschimbat
+    fara_bump = builder({**baza, "listed_at": _POSTAT, "found_at": _BUMPAT,
+                         "refreshed_at": _POSTAT + timedelta(hours=23)})
+    doar_postat = builder({**baza, "listed_at": _POSTAT, "found_at": _BUMPAT})
+    assert not any("Reactualizat" in n for n in _nume(fara_bump))
+    assert "📅 Postat pe platformă" in _nume(fara_bump)
+    assert fara_bump == doar_postat
+
+    # fara nicio data -> embed-ul de azi, dinaintea rundei
+    return builder(dict(baza))
+
+
+def test_t11_auto_embed_paritate_cu_radar():
+    from app.services.discord_service import build_auto_embed
+
+    fara_date = _verifica_paritate(
+        lambda listing: build_auto_embed(listing, "A", 40, "bmw"), _AUTO_BAZA)
+    assert not any(n in _NUME_DATE for n in _nume(fara_date))
+    assert _nume(fara_date)[-1] == "🎯 Keyword"
+    assert fara_date["footer"]["text"].startswith("FlipRadar Auto Anunțuri")
+
+
+def test_t12_imob_embed_paritate_cu_radar():
+    from app.services.discord_service import build_imob_embed
+
+    fara_date = _verifica_paritate(
+        lambda listing: build_imob_embed(listing, "A", 40, "apartament"), _IMOB_BAZA)
+    assert not any(n in _NUME_DATE for n in _nume(fara_date))
+    assert _nume(fara_date)[-1] == "🎯 Keyword"
+    assert fara_date["footer"]["text"].startswith("FlipRadar Imobiliare")
+
+
+def test_t12b_auto_datele_vin_dupa_blocul_de_import():
+    """Auto are un camp „Import pe roti" dupa Keyword — datele raman ULTIMELE."""
+    from app.services.discord_service import build_auto_embed
+
+    embed = build_auto_embed(
+        {**_AUTO_BAZA, "currency": "EUR", "listed_at": _POSTAT, "found_at": _BUMPAT,
+         "import_score_json": {"pe_roti": {"total_ron": 45000, "saving_ron": 3000}}},
+        "A", 40, "bmw")
+    nume = _nume(embed)
+    assert "🌍 Import pe roți" in nume
+    assert nume.index("🌍 Import pe roți") < nume.index("📅 Postat pe platformă")
+    assert nume[-1] == "🔍 Găsit de FlipRadar"
+
+
+# ── T13/T14 — dict-urile trimise de cele doua scannere ─────────────────────────
+
+def _seed_user_settings(db):
+    import uuid
+
+    from app.models.radar_settings import RadarSettings
+    from app.models.user import User
+
+    email = f"f1e_{uuid.uuid4().hex[:10]}@example.com"
+    user = User(email=email, username=email.split("@")[0],
+                hashed_password="x", is_active=True)
+    db.add(user)
+    db.flush()
+    db.add(RadarSettings(user_id=user.id, discord_webhook_auto_all="https://x/wh",
+                         discord_webhook_imob_all="https://x/wh"))
+    db.commit()
+    return user
+
+
+def test_t13_auto_scanner_trimite_cele_trei_date(monkeypatch):
+    """Dict-ul e o comprehensiune pe COLOANELE randului, deci cele trei coloane din
+    DATE-1 ajung acolo prin constructie — testul pinuieste ca raman."""
+    import app.services.discord_service as ds
+    from app.database import SessionLocal
+    from app.models.auto_feed_listing import AutoFeedListing
+    from app.models.auto_keyword import AutoKeyword
+    from app.services import auto_listings_scanner as als
+
+    trimise = []
+    monkeypatch.setattr(als.log_manager, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(ds, "send_auto_notification",
+                        lambda *a, **k: trimise.append(a[0]))
+
+    db = SessionLocal()
+    try:
+        user = _seed_user_settings(db)
+        kw = AutoKeyword(user_id=user.id, name="bmw", platform="olx_auto",
+                         is_active=True, notify_discord=True, notify_email=False)
+        db.add(kw)
+        db.flush()
+        rand = AutoFeedListing(user_id=user.id, keyword_id=kw.id, platform="olx_auto",
+                               external_id="a1", title="BMW 320d", price=7500.0,
+                               currency="EUR", grade="A", score=40,
+                               listed_at=_POSTAT, refreshed_at=_BUMPAT)
+        db.add(rand)
+        db.commit()
+        db.refresh(rand)
+        als._notify(kw, rand, db)
+    finally:
+        db.close()
+
+    assert trimise, "notificarea auto n-a plecat"
+    d = trimise[0]
+    assert d["listed_at"] == _POSTAT and d["refreshed_at"] == _BUMPAT
+    assert d["found_at"] is not None
+
+
+def test_t13b_auto_rand_vechi_fara_date_nu_randeaza_campuri():
+    """Paritate cu T10c de la Radar: randuri dinainte de DATE-1 au NULL."""
+    from app.services.discord_service import build_auto_embed
+
+    embed = build_auto_embed({**_AUTO_BAZA, "listed_at": None, "refreshed_at": None,
+                              "found_at": _BUMPAT}, "A", 40, "bmw")
+    nume = _nume(embed)
+    assert not any("Postat" in n or "Reactualizat" in n for n in nume)
+    assert "🔍 Găsit de FlipRadar" in nume
+
+
+def test_t14_imob_scanner_trimite_cele_trei_date(monkeypatch):
+    import app.services.discord_service as ds
+    from app.database import SessionLocal
+    from app.models.real_estate_monitor_keyword import (
+        RealEstateMonitorKeyword as RealEstateKeyword)
+    from app.models.real_estate_monitor_listing import RealEstateMonitorListing
+    from app.services import real_estate_scanner as rs
+
+    trimise = []
+    monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(ds, "send_imob_notification",
+                        lambda *a, **k: trimise.append(a[0]))
+
+    db = SessionLocal()
+    try:
+        user = _seed_user_settings(db)
+        kw = RealEstateKeyword(user_id=user.id, name="apartament", platform="olx",
+                               notify_discord=True, notify_email=False)
+        db.add(kw)
+        db.flush()
+        rand = RealEstateMonitorListing(
+            user_id=user.id, keyword_id=kw.id, platform="olx", external_id="r1",
+            title="Apartament 2 camere", price=85000.0, currency="EUR",
+            grade="A", score=40, listed_at=_POSTAT, refreshed_at=_BUMPAT)
+        db.add(rand)
+        db.commit()
+        db.refresh(rand)
+        settings = type("S", (), {"discord_webhook_imob_all": "https://x/wh",
+                                  "discord_here_imob": False})()
+        rs._notify_re(rand, kw, settings, db)
+    finally:
+        db.close()
+
+    assert trimise, "notificarea imobiliare n-a plecat"
+    d = trimise[0]
+    assert d["listed_at"] == _POSTAT and d["refreshed_at"] == _BUMPAT
+    assert d["found_at"] is not None
+
+
+def test_t14b_datele_ies_din_sqlite_intotdeauna_NAIVE():
+    """PASUL 0.4, pinuit — conventia Imobiliare scrie `listed_at` din `fromisoformat`
+    pe un ISO CU offset, deci in memorie poate fi AWARE. La persistare, coloana
+    TIMESTAMP din SQLite ARUNCA offset-ul si pastreaza ora de perete: un
+    `17:30+00:00` scris se citeste inapoi ca `17:30` naiv, NU convertit la local.
+
+    Consecinta pentru runda: `este_reactualizat` nu vede niciodata perechea mixta
+    aware+naiv pe calea de notificare (compara doua naive), deci nu e nimic de reparat
+    aici. Comportamentul e de STOCARE, preexistent, si nu se atinge in runda asta.
+    """
+    import uuid
+    from datetime import timezone
+
+    from app.database import SessionLocal
+    from app.models.real_estate_monitor_listing import RealEstateMonitorListing
+    from app.utils.listing_dates import este_reactualizat
+
+    aware = _BUMPAT.replace(tzinfo=timezone.utc)
+    db = SessionLocal()
+    try:
+        user = _seed_user_settings(db)
+        rand = RealEstateMonitorListing(
+            user_id=user.id, platform="olx", external_id=f"tz_{uuid.uuid4().hex[:6]}",
+            title="x", listed_at=_POSTAT, refreshed_at=aware)
+        db.add(rand)
+        db.commit()
+        db.expire_all()
+        rand = db.query(RealEstateMonitorListing).filter_by(id=rand.id).one()
+
+        assert rand.refreshed_at.tzinfo is None          # offset-ul a fost aruncat
+        assert rand.refreshed_at == _BUMPAT              # ora de perete, neconvertita
+        assert rand.listed_at.tzinfo is None
+        assert este_reactualizat(rand.listed_at, rand.refreshed_at) is True
+    finally:
+        db.close()

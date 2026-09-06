@@ -318,6 +318,12 @@ def build_auto_embed(listing: dict, grade: str, score: int,
             fields.append({"name": "🌍 Import pe roți",
                            "value": import_str, "inline": False})
 
+    # FRONT-1e — aceleasi campuri de data ca pe Radar, prin ACELASI helper: Postat /
+    # Reactualizat (doar la bump >= 24 h) / Gasit. Dictul vine din comprehensiunea pe
+    # coloanele randului (auto_listings_scanner._notify), deci cheile exista deja;
+    # cand sunt None, helperul intoarce lista goala si embed-ul ramane cel de azi.
+    fields.extend(_campuri_de_data(listing))
+
     # AUTO-GRADE — `grade=None` inseamna „nu s-a putut calcula" (keyword fara pret de
     # revanzare sau moneda neconvertibila), nu „grad slab": eticheta o spune, culoarea e
     # neutra, iar scorul se afiseaza ca „—" in loc de „None/100".
@@ -374,6 +380,8 @@ def build_imob_embed(listing: dict, grade: str, score: int,
                        "value": platform.upper(), "inline": True})
     fields.append({"name": "🎯 Keyword",
                    "value": keyword_name, "inline": True})
+    # FRONT-1e — vezi build_auto_embed: acelasi helper, aceeasi pozitie (ultimele campuri).
+    fields.extend(_campuri_de_data(listing))
 
     embed = {
         "title": f"🏠 [{grade}] {title_text}",
