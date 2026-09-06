@@ -322,6 +322,19 @@ def _portable_migrations(conn, inspector):
                      "CREATE INDEX ix_deals_ended_discount "
                      "ON deals (ended_at, discount_pct)")
 
+    # DATE-1 — data de REACTUALIZARE, separata de data primei publicari. Pana acum
+    # o reactualizare ("Reactualizat azi") ateriza in `listed_at`, deci un anunt vechi
+    # bumpat ieri trecea de filtrul de vechime RAD-1 ca si cum ar fi fost nou.
+    # Aceleasi trei tabele care au deja `listed_at`; garda _column_exists, fara
+    # IF NOT EXISTS, o singura actiune per ALTER (regula _portable_migrations).
+    for _tabel, _nume in (("radar_listings",      "add_radar_listings_refreshed_at"),
+                          ("auto_feed_listings",  "add_auto_feed_refreshed_at"),
+                          ("real_estate_listings", "add_re_listing_refreshed_at")):
+        if (_table_exists(inspector, _tabel)
+                and not _column_exists(inspector, _tabel, "refreshed_at")):
+            _migrate(conn, _nume,
+                     f"ALTER TABLE {_tabel} ADD COLUMN refreshed_at TIMESTAMP")
+
 
 def run_migrations():
     """Apply any pending column additions."""

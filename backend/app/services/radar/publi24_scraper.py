@@ -107,6 +107,22 @@ def _extract_external_id(url: str) -> Optional[str]:
     return f"publi24_{tail}" if tail else None
 
 
+# DATE-1 — etichetele care marcheaza o REACTUALIZARE, nu prima publicare.
+# NOTA: pe fixture-urile suitei cardul Publi24 nu poarta nicio eticheta (data e
+# goala: "29 iunie" / "azi"), deci in practica ramura de mai jos nu se aprinde si
+# comportamentul e cel de pana acum — data cardului ramane `listed_at`. Regula e
+# cablata oricum, ca sa nu reapara amestecul daca site-ul incepe sa eticheteze;
+# ce eticheta foloseste efectiv Publi24 se stabileste la o sonda live.
+_ETICHETE_REACTUALIZARE = ("reactualizat", "actualizat")
+
+
+def _este_reactualizare(raw: Optional[str]) -> bool:
+    """DATE-1 — True daca textul de data e etichetat ca reactualizare (fold fara
+    diacritice). Data astfel etichetata merge in `refreshed_at`, niciodata in
+    `listed_at`, ca un anunt vechi repromovat sa nu treaca drept nou."""
+    return any(e in _strip_accents(raw) for e in _ETICHETE_REACTUALIZARE)
+
+
 def _parse_date(raw: Optional[str]) -> Optional[datetime]:
     """'29 iunie' (zi + luna RO, fara an), 'azi'/'ieri'."""
     if not raw:
@@ -325,6 +341,9 @@ def _enrich_results(results: list[dict], skip_external_ids: Optional[set] = None
             if details.get("description"):
                 item["description"] = details["description"]
             # RP-1 — data exacta din detaliu ('Valabil din') suprascrie data din card.
+            # DATE-1 — 'Valabil din' e data de PUBLICARE, deci intra doar peste
+            # `listed_at`. Daca insa cardul a clasat data ca reactualizare, `listed_at`
+            # e gol si detaliul il completeaza; `refreshed_at` ramane neatins.
             if details.get("listed_at"):
                 item["listed_at"] = details["listed_at"]
         except Exception as exc:
@@ -421,7 +440,16 @@ def search_publi24(
                 location = location.strip() or None
 
             date_el = card.select_one("p.article-date span") or card.select_one(".article-date")
-            listed_at = _parse_date(date_el.get_text(" ", strip=True)) if date_el else None
+            # DATE-1 — eticheta decide coloana (vezi _este_reactualizare): o data de
+            # reactualizare nu are voie sa ajunga in `listed_at`. Fara eticheta ramane
+            # data de publicare, ca pana acum.
+            text_data = date_el.get_text(" ", strip=True) if date_el else None
+            _dt = _parse_date(text_data)
+            listed_at = refreshed_at = None
+            if _este_reactualizare(text_data):
+                refreshed_at = _dt
+            else:
+                listed_at = _dt
 
             img_tag = card.select_one(".art-img img") or card.find("img")
             image_url = None
@@ -449,6 +477,7 @@ def search_publi24(
                 "seller_name": None,
                 "seller_id": None,
                 "listed_at": listed_at,
+                "refreshed_at": refreshed_at,
             })
         except Exception as exc:
             log_manager.emit("radar", "WARN", f"Publi24: card invalid ignorat: {str(exc)[:80]}")

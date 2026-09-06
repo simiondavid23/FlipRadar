@@ -47,4 +47,6 @@ class AutoFeedListing(Base):
     # Imbogatire on-demand a detaliului (poze/descriere/vanzator/data) — pattern Radar.
     seller_name       = Column(String(200), nullable=True)
     listed_at         = Column(TIMESTAMP, nullable=True)
+    # DATE-1 — ultima reactualizare pe platforma, separata de prima publicare.
+    refreshed_at      = Column(TIMESTAMP, nullable=True)
     detail_fetched    = Column(Boolean, default=False)

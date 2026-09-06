@@ -292,8 +292,17 @@ def make_listing(
     descriere: Optional[str] = None,
     source_url: Optional[str] = None,
     thumbnail_url: Optional[str] = None,
+    listed_at=None,
+    refreshed_at=None,
 ) -> dict:
-    """Forma standard a unui anunt auto, aliniata cu modelul AutoListing."""
+    """Forma standard a unui anunt auto, aliniata cu modelul AutoListing.
+
+    DATE-1 — cele doua date sunt distincte: o data ETICHETATA ca actualizare
+    ("Reactualizat", "Actualizat", `lastRefreshTime`, `pushedUpAt`) intra in
+    `refreshed_at` si NICIODATA in `listed_at`; o data neetichetata sau etichetata ca
+    publicare ("Postat", "Valabil din", `createdTime`, `creation_time`) intra in
+    `listed_at`. Filtrul de vechime se aplica pe `listed_at`.
+    """
     return {
         "platform": platform,
         "external_id": external_id,
@@ -316,4 +325,7 @@ def make_listing(
         "description": descriere or "",
         "source_url": source_url,
         "thumbnail_url": thumbnail_url,
+        # DATE-1 — vezi docstring: publicare vs. reactualizare, niciodata amestecate.
+        "listed_at": listed_at,
+        "refreshed_at": refreshed_at,
     }

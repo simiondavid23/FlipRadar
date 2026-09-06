@@ -26,6 +26,9 @@ class RadarListing(Base):
     status = Column(String, default="active", nullable=False, index=True)
     ai_review = Column(Text, nullable=True)
     listed_at = Column(DateTime, nullable=True)
+    # DATE-1 — ultima REACTUALIZARE ("Reactualizat azi"), separata de prima publicare.
+    # RAD-1 (vechimea maxima) ramane pe listed_at; refreshed_at e strict informativ.
+    refreshed_at = Column(DateTime, nullable=True)
     found_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     last_checked_at = Column(DateTime, nullable=True)
     # SEEN-2 — pretul de la care a scazut, ca feed-ul sa poata arata „de la X".

@@ -86,14 +86,19 @@ def _seed_from_raw(raw: dict) -> dict:
         price = None
 
     # listed_at: string ISO (emis de scraperul OLX) -> datetime; lipsa/invalid -> None.
-    listed_at = raw.get("listed_at")
-    if listed_at:
+    # DATE-1: acelasi tratament pentru refreshed_at (ultima reactualizare pe platforma),
+    # tinut separat ca o repromovare sa nu treaca drept data primei publicari.
+    def _iso(cheie):
+        val = raw.get(cheie)
+        if not val:
+            return None
         try:
-            listed_at = datetime.fromisoformat(str(listed_at))
+            return datetime.fromisoformat(str(val))
         except (TypeError, ValueError):
-            listed_at = None
-    else:
-        listed_at = None
+            return None
+
+    listed_at = _iso("listed_at")
+    refreshed_at = _iso("refreshed_at")
 
     return {
         "title":         pick("title", "titlu"),
@@ -108,6 +113,7 @@ def _seed_from_raw(raw: dict) -> dict:
         # decat "location"/orasul generic de pe card ("București, Sectorul 6").
         "zone_hint":     pick("zone", "location", "locatie_oras"),
         "listed_at":     listed_at,
+        "refreshed_at":  refreshed_at,
     }
 
 
@@ -383,6 +389,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         score           = score,
         grade           = grade,
         listed_at       = seed["listed_at"],
+        refreshed_at    = seed["refreshed_at"],
         found_at        = datetime.now(timezone.utc),
         last_checked_at = datetime.now(timezone.utc),
     )

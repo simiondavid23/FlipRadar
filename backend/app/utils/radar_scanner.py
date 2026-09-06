@@ -2077,6 +2077,9 @@ def _salveaza_rand_nou(db: Session, user, kw, platform: str, listing: dict,
         status="active",
         ai_review=None,
         listed_at=listing.get("listed_at"),
+        # DATE-1 — reactualizarea, separata de prima publicare. RAD-1 (_too_old)
+        # ramane pe listed_at; refreshed_at nu intra in niciun filtru.
+        refreshed_at=listing.get("refreshed_at"),
         seller_reviews=_srev,
         seller_rating=_srat,
         seller_risk=_srisk,
@@ -2439,7 +2442,8 @@ def _maybe_enrich_olx_inline(listing: dict) -> None:
     except Exception as exc:
         log_manager.emit("radar", "WARN", f"OLX enrichment inline: {str(exc)[:80]}")
         return
-    for k in ("seller_name", "seller_id", "listed_at", "description", "olx_member_since"):
+    for k in ("seller_name", "seller_id", "listed_at", "refreshed_at",
+              "description", "olx_member_since"):
         if det.get(k) is not None:
             listing[k] = det[k]
     # RP-7 — rating public al vanzatorului (users/{id}/ -> uuid -> rating-cdn), sub
@@ -2560,6 +2564,8 @@ def _enrich_olx_backlog(db: Session, user: User) -> None:
             row.seller_id = det["seller_id"]
         if det.get("listed_at"):
             row.listed_at = det["listed_at"]
+        if det.get("refreshed_at"):
+            row.refreshed_at = det["refreshed_at"]
         if det.get("description") and not row.description:
             row.description = det["description"]
         if det.get("olx_member_since") is not None:

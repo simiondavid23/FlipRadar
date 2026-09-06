@@ -121,6 +121,26 @@ _OLX_RO_MONTHS = {
 }
 
 
+# DATE-1 — etichetele care marcheaza o REACTUALIZARE (repromovare), nu prima publicare.
+# "Postat"/"Adaugat" raman date de publicare si nu apar aici, deliberat.
+_OLX_ETICHETE_REACTUALIZARE = ("reactualizat", "actualizat")
+
+
+def _este_reactualizare(raw: Optional[str]) -> bool:
+    """DATE-1 — True daca textul de data al cardului e etichetat ca reactualizare.
+
+    Fold minimal (lowercase + diacritice romanesti), ca "Reactualizat" sa fie
+    prins indiferent de forma. Data astfel etichetata merge in `refreshed_at` si
+    NICIODATA in `listed_at`: altfel un anunt vechi bumpat ieri ar trece de
+    filtrul de vechime RAD-1 ca si cum ar fi fost publicat ieri.
+    """
+    t = (raw or "").lower()
+    for _de, _la in (("ă", "a"), ("â", "a"), ("î", "i"), ("ș", "s"), ("ş", "s"),
+                     ("ț", "t"), ("ţ", "t")):
+        t = t.replace(_de, _la)
+    return any(e in t for e in _OLX_ETICHETE_REACTUALIZARE)
+
+
 def _parse_olx_date(raw: Optional[str]) -> Optional[datetime]:
     """OLX afiseaza "Azi la HH:MM", "Ieri la HH:MM" sau "dd lun yyyy"."""
     if not raw:
@@ -345,7 +365,8 @@ def fetch_olx_offer_details(numeric_id) -> dict:
 
     Confirmat RP-DIAG (§5): `data.user.name`, `data.user.created` (an), `data.created_time`,
     `data.description`. Returneaza dict cu cheile disponibile (seller_name, seller_id,
-    olx_member_since, listed_at, description) sau {} la orice esec (caller pastreaza ce are).
+    olx_member_since, listed_at, refreshed_at, description) sau {} la orice esec
+    (caller pastreaza ce are).
     """
     if not numeric_id:
         return {}
@@ -370,7 +391,8 @@ def fetch_olx_offer_details(numeric_id) -> dict:
 
 def _map_olx_offer(data: dict) -> dict:
     """Mapeaza `data` din /api/v1/offers/{id} la campurile noastre (functie PURA,
-    testabila pe fixture): seller_name/seller_id/olx_member_since/listed_at/description."""
+    testabila pe fixture): seller_name/seller_id/olx_member_since/listed_at/
+    refreshed_at/description."""
     out: dict = {}
     if not isinstance(data, dict):
         return out
@@ -384,9 +406,15 @@ def _map_olx_offer(data: dict) -> dict:
         mm = re.match(r"(\d{4})", str(created))
         if mm:
             out["olx_member_since"] = int(mm.group(1))
+    # DATE-1 — API-ul expune AMBELE date: `created_time` (prima publicare) si
+    # `last_refresh_time` (ultima repromovare). Pana acum doar prima era citita, iar
+    # a doua se pierdea; acum fiecare merge in coloana ei, niciodata amestecate.
     dt = _parse_iso_dt(data.get("created_time"))
     if dt:
         out["listed_at"] = dt
+    dt_refresh = _parse_iso_dt(data.get("last_refresh_time"))
+    if dt_refresh:
+        out["refreshed_at"] = dt_refresh
     desc = data.get("description")
     if desc:
         txt = re.sub(r"<[^>]+>", " ", str(desc))
@@ -604,6 +632,7 @@ def search_olx(
                 # OLX combina "Locatie - Data" intr-un singur element; separa-le
                 location = None
                 listed_at = None
+                refreshed_at = None
                 if location_raw:
                     # SCRAPE-AUDIT: separatorul OLX e " - " cu spatii; pe "-" simplu,
                     # "Cluj-Napoca - Azi" devenea location="Cluj".
@@ -611,10 +640,18 @@ def search_olx(
                     if sep in location_raw:
                         loc_part, _, date_part = location_raw.partition(sep)
                         location = loc_part.strip()
-                        listed_at = _parse_olx_date(date_part.strip())
+                        text_data = date_part.strip()
                     else:
                         location = location_raw.strip()
-                        listed_at = _parse_olx_date(location_raw)
+                        text_data = location_raw
+                    # DATE-1 — o singura data pe card, dar doua semantici: cardurile
+                    # repromovate scriu "Reactualizat azi", nu data publicarii. Eticheta
+                    # decide coloana; fara eticheta ramane data de publicare (ca pana acum).
+                    _dt = _parse_olx_date(text_data)
+                    if _este_reactualizare(text_data):
+                        refreshed_at = _dt
+                    else:
+                        listed_at = _dt
 
                 img_tag = card.find("img")
                 image_url = None
@@ -664,6 +701,7 @@ def search_olx(
                     "seller_name": None,
                     "seller_id": None,
                     "listed_at": listed_at,
+                    "refreshed_at": refreshed_at,
                 })
             except Exception as exc:
                 print(f"[OlxScraper] Eroare la parsarea unui card: {exc}")

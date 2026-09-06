@@ -334,6 +334,11 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         grade        = grade,
         margin_value = margin_value,
         import_score_json = import_json,
+        # DATE-1 — pana acum feed-ul Auto pierdea data pana la enrichment-ul on-demand,
+        # desi scraperele o emit la scanare. Valorile vin deja naiv-local de la
+        # scrapere (vezi _naiv_local din facebook_auto_scraper) — nu se converteste nimic.
+        listed_at    = raw.get("listed_at"),
+        refreshed_at = raw.get("refreshed_at"),
         found_at     = datetime.now(timezone.utc),
         last_checked_at = datetime.now(timezone.utc),
     )

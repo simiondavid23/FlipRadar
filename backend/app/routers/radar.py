@@ -375,6 +375,8 @@ def _listing_to_dict(listing: RadarListing, keyword: Optional[RadarKeyword] = No
         "status": listing.status,
         "ai_review": listing.ai_review,
         "listed_at": listing.listed_at.isoformat() if listing.listed_at else None,
+        # DATE-1 — ultima reactualizare pe platforma, separata de prima publicare.
+        "refreshed_at": listing.refreshed_at.isoformat() if listing.refreshed_at else None,
         "found_at": listing.found_at.isoformat() if listing.found_at else None,
         "last_checked_at": listing.last_checked_at.isoformat() if listing.last_checked_at else None,
     }

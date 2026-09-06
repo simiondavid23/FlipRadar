@@ -60,8 +60,10 @@ def test_seed_din_chei_englezesti():
 def test_seed_valori_lipsa_raman_none():
     # dict gol -> toate cheile None, fara exceptii
     seed = _seed_from_raw({})
+    # DATE-1: `refreshed_at` s-a adaugat langa `listed_at` (reactualizare vs. publicare).
     assert set(seed.keys()) == {"title", "description", "rooms", "area_sqm", "floor",
-                                "price", "currency", "property_type", "zone_hint", "listed_at"}
+                                "price", "currency", "property_type", "zone_hint",
+                                "listed_at", "refreshed_at"}
     assert all(v is None for v in seed.values())
     # "" e tratat ca None (nu ca valoare)
     seed2 = _seed_from_raw({"titlu": "", "pret": "", "moneda": ""})

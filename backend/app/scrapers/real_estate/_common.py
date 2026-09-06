@@ -131,8 +131,16 @@ def make_re_listing(
     source_url: Optional[str] = None,
     thumbnail_url: Optional[str] = None,
     listed_at: Optional[str] = None,
+    refreshed_at: Optional[str] = None,
 ) -> dict:
-    """Forma standard a unui anunt imobiliar (aliniata cu RealEstateListing)."""
+    """Forma standard a unui anunt imobiliar (aliniata cu RealEstateListing).
+
+    DATE-1 — cele doua date sunt distincte: o data ETICHETATA ca actualizare
+    ("Reactualizat", "Actualizat", `lastRefreshTime`, `pushedUpAt`) intra in
+    `refreshed_at` si NICIODATA in `listed_at`; o data neetichetata sau etichetata ca
+    publicare ("Postat", "Valabil din", `createdTime`, `creation_time`) intra in
+    `listed_at`. Ambele pleaca STRING ISO — scannerul le trece prin fromisoformat.
+    """
     return {
         "platform": platform,
         "external_id": external_id,
@@ -151,5 +159,7 @@ def make_re_listing(
         "descriere": descriere,
         "source_url": source_url,
         "thumbnail_url": thumbnail_url,
+        # DATE-1 — vezi docstring: publicare vs. reactualizare, niciodata amestecate.
         "listed_at": listed_at,
+        "refreshed_at": refreshed_at,
     }
