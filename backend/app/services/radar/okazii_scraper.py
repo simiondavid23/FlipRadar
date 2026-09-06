@@ -12,6 +12,11 @@ prin fetch-uri reale:
 - Paginare:  ?page={N}   (36 rezultate/pagina)
 - Card:      #listing-Okazii .list-item
 - external_id: '-a(\\d+)' la finalul URL-ului anuntului
+
+DATE-3 (masurat 2026-09-06, listare + detaliu): Okazii NU publica data anuntului —
+zero meta, zero JSON embed, zero text de data pe ambele pagini; singura cheie de data
+din JSON-LD e `review.datePublished` (data unui review, nu a anuntului). `listed_at`
+ramane None pe platforma asta; nu mai e nevoie sa fie cautata.
 """
 import json
 import random

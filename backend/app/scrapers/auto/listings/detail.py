@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
 from app.scrapers.auto.listings._common import IMPERSONATE, build_headers, safe_soup
+from app.utils.olx_state import iso_to_naive_local
 
 _EMPTY = {"images": [], "description": None, "seller_name": None, "listed_at": None}
 
@@ -254,16 +255,24 @@ def fetch_autoscout24_detail(url: str) -> dict:
     seller_name = _first_str(data, ("companyName", "sellerName", "dealerName"))
     # SCRAPE-AUDIT: firstRegistration(Date) e DATA PRIMEI INMATRICULARI a masinii
     # (EZ, ex. 2017), nu data postarii anuntului — enrichment-ul scria in feed o
-    # "data postare" de acum multi ani. Nu mai mapam nimic pe listed_at de aici.
-    listed_at = None
-    for k in ():
-        v = _first_str(data, (k,))
-        if v:
-            try:
-                listed_at = datetime.fromisoformat(v.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                listed_at = None
-            break
+    # "data postare" de acum multi ani. Ramane nemapata.
+    #
+    # DATE-3 (sonda 2026-09-06): sursa CORECTA e
+    # `props.pageProps.listingDetails.createdTimestampWithOffset`
+    # ('2026-09-03T17:52:33.801Z'), citita pe CALE EXACTA, nu prin `_first_str` /
+    # `_collect_key` ca restul campurilor: o cautare recursiva dupa nume de cheie ar
+    # putea prinde alt `created*` dintr-un bloc de traduceri sau de feature-toggles,
+    # iar o data gresita in feed e mai rea decat lipsa ei. Pe fixture cheia apare o
+    # SINGURA data, deci calea exacta e o masura de siguranta, nu un fix pentru o
+    # coliziune observata.
+    #
+    # AS24 nu expune nicio data de repromovare -> `refreshed_at` nu se emite deloc.
+    # Nici listarea nu are data (masurat: 20 de anunturi, zero chei de data), deci
+    # `listed_at` vine DOAR pe calea asta, on-demand.
+    detalii = ((data.get("props") or {}).get("pageProps") or {}).get("listingDetails")
+    listed_at = iso_to_naive_local(
+        (detalii or {}).get("createdTimestampWithOffset")
+        if isinstance(detalii, dict) else None)
     return {"images": images, "description": description,
             "seller_name": seller_name, "listed_at": listed_at}
 

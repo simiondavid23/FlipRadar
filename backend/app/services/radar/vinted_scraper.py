@@ -880,6 +880,36 @@ def _condition_label(api_label: Optional[str]) -> Optional[str]:
     return None
 
 
+def _listed_at_din_poza(photo):
+    """`photo.high_resolution.timestamp` -> datetime NAIV LOCAL; None cand lipseste.
+
+    DATE-3 — de ce poza da data anuntului: `/api/v2/catalog/items` NU expune
+    `created_at`, `/api/v2/items/{id}` da 404, iar pagina itemului spune data doar
+    relativ (`upload_date` = "acum 14 minute"). Calibrare masurata 2026-09-06:
+    timestamp-ul pozei principale (1788699920 = 16:05:20 local) cade la cateva minute
+    de acel "acum 14 minute" citit la fetch — deci timestamp-ul pozei ESTE momentul
+    incarcarii anuntului, cu precizie de secunda.
+
+    Accepta si dict (JSON brut din wrapper, calea de azi) si obiect cu atribute
+    (modelul tipizat al libariei `vinted_scraper`), ca sa nu se rupa daca `_get_wrapper`
+    ajunge sa intoarca modele. Timestamp lipsa, 0 sau neconvertibil -> None, fara exceptie.
+    """
+    if photo is None:
+        return None
+    if isinstance(photo, dict):
+        hr = photo.get("high_resolution") or {}
+        ts = hr.get("timestamp") if isinstance(hr, dict) else None
+    else:
+        hr = getattr(photo, "high_resolution", None)
+        ts = getattr(hr, "timestamp", None) if hr is not None else None
+    if not ts:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ts))   # naiv local (conventia scraperelor)
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
 def _search_vinted_library(
     keyword: str,
     max_price: Optional[float],
@@ -965,17 +995,9 @@ def _search_vinted_library(
 
         photo = item.get("photo") or {}
         thumb = None
-        ts = None
         if isinstance(photo, dict):
             thumb = photo.get("url") or photo.get("full_size_url")
-            hr = photo.get("high_resolution") or {}
-            ts = hr.get("timestamp") if isinstance(hr, dict) else None
-        listed_at = None
-        if ts:
-            try:
-                listed_at = datetime.fromtimestamp(int(ts))  # naiv local (conventia scraperelor)
-            except (TypeError, ValueError, OSError):
-                listed_at = None
+        listed_at = _listed_at_din_poza(photo)
 
         # SCRAPE-AUDIT: `condition` era acceptat de search_vinted dar nefolosit —
         # keyword-urile "doar nou" primeau si second hand, tacut. Filtram local pe
