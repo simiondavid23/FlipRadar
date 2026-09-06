@@ -8,9 +8,18 @@ import json
 from bs4 import BeautifulSoup
 
 from app.scrapers.auto.listings._common import thumb_from_img
-from app.scrapers.auto.listings.olx_auto import (
-    _olx_id, _olx_upgrade_thumb, _photos_map_from_state,
-)
+from app.scrapers.auto.listings.olx_auto import _olx_id, _olx_upgrade_thumb
+from app.utils.olx_state import extract_olx_ad_meta
+
+
+def _photos_map_from_state(html: str) -> dict:
+    """OLX-STATE-1 — functia omonima din `olx_auto` a disparut (era a doua parsare a
+    aceluiasi state). Shim-ul reproduce EXACT compunerea pe care o face acum
+    `search_olx_auto`: prima poza din meta, ridicata la `;s=1000x1000`. Asertiile de
+    mai jos raman neschimbate — ele descriu comportamentul, care nu s-a schimbat.
+    """
+    return {token: _olx_upgrade_thumb(ad["photos"][0])
+            for token, ad in extract_olx_ad_meta(html).items() if ad["photos"]}
 
 
 def _img(html: str):

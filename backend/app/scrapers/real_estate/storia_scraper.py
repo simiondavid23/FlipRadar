@@ -16,7 +16,7 @@ from app.scrapers.real_estate._common import (
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
-from app.utils.olx_state import normalize_iso
+from app.utils.listing_dates import normalize_iso
 
 _BASE = "https://www.storia.ro"
 

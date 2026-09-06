@@ -9,9 +9,8 @@ from types import SimpleNamespace
 
 from bs4 import BeautifulSoup
 
-from app.scrapers.real_estate.olx_real_estate import (
-    _extract_numeric_ids, _map_offer_details, _pick_thumb,
-)
+from app.scrapers.real_estate.olx_real_estate import _map_offer_details, _pick_thumb
+from app.utils.olx_state import extract_olx_ad_meta
 from app.services.real_estate_scanner import _matches_re_keyword, _olx_query_with_zone
 
 
@@ -172,6 +171,17 @@ def test_created_time_corupt_nu_da_listed_at():
 
 
 # ── _extract_numeric_ids ────────────────────────────────────────────────────────
+def _extract_numeric_ids(html: str) -> dict:
+    """OLX-STATE-1 — functia omonima din `olx_real_estate` a disparut (era a doua
+    parsare a aceluiasi state). Shim-ul reproduce contractul vechi (ad-urile fara `id`
+    lipsesc din dict), adica exact ce citeste acum call site-ul din `meta`. Asertiile
+    de mai jos raman neschimbate.
+    """
+    return {token: ad["numeric_id"]
+            for token, ad in extract_olx_ad_meta(html).items()
+            if ad["numeric_id"] is not None}
+
+
 def _html_cu_state(ads):
     """HTML sintetic: __PRERENDERED_STATE__ = "<json escapat>" (dublu json.dumps)."""
     state = {"listing": {"listing": {"ads": ads}}}

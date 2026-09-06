@@ -13,12 +13,10 @@ import json
 import os
 from datetime import datetime
 
-from app.utils.olx_state import (
-    extract_olx_ad_meta,
-    extract_olx_state,
-    iso_to_naive_local,
-    normalize_iso,
-)
+# OLX-STATE-1: helperii de data au plecat in `utils/listing_dates`; parserul de state
+# a ramas in `utils/olx_state`. Doar importurile s-au re-tintit, nicio asertie.
+from app.utils.listing_dates import iso_to_naive_local, normalize_iso
+from app.utils.olx_state import extract_olx_ad_meta, extract_olx_state
 
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -100,7 +98,10 @@ def test_t1c_pushup_time_e_ignorat():
                              pushupTime="2026-03-03T00:00:00+02:00")])
     m = extract_olx_ad_meta(html)["A1"]
     assert m["refreshed"] == "2026-02-02T00:00:00+02:00"
-    assert set(m) == {"category_id", "created", "refreshed"}
+    # OLX-STATE-1: contractul a crescut cu `numeric_id` si `photos` (o singura parsare
+    # per pagina). Asertia isi pastreaza intentia: nimic derivat din `pushupTime`.
+    assert set(m) == {"category_id", "created", "refreshed", "numeric_id", "photos"}
+    assert "pushup" not in " ".join(m).lower()
 
 
 # ── T2 — degradare curata ────────────────────────────────────────────────────────

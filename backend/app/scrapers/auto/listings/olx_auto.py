@@ -11,7 +11,8 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
-from app.utils.olx_state import extract_olx_ad_meta, iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_local
+from app.utils.olx_state import extract_olx_ad_meta
 
 _BASE = "https://www.olx.ro"
 _CAT_BASE = "/auto-masini-moto-ambarcatiuni/"  # baza fixa; segmentul final = categoria selectata
@@ -36,35 +37,10 @@ def _olx_upgrade_thumb(url: str) -> str:
     return re.sub(r";s=\d+x\d+", ";s=1000x1000", url)
 
 
-def _photos_map_from_state(html: str) -> dict:
-    """{token_external_id -> URL prima poza} din window.__PRERENDERED_STATE__.ads[].
-
-    Reprodus din app/services/radar/olx_scraper.py::_extract_olx_numeric_ids (regex +
-    dublu json.loads, calea state["listing"]["listing"]["ads"], token din -ID<token>.html),
-    FARA import din app.services.radar.* — decuplare module (acelasi precedent ca detail.py).
-    Forma campului confirmata live (AA-1 Pasul 0): ad["photos"] = lista de URL-uri complete
-    cu sufix `;s=WxH`; luam prima si o normalizam la 1000x1000 (_olx_upgrade_thumb).
-    {} la orice esec (safe default -> cardul cade pe placeholder-ul ImageOff).
-    """
-    try:
-        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html or "", re.DOTALL)
-        if not m:
-            return {}
-        state = json.loads(json.loads(m.group(1)))  # dublu-decode (string JSON escapat)
-        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
-        result: dict = {}
-        for ad in ads:
-            url = ad.get("url") or ad.get("urlPath") or ""
-            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
-            if not mm:
-                continue
-            photos = ad.get("photos")
-            if isinstance(photos, list) and photos and isinstance(photos[0], str):
-                result[mm.group(1)] = _olx_upgrade_thumb(photos[0])
-        return result
-    except Exception as e:
-        print(f"[olx_auto] __PRERENDERED_STATE__ photos parse error: {e}")
-        return {}
+# OLX-STATE-1: `_photos_map_from_state` a disparut de aici — pozele vin din
+# `extract_olx_ad_meta` (app/utils/olx_state.py), din ACEEASI parsare de state ca
+# datele si categoria. Era a doua parsare a aceluiasi HTML (~470 ms per pagina).
+# Ridicarea la ;s=1000x1000 a ramas locala (_olx_upgrade_thumb): e afisare, nu state.
 
 
 async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) -> list:
@@ -114,10 +90,9 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
     # AA-1 — pozele reale ale TUTUROR cardurilor stau in __PRERENDERED_STATE__ (ads[]),
     # inclusiv cele de sub fold pe care OLX le lazy-load-eaza (src/data-src raman
     # placeholder in HTML-ul server-rendered). Construim map-ul {token -> URL} o data/pagina.
-    photos_map = _photos_map_from_state(resp.text)
-    # DATE-2 — acelasi state da si cele doua date ale anuntului: `createdTime` (prima
-    # publicare) si `lastRefreshTime` (ultima repromovare). Parser comun in
-    # app/utils/olx_state.py, ca sa nu fie a patra copie a aceluiasi regex in proiect.
+    # DATE-2 + OLX-STATE-1 — o SINGURA parsare de state per pagina: acelasi dict da
+    # pozele (AA-1), cele doua date ale anuntului (`createdTime` / `lastRefreshTime`)
+    # si restul meta-ului. `_photos_map_from_state` era a doua parsare a aceluiasi HTML.
     date_map = extract_olx_ad_meta(resp.text)
 
     cards = soup.select('div[data-cy="l-card"]') or soup.select('[data-testid="l-card"]')
@@ -148,22 +123,25 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
                 raw = loc_el.get_text(" ", strip=True)
                 locatie = raw.split("-")[0].strip() if "-" in raw else raw.strip()
 
+            # DATE-2 — conventia Auto e datetime NAIV LOCAL (vezi iso_to_naive_local).
+            # `_olx_id` da exact cheia din meta (token-ul -ID<...>.html).
+            _meta = date_map.get(_olx_id(href) or "") or {}
+
             img = card.find("img")
             # OLX lazy-load: pentru cardurile de sub fold `src`/`data-src` raman placeholder
             # in HTML-ul server-rendered (poza reala e populata din JS). thumb_from_img
             # acopera candidatii din tag; daca niciunul nu e URL real, cadem pe poza din
             # __PRERENDERED_STATE__ (ads[]) dupa token-ul din URL (-ID<token>.html). Daca nici
             # acolo -> "" (feed-ul arata fallback-ul ImageOff, nu o imagine rupta).
+            # OLX-STATE-1: pozele vin din meta (BRUTE, toate); ridicarea la ;s=1000x1000
+            # ramane aici, e o decizie de afisare a modulului, nu o proprietate a state-ului.
+            _poze = _meta.get("photos") or []
             img_thumb = thumb_from_img(img)
-            thumb = img_thumb or photos_map.get(_olx_id(href) or "", "")
+            thumb = img_thumb or (_olx_upgrade_thumb(_poze[0]) if _poze else "")
             if thumb:
                 cu_poza += 1
                 if not img_thumb:
                     din_state += 1
-
-            # DATE-2 — conventia Auto e datetime NAIV LOCAL (vezi iso_to_naive_local).
-            # `_olx_id` da exact cheia din meta (token-ul -ID<...>.html).
-            _meta = date_map.get(_olx_id(href) or "") or {}
 
             results.append(make_listing(
                 platform="olx_auto", external_id=_olx_id(href), titlu=titlu,

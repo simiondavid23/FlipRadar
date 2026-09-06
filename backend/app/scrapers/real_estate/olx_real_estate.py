@@ -17,7 +17,8 @@ from app.scrapers.real_estate._common import (
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
-from app.utils.olx_state import extract_olx_ad_meta, normalize_iso
+from app.utils.listing_dates import normalize_iso
+from app.utils.olx_state import extract_olx_ad_meta
 
 _BASE = "https://www.olx.ro"
 
@@ -49,30 +50,9 @@ def _pick_thumb(img) -> Optional[str]:
     return thumb
 
 
-def _extract_numeric_ids(html: str) -> dict:
-    """{token_external_id -> id_numeric} din window.__PRERENDERED_STATE__.ads[].
-
-    Cardul are doar `-ID<token>.html`, dar /api/v1/offers/{id} cere id-ul numeric,
-    prezent in state langa url. Dict gol la orice esec (enrichment-ul se sare).
-    Adaptare locala dupa radar._extract_olx_numeric_ids (fara import cross-modul).
-    """
-    try:
-        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html, re.DOTALL)
-        if not m:
-            return {}
-        state = json.loads(json.loads(m.group(1)))
-        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
-        result: dict = {}
-        for ad in ads:
-            aid = ad.get("id")
-            url = ad.get("url") or ad.get("urlPath") or ""
-            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
-            if mm and aid is not None:
-                result[mm.group(1)] = aid
-        return result
-    except Exception as exc:
-        print(f"[olx_re] __PRERENDERED_STATE__ numeric-id parse error: {exc}")
-        return {}
+# OLX-STATE-1: `_extract_numeric_ids` a disparut de aici — id-ul numeric vine din
+# `extract_olx_ad_meta` (app/utils/olx_state.py), din ACEEASI parsare de state ca
+# datele. Era a doua parsare a aceluiasi HTML (~470 ms per pagina).
 
 
 def _parse_iso_dt(s):
@@ -406,14 +386,15 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
     log_manager.emit("real_estate", "OK", f"OLX Imobiliare: {len(results)} anunturi gasite")
 
     # IMO-1 — enrichment doar pe anunturile NOI (necunoscute scannerului), plafonat.
-    numeric_map = _extract_numeric_ids(html)
+    # OLX-STATE-1: id-ul numeric vine din `meta`, calculat mai sus — `_extract_numeric_ids`
+    # era a doua parsare a aceluiasi state (~470 ms per pagina).
     skip = skip_enrich_ids or set()
     enriched = 0
     for r in results:
         if enriched >= _ENRICH_CAP:
             break
         ext = r.get("external_id")
-        nid = numeric_map.get(ext)
+        nid = (meta.get(ext) or {}).get("numeric_id")
         if not ext or ext in skip or not nid:
             continue
         det = _fetch_offer_details(nid)

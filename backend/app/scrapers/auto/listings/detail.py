@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
 from app.scrapers.auto.listings._common import IMPERSONATE, build_headers, safe_soup
-from app.utils.olx_state import iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_local
 
 _EMPTY = {"images": [], "description": None, "seller_name": None, "listed_at": None}
 

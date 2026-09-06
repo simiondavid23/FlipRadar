@@ -15,7 +15,7 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
-from app.utils.olx_state import iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_local
 
 _BASE = "https://www.autovit.ro"
 # Categorii confirmate (auto_categories.py). Orice altceva -> fallback "autoturisme".

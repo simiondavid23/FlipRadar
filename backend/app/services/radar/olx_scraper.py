@@ -17,7 +17,8 @@ from curl_cffi import requests as curl_requests
 
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
 from app.utils.http_profile import DEFAULT_IMPERSONATE
-from app.utils.olx_state import extract_olx_ad_meta, iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_local
+from app.utils.olx_state import extract_olx_ad_meta
 
 
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
@@ -298,29 +299,9 @@ def _fetch_detail_image(url: str) -> Optional[str]:
 # SINGURA parsare a state-ului. Avea un singur apelant si nicio referinta in teste.
 
 
-def _extract_olx_numeric_ids(html: str) -> dict:
-    """{token_external_id -> id_numeric} din window.__PRERENDERED_STATE__.ads[] (S2).
-
-    Necesare pentru /api/v1/offers/{id_numeric}: cardul are doar `-ID<token>.html`,
-    dar API-ul cere id-ul numeric, prezent in state langa url. Dict gol la esec.
-    """
-    try:
-        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html, re.DOTALL)
-        if not m:
-            return {}
-        state = json.loads(json.loads(m.group(1)))
-        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
-        result: dict = {}
-        for ad in ads:
-            aid = ad.get("id")
-            url = ad.get("url") or ad.get("urlPath") or ""
-            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
-            if mm and aid is not None:
-                result[mm.group(1)] = aid
-        return result
-    except Exception as e:
-        print(f"[OlxScraper] __PRERENDERED_STATE__ numeric-id parse error: {e}")
-        return {}
+# OLX-STATE-1: `_extract_olx_numeric_ids` a disparut de aici — id-ul numeric vine
+# acum din `extract_olx_ad_meta` (app/utils/olx_state.py), din ACEEASI parsare de
+# state ca datele si categoria. Era a doua parsare a aceluiasi HTML (~470 ms).
 
 
 def _parse_iso_dt(s) -> Optional[datetime]:
@@ -705,13 +686,11 @@ def search_olx(
                     item["listed_at"] = creat
                 if reactualizat:
                     item["refreshed_at"] = reactualizat
-        # RP-1 — id numeric pentru enrichment prin /api/v1/offers/{id} (fara request extra).
-        num_map = _extract_olx_numeric_ids(html)
-        if num_map:
-            for item in parsed:
-                hid = (item.get("external_id") or "").replace("olx_", "")
-                if num_map.get(hid) is not None:
-                    item["olx_numeric_id"] = num_map.get(hid)
+                # RP-1 — id numeric pentru enrichment prin /api/v1/offers/{id}. Venea
+                # dintr-o A DOUA parsare a aceluiasi state (_extract_olx_numeric_ids);
+                # OLX-STATE-1 il ia din meta-ul deja calculat. Forma bruta din JSON.
+                if m.get("numeric_id") is not None:
+                    item["olx_numeric_id"] = m["numeric_id"]
         return parsed
 
     # FIX paginare — intreaga colectare + procesare e protejata: nicio exceptie
