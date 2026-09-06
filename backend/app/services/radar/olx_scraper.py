@@ -17,6 +17,7 @@ from curl_cffi import requests as curl_requests
 
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
 from app.utils.http_profile import DEFAULT_IMPERSONATE
+from app.utils.olx_state import extract_olx_ad_meta, iso_to_naive_local
 
 
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
@@ -292,33 +293,9 @@ def _fetch_detail_image(url: str) -> Optional[str]:
         return None
 
 
-def _extract_olx_categories(html: str) -> dict:
-    """Extrage {href_id -> category_id} din window.__PRERENDERED_STATE__ (Apollo).
-
-    OLX NU foloseste __NEXT_DATA__; ad-urile sunt in state.listing.listing.ads[],
-    fiecare cu category:{id:<numeric>}. Cheia e ID-ul din url (`-ID<xxx>.html`) ca
-    sa se potriveasca cu external_id-ul cardului. Fara request extra per listing.
-    Dict gol la orice esec (safe default → nu se exclude nimic).
-    """
-    try:
-        import json
-        m = re.search(r'__PRERENDERED_STATE__\s*=\s*("(?:\\.|[^"\\])*")', html, re.DOTALL)
-        if not m:
-            return {}
-        state = json.loads(json.loads(m.group(1)))  # dublu-decode (string JSON escapat)
-        ads = (state.get("listing") or {}).get("listing", {}).get("ads") or []
-        result: dict = {}
-        for ad in ads:
-            cat = ad.get("category")
-            cat_id = cat.get("id") if isinstance(cat, dict) else None
-            url = ad.get("url") or ad.get("urlPath") or ""
-            mm = re.search(r"-ID([A-Za-z0-9]+)\.html", url)
-            if mm and cat_id is not None:
-                result[mm.group(1)] = str(cat_id)
-        return result
-    except Exception as e:
-        print(f"[OlxScraper] __PRERENDERED_STATE__ parse error: {e}")
-        return {}
+# DATE-2: `_extract_olx_categories` a disparut de aici — categoria vine acum din
+# `extract_olx_ad_meta` (app/utils/olx_state.py), impreuna cu cele doua date, dintr-o
+# SINGURA parsare a state-ului. Avea un singur apelant si nicio referinta in teste.
 
 
 def _extract_olx_numeric_ids(html: str) -> dict:
@@ -709,11 +686,25 @@ def search_olx(
 
         # Atasam categoria OLX (ID numeric) din __PRERENDERED_STATE__, pentru
         # filtrarea pe subcategorie din scanner. Fara request extra per listing.
-        cat_map = _extract_olx_categories(html)
-        if cat_map:
+        # DATE-2 — acelasi state da si cele doua date, deci se parseaza O SINGURA data
+        # (masurat: ~0,5 s per pagina de 3,3 MB; a doua trecere ar fi fost pe degeaba).
+        meta = extract_olx_ad_meta(html)
+        if meta:
             for item in parsed:
                 hid = (item.get("external_id") or "").replace("olx_", "")
-                item["olx_category"] = cat_map.get(hid, "")
+                m = meta.get(hid)
+                if not m:
+                    continue
+                item["olx_category"] = m.get("category_id") or ""
+                # DATE-2 — datele structurate BAT textul cardului: „Reactualizat azi" de
+                # pe card e o singura data cu doua semantici, iar state-ul le da separat.
+                # Cardul (cablat la DATE-1) ramane fallback pentru ad-urile lipsa din meta.
+                creat = iso_to_naive_local(m.get("created"))
+                reactualizat = iso_to_naive_local(m.get("refreshed"))
+                if creat:
+                    item["listed_at"] = creat
+                if reactualizat:
+                    item["refreshed_at"] = reactualizat
         # RP-1 — id numeric pentru enrichment prin /api/v1/offers/{id} (fara request extra).
         num_map = _extract_olx_numeric_ids(html)
         if num_map:

@@ -16,6 +16,7 @@ from app.scrapers.real_estate._common import (
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
+from app.utils.olx_state import normalize_iso
 
 _BASE = "https://www.storia.ro"
 
@@ -131,8 +132,12 @@ def _parse_item(it: dict, tip_anunt: str, tip_proprietate: str) -> dict:
     slug = it.get("slug")
     src = f"{_BASE}/ro/oferta/{slug}" if slug else None
 
-    # VERIFY listed_at (IM-7): __NEXT_DATA__ ar putea expune dateCreated/pushedUpAt, dar semantica
-    # (postare initiala vs repromovare) e neclara — neconfirmat, NU se conecteaza fara o sonda.
+    # DATE-2 (inchide VERIFY listed_at / IM-7, sonda din 2026-09-06 pe 37 de anunturi):
+    # `dateCreated` NU e data crearii — coincide cu `pushedUpAt` (27 identice la secunda,
+    # 7 la o secunda distanta, zero divergente reale), deci e bump-ul. Data reala a primei
+    # publicari e `createdAtFirst`, aflata la o mediana de 31 de zile inaintea bump-ului
+    # (max 807 zile) — exact eroarea pe care o inchide DATE-2. De aceea `dateCreated`
+    # ramane rezerva DOAR pentru `refreshed_at`, niciodata pentru `listed_at`.
     return make_re_listing(
         platform="storia", external_id=str(it.get("id")) if it.get("id") is not None else None,
         tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,
@@ -141,6 +146,8 @@ def _parse_item(it: dict, tip_anunt: str, tip_proprietate: str) -> dict:
         etaj=str(it.get("floorNumber")) if it.get("floorNumber") is not None else None,
         pret=pret, moneda=moneda, locatie_oras=oras, locatie_judet=judet,
         titlu=title, source_url=src, thumbnail_url=thumb,
+        listed_at=normalize_iso(it.get("createdAtFirst")),
+        refreshed_at=normalize_iso(it.get("pushedUpAt") or it.get("dateCreated")),
     )
 
 

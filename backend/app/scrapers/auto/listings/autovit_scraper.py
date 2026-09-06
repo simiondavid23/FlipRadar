@@ -15,6 +15,7 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
+from app.utils.olx_state import iso_to_naive_local
 
 _BASE = "https://www.autovit.ro"
 # Categorii confirmate (auto_categories.py). Orice altceva -> fallback "autoturisme".
@@ -69,6 +70,59 @@ def _extract_ld_prices(soup) -> list:
             })
         return offers
     return []
+
+
+def _extract_autovit_dates(soup) -> dict:
+    """DATE-2 — {node_id: (createdAt, bumpDate|None)} din `__NEXT_DATA__`.
+
+    Autovit nu pune datele in markup-ul cardului, dar le expune in
+    `props.pageProps.urqlState` — un dict al carui fiecare valoare are un camp `data`
+    care e el insusi un STRING JSON (deci mai e nevoie de un `json.loads`). Dupa
+    decodare, fiecare rezultat e un edge cu:
+      * `node.id` — acelasi ID ca `data-id` de pe card (confirmat pe fixture, 32/32);
+      * `node.createdAt` — prima publicare (`listed_at`);
+      * `vas.bumpDate`   — ultima repromovare (`refreshed_at`), poate lipsi.
+
+    Alinierea se face pe ID, NU pe pozitie: ordinea din `urqlState` coincide azi cu
+    ordinea cardurilor, dar e o coincidenta pe care nu ne bazam (spre deosebire de
+    `_extract_ld_prices`, unde alinierea 1:1 e verificata prin titlu).
+
+    Functie PURA. `{}` la orice esec, un `data` nedecodabil se sare fara sa opreasca
+    restul — apelantul ramane fara date, nu fara anunturi.
+    """
+    def _walk(node, out):
+        if isinstance(node, dict):
+            n = node.get("node")
+            if isinstance(n, dict) and n.get("id") is not None and n.get("createdAt"):
+                vas = node.get("vas")
+                out[str(n["id"])] = (n.get("createdAt"),
+                                     vas.get("bumpDate") if isinstance(vas, dict) else None)
+            for value in node.values():
+                _walk(value, out)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value, out)
+
+    try:
+        script = soup.find("script", id="__NEXT_DATA__")
+        if not script or not script.string:
+            return {}
+        urql = (json.loads(script.string).get("props") or {}).get("pageProps", {}).get("urqlState")
+        if not isinstance(urql, dict):
+            return {}
+        rezultat: dict = {}
+        for intrare in urql.values():
+            brut = intrare.get("data") if isinstance(intrare, dict) else None
+            if not isinstance(brut, str):
+                continue
+            try:
+                _walk(json.loads(brut), rezultat)
+            except (ValueError, TypeError):
+                continue
+        return rezultat
+    except Exception as exc:
+        print(f"[autovit] __NEXT_DATA__ dates parse error: {exc}")
+        return {}
 
 
 async def search_autovit(make: str = "", model: str = "", filters: dict = {}, page: int = 1) -> list:
@@ -126,6 +180,8 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
     # Preturile curate vin din JSON-LD (aliniate 1:1 cu cardurile), pentru ca
     # markup-ul cardului nu contine pretul.
     ld_prices = _extract_ld_prices(soup)
+    # DATE-2 — prima publicare + ultima repromovare, din acelasi HTML (fara request extra).
+    date_map = _extract_autovit_dates(soup)
     for idx, card in enumerate(cards):
         try:
             link = card.find("a", href=True)
@@ -156,6 +212,10 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
             img = card.find("img")
             thumb = thumb_from_img(img) or None
 
+            # DATE-2 — cheia e `data-id`, NU `idx`: spre deosebire de preturile JSON-LD,
+            # datele nu sunt garantat aliniate pozitional cu cardurile.
+            _creat, _bump = date_map.get(card.get("data-id") or "", (None, None))
+
             results.append(make_listing(
                 platform="autovit", external_id=card.get("data-id"), titlu=titlu,
                 make=make or None, model=model or None,
@@ -165,6 +225,8 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
                 gearbox=normalize_gearbox(card_text),
                 pret=pret, moneda=moneda, locatie=locatie,
                 source_url=href, thumbnail_url=thumb,
+                listed_at=iso_to_naive_local(_creat),
+                refreshed_at=iso_to_naive_local(_bump),
             ))
             if len(results) >= MAX_LISTINGS:
                 break

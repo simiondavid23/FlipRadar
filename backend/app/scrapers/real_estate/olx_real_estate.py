@@ -17,6 +17,7 @@ from app.scrapers.real_estate._common import (
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
+from app.utils.olx_state import extract_olx_ad_meta, normalize_iso
 
 _BASE = "https://www.olx.ro"
 
@@ -207,6 +208,21 @@ _OLX_RO_MONTHS = {
 }
 
 
+# DATE-2 — etichetele care marcheaza o REACTUALIZARE (regula DATE-1). Copie locala,
+# ca si `_parse_olx_date`: `services/radar/olx_scraper` nu se importa din `scrapers/`.
+_ETICHETE_REACTUALIZARE = ("reactualizat", "actualizat")
+
+
+def _este_reactualizare(text) -> bool:
+    """True daca textul de data al cardului e etichetat ca reactualizare.
+
+    Data astfel etichetata merge in `refreshed_at` si NICIODATA in `listed_at`; altfel
+    un anunt vechi repromovat ieri ar trece de filtrele de vechime ca si cum ar fi nou.
+    """
+    t = unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode().lower()
+    return any(e in t for e in _ETICHETE_REACTUALIZARE)
+
+
 def _parse_olx_date(text, now: datetime):
     """Data din cardul OLX ("Azi la HH:MM" / "Ieri la HH:MM" / "d luna yyyy") -> datetime | None.
 
@@ -334,6 +350,7 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
             loc_el = card.find(attrs={"data-testid": "location-date"})
             locatie = None
             listed_at = None
+            refreshed_at = None
             if loc_el:
                 raw = loc_el.get_text(" ", strip=True)
                 # Separatorul e " - "; split cu maxsplit=1 ca locatiile cu cratima interna
@@ -341,8 +358,15 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
                 parts = raw.split(" - ", 1)
                 locatie = parts[0].strip()
                 if len(parts) > 1:
+                    # DATE-2 — FALLBACK. Cardul are o singura data cu doua semantici, deci
+                    # eticheta decide coloana (regula DATE-1): „Reactualizat azi" pe un anunt
+                    # de patru luni nu are voie sa treaca drept data publicarii. Sursa
+                    # preferata ramane state-ul (mai jos), care le da separat.
                     dt = _parse_olx_date(parts[1], datetime.now())
-                    listed_at = dt.isoformat() if dt else None
+                    if dt and _este_reactualizare(parts[1]):
+                        refreshed_at = dt.isoformat()
+                    elif dt:
+                        listed_at = dt.isoformat()
 
             thumb = _pick_thumb(card.find("img"))
 
@@ -351,13 +375,32 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
                 tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,
                 camere=extract_rooms(titlu), suprafata_mp=extract_surface(titlu),
                 pret=pret, moneda=moneda, locatie_oras=locatie,
-                titlu=titlu, source_url=href, thumbnail_url=thumb, listed_at=listed_at,
+                titlu=titlu, source_url=href, thumbnail_url=thumb,
+                listed_at=listed_at, refreshed_at=refreshed_at,
             ))
             if len(results) >= MAX_RESULTS:
                 break
         except Exception as exc:
             print(f"[olx_re] card parse error: {exc}")
             continue
+
+    # DATE-2 — cele doua date, separate, din __PRERENDERED_STATE__ (aceeasi pagina, fara
+    # request extra). Bat data de pe card: acolo `createdTime` si `lastRefreshTime` sunt
+    # comprimate intr-un singur text. Exemplu masurat pe fixture: primul anunt e publicat
+    # pe 19.06 si repromovat pe 03.09 — cardul arata doar a doua data.
+    # Conventia Imobiliare: STRING ISO (scannerul face fromisoformat), cu `Z` normalizat.
+    meta = extract_olx_ad_meta(html)
+    if meta:
+        for r in results:
+            m = meta.get(r.get("external_id") or "")
+            if not m:
+                continue
+            creat = normalize_iso(m.get("created"))
+            reactualizat = normalize_iso(m.get("refreshed"))
+            if creat:
+                r["listed_at"] = creat
+            if reactualizat:
+                r["refreshed_at"] = reactualizat
 
     print(f"[olx_re] {len(results)} anunturi ({tip_proprietate} {tip_anunt})")
     log_manager.emit("real_estate", "OK", f"OLX Imobiliare: {len(results)} anunturi gasite")

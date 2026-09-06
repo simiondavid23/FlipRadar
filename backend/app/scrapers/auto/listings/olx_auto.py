@@ -11,6 +11,7 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
+from app.utils.olx_state import extract_olx_ad_meta, iso_to_naive_local
 
 _BASE = "https://www.olx.ro"
 _CAT_BASE = "/auto-masini-moto-ambarcatiuni/"  # baza fixa; segmentul final = categoria selectata
@@ -114,6 +115,10 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
     # inclusiv cele de sub fold pe care OLX le lazy-load-eaza (src/data-src raman
     # placeholder in HTML-ul server-rendered). Construim map-ul {token -> URL} o data/pagina.
     photos_map = _photos_map_from_state(resp.text)
+    # DATE-2 — acelasi state da si cele doua date ale anuntului: `createdTime` (prima
+    # publicare) si `lastRefreshTime` (ultima repromovare). Parser comun in
+    # app/utils/olx_state.py, ca sa nu fie a patra copie a aceluiasi regex in proiect.
+    date_map = extract_olx_ad_meta(resp.text)
 
     cards = soup.select('div[data-cy="l-card"]') or soup.select('[data-testid="l-card"]')
     cu_poza = 0
@@ -156,11 +161,17 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
                 if not img_thumb:
                     din_state += 1
 
+            # DATE-2 — conventia Auto e datetime NAIV LOCAL (vezi iso_to_naive_local).
+            # `_olx_id` da exact cheia din meta (token-ul -ID<...>.html).
+            _meta = date_map.get(_olx_id(href) or "") or {}
+
             results.append(make_listing(
                 platform="olx_auto", external_id=_olx_id(href), titlu=titlu,
                 year=extract_year(titlu), km=extract_km(titlu),
                 pret=pret, moneda=moneda, locatie=locatie,
                 source_url=href, thumbnail_url=thumb,
+                listed_at=iso_to_naive_local(_meta.get("created")),
+                refreshed_at=iso_to_naive_local(_meta.get("refreshed")),
             ))
             if len(results) >= MAX_LISTINGS:
                 break
