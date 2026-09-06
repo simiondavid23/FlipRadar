@@ -22,10 +22,19 @@ si `contentUrl`, dar NU are pret, moneda sau locatie. Deci:
   - locatia  se ia dintr-o frunza de forma "PLZ Oras" (5 cifre + nume).
   - titlul, la rezerva, e cea mai LUNGA ancora `/s-anzeige/` — nu prima: prima e
     insigna cu numarul de poze ("20", "15", "6").
+
+KLEIN-1 (fixture 2026-09-06, aceeasi structura ca la KA-1 — `article[data-adid]` = 27,
+`aditem` = 0) adauga doua campuri care lipseau:
+  - `listed_at` : data de pe card ("Heute, 13:25"), NEETICHETATA, deci data publicarii
+    (regula DATE-1). Cardul nu spune nimic despre repromovare -> `refreshed_at` = None.
+    Cele doua carduri TOP promovate n-au data deloc si raman cu None, dar NU se sar.
+  - anul        : din eticheta "EZ MM/YYYY" (Erstzulassung), nu din `extract_year` pe
+    textul cardului, care ia primul an plauzibil si nimereste in descriere.
 """
 import json
 import re
 import urllib.parse
+from datetime import datetime, timedelta
 
 from curl_cffi.requests import AsyncSession
 
@@ -43,6 +52,26 @@ _RE_PRET = re.compile(r"^[\d][\d.\s]*(?:,\d+)?\s*€")
 # "64283 Darmstadt", "81825 Trudering-Riem" — PLZ german + localitate.
 _RE_LOC = re.compile(r"^\d{5}\s+[A-ZÄÖÜ][\w\-\. ]*$")
 _MAX_FRUNZA = 40   # peste atat nu mai e o eticheta, e proza
+
+# ── KLEIN-1: data si anul de pe card ─────────────────────────────────────────────
+# Data sta intr-un `div.text-onSurfaceNonessential` (confirmat pe fixture 2026-09-06:
+# 25/27 carduri o au; cele doua carduri TOP promovate n-au deloc data). ACELASI
+# container tine si locatia ("59192 Bergkamen"), iar in parintele comun cele doua se
+# lipesc la `get_text()` fara spatiu ("59192 BergkamenHeute, 13:25"). De aceea nu
+# indexam pozitional, ci luam primul text pe care `_parse_card_date` stie sa-l citeasca:
+# o locatie nu se potriveste pe niciunul dintre cele trei formate de data.
+# Clasa e semantica (rolul textului), nu de layout — `flex`/`mb-xsmall`/`p-medium` se
+# schimba primele la un rebuild Tailwind, asa cum s-a intamplat la KA-1.
+_SEL_META_CARD = "div.text-onSurfaceNonessential"
+
+_RE_ORA = re.compile(r"\b(\d{1,2}):(\d{2})\b")
+_RE_DATA_DE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
+
+# "EZ 03/2017" = Erstzulassung (prima inmatriculare) — sursa CORECTA a anului.
+# Confirmat pe fixture 2026-09-06: 27/27 carduri au eticheta, in timp ce `extract_year`
+# pe textul intreg al cardului greseste pe 4 din 27, fiindca ia primul an plauzibil din
+# descriere ("...bis Mai 2031" -> 2031 in loc de EZ 2025; un Touran EZ 2011 -> 1996).
+_RE_EZ = re.compile(r"\bEZ\s*(\d{1,2})/(\d{4})\b")
 
 
 def _ld_din_card(card) -> dict:
@@ -97,6 +126,71 @@ def _titlu_din_card(card, ld: dict) -> str:
         return max(ancore, key=len)
     h2 = card.find("h2")
     return h2.get_text(" ", strip=True) if h2 else ""
+
+
+def _parse_card_date(text, now=None):
+    """Data de pe cardul Kleinanzeigen -> datetime NAIV LOCAL (conventia Auto).
+
+    Trei formate, toate masurate sau confirmate pe pagina de detaliu:
+      * "Heute, 13:25"   -> azi la ora data (singura forma din fixture-ul 2026-09-06,
+                            care e sortat dupa noutate);
+      * "Gestern, 09:05" -> ieri la ora data;
+      * "12.08.2026"     -> acea zi, ora 00:00 (forma confirmata in
+                            `detail.py::fetch_kleinanzeigen_detail`).
+    Ora lipsa -> 00:00, ca la ceilalti parseri de card din proiect. `now` e injectabil
+    pentru teste. Orice altceva ("TOP", gol, None, ora imposibila) -> None, fara exceptie.
+
+    DATE-1: data de pe card e NEETICHETATA, deci e data de PUBLICARE -> `listed_at`.
+    Cardul nu expune nicio informatie de repromovare, deci `refreshed_at` ramane None.
+    """
+    if not text:
+        return None
+    t = str(text).strip()
+    if not t:
+        return None
+    acum = now or datetime.now()
+
+    m_ora = _RE_ORA.search(t)
+    ora = int(m_ora.group(1)) if m_ora else 0
+    minut = int(m_ora.group(2)) if m_ora else 0
+
+    jos = t.lower()
+    if jos.startswith("heute") or jos.startswith("gestern"):
+        zi = acum - timedelta(days=1) if jos.startswith("gestern") else acum
+        try:
+            return zi.replace(hour=ora, minute=minut, second=0, microsecond=0)
+        except ValueError:          # "Heute, 99:99"
+            return None
+
+    m = _RE_DATA_DE.search(t)
+    if m:
+        try:
+            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:          # "32.13.2026"
+            return None
+    return None
+
+
+def _data_din_card(card, now=None):
+    """Prima data citibila dintre textele `_SEL_META_CARD` ale cardului; None la TOP."""
+    for el in card.select(_SEL_META_CARD):
+        dt = _parse_card_date(el.get_text(" ", strip=True), now=now)
+        if dt is not None:
+            return dt
+    return None
+
+
+def _an_din_ez(text):
+    """Anul din eticheta "EZ MM/YYYY" (Erstzulassung). None cand eticheta lipseste.
+
+    Preferat lui `extract_year` pe textul cardului, care ia PRIMUL an plauzibil din
+    text si nimereste in descriere (masurat: 4 greseli din 27 pe fixture).
+    """
+    m = _RE_EZ.search(text or "")
+    if not m:
+        return None
+    an = int(m.group(2))
+    return an if 1900 <= an <= 2100 else None
 
 
 async def search_kleinanzeigen_auto(query: str = "", make: str = "", model: str = "",
@@ -180,9 +274,15 @@ async def search_kleinanzeigen_auto(query: str = "", make: str = "", model: str 
             card_text = card.get_text(" ", strip=True)
             results.append(make_listing(
                 platform="kleinanzeigen_auto", external_id=card.get("data-adid"), titlu=titlu,
-                make=make or None, year=extract_year(titlu) or extract_year(card_text),
+                make=make or None,
+                # KLEIN-1: "EZ MM/YYYY" e anul REAL de inmatriculare; lantul vechi ramane
+                # rezerva pentru cardurile fara eticheta.
+                year=_an_din_ez(card_text) or extract_year(titlu) or extract_year(card_text),
                 km=extract_km(card_text), pret=pret, moneda="EUR",
                 locatie=locatie or "Germania", source_url=href, thumbnail_url=thumb,
+                # KLEIN-1: data de pe card e data publicarii (neetichetata -> `listed_at`,
+                # regula DATE-1). Cardurile TOP promovate n-au data deloc -> None.
+                listed_at=_data_din_card(card), refreshed_at=None,
             ))
             if len(results) >= MAX_LISTINGS:
                 break
