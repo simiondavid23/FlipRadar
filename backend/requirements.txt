@@ -57,7 +57,7 @@ tzlocal==5.3.1
 # deci ZoneInfo("Europe/Bucharest") — fusul in care se normalizeaza datele anunturilor
 # (app/utils/listing_dates.py) — depinde de pachetul asta. Venea tranzitiv prin pandas;
 # declarat explicit ca sa nu dispara la un build PyInstaller sau la o curatare de deps.
-tzdata==2025.3
+tzdata>=2025.3
 
 # Rate limiting endpoint-uri de scraping manual (MODIFICARE 5)
 slowapi==0.1.9
