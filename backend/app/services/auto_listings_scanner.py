@@ -15,6 +15,7 @@ from app.services.bnr_exchange import get_eur_ron
 from app.services.radar.scorer import calculate_score
 from app.services.log_manager import log_manager, set_log_user
 from app.utils.ore_active import in_ore_active
+from app.utils.listing_dates import acum_local
 
 _CURRENT_YEAR = 2026
 
@@ -339,7 +340,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         # scrapere (vezi _naiv_local din facebook_auto_scraper) — nu se converteste nimic.
         listed_at    = raw.get("listed_at"),
         refreshed_at = raw.get("refreshed_at"),
-        found_at     = datetime.now(timezone.utc),
+        found_at     = acum_local(),                 # TZ-1: ceasul nostru, ora sistemului
         last_checked_at = datetime.now(timezone.utc),
     )
     db.add(listing)

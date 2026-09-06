@@ -2,6 +2,7 @@ from sqlalchemy import (Boolean, Column, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
 from app.database import Base
+from app.utils.listing_dates import acum_local
 
 
 class AutoFeedListing(Base):
@@ -42,7 +43,9 @@ class AutoFeedListing(Base):
     # Review AI on-demand (paritate cu RadarListing.ai_review) — generat din generate_ai_review.
     ai_review         = Column(Text, nullable=True)
     status            = Column(String(20), default="active")
-    found_at          = Column(TIMESTAMP, server_default=func.now())
+    # TZ-1 — default PYTHON pe ora sistemului. `server_default=func.now()` ramane doar ca
+    # plasa pentru INSERT-uri din afara ORM-ului; pe SQLite ar da CURRENT_TIMESTAMP, adica UTC.
+    found_at          = Column(TIMESTAMP, default=lambda: acum_local(), server_default=func.now())
     last_checked_at   = Column(TIMESTAMP)
     # Imbogatire on-demand a detaliului (poze/descriere/vanzator/data) — pattern Radar.
     seller_name       = Column(String(200), nullable=True)

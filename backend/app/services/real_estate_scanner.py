@@ -19,6 +19,7 @@ from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
 from app.services.log_manager import log_manager, set_log_user
 from app.utils.ore_active import in_ore_active
+from app.utils.listing_dates import acum_local, to_naive_local
 
 
 def _within_hours(kw: RealEstateKeyword) -> bool:
@@ -88,14 +89,12 @@ def _seed_from_raw(raw: dict) -> dict:
     # listed_at: string ISO (emis de scraperul OLX) -> datetime; lipsa/invalid -> None.
     # DATE-1: acelasi tratament pentru refreshed_at (ultima reactualizare pe platforma),
     # tinut separat ca o repromovare sa nu treaca drept data primei publicari.
+    # TZ-1 — `to_naive_local` in loc de `fromisoformat` gol: Storia `createdAtFirst` si
+    # Facebook `creation_time` vin in UTC (`Z`), iar SQLite arunca offset-ul si pastra
+    # ora de perete UTC — pe ACELASI anunt Storia iesea `refreshed_at` corect (venea cu
+    # `+03:00`) si `listed_at` cu 3 h in urma. Stringul FARA offset ramane neschimbat.
     def _iso(cheie):
-        val = raw.get(cheie)
-        if not val:
-            return None
-        try:
-            return datetime.fromisoformat(str(val))
-        except (TypeError, ValueError):
-            return None
+        return to_naive_local(raw.get(cheie))
 
     listed_at = _iso("listed_at")
     refreshed_at = _iso("refreshed_at")
@@ -390,7 +389,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         grade           = grade,
         listed_at       = seed["listed_at"],
         refreshed_at    = seed["refreshed_at"],
-        found_at        = datetime.now(timezone.utc),
+        found_at        = acum_local(),              # TZ-1: ceasul nostru
         last_checked_at = datetime.now(timezone.utc),
     )
     db.add(listing)
@@ -659,8 +658,9 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         grade           = grade,
         # FBG-2 (M3) — data REALA a postarii FB (posted_at); created_at e momentul
         # INSERT-ului nostru (comentariul vechi pretindea altceva) si ramane fallback.
-        listed_at       = post.get("posted_at") or post.get("created_at"),
-        found_at        = datetime.now(timezone.utc),
+        # TZ-1 — `posted_at` din grupurile FB vine naiv-UTC (fromtimestamp(tz=utc)).
+        listed_at       = to_naive_local(post.get("posted_at") or post.get("created_at")),
+        found_at        = acum_local(),              # TZ-1: ceasul nostru (ramura FBG)
         last_checked_at = datetime.now(timezone.utc),
     )
     db.add(listing)
@@ -912,7 +912,7 @@ def run_cleanup(db: Session) -> int:
     # expirau NICIODATA din feed. Expirare pe varsta: active si mai vechi de 30
     # de zile (found_at) -> status "removed" (soft — salvatele raman neatinse,
     # nimic nu se sterge si nu se re-notifica).
-    cutoff_fb = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff_fb = acum_local() - timedelta(days=30)    # TZ-1: se compara cu found_at
     expired_fb = db.query(RealEstateListing).filter(
         RealEstateListing.status == "active",
         RealEstateListing.platform.in_(("facebook_groups", "facebook_marketplace")),

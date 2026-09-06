@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.models.radar_listing import RadarListing
 from app.services.log_manager import log_manager
 from app.utils.http_profile import DEFAULT_IMPERSONATE
+from app.utils.listing_dates import acum_local
 
 
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
@@ -86,7 +87,7 @@ def cleanup_sold_listings(db: Session) -> int:
 
     Returneaza numarul de listinguri actualizate.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    cutoff = acum_local() - timedelta(hours=1)       # TZ-1: found_at e acum ora sistemului
     candidates = (
         db.query(RadarListing)
         .filter(RadarListing.status == "active", RadarListing.found_at < cutoff)
@@ -122,7 +123,7 @@ def cleanup_removed_listings_daily(db: Session) -> int:
     last_checked_at < startul rularii: fiecare rand verificat iese din setul de
     candidati -> terminare garantata, zero sarituri.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=6)
+    cutoff = acum_local() - timedelta(hours=6)       # TZ-1: idem
     run_started = datetime.now(timezone.utc)
     BATCH_SIZE = 50
     MAX_CHECKS = 1000   # plafon de siguranta per rulare (ajustabil)

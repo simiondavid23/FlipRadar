@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.instance_lock import asigura_instanta_unica
+from app.utils.listing_dates import acum_local
 
 # LAUNCH-2 — inaintea lui create_all/run_migrations de mai jos: pana la lifespan
 # un al doilea proces ar fi scris deja in baza.
@@ -635,7 +636,7 @@ async def lifespan(app: FastAPI):
         from app.models.log_entry import LogEntry
         db = SessionLocal()
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            cutoff = acum_local() - timedelta(hours=24)   # TZ-1: LogEntry.created_at e ora sistemului
             db.query(LogEntry).filter(
                 LogEntry.created_at < cutoff,
             ).delete(synchronize_session=False)
@@ -794,6 +795,7 @@ app.include_router(deals_router, prefix="/api/deals")  # SHOP-2a
 from pathlib import Path
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
 
 def _resolve_frontend_out() -> Path:
     """Sub PyInstaller (onedir), frontend-ul static sta in folderul

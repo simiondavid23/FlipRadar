@@ -52,6 +52,7 @@ from app.services.radar.base_scraper import (
     classify, report_outcome, Outcome,
 )
 from app.utils.http_profile import DEFAULT_IMPERSONATE
+from app.utils.listing_dates import to_naive_local
 
 
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
@@ -131,10 +132,21 @@ def _parse_price(price, currency) -> tuple[Optional[float], str]:
 
 
 def _parse_dt(s) -> Optional[datetime]:
-    """listed_at: '2026-07-03 21:07:12' sau ISO '2026-07-03T21:07:12.000000Z'."""
+    """listed_at: '2026-07-03 21:07:12' sau ISO '2026-07-03T21:07:12.000000Z'.
+
+    TZ-1 — forma cu `Z` e UTC si se converteste (inainte se stergea `Z`-ul si se
+    citea ca ora locala, adica 3 h in urma vara). Forma FARA fus se lasa neschimbata:
+    PRESUPUNEM ca e ora locala a site-ului (romanesc), dar NU e masurat — daca apare
+    vreodata un anunt cu ambele forme, aici se verifica.
+    """
     if not s:
         return None
-    t = str(s).strip().replace("T", " ").replace("Z", "").split(".")[0].strip()
+    brut = str(s).strip()
+    if brut.endswith("Z") or brut.endswith("z"):
+        convertit = to_naive_local(brut)
+        if convertit is not None:
+            return convertit
+    t = brut.replace("T", " ").replace("Z", "").split(".")[0].strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             return datetime.strptime(t, fmt)

@@ -89,11 +89,12 @@ def test_t2_card_obisnuit_locatie_si_data_separate(monkeypatch):
 
     # Locatia si data stau in acelasi container parinte si se lipesc la get_text()
     # fara spatiu ("59192 BergkamenHeute, 13:25") — nu au voie sa ajunga impreuna.
+    # TZ-1: „13:25" e ora BERLINULUI; in feed intra ca 14:25, ora anunturilor.
     assert "Bergkamen" in r["locatie"]
     assert "Heute" not in r["locatie"]
 
     assert r["listed_at"] is not None
-    assert (r["listed_at"].hour, r["listed_at"].minute) == (13, 25)
+    assert (r["listed_at"].hour, r["listed_at"].minute) == (14, 25)
     assert r["listed_at"].date() in (inainte.date(), dupa.date())   # "Heute" = azi
     assert r["listed_at"].tzinfo is None                            # conventia Auto
     assert r["refreshed_at"] is None   # cardul n-are informatie de repromovare
@@ -101,7 +102,7 @@ def test_t2_card_obisnuit_locatie_si_data_separate(monkeypatch):
 
 def test_t2b_data_cardului_cu_now_injectat():
     """Aceeasi valoare, dar cu ceasul fixat — fara dependenta de ziua rularii."""
-    assert ka._data_din_card(_card("3505136877"), now=_ACUM) == datetime(2026, 9, 6, 13, 25)
+    assert ka._data_din_card(_card("3505136877"), now=_ACUM) == datetime(2026, 9, 6, 14, 25)
 
 
 # ── T3 — cardul TOP promovat ─────────────────────────────────────────────────────
@@ -127,15 +128,18 @@ def test_t3b_cardurile_top_raman_in_rezultate(monkeypatch):
 # ── T4 — `_parse_card_date`, functie pura ────────────────────────────────────────
 
 def test_t4_heute_gestern_si_data_plina():
-    assert ka._parse_card_date("Heute, 13:25", now=_ACUM) == datetime(2026, 9, 6, 13, 25)
-    assert ka._parse_card_date("Gestern, 09:05", now=_ACUM) == datetime(2026, 9, 5, 9, 5)
+    # TZ-1 — orele sunt GERMANE; rezultatul e in ora anunturilor (vara: +1 h).
+    assert ka._parse_card_date("Heute, 13:25", now=_ACUM) == datetime(2026, 9, 6, 14, 25)
+    assert ka._parse_card_date("Gestern, 09:05", now=_ACUM) == datetime(2026, 9, 5, 10, 5)
     # forma de pe pagina de detaliu: ziua, ora 00:00
-    assert ka._parse_card_date("12.08.2026", now=_ACUM) == datetime(2026, 8, 12, 0, 0)
+    # miezul noptii la Berlin = 01:00 la Bucuresti, deci ziua NU se schimba
+    assert ka._parse_card_date("12.08.2026", now=_ACUM) == datetime(2026, 8, 12, 1, 0)
 
 
 def test_t4b_gestern_traverseaza_luna():
     ref = datetime(2026, 9, 1, 10, 0, 0)
-    assert ka._parse_card_date("Gestern, 23:59", now=ref) == datetime(2026, 8, 31, 23, 59)
+    # 23:59 la Berlin = 00:59 ziua urmatoare la Bucuresti
+    assert ka._parse_card_date("Gestern, 23:59", now=ref) == datetime(2026, 9, 1, 0, 59)
 
 
 def test_t4c_intrari_necitibile_dau_none_fara_exceptie():
@@ -143,8 +147,8 @@ def test_t4c_intrari_necitibile_dau_none_fara_exceptie():
                  "Heute, 99:99", "32.13.2026", "Heute"):
         rezultat = ka._parse_card_date(brut, now=_ACUM)
         if brut == "Heute":
-            # ora lipsa -> 00:00, ca la ceilalti parseri de card din proiect
-            assert rezultat == datetime(2026, 9, 6, 0, 0)
+            # ora lipsa -> 00:00 la BERLIN, adica 01:00 in ora anunturilor (TZ-1)
+            assert rezultat == datetime(2026, 9, 6, 1, 0)
         else:
             assert rezultat is None, brut
 
@@ -237,7 +241,7 @@ def test_data_gasita_indiferent_de_ordinea_containerelor():
         '<div class="text-onSurfaceNonessential"><span>Gestern, 08:30</span></div>'
         '<div class="text-onSurfaceNonessential"><span>10115 Berlin</span></div>'
         "</article>").select_one("article")
-    assert ka._data_din_card(inversat, now=_ACUM) == datetime(2026, 9, 5, 8, 30)
+    assert ka._data_din_card(inversat, now=_ACUM) == datetime(2026, 9, 5, 9, 30)
 
     doar_locatie = safe_soup(
         '<article data-adid="X3">'

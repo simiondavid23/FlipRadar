@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
 from app.scrapers.auto.listings._common import IMPERSONATE, build_headers, safe_soup
-from app.utils.listing_dates import iso_to_naive_local
+from app.utils.listing_dates import din_fus, iso_to_naive_local
 
 _EMPTY = {"images": [], "description": None, "seller_name": None, "listed_at": None}
 
@@ -320,7 +320,10 @@ def fetch_kleinanzeigen_detail(url: str) -> dict:
         m = re.search(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", date_el.get_text(" ", strip=True))
         if m:
             try:
-                listed_at = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                # TZ-1 — data e germana (vezi kleinanzeigen_auto._FUS_SITE).
+                listed_at = din_fus(
+                    datetime(int(m.group(3)), int(m.group(2)), int(m.group(1))),
+                    "Europe/Berlin")
             except ValueError:
                 listed_at = None
     return {"images": imgs, "description": description,

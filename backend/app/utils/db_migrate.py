@@ -335,6 +335,91 @@ def _portable_migrations(conn, inspector):
             _migrate(conn, _nume,
                      f"ALTER TABLE {_tabel} ADD COLUMN refreshed_at TIMESTAMP")
 
+    # TZ-1 — backfill: orele deja scrise in DB sunt UTC, aplicatia le arata de acum ca
+    # ora locala. Fara conversie, tot ce e vechi ar sari cu 3 ore.
+    _tz1_backfill_ore_locale(conn, inspector)
+
+
+def _tz1_backfill_ore_locale(conn, inspector) -> None:
+    """UTC -> ora locala pe coloanele de timp AFISATE, o singura data.
+
+    Ce se converteste si de ce:
+      * `found_at` pe cele trei tabele de feed si `created_at` pe `log_entries` — erau
+        scrise cu `datetime.now(timezone.utc)` / `CURRENT_TIMESTAMP`, iar SQLite arunca
+        offset-ul si pastra ora de perete UTC. De aici anomalia masurata: un anunt cu
+        `listed_at` 16:50 (ora RO) si `found_at` 16:23, adica „gasit inainte de a fi postat".
+      * `listed_at` pe `real_estate_listings`, DOAR pe platformele care trimiteau UTC:
+        `storia` (`createdAtFirst` cu `Z`), `facebook_marketplace` si `facebook_groups`
+        (`creation_time` / `posted_at`, epoch UTC). OLX trimitea `+03:00`, deci era corect.
+
+    Ce NU se atinge: `refreshed_at` (venea cu offset, era corect), `listed_at` pe Radar si
+    Auto (deja ora locala prin `_naiv_local` / `iso_to_naive_local`), si coloanele de timp
+    care nu se afiseaza (`last_checked_at`, `seen_at`, `last_scan_at`, ...) — raman UTC,
+    consecvent cu comparatiile lor, si sunt tema unei runde separate.
+
+    Conversia se face PER RAND, prin `astimezone()`, nu cu un offset fix: randurile din
+    ianuarie sunt UTC+2 si cele din iulie UTC+3, iar un `+3` uniform le-ar strica pe
+    primele. Idempotenta vine din registrul de migrari (`_migrate` sare daca e aplicata).
+    """
+    if _applied(conn, "tz1_ore_locale"):
+        return
+
+    tinte = [("radar_listings", "found_at", None),
+             ("auto_feed_listings", "found_at", None),
+             ("real_estate_listings", "found_at", None),
+             ("log_entries", "created_at", None),
+             ("real_estate_listings", "listed_at",
+              ("storia", "facebook_marketplace", "facebook_groups"))]
+
+    total = {}
+    try:
+        for tabel, coloana, platforme in tinte:
+            if not _table_exists(inspector, tabel) or not _column_exists(inspector, tabel, coloana):
+                continue
+            unde = f"{coloana} IS NOT NULL"
+            parametri = {}
+            if platforme:
+                chei = ", ".join(f":p{i}" for i in range(len(platforme)))
+                unde += f" AND platform IN ({chei})"
+                parametri = {f"p{i}": v for i, v in enumerate(platforme)}
+
+            randuri = conn.execute(
+                text(f"SELECT id, {coloana} FROM {tabel} WHERE {unde}"), parametri).fetchall()
+            convertite = 0
+            for rid, valoare in randuri:
+                local = _tz1_utc_in_local(valoare)
+                if local is None:
+                    continue
+                conn.execute(text(f"UPDATE {tabel} SET {coloana} = :v WHERE id = :id"),
+                             {"v": local, "id": rid})
+                convertite += 1
+            total[f"{tabel}.{coloana}"] = convertite
+
+        conn.execute(text("INSERT INTO schema_migrations (migration_name) VALUES (:n)"),
+                     {"n": "tz1_ore_locale"})
+        conn.commit()
+        detaliu = ", ".join(f"{k}={v}" for k, v in sorted(total.items())) or "nimic de convertit"
+        print(f"[DB Migrate] Applied: tz1_ore_locale ({detaliu})")
+    except Exception as exc:
+        conn.rollback()
+        print(f"[DB Migrate] Failed: tz1_ore_locale -> {exc} "
+              f"(nimic nu s-a schimbat; se reia la pornirea urmatoare)")
+
+
+def _tz1_utc_in_local(valoare):
+    """Un moment scris ca UTC (naiv sau string SQLite) -> datetime naiv, ora locala."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    if isinstance(valoare, str):
+        try:
+            valoare = _dt.fromisoformat(valoare.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(valoare, _dt):
+        return None
+    aware = valoare if valoare.tzinfo is not None else valoare.replace(tzinfo=_tz.utc)
+    return aware.astimezone().replace(tzinfo=None)
+
 
 def run_migrations():
     """Apply any pending column additions."""

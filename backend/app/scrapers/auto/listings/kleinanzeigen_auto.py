@@ -35,6 +35,7 @@ import json
 import re
 import urllib.parse
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from curl_cffi.requests import AsyncSession
 
@@ -43,6 +44,7 @@ from app.scrapers.auto.listings._common import (
     safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
+from app.utils.listing_dates import din_fus
 
 _BASE = "https://www.kleinanzeigen.de"
 
@@ -72,6 +74,10 @@ _RE_DATA_DE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 # pe textul intreg al cardului greseste pe 4 din 27, fiindca ia primul an plauzibil din
 # descriere ("...bis Mai 2031" -> 2031 in loc de EZ 2025; un Touran EZ 2011 -> 1996).
 _RE_EZ = re.compile(r"\bEZ\s*(\d{1,2})/(\d{4})\b")
+
+# TZ-1 — orele de pe kleinanzeigen.de sunt ore GERMANE; feed-ul le vrea in ora
+# anunturilor (vezi utils/listing_dates). Vara diferenta e de o ora.
+_FUS_SITE = "Europe/Berlin"
 
 
 def _ld_din_card(card) -> dict:
@@ -148,7 +154,12 @@ def _parse_card_date(text, now=None):
     t = str(text).strip()
     if not t:
         return None
-    acum = now or datetime.now()
+    # TZ-1 — „Heute"/„Gestern" se judeca in ZIUA GERMANIEI, nu a masinii: intre
+    # 00:00 si 01:00 ora Romaniei, la Berlin e inca ziua precedenta, deci un
+    # „Heute, 23:40" ar fi primit data de maine. `now` intra naiv-local si se muta
+    # in fusul sursa inainte de a decide ziua; rezultatul se intoarce prin `din_fus`.
+    acum = (now or datetime.now()).astimezone().astimezone(ZoneInfo(_FUS_SITE))\
+        .replace(tzinfo=None)
 
     m_ora = _RE_ORA.search(t)
     ora = int(m_ora.group(1)) if m_ora else 0
@@ -158,14 +169,16 @@ def _parse_card_date(text, now=None):
     if jos.startswith("heute") or jos.startswith("gestern"):
         zi = acum - timedelta(days=1) if jos.startswith("gestern") else acum
         try:
-            return zi.replace(hour=ora, minute=minut, second=0, microsecond=0)
+            return din_fus(
+                zi.replace(hour=ora, minute=minut, second=0, microsecond=0), _FUS_SITE)
         except ValueError:          # "Heute, 99:99"
             return None
 
     m = _RE_DATA_DE.search(t)
     if m:
         try:
-            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            return din_fus(
+                datetime(int(m.group(3)), int(m.group(2)), int(m.group(1))), _FUS_SITE)
         except ValueError:          # "32.13.2026"
             return None
     return None

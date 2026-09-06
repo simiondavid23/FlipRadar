@@ -15,6 +15,7 @@ from app.models.real_estate_monitor_listing import RealEstateMonitorListing as R
 from app.services.real_estate.excel_exporter import build_re_xlsx
 from app.utils.auth import get_current_user
 from app.utils.id_csv import parse_id_csv
+from app.utils.listing_dates import acum_local
 
 router = APIRouter(prefix="/api/real-estate-monitor", tags=["real-estate-monitor"])
 
@@ -491,7 +492,7 @@ def save_manual_listing(
         description     = descriere[:2000],
         score           = score,
         grade           = grade,
-        found_at        = datetime.now(timezone.utc),
+        found_at        = acum_local(),              # TZ-1: ceasul nostru
         last_checked_at = datetime.now(timezone.utc),
     )
     db.add(listing)

@@ -41,6 +41,7 @@ from app.services.radar.scorer import calculate_fee_ceiling, calculate_score
 from app.services.log_manager import set_log_user
 from app.utils.auth import get_current_user, require_admin
 from app.utils.id_csv import parse_id_csv
+from app.utils.listing_dates import acum_local
 from app.utils.radar_scanner import (
     cancel_keyword_scan,
     mark_keyword_deleted,
@@ -1837,7 +1838,7 @@ def keyword_price_trend(
     )
     if not kw:
         raise HTTPException(status_code=404, detail="Keyword-ul nu a fost găsit.")
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = acum_local() - timedelta(days=days)      # TZ-1: se compara cu found_at
     rows = (
         db.query(
             func.date(RadarListing.found_at).label("day"),

@@ -11,6 +11,18 @@ Cele doua conventii, stabilite la DATE-1 si nemodificate de atunci:
 OLX-STATE-1: functiile astea au stat pana acum in `utils/olx_state.py`, unde ajunsesera
 sa fie importate de Autovit, Storia si `detail.py` (AutoScout24) — module fara nicio
 legatura cu OLX. Numele modulului mintea; continutul e neschimbat.
+
+TZ-1 — CONVENTIA, pe scurt: in DB toate datetime-urile sunt NAIVE, in ora de perete a
+locului unde conteaza, iar conversia se face O SINGURA DATA, LA SCRIERE. Frontend-ul
+afiseaza ce primeste, fara sa mai converteasca nimic (un string fara offset e citit de
+browser ca ora locala, adica a aceleiasi masini).
+
+Doua ceasuri, deliberat separate:
+  * `acum_local()` — ceasul NOSTRU (`found_at`, `log_entries.created_at`, pragurile de
+    cleanup/retentie/filtre): ora sistemului pe care ruleaza aplicatia;
+  * `to_naive_local()` / `din_fus()` — ora DECLARATA de platforma (`listed_at`,
+    `refreshed_at`): `FUS_ANUNTURI`, ca „postat 12:54" sa arate ca pe olx.ro.
+Pe masina de productie (GTB Standard Time) cele doua dau exact aceeasi valoare.
 """
 from datetime import datetime, timedelta
 from typing import Optional
@@ -58,6 +70,81 @@ def este_reactualizat(listed_at, refreshed_at, prag: timedelta = PRAG_REACTUALIZ
         return False
 
 
+def acum_local() -> datetime:
+    """Acum, ca datetime NAIV in ora sistemului pe care ruleaza aplicatia.
+
+    TZ-1 — ceasul NOSTRU (`found_at`, `log_entries.created_at`, pragurile de cleanup /
+    retentie / filtre de data). Pana acum se folosea `datetime.now(timezone.utc)`, iar
+    SQLite ii arunca offset-ul si pastra ora de perete UTC: pe un anunt Facebook,
+    `found_at` iesea 16:23 in timp ce `listed_at` (deja ora RO) era 16:50, adica „gasit
+    cu 27 de minute inainte de a fi postat".
+
+    Exista ca functie, nu ca `datetime.now()` imprastiat, din doua motive: se poate
+    mock-ui intr-un singur loc in teste, si se poate cauta cu grep cand cineva se
+    intreaba ce ceas foloseste o comparatie.
+    """
+    return datetime.now()
+
+
+def to_naive_local(x) -> Optional[datetime]:
+    """Orice moment venit de la o platforma -> datetime NAIV, in ora anunturilor.
+
+    Accepta: datetime aware (convertit), datetime naiv (intors NESCHIMBAT — contractul
+    e ca naivul e DEJA in ora corecta), string ISO cu sau fara offset (`Z` normalizat),
+    epoch int/float. `None` la lipsa, tip nesuportat sau text neparsabil — niciodata
+    exceptie.
+
+    TZ-1 / varianta A — tinta e `FUS_ANUNTURI`, nu fusul masinii. Sunt doua ceasuri
+    diferite in aplicatie, deliberat:
+      * `acum_local()` = ceasul NOSTRU (cand a gasit scanerul anuntul) -> ora masinii;
+      * asta = ora DECLARATA de piata (cand a fost postat anuntul) -> ora Romaniei.
+    Pe masina de productie (GTB) cele doua coincid bit cu bit. Diferenta apare doar pe
+    o masina din alt fus, unde e si corect sa difere: „postat 12:54" trebuie sa arate
+    la fel ca pe olx.ro, indiferent de unde te uiti la feed.
+    """
+    if x is None:
+        return None
+    if isinstance(x, datetime):
+        dt = x
+    elif isinstance(x, (int, float)) and not isinstance(x, bool):
+        try:
+            return datetime.fromtimestamp(x, tz=FUS_ANUNTURI).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
+    elif isinstance(x, str):
+        txt = normalize_iso(x)
+        if not txt:
+            return None
+        try:
+            dt = datetime.fromisoformat(txt)
+        except (TypeError, ValueError):
+            return None
+    else:
+        return None
+    return dt.astimezone(FUS_ANUNTURI).replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
+def din_fus(dt_naiv, nume_fus: str) -> Optional[datetime]:
+    """Un datetime NAIV citit de pe un site strain -> naiv, in ora anunturilor.
+
+    Kleinanzeigen afiseaza „Heute, 13:25" in ora Germaniei; fara conversie ajungea in
+    feed ca 13:25 ora Romaniei, adica o ora in urma vara. `nume_fus` e o cheie IANA
+    (`Europe/Berlin`), deci DST-ul fiecarei parti se aplica singur — un offset fix ar fi
+    gresit de doua ori pe an, si diferit pentru fiecare pereche de fusuri.
+
+    `None` la lipsa sau la un fus necunoscut (nu oprim un scan pentru asta).
+    """
+    if not isinstance(dt_naiv, datetime):
+        return None
+    if dt_naiv.tzinfo is not None:
+        return to_naive_local(dt_naiv)
+    try:
+        sursa = ZoneInfo(nume_fus)
+    except Exception:
+        return None
+    return dt_naiv.replace(tzinfo=sursa).astimezone(FUS_ANUNTURI).replace(tzinfo=None)
+
+
 def normalize_iso(s) -> Optional[str]:
     """String ISO cu sufix `Z` -> acelasi moment scris `+00:00`; restul, neatins.
 
@@ -90,12 +177,8 @@ def iso_to_naive_local(s) -> Optional[datetime]:
 
     HOTFIX CI — conversia se face la `FUS_ANUNTURI` (Europe/Bucharest), EXPLICIT, nu la
     fusul masinii: rezultatul trebuie sa fie acelasi pe laptop si pe runner-ul UTC.
+
+    TZ-1 — a devenit un alias subtire peste `to_naive_local`, care face acelasi lucru
+    dar accepta si datetime si epoch. Numele ramane: are patru consumatori.
     """
-    txt = normalize_iso(s)
-    if not txt:
-        return None
-    try:
-        dt = datetime.fromisoformat(txt)
-    except (TypeError, ValueError):
-        return None
-    return dt.astimezone(FUS_ANUNTURI).replace(tzinfo=None) if dt.tzinfo is not None else dt
+    return to_naive_local(s)

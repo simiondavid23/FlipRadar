@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, Text, Boolean
 from datetime import datetime, timezone
 from app.database import Base
+from app.utils.listing_dates import acum_local
 
 
 class RadarListing(Base):
@@ -29,7 +30,10 @@ class RadarListing(Base):
     # DATE-1 — ultima REACTUALIZARE ("Reactualizat azi"), separata de prima publicare.
     # RAD-1 (vechimea maxima) ramane pe listed_at; refreshed_at e strict informativ.
     refreshed_at = Column(DateTime, nullable=True)
-    found_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    # TZ-1 — ceasul NOSTRU: ora sistemului, nu UTC. Cu `now(timezone.utc)` SQLite arunca
+    # offset-ul si pastra ora de perete UTC, deci `found_at` iesea cu 3 h in urma fata de
+    # `listed_at` (deja ora RO) — anunturi „gasite inainte de a fi postate".
+    found_at = Column(DateTime, default=lambda: acum_local(), nullable=False, index=True)
     last_checked_at = Column(DateTime, nullable=True)
     # SEEN-2 — pretul de la care a scazut, ca feed-ul sa poata arata „de la X".
     # Setat DOAR cand scaderea trece pragul; altfel ramane NULL. Badge-ul e SEEN-2b.

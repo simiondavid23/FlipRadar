@@ -18,6 +18,7 @@ from app.models.real_estate_monitor_listing import RealEstateMonitorListing
 from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword
 from app.utils.auth import get_current_user
 from app.services.currency_service import convert
+from app.utils.listing_dates import acum_local
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
@@ -149,9 +150,9 @@ def get_dashboard_stats(
     # RadarListing.found_at e scris in UTC de aplicatie (aceeasi conventie ca
     # filtrul `since` din radar.py), iar AutoFeedListing / RealEstateMonitorListing
     # au server_default func.now() care pe SQLite (CURRENT_TIMESTAMP) scrie tot UTC — aceeasi conventie.
-    radar_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    radar_cutoff = acum_local() - timedelta(hours=24)   # TZ-1: found_at = ora sistemului
     # cutoff calculat in Python — portabil intre dialecte
-    db_cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+    db_cutoff_24h = acum_local() - timedelta(hours=24)  # TZ-1: idem
 
     def _cnt(q):
         return int(q.scalar() or 0)

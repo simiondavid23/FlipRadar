@@ -8,6 +8,7 @@ from sqlalchemy import (Boolean, Column, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
 from app.database import Base
+from app.utils.listing_dates import acum_local
 
 
 class RealEstateMonitorListing(Base):
@@ -42,7 +43,8 @@ class RealEstateMonitorListing(Base):
     grade                     = Column(String(5), default="C")
     price_history             = Column(JSON, default=list)
     status                    = Column(String(20), default="active")
-    found_at                  = Column(TIMESTAMP, server_default=func.now())
+    # TZ-1 — vezi nota din auto_feed_listing: default Python pe ora sistemului.
+    found_at                  = Column(TIMESTAMP, default=lambda: acum_local(), server_default=func.now())
     # Data postarii pe platforma; NULL cand sursa nu o expune (IM-7).
     listed_at                 = Column(TIMESTAMP)
     # DATE-1 — ultima reactualizare pe platforma, separata de prima publicare.
