@@ -14,6 +14,17 @@ legatura cu OLX. Numele modulului mintea; continutul e neschimbat.
 """
 from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+# HOTFIX CI — fusul in care traiesc anunturile, EXPLICIT. Pana acum conversia se facea
+# cu `.astimezone()` fara argument, adica la fusul MASINII: pe laptopul din Romania
+# iesea ora corecta, pe runner-ul GitHub Actions (UTC) iesea cu 3 ore mai putin, si
+# patru teste care asertau ora absoluta picau doar acolo.
+#
+# Platformele monitorizate sunt romanesti si emit ore locale (OLX trimite `+03:00`
+# vara, `+02:00` iarna), deci momentul afisat trebuie sa fie ora Bucurestiului
+# indiferent unde ruleaza procesul. ZoneInfo, nu un offset fix: Romania are DST.
+FUS_ANUNTURI = ZoneInfo("Europe/Bucharest")
 
 # FRONT-1 — pragul de la care o reactualizare conteaza. Sub o zi e zgomot, nu semnal:
 # pe OLX `lastRefreshTime == createdTime` cand anuntul n-a fost bumpat niciodata, iar pe
@@ -76,6 +87,9 @@ def iso_to_naive_local(s) -> Optional[datetime]:
     `_too_old` (RAD-1) compara `datetime.now()` naiv cu `listed_at`, deci un datetime
     aware ar arunca TypeError acolo — de aici conversia. Un input deja naiv se intoarce
     neschimbat (e local prin conventie). `None` la lipsa sau la text neparsabil.
+
+    HOTFIX CI — conversia se face la `FUS_ANUNTURI` (Europe/Bucharest), EXPLICIT, nu la
+    fusul masinii: rezultatul trebuie sa fie acelasi pe laptop si pe runner-ul UTC.
     """
     txt = normalize_iso(s)
     if not txt:
@@ -84,4 +98,4 @@ def iso_to_naive_local(s) -> Optional[datetime]:
         dt = datetime.fromisoformat(txt)
     except (TypeError, ValueError):
         return None
-    return dt.astimezone().replace(tzinfo=None) if dt.tzinfo is not None else dt
+    return dt.astimezone(FUS_ANUNTURI).replace(tzinfo=None) if dt.tzinfo is not None else dt

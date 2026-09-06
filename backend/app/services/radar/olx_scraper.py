@@ -306,16 +306,14 @@ def _fetch_detail_image(url: str) -> Optional[str]:
 
 def _parse_iso_dt(s) -> Optional[datetime]:
     """ISO 8601 cu offset ('2026-07-07T12:08:09+03:00') -> datetime NAIV local
-    (consecvent cu conventia listed_at a scraperelor)."""
-    if not s:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(s))
-        if dt.tzinfo is not None:
-            dt = dt.astimezone().replace(tzinfo=None)
-        return dt
-    except (ValueError, TypeError):
-        return None
+    (consecvent cu conventia listed_at a scraperelor).
+
+    HOTFIX CI — deleaga la `iso_to_naive_local`, care converteste EXPLICIT la
+    Europe/Bucharest. Copia locala facea `.astimezone()` fara argument, adica la fusul
+    MASINII: pe un runner UTC datele ieseau cu 3 ore mai putin decat ora reala a
+    anuntului. Nu se duplica regula de fus in scraper; traieste intr-un singur loc.
+    """
+    return iso_to_naive_local(s)
 
 
 def fetch_olx_offer_details(numeric_id) -> dict:

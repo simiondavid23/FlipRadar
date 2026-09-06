@@ -14,6 +14,7 @@ import json
 import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from app.scrapers.auto.listings import detail as dt
 from app.services.radar import vinted_scraper as vs
@@ -39,9 +40,15 @@ def _catalog() -> dict:
 
 
 def _naiv_local_din_utc(iso: str) -> datetime:
-    """Referinta calculata independent de cod: UTC aware -> naiv local."""
+    """Referinta calculata independent de cod: UTC aware -> naiv, ora Bucurestiului.
+
+    HOTFIX CI — inainte folosea `.astimezone()` fara argument, adica fusul MASINII.
+    Cum si implementarea facea la fel, testul trecea oriunde: cele doua greseli se
+    anulau. Acum implementarea converteste explicit la Europe/Bucharest, deci si
+    referinta trebuie sa fie acolo — altfel testul ar fi picat pe runner-ul UTC.
+    """
     return (datetime.fromisoformat(iso.replace("Z", "+00:00"))
-            .astimezone().replace(tzinfo=None))
+            .astimezone(ZoneInfo("Europe/Bucharest")).replace(tzinfo=None))
 
 
 def _as24_detail(monkeypatch, html: str) -> dict:

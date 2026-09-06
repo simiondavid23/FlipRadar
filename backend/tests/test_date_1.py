@@ -361,3 +361,82 @@ def test_t8b_feed_radar_expune_refreshed_at():
     gol = RadarListing(user_id=1, platform="olx", title="t", price=1.0,
                        currency="RON", url="u")
     assert _listing_to_dict(gol)["refreshed_at"] is None
+
+
+# ── HOTFIX CI — parserul ISO nu are voie sa depinda de fusul masinii ────────────
+
+def test_iso_parser_da_ora_bucurestiului_indiferent_de_offsetul_din_input():
+    """Acelasi MOMENT, scris in trei fusuri: acelasi rezultat, ora Bucurestiului.
+
+    Bug-ul reparat: `.astimezone()` fara argument converteste la fusul MASINII. Pe
+    laptopul din Romania iesea ora corecta, pe runner-ul GitHub Actions (UTC) iesea cu
+    3 ore mai putin, si patru teste care asertau ora absoluta picau doar acolo.
+
+    Asertia e pe o valoare FIXA (nu derivata din ceasul masinii), deci testul are
+    acelasi verdict pe orice runner — asta e tot rostul lui.
+    """
+    from app.utils.listing_dates import iso_to_naive_local
+
+    asteptat = datetime(2026, 9, 2, 12, 54, 54)          # 2 sept = ora de vara, UTC+3
+    for intrare in ("2026-09-02T12:54:54+03:00",         # cum trimite OLX vara
+                    "2026-09-02T09:54:54+00:00",
+                    "2026-09-02T09:54:54Z",
+                    "2026-09-02T11:54:54+02:00",
+                    "2026-09-02T04:54:54-05:00"):
+        assert iso_to_naive_local(intrare) == asteptat, intrare
+
+
+def test_iso_parser_respecta_ora_de_iarna():
+    """Romania trece pe UTC+2 iarna — de aia e ZoneInfo, nu un offset fix de +3."""
+    from app.utils.listing_dates import iso_to_naive_local
+
+    assert iso_to_naive_local("2026-01-15T08:00:00+00:00") == datetime(2026, 1, 15, 10, 0)
+    assert iso_to_naive_local("2026-01-15T10:00:00+02:00") == datetime(2026, 1, 15, 10, 0)
+    # aceeasi zi calendaristica, vara: +3
+    assert iso_to_naive_local("2026-07-15T08:00:00+00:00") == datetime(2026, 7, 15, 11, 0)
+
+
+def test_input_naiv_ramane_neschimbat():
+    """Fara offset nu se ghiceste nimic — valoarea e deja locala prin conventie."""
+    from app.utils.listing_dates import iso_to_naive_local
+
+    assert iso_to_naive_local("2026-09-02T12:54:54") == datetime(2026, 9, 2, 12, 54, 54)
+
+
+def test_niciun_astimezone_fara_argument_pe_caile_de_data():
+    """Garda structurala: `.astimezone()` fara argument = fusul masinii.
+
+    Prinde regresia si pe un laptop din Romania, unde asertiile pe ora absoluta trec
+    oricum. `facebook_scraper._naiv_local` e EXCLUS deliberat: acolo contractul e
+    relativ la `datetime.now()` (vezi test_fb_radar_adapter / test_fb_auto_adapter,
+    care compara varsta naiva cu varsta UTC), deci fusul masinii e cel corect.
+    """
+    import ast
+    import inspect
+
+    from app.scrapers.real_estate import olx_real_estate
+    from app.services.radar import olx_scraper
+    from app.utils import listing_dates
+
+    for modul in (listing_dates, olx_scraper, olx_real_estate):
+        # Se inspecteaza APELURILE, prin ast, nu textul: docstring-urile vorbesc
+        # despre `astimezone().replace(tzinfo=None)` ca sa explice exact capcana asta.
+        goale = [n for n in ast.walk(ast.parse(inspect.getsource(modul)))
+                 if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Attribute)
+                 and n.func.attr == "astimezone"
+                 and not n.args and not n.keywords]
+        assert not goale, (modul.__name__, [n.lineno for n in goale])
+
+
+def test_cele_doua_parsere_olx_deleaga_la_helperul_comun():
+    """Regula de fus traieste intr-un singur loc; copiile doar deleaga."""
+    from app.scrapers.real_estate.olx_real_estate import _parse_iso_dt as re_parse
+    from app.services.radar.olx_scraper import _parse_iso_dt as radar_parse
+
+    asteptat = datetime(2026, 7, 7, 12, 8, 9)
+    for parser in (radar_parse, re_parse):
+        assert parser("2026-07-07T12:08:09+03:00") == asteptat
+        assert parser("2026-07-07T09:08:09+00:00") == asteptat
+        assert parser(None) is None
+        assert parser("maine") is None

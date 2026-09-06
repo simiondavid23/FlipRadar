@@ -53,6 +53,12 @@ reportlab==4.4.10
 APScheduler==3.11.2
 tzlocal==5.3.1
 
+# Baza IANA de fusuri orare pentru `zoneinfo` (DATE-1b). Windows NU are tzdb de sistem,
+# deci ZoneInfo("Europe/Bucharest") — fusul in care se normalizeaza datele anunturilor
+# (app/utils/listing_dates.py) — depinde de pachetul asta. Venea tranzitiv prin pandas;
+# declarat explicit ca sa nu dispara la un build PyInstaller sau la o curatare de deps.
+tzdata==2025.3
+
 # Rate limiting endpoint-uri de scraping manual (MODIFICARE 5)
 slowapi==0.1.9
 
