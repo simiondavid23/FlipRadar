@@ -14,6 +14,7 @@ from curl_cffi.requests import AsyncSession
 from app.scrapers.real_estate._common import (
     IMPERSONATE, MAX_RESULTS, build_headers, parse_price,
     extract_rooms, extract_surface, detect_currency, make_re_listing, norm_city_slug,
+    url_dedup_key,
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
@@ -30,9 +31,43 @@ _ENRICH_CAP = 10                  # max fetch-uri de detaliu per scanare
 _ENRICH_DELAY_RANGE = (1.0, 2.0)  # delay politicos intre fetch-uri
 
 
+# OLX-IMO-1 — anunturile Storia incrucisate de OLX in propria lista.
+# Masurat pe `olx_re_listing_state.html`: 25 din 51 de carduri nu trimit la OLX, ci la
+# `storia.ro/ro/oferta/<slug>-ID<token>` (FARA `.html`). Le PASTRAM in feed — un keyword
+# doar pe OLX nu are voie sa piarda jumatate din pagina — cu `external_id` prefixat.
+_HOST_INCRUCISAT = "storia.ro"
+_PREFIX_INCRUCISAT = "storia-"
+
+# Tokenul `-ID<token>`, ancorat la finalul PATH-ului. `.html` e OPTIONAL: cardurile
+# proprii OLX il au, cele Storia nu.
+_RX_OLX_ID = re.compile(r"-ID([A-Za-z0-9]+?)(?:\.html)?$")
+
+
 def _olx_id(href: str):
-    m = re.search(r"-ID([A-Za-z0-9]+)\.html", href or "")
+    """Tokenul `-ID<token>` al unui link de card OLX; None daca lipseste.
+
+    Query-ul si fragmentul se taie INAINTE de match (cardurile proprii OLX poarta
+    `?search_reason=search%7Cpromoted`), iar `.html` e optional — vezi `_RX_OLX_ID`.
+    """
+    cale = str(href or "").split("#")[0].split("?")[0].rstrip("/")
+    m = _RX_OLX_ID.search(cale)
     return m.group(1) if m else None
+
+
+def _external_id_card(href: str) -> Optional[str]:
+    """PURA: `external_id`-ul unui card din lista OLX; None cand linkul n-are token.
+
+    Cardurile proprii OLX -> tokenul brut (`kTodo`). Anunturile Storia incrucisate ->
+    `storia-<token>` (`storia-HE6J`): prefixul le face vizibile ca atare si exclude prin
+    constructie orice coliziune cu tokenii OLX, care nu contin `-`. Nu se poate ciocni
+    nici cu `external_id`-ul scraperului Storia, care e NUMERIC (`10502931`).
+    """
+    tok = _olx_id(href)
+    if not tok:
+        return None
+    if url_dedup_key(href).startswith(f"https://{_HOST_INCRUCISAT}/"):
+        return _PREFIX_INCRUCISAT + tok
+    return tok
 
 
 def _pick_thumb(img) -> Optional[str]:
@@ -305,6 +340,9 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
         return []
 
     cards = soup.select('div[data-cy="l-card"]') or soup.select('[data-testid="l-card"]')
+    # OLX-IMO-1 — id-ul numeric al fiecarui card (`<div id="305646457">`), paralel cu
+    # `results`: e puntea catre meta pentru anunturile incrucisate (vezi mai jos).
+    card_ids: list = []
     for card in cards:
         try:
             link = card.find("a", href=True)
@@ -313,6 +351,7 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
             href = link["href"]
             if href.startswith("/"):
                 href = _BASE + href
+            card_id = str(card.get("id") or "").strip()
 
             title_el = card.find("h4") or card.find("h6") or link
             titlu = title_el.get_text(strip=True) if title_el else ""
@@ -348,13 +387,14 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
             thumb = _pick_thumb(card.find("img"))
 
             results.append(make_re_listing(
-                platform="olx", external_id=_olx_id(href),
+                platform="olx", external_id=_external_id_card(href),
                 tip_anunt=tip_anunt, tip_proprietate=tip_proprietate,
                 camere=extract_rooms(titlu), suprafata_mp=extract_surface(titlu),
                 pret=pret, moneda=moneda, locatie_oras=locatie,
                 titlu=titlu, source_url=href, thumbnail_url=thumb,
                 listed_at=listed_at, refreshed_at=refreshed_at,
             ))
+            card_ids.append(card_id)
             if len(results) >= MAX_RESULTS:
                 break
         except Exception as exc:
@@ -367,17 +407,28 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
     # pe 19.06 si repromovat pe 03.09 — cardul arata doar a doua data.
     # Conventia Imobiliare: STRING ISO (scannerul face fromisoformat), cu `Z` normalizat.
     meta = extract_olx_ad_meta(html)
-    if meta:
-        for r in results:
-            m = meta.get(r.get("external_id") or "")
-            if not m:
-                continue
-            creat = normalize_iso(m.get("created"))
-            reactualizat = normalize_iso(m.get("refreshed"))
-            if creat:
-                r["listed_at"] = creat
-            if reactualizat:
-                r["refreshed_at"] = reactualizat
+    # OLX-IMO-1 — legarea meta pe DOUA cai, in ordinea asta:
+    #   1. tokenul din URL, cheia lui `extract_olx_ad_meta` — calea existenta, neatinsa;
+    #   2. id-ul numeric de pe card, pentru anunturile incrucisate.
+    # A doua e necesara fiindca acelasi anunt are DOUA identificatoare: state-ul il tine
+    # sub tokenul OLX (`kGsBz`, din `url`-ul canonic olx.ro), iar cardul trimite la
+    # tokenul Storia (`HE6J`, din `externalUrl`). Nu lipseste nimic din meta — masurat,
+    # are toate cele 51 de ad-uri; doar cheia difera. `numeric_id` e prezent pe 51/51 si
+    # da acelasi ad ca tokenul pe toate cele 26 unde exista amandoua, deci calea 2 e o
+    # rezerva coerenta, nu o a doua sursa de adevar.
+    prin_numeric = {str(m["numeric_id"]): m
+                    for m in meta.values() if m.get("numeric_id") is not None}
+    metas = [meta.get(r.get("external_id") or "") or prin_numeric.get(cid) or {}
+             for r, cid in zip(results, card_ids)]
+    for r, m in zip(results, metas):
+        if not m:
+            continue
+        creat = normalize_iso(m.get("created"))
+        reactualizat = normalize_iso(m.get("refreshed"))
+        if creat:
+            r["listed_at"] = creat
+        if reactualizat:
+            r["refreshed_at"] = reactualizat
 
     print(f"[olx_re] {len(results)} anunturi ({tip_proprietate} {tip_anunt})")
     log_manager.emit("real_estate", "OK", f"OLX Imobiliare: {len(results)} anunturi gasite")
@@ -387,11 +438,11 @@ async def search_olx_real_estate(filters: dict = {}, skip_enrich_ids: Optional[s
     # era a doua parsare a aceluiasi state (~470 ms per pagina).
     skip = skip_enrich_ids or set()
     enriched = 0
-    for r in results:
+    for r, m in zip(results, metas):
         if enriched >= _ENRICH_CAP:
             break
         ext = r.get("external_id")
-        nid = (meta.get(ext) or {}).get("numeric_id")
+        nid = m.get("numeric_id")
         if not ext or ext in skip or not nid:
             continue
         det = _fetch_offer_details(nid)

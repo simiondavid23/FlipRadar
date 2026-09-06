@@ -6,6 +6,7 @@ este aliniata cu modelul RealEstateListing.
 import re
 import unicodedata
 from typing import Optional
+from urllib.parse import urlsplit
 from app.utils.http_profile import DEFAULT_IMPERSONATE
 
 IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
@@ -22,6 +23,43 @@ def norm_city_slug(name) -> str:
     s = unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode()
     return s.strip().lower().replace(" ", "-")
 
+
+
+def url_dedup_key(url) -> str:
+    """Cheia de COMPARARE a doua URL-uri de anunt. NU e o forma de stocare.
+
+    OLX-IMO-1 — dedup-ul cross-platform (un anunt Storia incrucisat in lista OLX vs
+    acelasi anunt cules de scraperul Storia) compara URL-uri venite pe doua cai. Masurat
+    pe fixture-uri, cele doua forme coincid deja caracter cu caracter
+    (`https://www.storia.ro/ro/oferta/<slug>-ID<token>`), deci `source_url` se STOCHEAZA
+    neatins pe ambele parti — clientul vede exact linkul canonic al site-ului. Ce
+    normalizam aici e doar cheia pe care o comparam, ca egalitatea sa nu depinda de
+    lucruri care nu fac parte din identitatea anuntului:
+
+      * fragmentul (`#...`) si query-ul (`?search_reason=...`) — OLX pune tracking pe
+        propriile carduri; azi nu-l pune pe cele incrucisate, dar l-ar putea pune maine;
+      * `www.` si majusculele din host — acelasi server;
+      * schema — `http` vs `https` e acelasi anunt;
+      * slash-ul final.
+
+    Path-ul ramane sensibil la majuscule (tokenul `-IDHE6J` e case-sensitive) si NU se
+    atinge slug-ul: doua URL-uri cu slug diferit dau chei diferite, deliberat — pe fixture
+    slugul OLX si cel Storia difera pe 6 din 25 de anunturi, deci nu e un identificator.
+    URL relativ (fara host) -> doar path-ul curatat. Gol/None -> "".
+    """
+    s = str(url or "").strip()
+    if not s:
+        return ""
+    if s.startswith("/"):
+        return s.split("#")[0].split("?")[0].rstrip("/")
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*://", s):
+        s = "//" + s
+    parti = urlsplit(s)
+    host = parti.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    cale = parti.path.rstrip("/")
+    return f"https://{host}{cale}" if host else cale
 
 
 def build_headers(extra: Optional[dict] = None) -> dict:

@@ -191,11 +191,10 @@ def _cauta_re(monkeypatch, html: str) -> list:
 
 
 def test_t4_imobiliare_pe_fixture(monkeypatch):
-    """Primul anunt cu external_id de pe pagina (`kTodo`) primeste ambele date.
+    """Primul anunt propriu OLX de pe pagina (`kTodo`) primeste ambele date.
 
     NU `kGsBz`, desi acela e primul ad din state: cardul lui trimite la
-    `storia.ro/...-IDHE6J` (fara `.html`), deci `_olx_id` da None si anuntul n-are
-    external_id — vezi testul de acoperire de mai jos.
+    `storia.ro/...-IDHE6J`, deci anuntul intra in feed sub `storia-HE6J` (OLX-IMO-1).
     """
     rezultate = _cauta_re(monkeypatch, _fixture("olx_re_listing_state.html"))
     prin_id = {r["external_id"]: r for r in rezultate if r.get("external_id")}
@@ -209,12 +208,12 @@ def test_t4_imobiliare_pe_fixture(monkeypatch):
     assert datetime.fromisoformat(primul["refreshed_at"]).month == 9
 
 
-def test_t4b_imobiliare_kgsbz_e_in_state_dar_cardul_lui_nu_are_id():
-    """Anuntul din brief traieste in state cu ambele date; ce lipseste e ID-ul de pe card.
+def test_t4b_imobiliare_kgsbz_are_ambele_date_in_state():
+    """Anuntul din brief traieste in state cu ambele date, sub tokenul OLX (`kGsBz`).
 
-    Pinuiaza limitarea PREEXISTENTA (`_olx_id` cere `-ID<token>.html`, iar OLX
-    afiseaza anunturi Storia cu link `storia.ro/...-IDHE6J`), ca sa nu para ca
-    DATE-2 pierde datele: ele sunt acolo, anuntul nu are cheie.
+    Cardul lui trimite insa la `storia.ro/...-IDHE6J`, deci in feed intra sub
+    `storia-HE6J`; puntea dintre cele doua identificatoare e id-ul numeric al cardului
+    (OLX-IMO-1, `test_olx_imo_1.py`). Aici pinuim doar ca datele SUNT in state.
     """
     meta = extract_olx_ad_meta(_fixture("olx_re_listing_state.html"))
     assert meta["kGsBz"]["created"].startswith("2026-06-19")
@@ -222,11 +221,18 @@ def test_t4b_imobiliare_kgsbz_e_in_state_dar_cardul_lui_nu_are_id():
 
 
 def test_t4c_imobiliare_acoperire_pe_anunturile_identificabile(monkeypatch):
-    """Toate anunturile care AU external_id primesc ambele date (26/26 pe fixture)."""
+    """Toate anunturile primesc ambele date — de la OLX-IMO-1, TOATE au si external_id.
+
+    Inainte de OLX-IMO-1 acoperirea era 26 din 51 de carduri: cele 25 de anunturi Storia
+    incrucisate n-aveau cheie, deci nici date. Acum feed-ul e 50/50 (MAX_RESULTS taie al
+    51-lea card), din care 24 incrucisate.
+    """
     rezultate = _cauta_re(monkeypatch, _fixture("olx_re_listing_state.html"))
     assert len(rezultate) == 50   # MAX_RESULTS taie la 50 din cele 51 de carduri
     identificabile = [r for r in rezultate if r.get("external_id")]
-    assert len(identificabile) == 26
+    assert len(identificabile) == 50
+    assert sum(1 for r in identificabile
+               if r["external_id"].startswith("storia-")) == 24
     assert [r["external_id"] for r in identificabile if not r.get("listed_at")] == []
     assert [r["external_id"] for r in identificabile if not r.get("refreshed_at")] == []
 

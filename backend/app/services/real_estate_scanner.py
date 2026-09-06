@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.real_estate_monitor_keyword import RealEstateMonitorKeyword as RealEstateKeyword
 from app.models.real_estate_monitor_listing import RealEstateMonitorListing as RealEstateListing
 from app.models.user import User
+from app.scrapers.real_estate._common import url_dedup_key
 from app.services.real_estate.extractor import extract_all, groq_extract
 from app.services.ai_service import AIConfigError, get_ai_client
 from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
@@ -253,13 +254,44 @@ def _call_scraper(kw: RealEstateKeyword, eur_ron: Optional[float] = None, db=Non
     return []
 
 
+# OLX-IMO-1 — prefixul pe care scraperul OLX il pune pe anunturile Storia incrucisate
+# in lista lui. Trebuie sa ramana identic cu `_PREFIX_INCRUCISAT` din
+# `scrapers/real_estate/olx_real_estate.py` (nu se importa: scannerul nu incarca
+# scraperele decat lazy, in `_call_scraper`).
+_PREFIX_INCRUCISAT = "storia-"
+
+
+def _url_deja_salvat(db: Session, user_id: int, url: str) -> bool:
+    """True daca userul are deja un anunt cu ACELASI URL, pe orice platforma.
+
+    Compararea se face pe `url_dedup_key`, nu pe stringul brut. SQL-ul nu poate normaliza,
+    deci restrangem intai cu un LIKE pe tokenul `-ID<...>` (partea stabila a URL-ului,
+    imuna la slug si la query) si confirmam apoi exact, in Python — un LIKE singur ar
+    putea prinde un alt anunt al carui slug contine intamplator acelasi text.
+
+    Fara token in URL -> False: un anunt incrucisat are mereu unul, deci absenta lui
+    inseamna ca nu avem cu ce cauta, si preferam sa inseram decat sa scanam tot feed-ul.
+    """
+    cheie = url_dedup_key(url)
+    if db is None or not cheie:
+        return False
+    m = re.search(r"-ID[A-Za-z0-9]+$", cheie)
+    if not m:
+        return False
+    randuri = (db.query(RealEstateListing.url)
+               .filter(RealEstateListing.user_id == user_id,
+                       RealEstateListing.url.like(f"%{m.group(0)}%"))
+               .all())
+    return any(url_dedup_key(u) == cheie for (u,) in randuri)
+
+
 def _save_listing(db: Session, kw: RealEstateKeyword,
                   raw: dict, ai,
                   custom_aliases: dict,
                   eur_ron: Optional[float] = None,
                   cursuri: Optional[dict] = None) -> tuple:
     """Salveaza un anunt de platforma. Intoarce (listing | None, motiv) cu motiv in
-    {"nou","duplicat","respins","invalid"} — scanner-ul numara dupa motiv."""
+    {"nou","duplicat","respins","invalid","dedup_storia"} — scanner-ul numara dupa motiv."""
     ext_id = str(raw.get("external_id") or raw.get("platform_id") or "")
     if not ext_id:
         return None, "invalid"
@@ -307,6 +339,16 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         existing.last_checked_at = datetime.now(timezone.utc)
         db.commit()
         return None, "duplicat"  # deja existent (nu e nou)
+
+    # OLX-IMO-1 — dedup CROSS-PLATFORM. OLX incruciseaza anunturi Storia in propria
+    # lista; le pastram in feed (`storia-<token>`), dar Storia ramane sursa primara: daca
+    # acelasi anunt a fost deja cules de scraperul Storia (acelasi user, acelasi URL), nu-l
+    # mai inseram a doua oara sub platforma "olx". Verificarea e DOAR pe aceste anunturi —
+    # un rezultat OLX obisnuit nu atinge query-ul — si DOAR in directia asta: un anunt
+    # intrat intai pe OLX nu blocheaza scraperul Storia.
+    if kw.platform == "olx" and ext_id.startswith(_PREFIX_INCRUCISAT):
+        if _url_deja_salvat(db, kw.user_id, raw.get("source_url") or raw.get("url") or ""):
+            return None, "dedup_storia"
 
     # Excluderi per keyword (IM-6) — ORICE termen exclus in titlu+descriere => respins. Se aplica
     # DOAR salvarilor noi; un listing existent isi pastreaza update-ul de pret de mai sus.
@@ -785,7 +827,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
         else:
             results = _call_scraper(kw, eur_ron, db=db)
             total_brute = len(results)
-            noi = dup = rej = 0
+            noi = dup = rej = ded = 0
             for r in results:
                 # Query (cautare libera) local pentru platformele care NU cauta (dovedit) la
                 # sursa: Storia si Imobiliare.ro nu accepta cautare libera deloc, iar la
@@ -817,6 +859,8 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                         dup += 1
                     elif motiv == "respins":
                         rej += 1
+                    elif motiv == "dedup_storia":
+                        ded += 1        # OLX-IMO-1 — deja salvat de scraperul Storia
                 except Exception as exc:
                     log_manager.emit("real_estate", "ERR",
                         f"{kw.platform}: anunt sarit ({type(exc).__name__}: {str(exc)[:80]})")
@@ -826,8 +870,13 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                         pass
                     rej += 1
                     continue
-            log_manager.emit("real_estate", "OK",
-                f"{kw.platform}: {total_brute} brute -> {noi} noi, {dup} duplicate, {rej} respinse")
+            sumar = (f"{kw.platform}: {total_brute} brute -> {noi} noi, "
+                     f"{dup} duplicate, {rej} respinse")
+            if ded:
+                # OLX-IMO-1 — apare doar cand chiar s-a taiat ceva, ca linia sa nu creasca
+                # pe platformele care n-au anunturi incrucisate.
+                sumar += f", {ded} dedup storia"
+            log_manager.emit("real_estate", "OK", sumar)
 
         # Marcheaza scanul efectiv pentru polling-ul per keyword — DUPA procesare, indiferent de
         # rezultat (0 anunturi sau eroare deja logata). Un keyword sarit de _within_hours NU
