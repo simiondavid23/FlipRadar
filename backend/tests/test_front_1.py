@@ -140,39 +140,65 @@ def test_t5d_bump_mai_vechi_decat_publicarea_nu_e_bump():
     assert este_reactualizat(_BUMPAT, _POSTAT) is False
 
 
-# ── T6 — alertele Radar ─────────────────────────────────────────────────────────
+# ── T6 — alertele Radar (Discord: calea VIE, dupa FRONT-1b) ────────────────────
 
 _LISTING = {"title": "iPhone 12 Pro", "price": 1200, "currency": "RON",
-            "platform": "olx", "url": "https://www.olx.ro/x", "location": "Cluj"}
+            "platform": "olx", "url": "https://www.olx.ro/x", "location": "Cluj",
+            "resale_price": 2000, "margin": 800}
 
 
-def _embed(**kw):
-    from app.services.radar.discord_service import _build_embed
+def _embed(**date):
+    """Embed-ul Radar de pe calea vie: `send_radar_notification` -> `build_radar_embed`.
 
-    return _build_embed(_LISTING, "iphone", "A", 2000.0, 40.0, **kw)
+    FRONT-1b: `_build_embed` din app/services/radar/discord_service.py (pe care erau
+    scrise T6/T6b la FRONT-1) a fost sters — nu-l mai apela nimeni de mult, iar
+    campurile de data au fost mutate aici, unde ajung efectiv pe Discord.
+    """
+    from app.services.discord_service import build_radar_embed
+
+    return build_radar_embed({**_LISTING, **date}, "A", 40, "iphone")
 
 
-def test_t6_embedul_are_campul_doar_pe_bump_real():
-    cu_bump = _embed(listed_at=_POSTAT, found_at=_BUMPAT, refreshed_at=_BUMPAT)
+def test_t6_campul_de_reactualizare_apare_doar_pe_bump_real():
+    cu_bump = _embed(listed_at=_POSTAT, refreshed_at=_BUMPAT, found_at=_BUMPAT)
     nume = [f["name"] for f in cu_bump["fields"]]
     assert "🔁 Reactualizat pe platformă" in nume
-    # imediat dupa „Postat", inainte de „Găsit"
+    # ordinea: Postat -> Reactualizat -> Gasit (aceeasi ca in corpul e-mailului)
     assert nume.index("🔁 Reactualizat pe platformă") == nume.index("📅 Postat pe platformă") + 1
     assert nume.index("🔍 Găsit de FlipRadar") == nume.index("🔁 Reactualizat pe platformă") + 1
+    valoare = next(f["value"] for f in cu_bump["fields"] if "Reactualizat" in f["name"])
+    assert valoare == "03.09.2026 17:30"
 
 
-def test_t6b_fara_bump_embedul_e_identic_cu_cel_al_semnaturii_vechi():
-    """Parametrul nou e la coada, cu default — apelurile vechi produc EXACT ce produceau."""
-    vechi = _embed(listed_at=_POSTAT, found_at=_BUMPAT)                       # semnatura veche
-    fara_bump = _embed(listed_at=_POSTAT, found_at=_BUMPAT, refreshed_at=None)
+def test_t6b_fara_date_embedul_e_identic_cu_cel_de_dinainte():
+    """Un `listing` fara chei de data produce EXACT embed-ul de dinainte de runda.
+
+    Comparatia e pe dict intreg, nu pe chei: garda ca modulele care nu trimit date
+    (si calea de pret scazut, care inca nu le trimite) raman neatinse la byte.
+    """
+    fara_nimic = _embed()
+    assert all("Postat" not in f["name"] and "Reactualizat" not in f["name"]
+               and "Găsit" not in f["name"] for f in fara_nimic["fields"])
+    # ultimul camp ramane Keyword, ca inainte de FRONT-1b
+    assert fara_nimic["fields"][-1]["name"] == "🎯 Keyword"
+
+
+def test_t6c_listed_at_fara_bump_arata_postat_dar_nu_reactualizat():
+    doar_postat = _embed(listed_at=_POSTAT, found_at=_BUMPAT)
     sub_prag = _embed(listed_at=_POSTAT, found_at=_BUMPAT,
                       refreshed_at=_POSTAT + timedelta(hours=23))
-    assert fara_bump == vechi
-    assert sub_prag == vechi
-    assert all("Reactualizat" not in f["name"] for f in vechi["fields"])
+    egal = _embed(listed_at=_POSTAT, found_at=_BUMPAT, refreshed_at=_POSTAT)
+
+    for embed in (doar_postat, sub_prag, egal):
+        nume = [f["name"] for f in embed["fields"]]
+        assert "📅 Postat pe platformă" in nume
+        assert "🔍 Găsit de FlipRadar" in nume
+        assert not any("Reactualizat" in n for n in nume)
+    # sub prag / egal produc acelasi embed ca lipsa totala a reactualizarii
+    assert sub_prag == doar_postat and egal == doar_postat
 
 
-def test_t6c_corpul_emailului_are_linia_doar_pe_bump_real(monkeypatch):
+def test_t6d_corpul_emailului_are_linia_doar_pe_bump_real(monkeypatch):
     from app.models.radar_keyword import RadarKeyword
     from app.models.user import User
     from app.utils import radar_scanner as rs
@@ -201,24 +227,6 @@ def test_t6c_corpul_emailului_are_linia_doar_pe_bump_real(monkeypatch):
     assert "Reactualizat" not in vechi
 
 
-def test_t6d_lantul_discord_paseaza_refreshed_at(monkeypatch):
-    """`route_discord_alerts` -> `send_discord_alert` -> `_build_embed`, tot lantul."""
-    from app.services.radar import discord_service as ds
-
-    trimise = []
-    monkeypatch.setattr(ds.requests, "post",
-                        lambda url, **kw: trimise.append(kw["json"]) or type(
-                            "R", (), {"status_code": 204, "text": ""})())
-
-    setari = type("S", (), {"discord_webhook_all": "https://x/wh",
-                            "discord_webhook_buy_now": None,
-                            "discord_webhook_maybe": None})()
-    ds.route_discord_alerts(setari, _LISTING, "iphone", "A", 2000.0, 40.0,
-                            _POSTAT, _BUMPAT, _BUMPAT)
-    nume = [f["name"] for f in trimise[0]["embeds"][0]["fields"]]
-    assert "🔁 Reactualizat pe platformă" in nume
-
-
 # ── Paritatea celor doua reguli (backend vs frontend) ──────────────────────────
 
 def test_regula_backend_si_frontend_folosesc_acelasi_prag():
@@ -236,3 +244,71 @@ def test_regula_backend_si_frontend_folosesc_acelasi_prag():
     m = re.search(r"const PRAG_BUMP_MS = ([^;]+);", sursa)
     assert m, "PRAG_BUMP_MS a disparut din listingHelpers.js"
     assert eval(m.group(1).replace("*", "*")) == PRAG_REACTUALIZARE.total_seconds() * 1000
+
+
+# ── T7/T8 — FRONT-1b: calea vie de Discord + stergerea duplicatului ────────────
+
+def test_t7_listing_dict_pentru_discord_duce_ambele_date():
+    """Ce ajunge efectiv pe Discord. Blocul era inline in bucla de scan (cateva sute de
+    linii), deci nimic nu-l putea verifica; FRONT-1b l-a extras."""
+    from app.utils.radar_scanner import _listing_dict_pentru_discord
+
+    listing = {"title": "iPhone 12 Pro", "price": 1200, "currency": "RON",
+               "platform": "olx", "url": "https://www.olx.ro/x",
+               "images": ["https://x/y.jpg"], "location": "Cluj",
+               "listed_at": _POSTAT, "refreshed_at": _BUMPAT}
+    rand = type("Rand", (), {"found_at": _BUMPAT})()
+    kw = type("Kw", (), {"resale_price": 2000.0})()
+
+    d = _listing_dict_pentru_discord(listing, rand, kw, "olx")
+    assert d["listed_at"] == _POSTAT
+    assert d["refreshed_at"] == _BUMPAT
+    assert d["found_at"] == _BUMPAT          # din randul DB, nu din listing
+    # campurile de dinainte de FRONT-1b, neatinse
+    assert d["title"] == "iPhone 12 Pro" and d["platform"] == "olx"
+    assert d["resale_price"] == 2000 and d["margin"] == 800
+    assert d["image_url"] == "https://x/y.jpg"
+
+
+def test_t7b_dictul_ajunge_intr_un_embed_cu_reactualizarea():
+    """Capatul lantului: dictul construit de scanner produce campul pe embed-ul real."""
+    from app.services.discord_service import build_radar_embed
+    from app.utils.radar_scanner import _listing_dict_pentru_discord
+
+    d = _listing_dict_pentru_discord(
+        {"title": "x", "price": 1200, "listed_at": _POSTAT, "refreshed_at": _BUMPAT},
+        type("Rand", (), {"found_at": _BUMPAT})(),
+        type("Kw", (), {"resale_price": 2000.0})(), "olx")
+    nume = [f["name"] for f in build_radar_embed(d, "A", 40, "iphone")["fields"]]
+    assert "🔁 Reactualizat pe platformă" in nume
+    assert "📅 Postat pe platformă" in nume
+
+
+def test_t7c_listing_fara_date_da_chei_none_nu_lipsa():
+    """Cheile exista mereu; embed-ul decide ce afiseaza, nu dictul."""
+    from app.utils.radar_scanner import _listing_dict_pentru_discord
+
+    d = _listing_dict_pentru_discord({"title": "x"}, type("R", (), {})(),
+                                     type("K", (), {})(), "olx")
+    assert d["listed_at"] is None and d["refreshed_at"] is None and d["found_at"] is None
+
+
+def test_t8_calea_moarta_de_alerte_a_disparut():
+    """FRONT-1b — `_build_embed`/`send_discord_alert`/`route_discord_alerts` erau un
+    duplicat fara apelanti al rutarii Radar. Modulul NU s-a putut sterge: gazduieste
+    `send_test_message` si `send_system_alert`, vii, cu cinci apelanti in `app/`.
+    """
+    from app.services.radar import discord_service as vechi
+
+    for mort in ("_build_embed", "send_discord_alert", "route_discord_alerts", "_fmt_dt"):
+        assert not hasattr(vechi, mort), mort
+    for viu in ("send_test_message", "send_system_alert"):
+        assert hasattr(vechi, viu), viu
+
+
+def test_t8b_formatarea_de_data_traieste_pe_calea_vie():
+    from app.services.discord_service import _fmt_dt
+
+    assert _fmt_dt(_POSTAT) == "01.06.2026 10:00"
+    assert _fmt_dt(None) == ""
+    assert _fmt_dt("nu-i datetime") == ""

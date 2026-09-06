@@ -2355,6 +2355,35 @@ def _fmt_dt(dt) -> str:
         return "Necunoscut"
 
 
+def _listing_dict_pentru_discord(listing: dict, listing_db, kw, platform: str) -> dict:
+    """Forma plata pe care o consuma `build_radar_embed` (app/services/discord_service).
+
+    Extrasa din bucla de scan la FRONT-1b ca sa fie testabila: era inline intr-o functie
+    de cateva sute de linii, deci nimic nu putea verifica CE ajunge pe Discord.
+
+    `found_at` vine din randul DEJA salvat (`listing_db`), nu din `listing` — acolo nu
+    exista; e aceeasi sursa pe care o foloseste si alerta pe e-mail. `listed_at` si
+    `refreshed_at` vin din listing-ul brut al scraperului; embed-ul decide singur ce
+    afiseaza (vezi `_campuri_de_data`), deci aici nu se filtreaza nimic.
+    """
+    pret = float(listing.get("price") or 0)
+    resale = float(getattr(kw, "resale_price", 0) or 0)
+    return {
+        "title": listing.get("title", ""),
+        "price": listing.get("price"),
+        "currency": listing.get("currency") or "RON",
+        "url": listing.get("url", ""),
+        "image_url": (listing.get("images") or [None])[0] or "",
+        "location": listing.get("location") or "",
+        "platform": listing.get("platform") or platform,
+        "resale_price": int(resale) if resale else None,
+        "margin": int(resale - pret) if (resale and pret) else None,
+        "listed_at": listing.get("listed_at"),
+        "refreshed_at": listing.get("refreshed_at"),
+        "found_at": getattr(listing_db, "found_at", None),
+    }
+
+
 def _send_email_alert(
     user: User,
     listing: dict,
@@ -2853,19 +2882,8 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                     if not score_data["filtered"] and not _first_scan:
                         # Discord doar daca keyword-ul are notify_discord activ
                         if getattr(kw, "notify_discord", False):
-                            _price = float(listing.get("price") or 0)
-                            _resale = float(kw.resale_price or 0)
-                            listing_dict = {
-                                "title": listing.get("title", ""),
-                                "price": listing.get("price"),
-                                "currency": listing.get("currency") or "RON",
-                                "url": listing.get("url", ""),
-                                "image_url": (listing.get("images") or [None])[0] or "",
-                                "location": listing.get("location") or "",
-                                "platform": listing.get("platform") or platform,
-                                "resale_price": int(_resale) if _resale else None,
-                                "margin": int(_resale - _price) if (_resale and _price) else None,
-                            }
+                            listing_dict = _listing_dict_pentru_discord(
+                                listing, listing_db, kw, platform)
                             queued = send_radar_notification(
                                 listing=listing_dict,
                                 grade=score_data["score"],

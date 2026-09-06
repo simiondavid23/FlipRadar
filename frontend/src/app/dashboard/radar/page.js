@@ -484,7 +484,7 @@ export default function RadarFeedPage() {
         {/* RP-1 — sortare */}
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
           <option value="">Sortare: implicită</option>
-          <option value="listed_desc">Data postării (recente)</option>
+          <option value="listed_desc">Postat recent</option>
           <option value="refreshed_desc">Reactualizat recent</option>
         </select>
 

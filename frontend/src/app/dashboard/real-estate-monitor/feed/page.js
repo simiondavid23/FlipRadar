@@ -291,7 +291,7 @@ export default function REFeedPage() {
           <option value="price_desc">Preț descrescător</option>
           <option value="ppm_asc">Preț/mp crescător</option>
           <option value="score_desc">Scor descrescător</option>
-          <option value="listed_desc">Data postării (recente)</option>
+          <option value="listed_desc">Postat recent</option>
           <option value="refreshed_desc">Reactualizat recent</option>
         </select>
 

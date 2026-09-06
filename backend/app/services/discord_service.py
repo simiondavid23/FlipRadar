@@ -6,12 +6,13 @@ Discord notification service — coadă persistentă în PostgreSQL (MODIFICARE 
 - Retry: max 3 încercări, după care status='failed'
 - La startup: items 'pending' mai vechi de 1h → 'failed' (stale cleanup)
 
-NOTA Radar: modulul Radar Piata are deja un router Discord complet, cu 3 niveluri
-(all / buy_now=A,B / maybe=C,D) si embed-uri bogate (resale/marja/date) — vezi
-app/services/radar/discord_service.route_discord_alerts. Nu il inlocuim ca sa nu
-regresam (canalul C/D + campurile bogate). Coada globala de aici e folosita de
-modulele noi (Auto + Imobiliare). send_radar_notification e pastrat corect (pe
-field-urile reale discord_webhook_all/buy_now) pentru completitudine.
+NOTA Radar (rescrisa la FRONT-1b): coada de aici e calea UNICA de alerte de deal, pe
+toate trei modulele. Radar intra prin `send_radar_notification`, pe aceleasi trei
+niveluri ca vechiul `route_discord_alerts` (all = A/B/C/D, buy_now = A/B, maybe = C/D),
+dar cu rate-limit si dedup. Textul de dinainte spunea ca vechiul router „nu e inlocuit,
+ca sa nu regresam" — era stale: scanner-ul trecuse deja pe coada, iar functiile alea
+n-aveau niciun apelant. Au fost sterse la FRONT-1b, odata cu mutarea campurilor de data
+in `build_radar_embed`.
 """
 import os
 import json
@@ -22,6 +23,7 @@ from typing import Optional
 import requests as req
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
+from app.utils.listing_dates import este_reactualizat
 
 
 class DiscordNotificationService:
@@ -183,6 +185,45 @@ MODULE_EMOJI = {
 }
 
 
+def _fmt_dt(dt) -> str:
+    """dd.mm.yyyy HH:MM. Mutata din app/services/radar/discord_service.py (calea moarta),
+    unde era singura utilizatoare `_build_embed`. Nimic altceva n-o folosea."""
+    if not dt:
+        return ""
+    try:
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return ""
+
+
+def _campuri_de_data(listing: dict) -> list:
+    """FRONT-1b — cele trei campuri de data ale embed-ului Radar, in ordinea din e-mail.
+
+    Fiecare apare DOAR daca are ce afisa, deci un `listing` fara chei de data produce
+    lista goala si embed-ul ramane identic cu cel de dinainte de runda — asta e garda
+    care tine calea Auto/Imobiliare neatinsa (ele trec prin alti builderi, dar dictul
+    Radar era pana acum si el fara date).
+
+    „Reactualizat" apare doar pe un bump REAL (>= 24 h intre publicare si repromovare,
+    `este_reactualizat`): pe OLX `lastRefreshTime == createdTime` cand anuntul n-a fost
+    bumpat niciodata, deci fara prag campul ar aparea pe toate anunturile, degeaba.
+    """
+    listed = listing.get("listed_at")
+    refreshed = listing.get("refreshed_at")
+    found = listing.get("found_at")
+    campuri = []
+    if listed:
+        campuri.append({"name": "📅 Postat pe platformă",
+                        "value": _fmt_dt(listed), "inline": True})
+    if este_reactualizat(listed, refreshed):
+        campuri.append({"name": "🔁 Reactualizat pe platformă",
+                        "value": _fmt_dt(refreshed), "inline": True})
+    if found:
+        campuri.append({"name": "🔍 Găsit de FlipRadar",
+                        "value": _fmt_dt(found), "inline": True})
+    return campuri
+
+
 def build_radar_embed(listing: dict, grade: str, score: int,
                       keyword_name: str) -> dict:
     title_text = listing.get("title", "")[:200]
@@ -211,6 +252,10 @@ def build_radar_embed(listing: dict, grade: str, score: int,
                        "value": location, "inline": True})
     fields.append({"name": "🎯 Keyword",
                    "value": keyword_name, "inline": True})
+    # FRONT-1b — datele anuntului, pe calea VIE de notificare. Pana acum embed-ul Radar
+    # n-avea nicio data: `_build_embed` din app/services/radar/discord_service.py le avea,
+    # dar functia aia nu mai era apelata de nimeni.
+    fields.extend(_campuri_de_data(listing))
 
     embed = {
         "title": f"{GRADE_EMOJI[grade]} [{grade}] {title_text}",
