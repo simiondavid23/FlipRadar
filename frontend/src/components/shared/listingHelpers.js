@@ -64,6 +64,60 @@ export function formatListedDate(iso) {
   return `${dd}.${mo}.${d.getFullYear()} ${hh}:${mm}`;
 }
 
+// FRONT-1 — pragul de la care o reactualizare conteaza (24 h). Sub o zi e zgomot, nu
+// semnal: pe OLX `lastRefreshTime == createdTime` cand anuntul n-a fost bumpat niciodata,
+// iar pe Storia `pushedUpAt` si `createdAtFirst` pot diferi cu o secunda.
+const PRAG_BUMP_MS = 24 * 3600 * 1000;
+
+function msDin(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+// FRONT-1 — regula „anunt reactualizat", intr-un SINGUR loc pe frontend.
+//
+// Semnalul: un anunt vechi dupa `listed_at`, dar repromovat recent dupa `refreshed_at`,
+// inseamna marfa care nu pleaca — deci loc de negociere. Masurat la DATE-2 pe Storia:
+// mediana diferentei 31 de zile, maximul 807.
+//
+// Fara `listed_at` nu stim vechimea, deci NU marcam anuntul ca reactualizat; `refreshed_at`
+// singur ramane afisabil (modal, sortare) si primeste `sinceBumpDays`. Orice intrare
+// invalida (null, string neparsabil, obiect lipsa) da forma neutra, niciodata exceptie.
+//
+// Perechea in backend e `este_reactualizat` din app/utils/listing_dates.py — aceeasi
+// regula, acelasi prag, testate pe ambele parti.
+export function bumpInfo(listing, now = Date.now()) {
+  const gol = { bumped: false, ageDays: null, sinceBumpDays: null };
+  if (!listing || typeof listing !== "object") return gol;
+  const listed = msDin(listing.listed_at);
+  const refreshed = msDin(listing.refreshed_at);
+  const zile = (ms) => Math.floor((now - ms) / 86400000);
+  if (refreshed === null) {
+    return { ...gol, ageDays: listed === null ? null : zile(listed) };
+  }
+  return {
+    bumped: listed !== null && refreshed - listed >= PRAG_BUMP_MS,
+    ageDays: listed === null ? null : zile(listed),
+    sinceBumpDays: zile(refreshed),
+  };
+}
+
+// FRONT-1 — comparator descrescator pe o cheie de data, cu null-urile MEREU la coada.
+// Extras aici fiindca sortarea era scrisa de trei ori, in trei pagini, cu trei tratari
+// diferite ale null-ului (radar folosea `-Infinity`, ceea ce da NaN cand ambele lipsesc,
+// adica ordine nespecificata). O regula, trei apelanti.
+export function sortByDateDesc(key) {
+  return (a, b) => {
+    const ta = msDin(a?.[key]);
+    const tb = msDin(b?.[key]);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return tb - ta;
+  };
+}
+
 export function marginColor(pct) {
   if (pct === null || pct === undefined) return "var(--text-tertiary)";
   if (pct >= 25) return "#4ade80";

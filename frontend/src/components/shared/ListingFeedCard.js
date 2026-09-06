@@ -8,8 +8,12 @@
 //   showMarginLine       — arata linia "-> revanzare | Marja" (Radar: mereu; Auto: doar cu marja)
 //   onToggleCompare      — daca lipseste, butonul de comparare nu apare (opt-in)
 import { useState } from "react";
-import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge } from "./listingHelpers";
+import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale, RefreshCw } from "lucide-react";
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge, bumpInfo } from "./listingHelpers";
+
+// FRONT-1 — culoarea de avertizare discreta pentru anunturile repromovate. Aceeasi
+// valoare in card si in modal; `uiStyles.js` nu are (inca) un token de warning.
+const BUMP_COLOR = "#f59e0b";
 const CARD_BORDER = "rgba(94,140,255,.13)";
 
 export default function ListingFeedCard({
@@ -225,6 +229,22 @@ export default function ListingFeedCard({
               <>găsit {formatListedDate(listing.found_at) || timeAgo(listing.found_at)}</>
             )}
           </span>
+          {/* FRONT-1 — al treilea segment, DOAR pe anunturile chiar repromovate
+              (>= 24 h intre publicare si reactualizare, vezi bumpInfo). Semnalul:
+              anunt vechi care se tot bumpa = marfa care nu pleaca = loc de negociere.
+              Pe hover, ambele date absolute. */}
+          {bumpInfo(listing).bumped && (
+            <>
+              <span style={{ color: "var(--text-faint)" }}>·</span>
+              <span
+                title={`Postat ${formatListedDate(listing.listed_at)} · reactualizat ${formatListedDate(listing.refreshed_at)}`}
+                style={{ color: BUMP_COLOR, display: "inline-flex", alignItems: "center", gap: "3px" }}
+              >
+                <RefreshCw size={12} />
+                reactualizat {timeAgo(listing.refreshed_at)}
+              </span>
+            </>
+          )}
         </div>
 
         {/* RP-1 — vânzător + rating + badge de risc (randate doar când există date). */}

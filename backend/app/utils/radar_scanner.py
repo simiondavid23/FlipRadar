@@ -38,6 +38,7 @@ from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 from app.services.radar.vinted_html import guard_status as vinted_guard_status
+from app.utils.listing_dates import este_reactualizat
 from app.utils.ore_active import in_ore_active
 
 
@@ -2200,7 +2201,8 @@ def _reaparitie_fara_rand(db: Session, user, kw, platform: str, listing: dict,
     if score_data["score"] in ("A", "B") and getattr(kw, "notify_email", False):
         _send_email_alert(user, listing, kw, score_data["score"],
                           score_data["margin_pct"],
-                          listed_at=listing.get("listed_at"), found_at=rand.found_at)
+                          listed_at=listing.get("listed_at"), found_at=rand.found_at,
+                          refreshed_at=listing.get("refreshed_at"))
     if score_data["score"] in ("A", "B") and is_push_configured():
         try:
             notify_user_push(
@@ -2361,6 +2363,7 @@ def _send_email_alert(
     margin_pct: float,
     listed_at=None,
     found_at=None,
+    refreshed_at=None,
 ) -> None:
     if not smtp_configured() or not user.email:
         return
@@ -2373,7 +2376,11 @@ def _send_email_alert(
         f"Preț cerut: {listing.get('price')} {listing.get('currency', 'RON')}\n"
         f"Marjă estimată: {margin_pct:.0f}%\n"
         f"Postat pe platformă: {_fmt_dt(listed_at)}\n"
-        f"Găsit de FlipRadar: {_fmt_dt(found_at)}\n"
+        # FRONT-1 — linia apare DOAR pe un anunt chiar repromovat (>= 24 h intre cele
+        # doua date). Fara bump, corpul e identic la byte cu cel de dinainte.
+        + (f"Reactualizat pe platformă: {_fmt_dt(refreshed_at)}\n"
+           if este_reactualizat(listed_at, refreshed_at) else "")
+        + f"Găsit de FlipRadar: {_fmt_dt(found_at)}\n"
         f"Link: {listing.get('url')}\n"
         f"\n-- FlipRadar Radar"
     )
@@ -2878,6 +2885,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                                 score_data["score"], score_data["margin_pct"],
                                 listed_at=listing.get("listed_at"),
                                 found_at=listing_db.found_at,
+                                refreshed_at=listing.get("refreshed_at"),
                             )
                         # Web Push pentru deal-uri prioritare (A/B)
                         if score_data["score"] in ("A", "B") and is_push_configured():

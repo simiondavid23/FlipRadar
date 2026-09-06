@@ -240,7 +240,8 @@ def export_feed(
         "price": float(i.price) if i.price is not None else None, "currency": i.currency,
         "year": i.year, "km": i.km, "fuel_type": i.fuel_type, "location": i.location,
         "seller_name": i.seller_name, "keyword_name": kw_map.get(i.keyword_id),
-        "listed_at": i.listed_at, "found_at": i.found_at, "status": i.status, "url": i.url,
+        "listed_at": i.listed_at, "refreshed_at": i.refreshed_at,
+        "found_at": i.found_at, "status": i.status, "url": i.url,
     } for i in items]
 
     xlsx_bytes = build_auto_xlsx(rows)

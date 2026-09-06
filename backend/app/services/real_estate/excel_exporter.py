@@ -5,9 +5,12 @@ Grad, Preț, Preț/mp, Camere, Suprafață, Zonă, Etaj, Vânzător, Keyword, Da
 Status, URL.
 
 Ajustări față de lista generică cerută, impuse de câmpurile REALE ale modelului:
-  * NU există câmp de dată-postare (modelul are doar `found_at`) → "Data postării" omisă.
   * NU există nume vânzător, doar `seller_id` (identificator vânzător, populat
     când scraperul îl oferă) → coloana "Vânzător" mapează pe `seller_id`.
+
+Nota de dată, corectată: modelul ARE `listed_at` din IM-7 (data postării pe platformă)
+si `refreshed_at` din DATE-1 (ultima repromovare) — ambele exportate. Textul de dinainte,
+"NU există câmp de dată-postare", era stale din vremea când coloana chiar lipsea.
 """
 from typing import Iterable
 
@@ -20,7 +23,8 @@ _PLATFORM_LABELS = {
 
 _COLUMNS = [
     "Titlu", "Platformă", "Grad", "Preț", "Preț/mp", "Camere", "Suprafață",
-    "Zonă", "Etaj", "Vânzător", "Keyword", "Data găsirii", "Data postării", "Status", "URL",
+    "Zonă", "Etaj", "Vânzător", "Keyword", "Data găsirii", "Data postării",
+    "Data reactualizării", "Status", "URL",
 ]
 _URL_COL_IDX = len(_COLUMNS) - 1  # ultima coloana (URL) — recalculata automat
 
@@ -60,6 +64,8 @@ def build_re_xlsx(rows: Iterable[dict]) -> bytes:
             it.get("keyword_name") or "",
             fmt_dt(it.get("found_at")),
             fmt_dt(it.get("listed_at")),
+            # FRONT-1 — ultima repromovare, langa data postarii, cu ACEEASI formatare.
+            fmt_dt(it.get("refreshed_at")),
             it.get("status") or "",
             it.get("url") or "",
         ])

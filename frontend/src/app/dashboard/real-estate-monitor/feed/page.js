@@ -10,6 +10,7 @@ import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import ActionBanner from "@/components/shared/ActionBanner";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
+import { bumpInfo, sortByDateDesc } from "@/components/shared/listingHelpers";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import REManualSearch from "@/components/REManualSearch";
 import TopBar from "@/components/shared/TopBar";
@@ -117,7 +118,9 @@ export default function REFeedPage() {
       if (sortBy === "price_desc")  return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
       if (sortBy === "ppm_asc")     return nullsLast(a.price_per_sqm, b.price_per_sqm, (x, y) => x - y);
       if (sortBy === "score_desc")  return nullsLast(a.score, b.score, (x, y) => y - x);
-      if (sortBy === "listed_desc") return nullsLast(ts(a), ts(b), (x, y) => y - x);
+      // FRONT-1 — comparatorul comun (listingHelpers), aceeasi regula in toate feed-urile.
+      if (sortBy === "listed_desc")    return sortByDateDesc("listed_at")(a, b);
+      if (sortBy === "refreshed_desc") return sortByDateDesc("refreshed_at")(a, b);
       return 0;
     });
   }, [listings, sortBy]);
@@ -289,6 +292,7 @@ export default function REFeedPage() {
           <option value="ppm_asc">Preț/mp crescător</option>
           <option value="score_desc">Scor descrescător</option>
           <option value="listed_desc">Data postării (recente)</option>
+          <option value="refreshed_desc">Reactualizat recent</option>
         </select>
 
         <SelectFiniteControl
@@ -445,7 +449,17 @@ function RESpecs({ listing, size = "0.7rem", mt }) {
       {rooms && <div>{rooms}</div>}
       {locLine && <div style={{ color: "var(--text-muted)" }}>{locLine}</div>}
       {listing.price_per_sqm && <div>{Number(listing.price_per_sqm).toFixed(1)} {listing.currency}/mp</div>}
-      {listing.listed_at && <div style={{ color: "var(--text-muted)" }}>Postat: {new Date(listing.listed_at).toLocaleDateString("ro-RO")}</div>}
+      {listing.listed_at && (
+        <div style={{ color: "var(--text-muted)" }}>
+          Postat: {new Date(listing.listed_at).toLocaleDateString("ro-RO")}
+          {/* FRONT-1 — ACEEASI regula ca pe card/modal (bumpInfo), ca sa nu existe doua. */}
+          {bumpInfo(listing).bumped && (
+            <span style={{ color: "#f59e0b" }}>
+              {" · reactualizat "}{new Date(listing.refreshed_at).toLocaleDateString("ro-RO")}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

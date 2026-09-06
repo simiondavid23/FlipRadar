@@ -12,6 +12,7 @@ import SelectFiniteControl from "@/components/shared/SelectFiniteControl";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
+import { sortByDateDesc } from "@/components/shared/listingHelpers";
 import ActionBanner from "@/components/shared/ActionBanner";
 import TopBar from "@/components/shared/TopBar";
 import PageHeading, { Hl } from "@/components/shared/PageHeading";
@@ -165,13 +166,11 @@ export default function RadarFeedPage() {
   const displayedListings = useMemo(() => {
     let arr = listings;
     if (hideRisky) arr = arr.filter((l) => !l.seller_risk);
-    if (sortBy === "listed_desc") {
-      arr = [...arr].sort((a, b) => {
-        const ta = a.listed_at ? new Date(a.listed_at).getTime() : -Infinity;  // null la coada
-        const tb = b.listed_at ? new Date(b.listed_at).getTime() : -Infinity;
-        return tb - ta;  // recente intai
-      });
-    }
+    // FRONT-1 — comparatorul comun `sortByDateDesc` (listingHelpers): aceeasi regula de
+    // null-la-coada in toate cele trei feed-uri. Varianta veche cu `-Infinity` dadea NaN
+    // cand ambele date lipseau, adica ordine nespecificata.
+    if (sortBy === "listed_desc")    arr = [...arr].sort(sortByDateDesc("listed_at"));
+    if (sortBy === "refreshed_desc") arr = [...arr].sort(sortByDateDesc("refreshed_at"));
     return arr;
   }, [listings, hideRisky, sortBy]);
 
@@ -486,6 +485,7 @@ export default function RadarFeedPage() {
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
           <option value="">Sortare: implicită</option>
           <option value="listed_desc">Data postării (recente)</option>
+          <option value="refreshed_desc">Reactualizat recent</option>
         </select>
 
         <SelectFiniteControl

@@ -36,6 +36,7 @@ _COLUMNS = [
     "Vânzător",
     "Keyword",
     "Data postării",
+    "Data reactualizării",
     "Găsit de FlipRadar",
     "Status",
     "URL",
@@ -80,6 +81,8 @@ def build_listings_xlsx(rows: Iterable[dict]) -> bytes:
             item.get("seller_name") or "",
             item.get("keyword_name") or "",
             _fmt_dt_iso(item.get("listed_at")),
+            # FRONT-1 — ultima repromovare, langa data postarii, cu ACEEASI formatare.
+            _fmt_dt_iso(item.get("refreshed_at")),
             _fmt_dt_iso(item.get("found_at")),
             item.get("status") or "",
             item.get("url") or "",

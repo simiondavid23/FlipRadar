@@ -12,8 +12,39 @@ OLX-STATE-1: functiile astea au stat pana acum in `utils/olx_state.py`, unde aju
 sa fie importate de Autovit, Storia si `detail.py` (AutoScout24) — module fara nicio
 legatura cu OLX. Numele modulului mintea; continutul e neschimbat.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+
+# FRONT-1 — pragul de la care o reactualizare conteaza. Sub o zi e zgomot, nu semnal:
+# pe OLX `lastRefreshTime == createdTime` cand anuntul n-a fost bumpat niciodata, iar pe
+# Storia `pushedUpAt` si `createdAtFirst` pot diferi cu o secunda din cauze de sistem.
+PRAG_REACTUALIZARE = timedelta(hours=24)
+
+
+def este_reactualizat(listed_at, refreshed_at, prag: timedelta = PRAG_REACTUALIZARE) -> bool:
+    """True daca anuntul a fost REPROMOVAT: `refreshed_at - listed_at >= prag` (24 h).
+
+    Semnalul pe care il marcheaza: un anunt vechi dupa data publicarii, dar reactualizat
+    recent, inseamna marfa care nu pleaca — deci loc de negociere. Masurat la DATE-2 pe
+    Storia: mediana diferentei 31 de zile, maximul 807.
+
+    Perechea trebuie sa fie COMPARABILA. Cand una dintre date lipseste, nu e datetime,
+    sau una e naiva si cealalta aware (conventiile difera per modul: Radar/Auto tin naiv
+    local, Imobiliare trece prin `fromisoformat`), raspunsul e False — niciodata exceptie.
+    Fara `listed_at` nu stim vechimea, deci nu marcam nimic; `refreshed_at` singur ramane
+    afisabil, dar nu declanseaza eticheta.
+
+    Perechea in frontend e `bumpInfo` din components/shared/listingHelpers.js — aceeasi
+    regula, aceleasi cazuri, testate pe ambele parti.
+    """
+    if not isinstance(listed_at, datetime) or not isinstance(refreshed_at, datetime):
+        return False
+    if (listed_at.tzinfo is None) != (refreshed_at.tzinfo is None):
+        return False
+    try:
+        return (refreshed_at - listed_at) >= prag
+    except TypeError:
+        return False
 
 
 def normalize_iso(s) -> Optional[str]:

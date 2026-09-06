@@ -9,9 +9,12 @@
 import { useState, useEffect } from "react";
 import {
   X, ImageOff, Tag, MapPin, Calendar, Sparkles,
-  Bookmark, EyeOff, ExternalLink, MessageSquare, Copy, Check,
+  Bookmark, EyeOff, ExternalLink, MessageSquare, Copy, Check, RefreshCw,
 } from "lucide-react";
-import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge } from "./listingHelpers";
+import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge, bumpInfo } from "./listingHelpers";
+
+// FRONT-1 — aceeasi culoare de avertizare ca pe card (vezi ListingFeedCard).
+const BUMP_COLOR = "#f59e0b";
 import { modalOverlayStyle, modalPanelStyle } from "@/lib/uiStyles";
 
 // Eticheta mono de deasupra fiecarei valori din coloana de detalii.
@@ -234,6 +237,21 @@ export default function ListingDetailModal({
                   <strong>Postat pe platformă:</strong>{" "}
                   {formatListedDate(listing.listed_at) || "Necunoscut"}
                 </span>
+                {/* FRONT-1 — randul apare doar cand platforma chiar da o data de
+                    reactualizare. Sufixul cu vechimea apare doar cand e un bump real
+                    (>= 24 h fata de publicare), ca sa nu tipam pe diferente de o secunda. */}
+                {listing.refreshed_at && formatListedDate(listing.refreshed_at) && (
+                  <span>
+                    <RefreshCw style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
+                    <strong>Reactualizat:</strong>{" "}
+                    {formatListedDate(listing.refreshed_at)}
+                    {bumpInfo(listing).bumped && (
+                      <span style={{ color: BUMP_COLOR }}>
+                        {" "}(anunț de {bumpInfo(listing).ageDays} zile)
+                      </span>
+                    )}
+                  </span>
+                )}
                 <span>
                   <Calendar style={{ width: "12px", height: "12px", display: "inline", marginRight: "0.25rem" }} />
                   <strong>Găsit de FlipRadar:</strong>{" "}

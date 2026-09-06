@@ -12,6 +12,7 @@ import SearchResultCard from "@/components/AutoListingCard";
 import AutoAiModal from "@/components/AutoAiModal";
 import ListingFeedCard from "@/components/shared/ListingFeedCard";
 import ListingDetailModal from "@/components/shared/ListingDetailModal";
+import { sortByDateDesc } from "@/components/shared/listingHelpers";
 import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
 import ActionBanner from "@/components/shared/ActionBanner";
 import TopBar from "@/components/shared/TopBar";
@@ -198,6 +199,9 @@ export default function AutoFeedPage() {
       if (sortBy === "price_desc") return nullsLast(priceRon(a), priceRon(b), (x, y) => y - x);
       if (sortBy === "year_desc")  return nullsLast(a.year, b.year, (x, y) => y - x);
       if (sortBy === "km_asc")     return nullsLast(a.km, b.km, (x, y) => x - y);
+      // FRONT-1 — comparatorul comun (listingHelpers), aceeasi regula in toate feed-urile.
+      if (sortBy === "listed_desc")    return sortByDateDesc("listed_at")(a, b);
+      if (sortBy === "refreshed_desc") return sortByDateDesc("refreshed_at")(a, b);
       return 0;
     });
   }, [listings, sortBy]);
@@ -300,6 +304,8 @@ export default function AutoFeedPage() {
           <option value="price_desc">Preț descrescător</option>
           <option value="year_desc">An: noile întâi</option>
           <option value="km_asc">Km: puținii întâi</option>
+          <option value="listed_desc">Postat recent</option>
+          <option value="refreshed_desc">Reactualizat recent</option>
         </select>
 
         <SelectFiniteControl

@@ -7,6 +7,8 @@ primeste C si D (deal-uri marginale). Userul poate configura oricate (sau zero).
 from typing import Optional
 import requests
 
+from app.utils.listing_dates import este_reactualizat
+
 
 _SCORE_COLORS = {
     "A": 0x00FF00,
@@ -40,6 +42,7 @@ def _build_embed(
     margin_pct: float,
     listed_at=None,
     found_at=None,
+    refreshed_at=None,
 ) -> dict:
     title = listing.get("title", "")[:240]
     color = _SCORE_COLORS.get(score, 0x64748B)
@@ -58,6 +61,11 @@ def _build_embed(
     if listing.get("location"):
         fields.append({"name": "Locație", "value": str(listing["location"])[:200], "inline": True})
     fields.append({"name": "📅 Postat pe platformă", "value": _fmt_dt(listed_at), "inline": True})
+    # FRONT-1 — campul apare DOAR pe un anunt chiar repromovat (>= 24 h intre cele doua
+    # date). Fara bump, embed-ul e identic cu cel produs de semnatura veche.
+    if este_reactualizat(listed_at, refreshed_at):
+        fields.append({"name": "🔁 Reactualizat pe platformă",
+                       "value": _fmt_dt(refreshed_at), "inline": True})
     fields.append({"name": "🔍 Găsit de FlipRadar", "value": _fmt_dt(found_at), "inline": True})
 
     embed = {
@@ -82,11 +90,13 @@ def send_discord_alert(
     margin_pct: float,
     listed_at=None,
     found_at=None,
+    refreshed_at=None,
 ) -> bool:
     """POST la webhook. True daca status 200/204."""
     if not webhook_url:
         return False
-    embed = _build_embed(listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at)
+    embed = _build_embed(listing, keyword_name, score, resale_price, margin_pct,
+                         listed_at, found_at, refreshed_at)
     payload = {"embeds": [embed]}
     try:
         resp = requests.post(webhook_url, json=payload, timeout=10)
@@ -108,19 +118,20 @@ def route_discord_alerts(
     margin_pct: float,
     listed_at=None,
     found_at=None,
+    refreshed_at=None,
 ) -> int:
     """Trimite la webhook-urile potrivite in functie de scor. Returneaza nr. de notificari trimise."""
     if not settings:
         return 0
     sent = 0
     if settings.discord_webhook_all:
-        if send_discord_alert(settings.discord_webhook_all, listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at):
+        if send_discord_alert(settings.discord_webhook_all, listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at, refreshed_at):
             sent += 1
     if score in ("A", "B") and settings.discord_webhook_buy_now:
-        if send_discord_alert(settings.discord_webhook_buy_now, listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at):
+        if send_discord_alert(settings.discord_webhook_buy_now, listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at, refreshed_at):
             sent += 1
     if score in ("C", "D") and settings.discord_webhook_maybe:
-        if send_discord_alert(settings.discord_webhook_maybe, listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at):
+        if send_discord_alert(settings.discord_webhook_maybe, listing, keyword_name, score, resale_price, margin_pct, listed_at, found_at, refreshed_at):
             sent += 1
     return sent
 

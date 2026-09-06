@@ -17,7 +17,8 @@ _PLATFORM_LABELS = {
 
 _COLUMNS = [
     "Titlu", "Platformă", "Grad", "Preț", "An", "Km", "Combustibil",
-    "Locație", "Vânzător", "Keyword", "Data postării", "Data găsirii", "Status", "URL",
+    "Locație", "Vânzător", "Keyword", "Data postării", "Data reactualizării",
+    "Data găsirii", "Status", "URL",
 ]
 _URL_COL_IDX = len(_COLUMNS) - 1  # 13
 
@@ -48,6 +49,8 @@ def build_auto_xlsx(rows: Iterable[dict]) -> bytes:
             it.get("seller_name") or "",
             it.get("keyword_name") or "",
             fmt_dt(it.get("listed_at")),
+            # FRONT-1 — ultima repromovare, langa data postarii, cu ACEEASI formatare.
+            fmt_dt(it.get("refreshed_at")),
             fmt_dt(it.get("found_at")),
             it.get("status") or "",
             it.get("url") or "",
