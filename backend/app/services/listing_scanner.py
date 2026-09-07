@@ -271,6 +271,32 @@ def _text_of(nod) -> str:
     return re.sub(r"\s+", " ", nod.get_text(" ", strip=True)).strip() if nod else ""
 
 
+# DEAL-D3 — spatiile din INTERIORUL unui `href` se codifica.
+#
+# brickdepot randeaza ancora cardului cu un spatiu literal dupa slash:
+#   href="https://brickdepot.ro/lego-super-mario-c-120/ mario-kart-luigi-si-mach-8-p-30375.html"
+# Fara gardul asta, URL-ul iese cu spatiul in el si ajunge asa in `deals.url` si in
+# orice fetch de refresh de pe axa L — un URL cu spatiu brut nu e un URL.
+#
+# MASURAT, si e important: caracterul din dump NU e `U+0020`, ci `U+00A0` (spatiu
+# neseparator). De aia clasa de mai jos il contine explicit — o garda scrisa doar
+# pentru ` `, `\t`, `\n` ar fi lasat neatins exact cazul care a cerut-o.
+#
+# Toate variantele se codifica `%20`, inclusiv U+00A0. Strict vorbind, forma UTF-8
+# a lui U+00A0 ar fi `%C2%A0`; alegerea lui `%20` e deliberata (un spatiu
+# neseparator intr-un slug e o greseala de redactare, nu o intentie), dar RAMANE
+# NEVERIFICATA LIVE — runda DEAL-D3 n-a facut nicio cerere. Daca un refresh pe
+# brickdepot da 404, aici se uita.
+#
+# Doar spatii. Diacriticele necodificate raman cum sunt, fiindca asa le accepta
+# deja `extract_product` pe axa L.
+_SPATII_IN_HREF = re.compile(r"[ \t\n\r\f\v ]")
+
+
+def _fara_spatii(href: str) -> str:
+    return _SPATII_IN_HREF.sub("%20", href)
+
+
 def _link_of(card, descriptor, domain: str):
     """(absolute_url, link_element) or (None, None).
 
@@ -287,7 +313,7 @@ def _link_of(card, descriptor, domain: str):
     href = nod["href"].strip()
     if not href or href.startswith(("javascript:", "#", "mailto:")):
         return None, None
-    return urllib.parse.urljoin(f"https://{domain}/", href), nod
+    return urllib.parse.urljoin(f"https://{domain}/", _fara_spatii(href)), nod
 
 
 def _titlu_of(card, descriptor, link_nod) -> str:

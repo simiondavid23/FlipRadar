@@ -3763,3 +3763,160 @@ Patru, toate din LST-D2, toate arătând ca o măsurătoare reușită și nu ca 
    Câmpul e același; doar eticheta lipsește uneori.
 5. **Adâncimea reală a lui itgalaxy (770 de pagini) nu se scanează**, `max_pages: 40` e
    buget, nu graniță — convenția otter.
+
+---
+
+## DEAL-D3 — lotul jucării + sneakers pe axa D (sonda LST-D3, 2026-09-07)
+
+Sonda LST-D3 a triajat 12 domenii cu 44 de cereri. Runda asta scrie în registru cei cinci
+care au trecut controlul, adaugă un gard în extracție și consemnează în `notes` motivul
+fiecărei ieșiri. Zero cereri de rețea: tot ce intră, inclusiv paginarea, e măsurat pe
+dump-urile sondei.
+
+### 1. Cele 12 verdicte
+
+| domeniu | verdict | în registru |
+|---|---|---|
+| carrefour.ro | CSS_GRID | **descriptor** |
+| brickdepot.ro | CSS_GRID | **descriptor** |
+| snipes.com | CSS_GRID | **descriptor** |
+| sneakersnstuff.com | CSS_GRID | **descriptor** |
+| footshop.ro | CSS_GRID | **descriptor** |
+| lego.com | STATE (Apollo normalizat) | doar `notes` |
+| flip.ro | STATE (array plat) | doar `notes` |
+| nichiduta.ro | `entries` (17 fațete) | doar `notes` |
+| jb-spielwaren.de | FĂRĂ_LISTARE pe intrarea găsită | doar `notes` |
+| 43einhalb.com | CERE_MECANISM + 403 pe plast | doar `notes` |
+| endclothing.com | JS_ONLY (Algolia) | doar `notes` |
+| nike.com | POARTĂ | doar `notes` |
+
+`listing_domains()`: 24 → **29**.
+
+### 2. Cei cinci intrați
+
+| domeniu | intrare | volum | paginare | referință | monedă |
+|---|---|---|---|---|---|
+| carrefour.ro | `/campanii/oferte-saptamanale` | 384/pagină | **niciuna** → `max_pages: 1` | 181/384, neetichetată | RON |
+| brickdepot.ro | landing page de campanie | 91 (= „91 produse" anunțate) | niciuna | `normalprice`, 91/91 | RON |
+| snipes.com | `/de-de/c/sale-660` | 24 | niciuna SSR | `Originalpreis`, 24/24 | EUR |
+| sneakersnstuff.com | `/collections/sale` | 24/pagină | `?page={n}` | `s.price__original`, 24/24 | EUR |
+| footshop.ro | `/ro/872-reduceri` | 24/pagină | `/page-{n}` | `oldPrice`, 24/24 | RON |
+
+Trei lucruri care sunt decizii, nu descrieri:
+
+* **carrefour e al doilea consumator al treptei `eu_sup`** (după evomag, DEAL-D2). Întregul
+  și zecimalele stau pe noduri separate, fără separator, iar `_text_of` dă `8 79 LEI`.
+  `eu_comma` ar citi 879.0 — pe 384 de carduri, un feed întreg de chilipiruri false.
+  **Corecție la măsurătoarea LST-D3:** agregatul sondei raportase 70 de referințe „inversate
+  sau egale" din 181; numărul era un artefact al comparatorului analizei, care nu cunoștea
+  `eu_sup`. Recalculat corect: **181 de perechi, 0 inversate.**
+* **brickdepot cere `us_dot` pe un magazin românesc.** `569.99Lei` are punct zecimal și
+  niciun separator de mii; `eu_comma` ar da 56999.0. Exact ambiguitatea pe care DEAL-D1 a
+  decis-o prin cheie declarată: din șir nu se poate deosebi.
+* **footshop citește prețul de pe `strong`, nu de pe div-ul de preț.** Referința e imbricată
+  în nodul de preț, deci textul div-ului conține ambele sume (`477 RON 529 RON` → 477529.0).
+
+### 3. Cele două garduri — și ce s-a dovedit că nu era nevoie
+
+**`href` cu spații: gard NOU, chiar necesar.** brickdepot randează ancora cardului cu un
+spațiu literal după slash. Fără gard, URL-ul ieșea cu spațiul în el și ajungea așa în
+`deals.url` și în orice fetch de refresh de pe axa L. `_link_of` codifică acum orice spațiu
+interior ca `%20`, înainte de `urljoin`.
+
+Nuanță măsurată, care contează: **caracterul din dump nu e `U+0020`, ci `U+00A0`** (spațiu
+neseparator). O gardă scrisă doar pentru ` `, `\t`, `\n` ar fi lăsat neatins exact cazul care
+a cerut-o. Clasa îl conține explicit. Toate variantele devin `%20` — strict vorbind, forma
+UTF-8 a lui U+00A0 ar fi `%C2%A0`; alegerea lui `%20` e deliberată (un spațiu neseparator
+într-un slug e o greșeală de redactare), dar **rămâne neverificată live**: runda n-a făcut
+nicio cerere. Dacă un refresh pe brickdepot dă 404, acolo se uită.
+
+**Imagini `data:`: gardul EXISTA deja, iar premisa era greșită.** Ipoteza de lucru era că
+controlul LST-D3 numărase placeholderul lazy al lui carrefour ca imagine validă (384/384).
+Verificat: `normalizeaza_imagine` respinge `data:` din IMG-1a (`v.lower().startswith("data:")`),
+iar `_imagine_of` trece la `<img>`-ul următor. Controlul raportase deci URL-uri CDN reale, nu
+placeholdere — nu era o slăbiciune. Măsurat pe toate cele 384 de carduri: 0 data-URI, 368 poze
+de produs `cdn-media.carrefour.ro`, 16 bannere de campanie.
+
+Mai mult: **gardul e redundant**. Un `data:image/gif;base64,…` e tăiat la prima virgulă
+(logica de `srcset`), rămâne `data:image/gif;base64`, iar acela cade oricum pe ramura finală
+„nici absolut, nici ancorat la rădăcină → None". Sabotajul care scoate gardul nu rupe niciun
+test, și e corect că nu-l rupe. Testul `test_normalizeaza_imagine_respinge_data_uri` pinuiește
+deci **comportamentul observabil**, nu linia de cod — ceea ce e oricum ce contează pentru
+carrefour.
+
+### 4. Decizia snipes: `Originalpreis`, nu `30-Tage-Bestpreis`
+
+Pagina publică două referințe. `del.strikeout` poartă `Originalpreis 119,99 €` — prețul
+original al magazinului. Separat, `<… class="lowest-prior-price">30-Tage-Bestpreis: 95,99 €</…>`
+e un câmp Omnibus **real**, cu semantică `min30`.
+
+Intră `Originalpreis`, din două motive: pe cardul măsurat valoarea lui `30-Tage-Bestpreis` era
+**egală cu prețul de vânzare**, deci ca `compare_at` n-ar califica niciodată R1 (pragul cere
+referință strict mai mare); iar `reference_kind` rămâne `nemarcat` tocmai fiindcă
+`Originalpreis` **nu** e câmpul legal. Dacă David preferă semantica Omnibus, cheia e acolo și
+se schimbă cu o linie — dar atunci axa D pe snipes ar trăi doar din R2.
+
+### 5. Corecția senetic (din LST-D2)
+
+Verdictul NEPOTRIVIT dat lui senetic.ro la LST-D2 s-a dat **pe carusel**. Validarea corecției
+de carusel din LST-D3 a arătat că există și o grilă SSR în afara lui: `div.product-block`,
+24 de produse, sub `div.category-filters-products__container`. Sonda LST-D2 o ratase fiindcă
+ordona după număr, iar caruselul avea un exemplar în plus (25 vs 24).
+
+Referința tot lipsește, deci axa D ar sta oricum doar pe R2. Verdictul se **re-măsoară**
+într-o sondă; nu se rescrie de aici. Nota din registru spune asta.
+
+### 6. Defectul `_PRET_TOKEN` al sondei — lecție pentru LST-D4
+
+Detectorul grosier de preț al sondelor (moștenit din LST-D1 prin LST-D2 în LST-D3) are trei
+găuri, toate lovind magazinele străine:
+
+```
+_PRET_TOKEN = r"\d[\d .,]*\s*(?:lei|ron|eur|€|\$|usd)\b|\b(?:lei|ron)\b\s*\d"
+```
+
+1. **simbolul înaintea sumei nu e prevăzut deloc** — `€ 159,95` (43einhalb) nu potrivește;
+2. **`€\b` cere caracter de cuvânt DUPĂ simbol** — `95,99 €` la capăt de text (snipes) nu
+   potrivește, fiindcă `€` nu e caracter de cuvânt;
+3. **`£` nu e în listă** (endclothing).
+
+Efectul măsurat: trei domenii au raportat „0 jetoane de preț" pe pagini pline de prețuri, au
+cerut un `p1b` inutil fiecare și au sărit `prod1`/`prod2`. Analiza (cu `_PRET_RE`, care are
+ambele ordini) a recuperat grilele din dump-urile salvate, deci s-au pierdut cereri, nu
+măsurători.
+
+Aceeași familie de greșeli: `\bLei\b` nu prinde `569.99Lei` (brickdepot), fiindcă între `9` și
+`L` nu există graniță de cuvânt — reparat în analiza LST-D3 prin **adiacență de litere**
+(`(?<![A-Za-z])lei(?![A-Za-z])`), lecția FBS-12.
+
+Înainte de LST-D4: `_PRET_TOKEN` se înlocuiește cu forma din `analiza_*.py`.
+
+### 7. Rămase în afară
+
+| domeniu | motiv |
+|---|---|
+| lego.com | Navigația `/ro-ro/` n-are categorie de sale — doar pagina CMS `/ro-ro/page/lego-offers-promotions`, iar aceea e un carusel de 20 (20/20 sub `ol.Carousel_items__…`) peste un `__NEXT_DATA__` cu cache **Apollo normalizat**: valorile stau în intrări separate legate prin referințe. STATE, dar cere un resolver — mai mult decât o rundă de descriptori. |
+| flip.ro | STATE, și cel mai curat din familie: `props.pageProps.dehydratedState.queries[0].state.data.data.productsPage`, array plat de 32 cu chei directe (`price`, `previousPrice`, `retailPrice`, `pdpUrl`, `imagePath`, `currency: "RON"`). Gradul e în `naming.title` ca sufix pe 32/32 și în `pdpUrl` ca `?shape=`. Capcană: `lowestPriceOfTheYear` e `false` pe 32/32 — constantă de șablon (lecția vivre). Candidat `state_extractor`. |
+| nichiduta.ro | `/oferte-speciale` e hub: h1 de oferte, dar textul vizibil e meniul de categorii. Își expune însă 17 fațete `/<categorie>/produse-cu:reducere` — candidat pentru forma `entries`, al doilea caz după eMAG. Niciuna cerută încă. |
+| jb-spielwaren.de | `/spezielle-lego-angebote-und-gwp/` e pagină de campanii: 2 jetoane de preț pe 236 KB, zero carduri, zero produse în stare. Nota LOT2 („LEGO retired + SALE") descrie o secțiune editorială. |
+| 43einhalb.com | Citibil (preț plătit + tăiat cu etichetă `UVP` verbatim, paginare `/sale/page/{n}`), dar grila randează același produs de mai multe ori în variante responsive: **69 de `div.item-wrapper` pentru 16 URL-uri distincte**, 36 fără niciun `<a href>`. Un descriptor pe ele scotea 6 carduri cu 3 URL-uri — măsurătoare falsă care arăta a succes. În plus `page/500` → 403, `classify` → `BLOCKED`. |
+| endclothing.com | JS_ONLY: `/eu/sale` răspunde 200 cu 1,5 MB și zero carduri; `__NEXT_DATA__`-ul de 1,37 MB n-are produse — cele 105 chei `price` sunt praguri de livrare din `config/shipping/methods`, iar singurele array-uri mari sunt arbori de categorii. `algolia` de 14 ori: produsele vin client-side. |
+| nike.com | POARTĂ: `None` din poartă pe `/ro/w/promotional-styles-3vvvm`, dar cererea directă cu același profil a dat 200 (875 KB, titlu real) și `classify()` pe chiar acel corp întoarce `OK`. Al doilea caz după flanco. Afirmația SNK-2 (fără preț server-side pe listări) rămâne **netestată** — poarta n-a livrat corpul. |
+
+### 8. Limitele oneste
+
+1. **brickdepot intră fără imagini** (0/91). `src` e cale relativă fără slash inițial
+   (`bmz_cache/…`), pe care normalizatorul o refuză deliberat: fără o bază măsurată n-are cum
+   s-o rezolve, iar a ghici ar produce 404-uri tăcute. Nu e o alegere proastă de selector.
+2. **URL-ul brickdepot e o CAMPANIE** („Până la 40% reducere…") și poate expira. Dacă un scan
+   dă 0 carduri, intrarea se re-măsoară din navigația home-ului.
+3. **`%20` pentru U+00A0 e neverificat live** (v. §3).
+4. **`max_pages: 40` la footshop e pur buget:** `page-500` întoarce 24 de produse reale, deci
+   oprirea nu s-a atins. La sneakersnstuff, în schimb, `?page=500` dă grila goală — oprire
+   măsurată.
+5. **16 din 384 de carduri carrefour** primesc un banner de campanie în loc de poza produsului.
+6. **`/products.json` la sneakersnstuff n-a fost măsurat.** Dacă enumerarea Shopify e deschisă,
+   `method: shopify` ar bate descriptorul (același caz ca sneakerindustry la SNK-1).
+7. **Clasele cu hash de build** (carrefour `__BWFkK`/`__EvRr7`, footshop `_2egST`/`_1Go7D`/
+   `_1NHjx`) se schimbă la fiecare deploy și n-au alternativă în dump. Dacă un scan dă 0
+   carduri, se re-măsoară.

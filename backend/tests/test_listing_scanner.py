@@ -681,7 +681,15 @@ def test_listing_domains_exact_cele_din_registru():
                                  # citeste pretul din atribut si referinta din
                                  # text, iar evomag a cerut treapta `eu_sup`.
                                  "altex.ro", "mediagalaxy.ro", "cel.ro",
-                                 "itgalaxy.ro", "evomag.ro"}
+                                 "itgalaxy.ro", "evomag.ro",
+                                 # DEAL-D3 — lotul „jucarii + sneakers", din sonda
+                                 # LST-D3. carrefour intra la a doua incercare (la
+                                 # LST-D2 sonda alesese o pagina de regulamente),
+                                 # brickdepot e primul magazin ROMANESC cu pret
+                                 # zecimal cu punct (`us_dot`), iar carrefour e al
+                                 # doilea consumator al treptei `eu_sup`.
+                                 "carrefour.ro", "brickdepot.ro", "snipes.com",
+                                 "sneakersnstuff.com", "footshop.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -1982,3 +1990,161 @@ def test_altex_mediagalaxy_frati_de_platforma():
     assert a["url"] != m["url"]
     assert {k: v for k, v in a.items() if k != "url"} == \
            {k: v for k, v in m.items() if k != "url"}
+
+
+# ── DEAL-D3 — lotul „jucarii + sneakers" (sonda LST-D3, 2026-09-07) ──────────
+#
+# Fixture-urile sunt decupate din `dumps_lstd3/<domeniu>_p1.html` (brickdepot: `p1b`),
+# cu cardurile VERBATIM. Fiecare pastreaza DOUA carduri cu preturi DISTINCTE — regula
+# DEAL-D2: doua valori identice n-ar deosebi o citire per card de una care scapa din
+# scopul cardului. Pe carrefour al doilea card e ales deliberat FARA referinta.
+
+def test_carrefour_eu_sup_si_imagine_reala():
+    """Doua masuratori intr-un singur test, fiindca amandoua tin de acelasi card.
+
+    Pretul: intregul si zecimalele stau pe noduri SEPARATE, fara separator, deci
+    `_text_of` da „8 79 LEI"; `eu_comma` ar citi 879.0. Imaginea: PRIMUL `<img>` al
+    fiecarui card e un placeholder `data:image/gif;base64,…`, iar poza reala vine
+    de pe al doilea — daca garda `data:` din normalizator ar cadea, `image_url` ar
+    deveni chiar placeholderul si ar arata perfect valid.
+    """
+    carduri = extrage_carduri(_fixture("carrefour.ro"),
+                              listing_descriptor("carrefour.ro"), "carrefour.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 8.79                     # „8 79 LEI"
+    assert primul["compare_at"] == 10.99               # „10 99 LEI"
+    assert primul["title"] == "Naut si sare Noirmoutier Carrefour Bio, 265g"
+    assert primul["image_url"].startswith("https://cdn-media.carrefour.ro/")
+    assert not primul["image_url"].lower().startswith("data:")
+    # Al doilea card N-ARE pret taiat — referinta e pe 181/384, deci `None` acolo e
+    # corect, nu o citire ratata. Si are alt pret: citirea e per card.
+    assert carduri[1]["compare_at"] is None
+    assert carduri[1]["price"] == 6.79
+
+
+def test_brickdepot_us_dot_si_url_fara_spatii():
+    """`us_dot` pe un magazin ROMANESC (`569.99Lei` — punct zecimal, fara separator
+    de mii; `eu_comma` ar da 56999.0), plus gardul DEAL-D3 pe spatiile din `href`.
+
+    Caracterul din dump NU e `U+0020`, ci `U+00A0` — de aia asertia verifica ambele.
+    """
+    carduri = extrage_carduri(_fixture("brickdepot.ro"),
+                              listing_descriptor("brickdepot.ro"), "brickdepot.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 569.99
+    assert primul["compare_at"] == 949.99
+    assert primul["title"] == "Mario Kart™ – Luigi și Mach 8"
+    assert " " not in primul["url"] and " " not in primul["url"]
+    assert "%20mario-kart" in primul["url"]
+    # Limita DECLARATA, nu o scapare: `src` e cale relativa fara slash initial
+    # (`bmz_cache/…`), pe care normalizatorul o refuza deliberat.
+    assert not primul["image_url"]
+    assert carduri[1]["price"] == 437.99
+
+
+def test_snipes_carduri():
+    carduri = extrage_carduri(_fixture("snipes.com"),
+                              listing_descriptor("snipes.com"), "snipes.com")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 95.99                    # „Preis 95,99 €"
+    assert primul["compare_at"] == 119.99              # „Originalpreis 119,99 €"
+    assert primul["title"] == "Samba OG"
+    # Fara `www`: href-ul cardului e RELATIV, iar `_link_of` il rezolva fata de
+    # cheia din registru (`https://<domeniu>/`). `external_id` si `handle` se
+    # calculeaza pe CALE, deci identitatea nu sufera.
+    assert primul["url"].startswith("https://snipes.com/de-de/p/")
+    assert carduri[1]["price"] == 120.0
+
+
+def test_sneakersnstuff_carduri():
+    carduri = extrage_carduri(_fixture("sneakersnstuff.com"),
+                              listing_descriptor("sneakersnstuff.com"),
+                              "sneakersnstuff.com")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 147.0                    # „€147", preturi INTREGI
+    assert primul["compare_at"] == 210.0
+    assert primul["url"].startswith("https://sneakersnstuff.com/products/")
+    # `src` e protocol-relativ (`//www.sneakersnstuff.com/cdn/…`); normalizatorul
+    # ii pune schema.
+    assert primul["image_url"].startswith("https://")
+    assert carduri[1]["price"] == 114.0
+
+
+def test_footshop_pret_din_strong():
+    """Pretul se ia de pe `strong`, nu de pe div-ul de pret: referinta e IMBRICATA
+    in el, deci textul div-ului contine ambele sume („477 RON 529 RON") si ar iesi
+    477529.0 — o valoare care arata a pret si nu e."""
+    carduri = extrage_carduri(_fixture("footshop.ro"),
+                              listing_descriptor("footshop.ro"), "footshop.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 477.0
+    assert primul["price"] != 477529.0
+    assert primul["compare_at"] == 529.0
+    assert primul["title"] == "Asics Gel-1130"
+    assert carduri[1]["price"] == 736.0
+
+
+def test_pagina_url_deal_d3():
+    """Cele doua sabloane de paginare ale rundei, amandoua MASURATE pe p2 in
+    dump-uri (p1 si p2 n-au niciun handle comun pe niciunul din domenii)."""
+    from app.services.listing_scanner import _pagina_url
+
+    asteptat = {
+        "sneakersnstuff.com": "https://www.sneakersnstuff.com/collections/sale?page=2",
+        "footshop.ro": "https://www.footshop.ro/ro/872-reduceri/page-2",
+    }
+    for domeniu, pagina2 in asteptat.items():
+        d = listing_descriptor(domeniu)
+        intrare = {"url": d["url"],
+                   "page_url_template": d.get("page_url_template")}
+        assert _pagina_url(intrare, 1) == d["url"]
+        assert _pagina_url(intrare, 2) == pagina2
+
+
+def test_normalizeaza_imagine_respinge_data_uri():
+    """Garda `data:` exista din IMG-1a; testul o PINUIESTE, fiindca de ea depinde
+    ca poza lui carrefour sa fie cea reala si nu placeholderul lazy de 1x1."""
+    from app.services.listing_scanner import normalizeaza_imagine
+
+    placeholder = ("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///"
+                   "yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+    assert normalizeaza_imagine(placeholder, "carrefour.ro") is None
+    assert normalizeaza_imagine("DATA:image/png;base64,AAAA", "x.ro") is None
+    assert normalizeaza_imagine("  data:image/gif;base64,AAAA", "x.ro") is None
+    # Fara regresie pe forma normala.
+    real = "https://cdn-media.carrefour.ro/media/catalog/product/cache/a40/x.webp"
+    assert normalizeaza_imagine(real, "carrefour.ro") == real
+
+
+def test_link_cu_spatiu_se_codifica():
+    """Gardul DEAL-D3: un `href` cu spatiu interior nu e un URL, iar fara garda
+    ajungea asa in `deals.url` si in orice fetch de refresh de pe axa L."""
+    from bs4 import BeautifulSoup
+
+    descriptor = {"card": "div.c", "link": "a", "title": "a",
+                  "price_text": "span", "price_parse": "eu_comma",
+                  "currency": "RON"}
+    html = ('<html><body><div class="c">'
+            '<a href="/a b/c.html">Produs</a><span>10,00 lei</span>'
+            '</div></body></html>')
+    carduri = extrage_carduri(html, descriptor, "exemplu.ro")
+
+    assert len(carduri) == 1
+    assert carduri[0]["url"] == "https://exemplu.ro/a%20b/c.html"
+
+    # Si spatiul NESEPARATOR (U+00A0), care e chiar forma masurata pe brickdepot.
+    html_nbsp = html.replace("/a b/c.html", "/a b/c.html")
+    assert (extrage_carduri(html_nbsp, descriptor, "exemplu.ro")[0]["url"]
+            == "https://exemplu.ro/a%20b/c.html")
+    assert BeautifulSoup(html_nbsp, "html.parser").select_one("a")["href"] == \
+        "/a b/c.html"
