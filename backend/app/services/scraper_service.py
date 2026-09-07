@@ -1301,6 +1301,51 @@ def _fetch_shop_url_guarded(url: str, *, headers: dict, timeout: int, max_hops: 
     return raspuns
 
 
+def _normalizeaza_url_hop(url: str) -> str:
+    """Normalizare RFC 3986 §6.2.3 pe URL-ul unui hop de redirect. Functie PURA.
+
+    GATE-2, din masuratoarea GATE-1: `https://flanco.ro/` raspunde 308 cu
+    `Location: https://www.flanco.ro:443` — cale GOALA si port implicit scris
+    explicit. Poarta re-cerea sirul LITERAL, iar acea forma primea 403 cu
+    `cf-mitigated: challenge`; forma normalizata (`https://www.flanco.ro/`) a
+    raspuns 200 prin ACEEASI poarta, la 10 secunde distanta, cu acelasi profil.
+
+    Ce se schimba, si nimic altceva:
+      * schema si gazda in minuscule;
+      * cale goala -> `/` (pe fir linia de cerere poarta oricum minimum `/`);
+      * portul IMPLICIT se sterge (`:443` pe https, `:80` pe http). Orice alt port
+        RAMANE: un `:8443` explicit e semnificativ, nu zgomot.
+    Query-ul, fragmentul si `userinfo` raman neatinse; NU se codifica niciun
+    caracter (spatiile se codifica la intrare, DEAL-D3, nu aici).
+
+    Nu poate schimba decizia anti-SSRF: `_is_allowed_shop_url` citeste
+    `parsed.hostname`, pe care normalizarea il atinge doar cu litera mica — iar
+    acolo e comparat tot cu `.lower()`. Verificarea allow-list se face ORICUM la
+    inceputul hop-ului urmator, pe URL-ul deja normalizat.
+    """
+    parsed = urllib.parse.urlsplit(url)
+    try:
+        port = parsed.port
+    except ValueError:                    # port nenumeric: lasam URL-ul cum e
+        return url
+    gazda = (parsed.hostname or "").lower()
+    if not gazda:
+        return url                        # nu e URL absolut cu gazda: neatins
+    schema = parsed.scheme.lower()
+    if ":" in gazda:                      # IPv6: `hostname` scoate parantezele
+        gazda = f"[{gazda}]"
+    implicit = ((schema == "https" and port == 443)
+                or (schema == "http" and port == 80))
+    netloc = gazda if (port is None or implicit) else f"{gazda}:{port}"
+    if parsed.username is not None:
+        userinfo = parsed.username
+        if parsed.password is not None:
+            userinfo = f"{userinfo}:{parsed.password}"
+        netloc = f"{userinfo}@{netloc}"
+    return urllib.parse.urlunsplit(
+        (schema, netloc, parsed.path or "/", parsed.query, parsed.fragment))
+
+
 def _parcurge_hopuri(url: str, headers: dict, timeout: int, max_hops: int,
                      jar, nume_jar):
     """Bucla de hop-uri. Intoarce (raspuns_sau_None, Outcome_sau_None).
@@ -1359,8 +1404,12 @@ def _parcurge_hopuri(url: str, headers: dict, timeout: int, max_hops: int,
             loc = response.headers.get("location") or response.headers.get("Location")
             if not loc:
                 return None, None
-            # Location poate fi cale relativa -> rezolvam fata de URL-ul curent.
-            current_url = urllib.parse.urljoin(current_url, loc)
+            # Location poate fi cale relativa -> rezolvam fata de URL-ul curent,
+            # apoi NORMALIZAM (GATE-2). `urljoin` intoarce un `Location` absolut
+            # verbatim, iar flanco emite `https://www.flanco.ro:443` — cale goala
+            # si port implicit — forma pe care Cloudflare o trimite in challenge.
+            current_url = _normalizeaza_url_hop(
+                urllib.parse.urljoin(current_url, loc))
             continue
         rezultat = _clasifica_raspuns(current_url, response)
         if rezultat in _REZULTATE_ZID:

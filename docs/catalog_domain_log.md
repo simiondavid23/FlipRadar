@@ -3920,3 +3920,116 @@ Aceeași familie de greșeli: `\bLei\b` nu prinde `569.99Lei` (brickdepot), fiin
 7. **Clasele cu hash de build** (carrefour `__BWFkK`/`__EvRr7`, footshop `_2egST`/`_1Go7D`/
    `_1NHjx`) se schimbă la fiecare deploy și n-au alternativă în dump. Dacă un scan dă 0
    carduri, se re-măsoară.
+
+---
+
+## GATE-1/GATE-2 — poarta re-cerea `Location`-ul literal (flanco 308 → www.flanco.ro:443 → challenge)
+
+Două sonde independente (LST-D2 §3.12 pe flanco, LST-D3 §3.8 pe nike) raportaseră același
+tipar: `_fetch_shop_url_guarded` întoarce `None` fără WARN, iar o cerere directă `curl_cffi`
+cu ACELAȘI profil întoarce 200 cu pagina reală, pe care `classify()` o dă `OK`. Concluzia de
+atunci — „cauza e în lanțul de hopuri al porții, nu în sit" — era pe jumătate adevărată, dar
+mecanismul era altul decât se presupunea.
+
+GATE-1 a măsurat poarta **din interior**, hop cu hop, fără s-o modifice.
+
+### 1. Măsurătoarea (GATE-1, 5 cereri interne din 16)
+
+| apel | hop | URL cerut | status | octeți | `Location` | header decisiv | `<title>` |
+|---|---|---|---|---|---|---|---|
+| `flanco_apex` | 1 | `https://flanco.ro/` | 308 | 1 463 | `https://www.flanco.ro:443` | `cf-cache-status: DYNAMIC` | `308 Permanent Redirect` |
+| `flanco_apex` | 2 | `https://www.flanco.ro:443` | **403** | 5 767 | — | **`cf-mitigated: challenge`** | `Just a moment...` |
+| `flanco_www` | 1 | `https://www.flanco.ro/` | **200** | 883 150 | — | **`cf-cache-status: HIT`**, `age: 6381` | `Flanco Smart Discounter…` |
+| `nike_listare` | 1 | `…/ro/w/promotional-styles-3vvvm` | 200 | 875 548 | — | `cdn-cache; desc=REVALIDATE` | `UNLOCK 25% OFF. Nike RO` |
+| `nike_home` | 1 | `https://www.nike.com/ro/` | 200 | 706 200 | — | `cdn-cache; desc=HIT` | `Nike. Just Do It. Nike RO` |
+
+Ramura e **(d) ZID**, nu una dintre cele trei tăcute — și fiecare alternativă e exclusă
+printr-o observație, nu prin raționament: niciun hop n-are excepție (a); hop 1 e 308 **cu**
+`Location` (b); bucla a folosit 2 hop-uri din 4 și a ieșit prin `return None, rezultat`, nu
+prin `return None, None`-ul de la capăt (c); allow-list-ul a dat `permis=True` pe ambele
+URL-uri, inclusiv pe cel cu `:443` (e) — `parsed.hostname` taie portul.
+
+Poarta clasifica deci **corect**. Ce lipsea era normalizarea URL-ului de hop: `Location`-ul
+emis de sit e `https://www.flanco.ro:443` — **cale goală și port implicit scris explicit** —
+iar `urljoin(current_url, loc)` pe un `Location` absolut întoarce exact șirul primit.
+
+### 2. Corecția la concluzia LST-D2/LST-D3
+
+Afirmația „poarta refuză o pagină pe care `classify` o dă OK" compara **două corpuri
+diferite**. Cererea directă din sondele anterioare avea `allow_redirects=True`, deci curl
+urma singur redirectul și `classify` vedea pagina finală de 881 KB. Poarta vede corpul
+hop-ului 2 — pagina de challenge. `classify()` rulat offline pe **corpul porții** întoarce
+tot `BLOCKED`. Nu există nicio divergență între poartă și clasificator; există o diferență
+între ce URL ajunge să fie cerut.
+
+| | cererea directă | poarta |
+|---|---|---|
+| `allow_redirects` | `True` (curl urmează singur) | `False` (hop-uri manuale) |
+| URL cerut după 308 | normalizat de libcurl | **literal din `Location`** |
+| cookie-uri între hop-uri | păstrate de curl în sesiune | **niciunul** (flanco/nike n-au jar) |
+| corpul văzut de `classify` | pagina finală, 200 | pagina hop-ului care a oprit bucla |
+
+### 3. Reparația (GATE-2)
+
+`_normalizeaza_url_hop(url)` — funcție pură, RFC 3986 §6.2.3 — aplicată pe rezultatul lui
+`urljoin`, deci și pe `Location` relativ, și pe cel absolut:
+
+* schema și gazda în minuscule;
+* cale goală → `/`;
+* portul **implicit** șters (`:443` pe https, `:80` pe http); orice alt port rămâne;
+* query, fragment și `userinfo` neatinse; **niciun caracter nu se codifică** aici (spațiile
+  se codifică la intrare, `_fara_spatii`, DEAL-D3).
+
+O singură linie schimbată în `_parcurge_hopuri`:
+
+```python
+current_url = _normalizeaza_url_hop(urllib.parse.urljoin(current_url, loc))
+```
+
+**Riscul pentru celelalte ~95 de domenii e mic, și se poate argumenta punctual.**
+Normalizarea nu poate schimba gazda contactată, deci nu atinge decizia anti-SSRF:
+`_is_allowed_shop_url` citește `parsed.hostname` și îl compară oricum cu `.lower()`, iar
+verificarea allow-list se face **din nou**, la începutul hop-ului următor, pe URL-ul deja
+normalizat. „Cale goală → `/`" nu schimbă nimic pe fir — linia de cerere HTTP poartă oricum
+minimum `/`. Un test pinuiește invarianța verdictului allow-list pe un set care include cele
+două forme înșelătoare din C-14 (sufix fals `evil-altex.ro.attacker.com` și `userinfo` care
+imită un domeniu permis, `https://altex.ro@evil.com/`).
+
+Nu s-au atins: `max_hops`, cookie-urile/jar-urile, `_impersonate_for`, `_clasifica_raspuns`,
+ramura de excepție.
+
+### 4. Verificarea funcțională (GATE-2, 1 apel de poartă, 2 cereri interne)
+
+`_fetch_shop_url_guarded("https://flanco.ro/")` prin poarta REPARATĂ:
+
+| hop | URL cerut | status | octeți | header decisiv |
+|---|---|---|---|---|
+| 1 | `https://flanco.ro/` | 308 | 1 463 | `cf-cache-status: DYNAMIC`, `Location: https://www.flanco.ro:443` |
+| 2 | **`https://www.flanco.ro/`** (normalizat) | **200** | **883 150** | `cf-cache-status: HIT`, `age: 7339` |
+
+`_clasifica_raspuns` → `OK`, poarta întoarce răspunsul (`poarta_none = False`), zero jar-uri
+scrise. Situl emite în continuare `Location`-ul nenormalizat; poarta nu-l mai re-cere ca atare.
+
+Mărimea corpului e identică la octet cu cea măsurată la GATE-1 pe `flanco_www` (883 150) —
+o verificare încrucișată gratuită că e aceeași pagină.
+
+### 5. Ce rămâne neexplicat
+
+* **nike.com nu reproduce.** GATE-1 i-a cerut listarea și home-ul: 3 × 200, fiecare dintr-un
+  singur hop. `None`-ul din LST-D3 a fost **tranzitoriu** și nu se repară pe baza unei
+  observații care nu se repetă. Ce diferă față de atunci: ora și, probabil, reputația IP-ului
+  la Akamai. Ce nu diferă: profilul (`chrome`), URL-ul, lipsa jar-ului.
+* **Ipoteză pentru blocaje intermitente, notată dar nemăsurată:** răspunsurile nike setează
+  **14 cookie-uri** (`ak_bmsc`, `AKA_A2` ×6, `geoloc`, `rc`, `tp`, `tz`, `la`, `lo`, `ni_d`)
+  — Akamai Bot Manager. Poarta le aruncă pe toate, fiindcă `jar_pentru("nike.com")` e `None`.
+  Aici n-a contat (un singur hop, 200 din prima), dar pe lanțuri mai lungi sau la cereri
+  repetate e un mecanism plauzibil.
+* **Care dintre cele două variabile declanșa challenge-ul** (calea goală sau portul explicit)
+  rămâne nedeterminat: GATE-1 avea o singură observație per formă, iar o a cincea cerere era
+  în afara bugetului. Normalizarea le acoperă pe amândouă, iar ambele sunt no-op-uri standard,
+  deci reparația e sigură fără să fie nevoie de separarea cauzelor. GATE-2 arată însă că, pe
+  forma normalizată, flanco răspunde 200 prin poartă — deci reparația chiar rezolvă cazul.
+* **Challenge-urile Cloudflare au și o componentă nedeterministă.** Două observații nu
+  dovedesc un mecanism; `cf-cache-status: HIT` pe una și `cf-mitigated: challenge` pe cealaltă
+  sunt însă două semnale independente care merg în aceeași direcție, iar GATE-2 adaugă o a
+  treia observație pe forma normalizată (tot HIT, tot 200).

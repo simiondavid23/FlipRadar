@@ -332,3 +332,96 @@ def test_12_hartile_vin_din_registru():
 
     assert ss._COOKIE_JAR_DOMENIU == option_map("cookie_jar")
     assert ss._BOOTSTRAP_URL_DOMENIU == option_map("bootstrap_url")
+
+
+# ── GATE-2 — URL-ul de hop se normalizeaza dupa `Location` ──────────────────────
+#
+# GATE-1 a masurat hop cu hop, prin poarta instrumentata: `https://flanco.ro/`
+# raspunde 308 cu `Location: https://www.flanco.ro:443` (cale GOALA, port implicit
+# scris explicit), iar acea forma primeste 403 `cf-mitigated: challenge`. Forma
+# normalizata, `https://www.flanco.ro/`, a raspuns 200 (`cf-cache-status: HIT`)
+# prin ACEEASI poarta, la 10 secunde distanta, cu acelasi profil.
+#
+# Testele de mai jos nu ating reteaua: stub-ul `fake_get` al fixture-ului `mediu`
+# inregistreaza URL-urile cerute, deci se poate afirma EXACT ce a plecat pe fir.
+
+def test_16_normalizeaza_url_hop():
+    """Helper PUR, cele cinci forme masurate. Ultima e cea mai importanta ca
+    NON-schimbare: normalizarea nu codifica niciun caracter — spatiile se
+    codifica la intrare (`_fara_spatii`, DEAL-D3), nu aici."""
+    n = ss._normalizeaza_url_hop
+
+    assert n("https://www.flanco.ro:443") == "https://www.flanco.ro/"
+    assert n("https://X.ro:443/a?b=1#f") == "https://x.ro/a?b=1#f"
+    assert n("http://x.ro:80/") == "http://x.ro/"
+    # Port NEIMPLICIT: ramane. Un `:8443` explicit e semnificativ, nu zgomot.
+    assert n("https://x.ro:8443/a") == "https://x.ro:8443/a"
+    assert n("https://x.ro/a b") == "https://x.ro/a b"
+
+
+def test_17_redirect_308_catre_port_implicit_se_recere_normalizat(mediu, monkeypatch):
+    """Cazul flanco, reprodus in laborator: al doilea hop NU mai cere forma cu
+    `:443` si cale goala, ci pe cea normalizata."""
+    monkeypatch.setattr(ss, "VALIDATED_DOMAINS",
+                        set(ss.VALIDATED_DOMAINS) | {"flanco.ro"})
+    mediu["seteaza"](
+        _Resp(status=308, headers={"location": "https://www.flanco.ro:443"}),
+        _Resp(status=200),
+    )
+
+    raspuns = _poarta("https://flanco.ro/")
+
+    assert raspuns is not None and raspuns.status_code == 200
+    assert [c["url"] for c in mediu["cereri"]] == [
+        "https://flanco.ro/", "https://www.flanco.ro/"]
+
+
+def test_18_location_relativ_se_rezolva_si_normalizeaza(mediu, monkeypatch):
+    """Doua lucruri deodata, fiindca amandoua tin de aceeasi linie: `Location`
+    RELATIV se rezolva fata de URL-ul curent SI se normalizeaza; iar un port
+    NEIMPLICIT supravietuieste normalizarii."""
+    monkeypatch.setattr(ss, "VALIDATED_DOMAINS",
+                        set(ss.VALIDATED_DOMAINS) | {"x.ro"})
+
+    mediu["seteaza"](
+        _Resp(status=302, headers={"location": "../x/"}),
+        _Resp(status=200),
+    )
+    raspuns = _poarta("https://x.ro:443/a/b")
+    assert raspuns is not None and raspuns.status_code == 200
+    assert [c["url"] for c in mediu["cereri"]] == [
+        "https://x.ro:443/a/b", "https://x.ro/x/"]
+
+    mediu["cereri"].clear()
+    mediu["raspunsuri"].clear()
+    mediu["seteaza"](
+        _Resp(status=302, headers={"location": "https://x.ro:8443/y"}),
+        _Resp(status=200),
+    )
+    raspuns = _poarta("https://x.ro/start")
+    assert raspuns is not None and raspuns.status_code == 200
+    assert [c["url"] for c in mediu["cereri"]] == [
+        "https://x.ro/start", "https://x.ro:8443/y"]
+
+
+def test_19_normalizarea_nu_schimba_gazda_pentru_allowlist():
+    """Garda anti-SSRF: normalizarea atinge gazda doar cu litera mica, iar
+    `_is_allowed_shop_url` o compara oricum cu `.lower()`. Deci verdictul nu se
+    poate schimba — nici in permisiv, nici in restrictiv.
+
+    Setul contine si cele doua forme inselatoare pinuite de C-14: sufixul fals
+    (`evil-altex.ro.attacker.com`) si `userinfo` care imita un domeniu permis
+    (`https://altex.ro@evil.com/`). Amandoua trebuie sa ramana RESPINSE.
+    """
+    for u in ("https://altex.ro:443/p/1",
+              "https://www.flanco.ro:443",
+              "https://SHOP.43einhalb.com/p/1",
+              "https://evil-altex.ro.attacker.com/",
+              "https://altex.ro@evil.com/"):
+        assert (ss._is_allowed_shop_url(u)
+                == ss._is_allowed_shop_url(ss._normalizeaza_url_hop(u))), u
+    # Sanatatea setului: contine si permise, si respinse — altfel egalitatea de
+    # mai sus ar putea fi adevarata dintr-un motiv trivial.
+    assert ss._is_allowed_shop_url("https://altex.ro:443/p/1")
+    assert not ss._is_allowed_shop_url("https://evil-altex.ro.attacker.com/")
+    assert not ss._is_allowed_shop_url("https://altex.ro@evil.com/")

@@ -853,7 +853,13 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "rulat pe chiar acel corp intoarce `Outcome.OK`. Redirectul e catre "
                  "`https://www.flanco.ro:443/` (port explicit). Cauza e deci in lantul "
                  "de hopuri al portii, nu in sit — de investigat separat, fiindca "
-                 "atinge si axa L.",
+                 "atinge si axa L. GATE-1/GATE-2 — masurat hop cu hop: situl "
+                 "raspunde 308 cu `Location: https://www.flanco.ro:443` (cale GOALA "
+                 "si port implicit scris explicit), iar exact acea forma primeste 403 "
+                 "`cf-mitigated: challenge`. Poarta normalizeaza acum URL-ul de hop "
+                 "(RFC 3986), deci intrarea trece prin `https://www.flanco.ro/` si "
+                 "raspunde 200. `classify` n-a gresit niciodata: cele doua sonde "
+                 "comparau doua CORPURI diferite.",
     },
     "evomag.ro": {
         "label": "evoMAG",
