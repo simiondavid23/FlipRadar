@@ -664,7 +664,10 @@ def test_listing_domains_exact_cele_din_registru():
                                  # enumerarea lui Shopify s-a masurat DESCHISA, deci
                                  # a intrat pe `method: shopify`, nu pe descriptor.
                                  "zooplus.ro", "footlocker.ro", "forit.ro",
-                                 "direct-running.com"}
+                                 "direct-running.com",
+                                 # EMAG-D — primul descriptor pe forma `entries`
+                                 # (12 categorii de resigilate).
+                                 "emag.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -689,51 +692,77 @@ def test_fiecare_descriptor_are_cheile_obligatorii():
 
     for domeniu in listing_domains():
         d = listing_descriptor(domeniu)
-        for cheie in ("url", "max_pages", "currency", "reference_kind"):
-            assert d.get(cheie), f"{domeniu} nu are `{cheie}`"
-        assert d["reference_kind"] in {"prp", "min30", "nemarcat"}
+        _verifica_descriptor(domeniu, d)
 
-        # `page_url_template` e obligatoriu EXACT cand scannerul chiar il citeste:
-        # `_pagina_url` intoarce `url` pentru pagina 1 si abia de la 2 in sus
-        # formateaza template-ul. Un domeniu masurat ca PAGINA-UNICA (bonami:
-        # `nextPagePath` None, zero `rel=next`, zero `?page=`) are `max_pages: 1`,
-        # deci bucla face o singura tura si template-ul n-ar fi citit niciodata —
-        # a-l cere ar insemna sa inventam un URL nemasurat doar ca sa treaca garda.
-        if d["max_pages"] > 1:
-            assert d.get("page_url_template"), f"{domeniu} nu are `page_url_template`"
-            assert "{n}" in d["page_url_template"]
-        else:
-            assert "page_url_template" not in d, (
-                f"{domeniu}: max_pages=1 dar declara un template care nu se citeste")
 
-        pe_stare = bool(d.get("state_extractor"))
-        pe_css = bool(d.get("card"))
-        assert pe_stare != pe_css, (
-            f"{domeniu}: exact una din `card` / `state_extractor`, nu ambele si nu "
-            f"niciuna")
-        if pe_stare:
-            assert d["state_extractor"] in LISTING_STATE_EXTRACTORS, (
-                f"{domeniu}: `state_extractor` necunoscut in registru")
-            for interzisa in ("card", "link", "title", "price_text", "price_attr",
-                              "compare_text", "compare_attr", "price_parse"):
-                assert interzisa not in d, (
-                    f"{domeniu}: `{interzisa}` n-are sens pe calea de stare")
+def _verifica_descriptor(domeniu, d):
+    """Contractul unui descriptor de listare. Extras din bucla la EMAG-D ca sa
+    poata fi chemat SI pe dicturi sintetice — o garda care se poate verifica doar
+    pe registrul real n-are cum sa dovedeasca ce RESPINGE."""
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
+    for cheie in ("max_pages", "currency", "reference_kind"):
+        assert d.get(cheie), f"{domeniu} nu are `{cheie}`"
+    assert d["reference_kind"] in {"prp", "min30", "nemarcat"}
+
+    # EMAG-D — intrarile: ori `url`, ori `entries`, niciodata amandoua si
+    # niciodata niciuna. Ambele deodata ar fi ambiguu exact ca `card` +
+    # `state_extractor`: `_intrari` prefera tacut `entries`, iar `url` ar deveni
+    # configuratie moarta care pare vie.
+    are_url = bool(d.get("url"))
+    are_entries = "entries" in d
+    assert are_url != are_entries, (
+        f"{domeniu}: exact una din `url` / `entries`, nu ambele si nu niciuna")
+
+    if are_entries:
+        assert d["entries"], f"{domeniu}: `entries` gol"
+        for i, intrare in enumerate(d["entries"]):
+            assert intrare.get("url"), f"{domeniu}: intrarea {i} n-are `url`"
+            # Plafonul EFECTIV al intrarii decide, nu cel scris: o intrare fara
+            # `max_pages` mosteneste plafonul descriptorului, deci poate avea
+            # nevoie de template chiar daca nu-si declara niciun numar.
+            efectiv = int(intrare.get("max_pages") or d["max_pages"])
+            _verifica_paginare(f"{domeniu}: intrarea {i}", intrare, efectiv)
+    else:
+        _verifica_paginare(domeniu, d, int(d["max_pages"]))
+
+    pe_stare = bool(d.get("state_extractor"))
+    pe_css = bool(d.get("card"))
+    assert pe_stare != pe_css, (
+        f"{domeniu}: exact una din `card` / `state_extractor`, nu ambele si nu "
+        f"niciuna")
+    if pe_stare:
+        assert d["state_extractor"] in LISTING_STATE_EXTRACTORS, (
+            f"{domeniu}: `state_extractor` necunoscut in registru")
+        for interzisa in ("card", "link", "title", "price_text", "price_attr",
+                          "compare_text", "compare_attr", "price_parse"):
+            assert interzisa not in d, (
+                f"{domeniu}: `{interzisa}` n-are sens pe calea de stare")
+    else:
+        assert d.get("price_parse"), f"{domeniu} nu are `price_parse`"
+        if d.get("price_attr"):
+            assert d["price_parse"] == "attr_float", (
+                f"{domeniu}: `price_attr` merge prin parserul strict, deci "
+                f"`price_parse` trebuie sa fie `attr_float`")
         else:
-            assert d.get("price_parse"), f"{domeniu} nu are `price_parse`"
-            # DEAL-D1 — valoarea, nu doar prezenta. De cand `_pret_of` chiar o
-            # citeste, `price_parse` a incetat sa fie documentatie: o valoare
-            # necunoscuta pe calea de text opreste scanul domeniului la primul
-            # card, iar una gresit aleasa (eu_comma pe „$117.63") publica preturi
-            # de 100x. Garda perechea si campul, ca sa nu se poata scrie
-            # `attr_float` peste un `price_text`.
-            if d.get("price_attr"):
-                assert d["price_parse"] == "attr_float", (
-                    f"{domeniu}: `price_attr` merge prin parserul strict, deci "
-                    f"`price_parse` trebuie sa fie `attr_float`")
-            else:
-                assert d["price_parse"] in {"eu_comma", "us_dot"}, (
-                    f"{domeniu}: pe `price_text` valorile admise sunt "
-                    f"eu_comma / us_dot, nu {d['price_parse']!r}")
+            assert d["price_parse"] in {"eu_comma", "us_dot"}, (
+                f"{domeniu}: pe `price_text` valorile admise sunt "
+                f"eu_comma / us_dot, nu {d['price_parse']!r}")
+
+
+def _verifica_paginare(eticheta, sursa, max_pages):
+    """`page_url_template` e obligatoriu EXACT cand scannerul chiar il citeste:
+    `_pagina_url` intoarce `url` pentru pagina 1 si abia de la 2 in sus formateaza
+    template-ul. Un domeniu masurat ca PAGINA-UNICA (bonami: `nextPagePath` None,
+    zero `rel=next`, zero `?page=`) are `max_pages: 1`, deci bucla face o singura
+    tura si template-ul n-ar fi citit niciodata — a-l cere ar insemna sa inventam
+    un URL nemasurat doar ca sa treaca garda."""
+    if max_pages > 1:
+        assert sursa.get("page_url_template"), f"{eticheta} nu are `page_url_template`"
+        assert "{n}" in sursa["page_url_template"]
+    else:
+        assert "page_url_template" not in sursa, (
+            f"{eticheta}: max_pages=1 dar declara un template care nu se citeste")
 
 
 # ── 8. DEAL-2b — pragul separat al lui R1 + inchiderea pe calificare ─────────
@@ -1457,3 +1486,289 @@ def test_sneakerindustry_pe_shopify():
     assert "sneakerindustry.ro" in shopify_domains()
     assert SHOP_REGISTRY["sneakerindustry.ro"]["currency"] == "RON"
     assert "sneakerindustry.ro" not in listing_domains()
+
+
+# ── EMAG-D — lista de intrari per descriptor + eMAG Resigilate ───────────────
+#
+# Fixture-ul `emag.ro_cards.html` e decupat din `scripts/diagnostics/
+# dumps_emag_rs/emag.ro_rs_listare.html` (20 august): trei carduri intregi, al
+# doilea cu `<p class="pricing rrp"></p>` GOL — cazul real in care nodul de
+# referinta exista dar n-are valoare, masurat pe 1 din 60.
+
+def _descriptor_entries(intrari, max_pages=5):
+    """Descriptor de test pe forma `entries`, cu selectorii otter (fixture-ul lui
+    e cel folosit de restul testelor de scan)."""
+    return {"entries": intrari, "max_pages": max_pages, "currency": "RON",
+            "card": "li.product-item", "link": "a.product-item-photo",
+            "title": "h3.product-item-name",
+            "price_attr": ("[data-price-type='finalPrice']", "data-price-amount"),
+            "compare_attr": ("[data-price-type='oldPrice']", "data-price-amount"),
+            "price_parse": "attr_float", "reference_kind": "prp"}
+
+
+def _scaneaza_direct(monkeypatch, pagini, descriptor):
+    """`_scaneaza_domeniu` chemat direct, cu fetch-ul stub-uit.
+
+    `run_listing_scan` intoarce un rezumat pe MAGAZINE si inghite exceptiile per
+    domeniu; contoarele care dovedesc semantica per-intrare (`pagini`, `produse`)
+    sunt in valoarea de retur a functiei de dedesubt. De aceea testele de intrari
+    coboara un nivel.
+    """
+    cereri = []
+
+    def fals(url, *, headers=None, timeout=None, max_hops=3):
+        cereri.append(url)
+        indice = len(cereri) - 1
+        pagina = pagini[indice] if indice < len(pagini) else "<html></html>"
+        if isinstance(pagina, tuple):
+            return _Raspuns(pagina[0], pagina[1])
+        return _Raspuns(pagina)
+
+    monkeypatch.setattr("app.services.scraper_service._fetch_shop_url_guarded", fals)
+    monkeypatch.setattr(listing_scanner, "_pauza", lambda: None)
+    monkeypatch.setattr(listing_scanner, "listing_descriptor", lambda _dom: descriptor)
+
+    db = SessionLocal()
+    try:
+        if db.query(RadarSettings).first() is None:
+            _seteaza(db)
+        rezultat = listing_scanner._scaneaza_domeniu(
+            db, DOM, db.query(RadarSettings).first(), 50.0)
+    finally:
+        db.close()
+    return rezultat, cereri
+
+
+def test_intrari_forma_simpla():
+    """Forma cu `url` da o singura intrare, cu aceleasi valori — asa raman cei
+    optsprezece descriptori de dinaintea EMAG-D neatinsi."""
+    d = _descriptor_test(max_pages=7)
+    intrari = listing_scanner._intrari(d)
+
+    assert len(intrari) == 1
+    assert intrari[0]["url"] == "https://www.otter.ro/reduceri"
+    assert intrari[0]["page_url_template"] == "https://www.otter.ro/reduceri?p={n}"
+    assert intrari[0]["max_pages"] == 7
+
+    assert listing_scanner._pagina_url(intrari[0], 1) == "https://www.otter.ro/reduceri"
+    assert (listing_scanner._pagina_url(intrari[0], 2)
+            == "https://www.otter.ro/reduceri?p=2")
+
+
+def test_intrari_forma_entries_mosteneste_max_pages():
+    """O intrare fara `max_pages` primeste plafonul descriptorului, iar ORDINEA se
+    pastreaza — pe eMAG ea e ordinea hub-ului, deci nu e cosmetica."""
+    d = _descriptor_entries([
+        {"url": "https://x.ro/a", "page_url_template": "https://x.ro/a/p{n}",
+         "max_pages": 2},
+        {"url": "https://x.ro/b", "page_url_template": "https://x.ro/b/p{n}"},
+    ], max_pages=9)
+    intrari = listing_scanner._intrari(d)
+
+    assert [i["url"] for i in intrari] == ["https://x.ro/a", "https://x.ro/b"]
+    assert intrari[0]["max_pages"] == 2, "plafonul propriu bate"
+    assert intrari[1]["max_pages"] == 9, "fara plafon propriu -> cel al descriptorului"
+
+
+def test_scan_itereaza_intrarile_cu_dedup_pe_scan(monkeypatch):
+    """Doua intrari x o pagina: ambele se parcurg, dar un produs prezent in
+    AMANDOUA se numara O SINGURA data.
+
+    Asta e granita dintre per-intrare si per-scan, si se verifica pe CONTOARE, nu
+    pe unicitatea randurilor din baza: commit-ul e per pagina (D6), deci cand
+    intrarea a doua ajunge la `preincarca_pagina` randul scris de prima e deja
+    vizibil si o dublura ar fi absorbita tacut de ramura de UPDATE. Ce nu poate fi
+    absorbit e numaratoarea — cu `vazute` resetat per intrare, fiecare produs comun
+    ar fi numarat de doua ori SI reevaluat a doua oara fata de un minim pe care
+    tocmai acest scan l-a coborat, adica exact „inventarea unei reduceri" impotriva
+    careia a fost scrisa garda SCAN-1.
+    """
+    fixture = _fixture("otter.ro")
+    rezultat, cereri = _scaneaza_direct(monkeypatch, [fixture, fixture],
+                                        _descriptor_entries([
+                                            {"url": "https://www.otter.ro/a",
+                                             "max_pages": 1},
+                                            {"url": "https://www.otter.ro/b",
+                                             "max_pages": 1},
+                                        ]))
+
+    assert cereri == ["https://www.otter.ro/a", "https://www.otter.ro/b"], \
+        "ambele intrari se cer, in ordinea din descriptor"
+    assert rezultat["pagini"] == 2, "amandoua paginile au fost procesate"
+
+    distincte = len({c["external_id"] for c in extrage_carduri(
+        fixture, _descriptor_entries([]), DOM)})
+    assert distincte > 0
+    assert rezultat["produse"] == distincte, (
+        "produsele comune celor doua intrari se numara O data — cu `vazute` "
+        "resetat per intrare ar fi iesit dublu")
+
+
+def test_clamp_e_per_intrare(monkeypatch):
+    """Aceleasi linkuri in a DOUA intrare nu sunt un clamp; in a doua PAGINA, da.
+
+    Se masoara pe `pagini`, nu pe numarul de cereri, si diferenta conteaza:
+    conditia de clamp se evalueaza DUPA fetch, deci o pagina taiata de clamp a
+    fost oricum ceruta. Cu `linkuri_vazute` partajat intre intrari, cererea catre
+    a doua categorie ar pleca la fel — dar continutul ei ar fi aruncat, si tocmai
+    asta trebuie sa se vada.
+    """
+    fixture = _fixture("otter.ro")
+
+    # (a) doua INTRARI cu acelasi continut -> AMBELE pagini se proceseaza.
+    rezultat, cereri = _scaneaza_direct(monkeypatch, [fixture, fixture],
+                                        _descriptor_entries([
+                                            {"url": "https://www.otter.ro/a",
+                                             "max_pages": 1},
+                                            {"url": "https://www.otter.ro/b",
+                                             "max_pages": 1},
+                                        ]))
+    assert len(cereri) == 2
+    assert rezultat["pagini"] == 2, (
+        "a doua intrare NU e un clamp — doua categorii care impart produse sunt "
+        "normale, iar cu `linkuri_vazute` partajat pagina ei ar fi fost aruncata")
+
+    # (b) aceeasi INTRARE, pagina 2 identica -> clamp real, o singura pagina.
+    rezultat, cereri = _scaneaza_direct(monkeypatch, [fixture, fixture, fixture],
+                                        _descriptor_entries([
+                                            {"url": "https://www.otter.ro/a",
+                                             "page_url_template":
+                                                 "https://www.otter.ro/a?p={n}",
+                                             "max_pages": 5},
+                                        ]))
+    assert cereri == ["https://www.otter.ro/a", "https://www.otter.ro/a?p=2"], \
+        "pagina 2 repetata opreste intrarea, deci pagina 3 nu se mai cere"
+    assert rezultat["pagini"] == 1, "pagina 2 a fost aruncata de clamp"
+
+
+def test_eroare_pe_pagina_1_a_intrarii_2_ridica(monkeypatch):
+    """O categorie moarta e semnal ca hub-ul s-a schimbat, nu ceva de tacut.
+
+    Se cheama `_scaneaza_domeniu` DIRECT, nu prin `run_listing_scan`: acolo sus,
+    exceptia e prinsa deliberat per domeniu si scrisa in `ShopScanState`, ca un
+    magazin mort sa nu opreasca restul. Testul asta e despre stratul de dedesubt,
+    unde ridicarea chiar se intampla.
+
+    Randurile primei intrari sunt deja COMISE cand exceptia cade — commit-ul e per
+    pagina de la D6, iar `_scaneaza_domeniu` nu le atinge inapoi.
+    """
+    pagini = [_fixture("otter.ro"), ("<html></html>", 500)]
+    cereri = []
+
+    def fals(url, *, headers=None, timeout=None, max_hops=3):
+        cereri.append(url)
+        pagina = pagini[len(cereri) - 1]
+        if isinstance(pagina, tuple):
+            return _Raspuns(pagina[0], pagina[1])
+        return _Raspuns(pagina)
+
+    monkeypatch.setattr("app.services.scraper_service._fetch_shop_url_guarded", fals)
+    monkeypatch.setattr(listing_scanner, "_pauza", lambda: None)
+    monkeypatch.setattr(listing_scanner, "listing_descriptor",
+                        lambda _dom: _descriptor_entries([
+                            {"url": "https://www.otter.ro/a", "max_pages": 1},
+                            {"url": "https://www.otter.ro/moarta", "max_pages": 1},
+                        ]))
+
+    db = SessionLocal()
+    try:
+        if db.query(RadarSettings).first() is None:
+            _seteaza(db)
+        with pytest.raises(RuntimeError):
+            listing_scanner._scaneaza_domeniu(db, DOM, db.query(RadarSettings).first(),
+                                              50.0)
+        assert cereri == ["https://www.otter.ro/a", "https://www.otter.ro/moarta"]
+        db.rollback()
+        assert (db.query(ShopPriceMemory)
+                .filter(ShopPriceMemory.shop_domain == DOM).count()) > 0, \
+            "paginile deja comise raman comise chiar si dupa rollback"
+    finally:
+        db.close()
+
+
+def test_404_pe_pagina_2_a_intrarii_e_final_de_intrare(scan):
+    """404 dupa o pagina reusita A INTRARII inchide intrarea, nu scanul.
+
+    Contorul verificat e `pagini_intrare`, nu cel global: cu cel global, un 404 pe
+    pagina 1 a intrarii a doua ar fi fost inghitit ca „final de paginare" doar
+    fiindca prima intrare citise deja pagini.
+    """
+    fixture = _fixture("otter.ro")
+    scan([fixture, ("<html></html>", 404), fixture],
+         descriptor=_descriptor_entries([
+             {"url": "https://www.otter.ro/a",
+              "page_url_template": "https://www.otter.ro/a?p={n}", "max_pages": 4},
+             {"url": "https://www.otter.ro/b", "max_pages": 1},
+         ]))
+
+    assert scan.cereri == ["https://www.otter.ro/a",
+                           "https://www.otter.ro/a?p=2",
+                           "https://www.otter.ro/b"], \
+        "404 inchide intrarea 1 si se trece la intrarea 2, fara exceptie"
+
+
+def test_emag_carduri_din_fixture():
+    """eMAG, prin descriptorul REAL din registru.
+
+    Cardul din mijloc are `<p class="pricing rrp"></p>` gol — `compare_at` iese
+    None, nu 0 si nici o exceptie. Titlul poarta deja „RESIGILAT: " din HTML, deci
+    feed-ul nu poate arata un iPhone la 60% fara sa spuna ce e.
+    """
+    carduri = extrage_carduri(_fixture("emag.ro"),
+                              listing_descriptor("emag.ro"), "emag.ro")
+
+    assert len(carduri) == 3
+    assert all(c["title"].startswith("RESIGILAT: ") for c in carduri), \
+        "starea vine din HTML, nu dintr-un prefix adaugat de noi"
+    assert all(c["url"].startswith("https://www.emag.ro/") for c in carduri)
+    assert all(c["image_url"].startswith("https://") for c in carduri)
+
+    primul, mijloc, ultimul = carduri
+    assert primul["price"] == 4599.99, "pret spart pe noduri, citit corect"
+    assert primul["compare_at"] == 4999.99, "pretul de NOU al aceluiasi produs"
+    assert mijloc["price"] == 2359.99
+    assert mijloc["compare_at"] is None, "`p.pricing.rrp` gol -> None"
+    assert ultimul["compare_at"] > ultimul["price"]
+
+
+def test_emag_descriptor_pe_entries():
+    """Forma descriptorului eMAG, plus ce RESPINGE garda.
+
+    Partea a doua e miezul: o garda verificata doar pe registrul real nu poate
+    dovedi ca refuza ceva. `_verifica_descriptor` primeste dicturi sintetice.
+    """
+    d = listing_descriptor("emag.ro")
+
+    assert "emag.ro" in listing_domains()
+    assert "url" not in d, "forma cu lista nu declara si `url`"
+    assert len(d["entries"]) == 12, "cele 12 departamente din hub"
+    urluri = [i["url"] for i in d["entries"]]
+    assert len(set(urluri)) == 12, "intrari distincte"
+    assert urluri[0] == "https://www.emag.ro/resigilate/laptop-tablete-telefoane/d", \
+        "ordinea e a hub-ului (`category_panel_1_0`)"
+    for intrare in d["entries"]:
+        assert "{n}" in intrare["page_url_template"]
+        # Numarul de pagina sta la MIJLOC pe eMAG, nu la coada.
+        assert intrare["page_url_template"].endswith("/d")
+    _verifica_descriptor("emag.ro", d)
+
+    baza = {"max_pages": 2, "currency": "RON", "reference_kind": "nemarcat",
+            "card": "div", "price_text": "p", "price_parse": "eu_comma"}
+    intrare_buna = {"url": "https://x.ro/b",
+                    "page_url_template": "https://x.ro/b/p{n}"}
+
+    # Sanatatea cazurilor negative: forma cu lista, altfel VALIDA, chiar trece.
+    # Fara asta, fiecare `raises` de mai jos ar putea sa se aprinda din alt motiv
+    # decat cel testat — si exact asa a scapat prima versiune a acestui test.
+    _verifica_descriptor("sintetic", {**baza, "entries": [intrare_buna]})
+
+    with pytest.raises(AssertionError):                  # ambele forme deodata
+        _verifica_descriptor("sintetic", {**baza, "url": "https://x.ro/a",
+                                          "page_url_template": "https://x.ro/a/p{n}",
+                                          "entries": [intrare_buna]})
+    with pytest.raises(AssertionError):                  # niciuna din forme
+        _verifica_descriptor("sintetic", dict(baza))
+    with pytest.raises(AssertionError):                  # `entries` gol
+        _verifica_descriptor("sintetic", {**baza, "entries": []})
+    with pytest.raises(AssertionError):                  # intrare fara template
+        _verifica_descriptor("sintetic", {**baza, "entries": [{"url": "https://x.ro/b"}]})

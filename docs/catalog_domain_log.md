@@ -3399,3 +3399,191 @@ consemnat onest:
 
 **97 de domenii validate, neschimbat** — DEAL-D1 n-a adaugat domenii, ci capabilitati
 pe domenii deja validate: 4 descriptori de listare, 2 migrari pe `shopify`.
+
+---
+
+## EMAG-D — eMAG Resigilate pe axa D + mecanismul `entries`
+
+Prima runda de axa D care a cerut o schimbare de MECANISM, nu doar un descriptor.
+Materia prima: dump-urile EMAG-1 din 20-21 august, analizate offline la Partea A
+(`scripts/diagnostics/dumps_emag_rs/raport_emag_d.md`), plus trei cereri vii la B3.
+
+### 1. De ce `entries`
+
+eMAG isi imparte cele ~8000 de produse resigilate pe **12 departamente**, fiecare cu
+paginare proprie in CALE. Pana acum un descriptor putea declara O singura listare, deci
+eMAG ar fi intrat cu o categorie si ar fi pierdut unsprezece.
+
+`entries` e o lista de `{url, page_url_template, max_pages?}`, SAU-EXCLUSIV cu `url`.
+Cei 18 descriptori anteriori nu s-au atins si nu s-au convertit — forma cu `url` da o
+lista cu un element si merge pe acelasi drum.
+
+Miezul e ce e per INTRARE si ce e per SCAN, si fiecare jumatate a fost aleasa impotriva
+unui esec concret:
+
+| stare | domeniu | de ce |
+|---|---|---|
+| `linkuri_vazute` | **per intrare** | „Clamp" inseamna *lista asta mi-a servit iar pagina precedenta*. Doua categorii care impart legitim un produs NU sunt un clamp; partajat, a doua categorie ar fi taiata dupa prima ei pagina. |
+| contorul de pagini | **per intrare** | Un 404 pe pagina 1 a categoriei a doua trebuie sa ramana EROARE (hub-ul s-a schimbat). Cu contorul global ar fi fost inghitit ca „final de paginare". |
+| `vazute` | **per scan** | Un produs poate fi listat si la „Laptop" si la „PC". Resetat per intrare, ar fi numarat de doua ori si reevaluat fata de un minim pe care chiar acest scan l-a coborat — „inventarea unei reduceri", exact ce interzice SCAN-1. |
+| `calificate` | **per scan** | Inchiderea dealurilor necalificate se face dupa TOATE intrarile; altfel prima categorie ar inchide dealurile celei de-a doua. |
+
+### 2. Cele 12 intrari
+
+Ordinea e a hub-ului (`category_panel_1_0` .. `_12_0`), slug-urile verbatim din ancorele
+lui. Numarul de pagina sta la **MIJLOC** — `…/resigilate/<cat>/p{n}/d` — citit din
+`<link rel="next" href="/resigilate/laptop-tablete-telefoane/p2/d">`.
+
+| # | departament | slug |
+|---|---|---|
+| 1 | Laptop, Tablete & Telefoane | `laptop-tablete-telefoane` |
+| 2 | PC, Periferice & Software | `pc-periferice-software` |
+| 3 | TV, Audio-Video & Foto | `tv-audio-video-foto` |
+| 4 | Electrocasnice & Climatizare | `electrocasnice-climatizare` |
+| 5 | Gaming, Carti & Birotica | `gaming-carti-birotica` |
+| 6 | Bacanie | `alimente-bauturi` |
+| 7 | Fashion | `fashion` |
+| 8 | Ingrijire personala & Cosmetice | `ingrijire-personala-cosmetice` |
+| 9 | Casa, Gradina & Bricolaj | `casa-bricolaj-petshop` |
+| 10 | Sport & Travel | `sport-activitati-aer-liber` |
+| 11 | Auto, Moto & RCA | `auto-moto-rca` |
+| 12 | Jucarii, Copii & Bebe | `jucarii-copii-bebe` |
+
+**`max_pages: 40`, unic la nivel de descriptor.** Hub-ul publica UN total (7996 de
+produse) si niciun numar per categorie; singura categorie cu dump propriu,
+`laptop-tablete-telefoane`, anunta 1948 = 33 de pagini la 60/pagina. 40 e aia plus marja
+(conventia otter). Un plafon per intrare ar fi trebuit INVENTAT pentru celelalte
+unsprezece — vezi limitele.
+
+**Corectie la EMAG-1**, care numarase 25 de categorii: sunt **12**. Cele 67 de href-uri
+`/resigilate/*` din hub se impart in 12 categorii, 10 branduri, 5 benzi de discount, 11
+benzi de pret, 10 filtre, 4 sortari si 2 pagini. „25" se obtine numarand si brandurile —
+care nu partitioneaza catalogul.
+
+**URL-ul agregat exista si NU se foloseste.** `/resigilate` e el insusi o grila paginata
+(`rel=next` catre `/resigilate/p2`, 7996 de produse = 134 de pagini), deci o singura
+intrare ar fi acoperit tot. Dar adancimea lui n-a fost ceruta NICIODATA, nici la EMAG-1
+nici la EMAG-D — cele trei cereri ale rundei s-au dus pe forma de categorie, care e
+masurata. Nu se pariaza pe 134 de pagini neverificate.
+
+### 3. Referinta: pretul de NOU, si de ce e `nemarcat`
+
+Cardul poarta doua preturi:
+
+```html
+<p class="pricing rrp">NOU 4.999<sup><small class="mf-decimal">,</small>99</sup> <span>Lei</span></p>
+<p class="product-new-price"><span class="fs-12">de la</span> 4.599<sup>…</sup> <span>Lei</span></p>
+```
+
+Incrucisat cu PDP-ul aceluiasi produs, care poarta verbatim
+`"recommended_retail_price":{"amount":4999.99,"is_visible":true,"label":"NOU"}` si afiseaza
+4.999,99 ca pret principal, 4.599,99 ca oferta resigilata: **referinta e pretul de vanzare
+CURENT al unitatii NOI a aceluiasi produs, la acelasi comerciant.**
+
+*Capcana de omonimie:* aceeasi cheie JSON apare pe PDP si cu `"label":"PRP:"` si valoarea
+**6274.56** — ala e Pretul Recomandat de Producator, alt numar si alt lucru. Cardul arata
+„NOU", nu „PRP".
+
+Pe listare: zero „ultimele 30 de zile", zero „pret recomandat", zero „PRP", zero
+„Omnibus". („cel mai mic pret" apare doar in textul de ajutor al sortarii, „30 de zile"
+doar in politica de retur din `<meta>` — niciuna nu eticheteaza campul; lectia
+bergfreunde, a treia oara.)
+
+**Verdict `nemarcat`, dar campul SE CITESTE.** Nu e Omnibus si nu e PRP, insa e cea mai
+buna referinta posibila pentru un resigilat: acelasi SKU, acelasi magazin, unitate noua —
+„nou 4.999,99, resigilat 4.599,99" e o economie reala si verificabila. Pe 59/59 de carduri
+cu referinta ea e STRICT peste pretul platit, zero inversate. Vocabularul registrului
+n-are un al patrulea termen; **daca David vrea ca axa D sa poarte doar referinte legal
+etichetate, `compare_text` se scoate si eMAG trece pe R2, ca zooplus.**
+
+### 4. Capcanele de pret
+
+**Pretul e spart pe noduri** — zecimalele intr-un `<sup>`, virgula intr-un
+`<small class="mf-decimal">` separat. Nu e o problema, si merita stiut de ce: `_text_of`
+foloseste `get_text(" ")`, deci pune spatii intre noduri, iar `_pret_eu_comma` sterge tot
+ce nu e cifra/punct/virgula — inclusiv „de la", „NOU", „Lei" si spatiile, niciunul cu
+cifre. Masurat prin functiile de productie:
+
+| selector | `_text_of` | `_pret_eu_comma` |
+|---|---|---|
+| `p.product-new-price` | `'de la 4.599 , 99 Lei'` | **4599.99** |
+| `p.pricing.rrp` | `'NOU 4.999 , 99 Lei'` | **4999.99** |
+
+**„de la" e pe 60/60**: un resigilat are mai multe oferte (grade diferite), iar cardul
+arata cea mai ieftina — pretul real platibil, ca „Starting at" la direct-running.
+
+**Componente partajate: NICIUNA.** Intersectia `listare ∩ prod1 ∩ prod2` peste jetoanele
+de pret e goala; pragurile de livrare si Genius nu apar ca sume in textul listarii.
+
+**Capcana caruselului, a treia oara** (dupa LOT5 si powerup): corpul lui `plast` contine
+18 aparitii de `card-item`, toate placeholder-e de carusel de recomandari
+(`rec-card-item card-item js-card-item` cu `div.card-v2 card-shimmer` gol). Niciunul n-are
+`js-product-data` — de aia clasa aia e obligatorie in selector, si de aia `plast` iese cu
+zero carduri in loc de 18.
+
+### 5. Cele 3 cereri de la B3
+
+Dump-urile EMAG-1 aveau **17-18 zile**, iar conditia de oprire lipsea cu totul din ele
+(EMAG-1 n-a cerut niciodata o pagina > 1). Trei cereri prin poarta, cu descriptorul deja
+scris:
+
+| eticheta | URL | status | octeti | carduri | cu compare | cu imagine |
+|---|---|---:|---:|---:|---:|---:|
+| `p2` | `…/resigilate/laptop-tablete-telefoane/p2/d` | **200** | 750 106 | **60** | 60 | 60 |
+| `plast` | `…/resigilate/laptop-tablete-telefoane/p500/d` | **200** | 180 260 | **0** | 0 | 0 |
+| `cat2_p1` | `…/resigilate/pc-periferice-software/d` | **200** | 816 220 | **60** | 60 | 60 |
+
+**Conditia de oprire masurata: GRILA GOALA PE 200** — prima conditie din
+`_scaneaza_domeniu`, aceeasi ca otter si caseking. Nu 404, nu clamp: pagina 500 raspunde
+200 cu un corp de 180 KB fara niciun card de produs.
+
+Ce a confirmat B3 fata de dump-uri: selectorii tin dupa 18 zile (produse complet noi —
+`Nothing Phone (3)` la 3149.99 cu referinta 3677.48 pe `p2`), si descriptorul
+generalizeaza peste intrari (`cat2_p1`, alta categorie: `Monitor Samsung Odyssey OLED G6`
+la 1899.99 cu referinta 2866.80). Pe paginile vii referinta e prezenta pe **60/60**, fata
+de 59/60 pe dump-ul din august.
+
+### 6. `title_prefix`: NU s-a adaugat
+
+Briefingul prevedea o cheie noua daca titlul cardului n-ar purta starea. **O poarta.**
+Verbatim din card:
+
+```html
+<a class="card-v2-title …" href="…/pd/DDF9FV3BM/#used-products"><span class="text-success fw-semibold">RESIGILAT: </span>Telefon mobil Apple iPhone Air, 256GB, 5G, Light Gold</a>
+```
+
+`_text_of` intoarce `'RESIGILAT: Telefon mobil Apple iPhone Air, 256GB, 5G, Light Gold'`
+pe **60/60 de carduri, pe toate cele trei dump-uri de listare**. O cheie de prefix ar fi
+produs „Resigilat: RESIGILAT: …". Confuzia pe care decizia de resigilate o interzice nu se
+poate produce aici — magazinul o previne singur.
+
+**Ce NU ajunge in feed:** gradul (ca nou / foarte buna / acceptabila). Cautat pe toate 60
+de carduri: zero aparitii. Sta pe PDP, in sectiunea catre care duce chiar linkul cardului
+(fragmentul `#used-products` e pastrat deliberat in `url`; `external_id` si `handle` se
+calculeaza pe CALE, deci nu atinge dedup-ul).
+
+### 7. Ce NU s-a declarat, si de ce
+
+* **`stock_attr`** — `data-availability-id` exista dar e `2` pe 60/60, deci nu se poate
+  deosebi de o constanta de sablon. Capcana masurata pe toolnation, dovedita pe vivre.
+* **`image`** — primul `<img>` din card E poza produsului (60/60, absoluta pe
+  `s13emagst.akamaized.net`), deci `image_attr: ["src"]` ajunge. Placeholder-ul lazy e un
+  `data:` pe atributul `style` al containerului, pe care `normalizeaza_imagine` il
+  respinge oricum.
+* **`price_attr`** — butonul de favorite poarta un JSON cu `"price":4599.99`, dar
+  `_pret_strict` de pe calea `*_attr` asteapta un numar, nu un JSON. Ramane doar
+  incrucisare, nu cale.
+
+### 8. Limitele oneste
+
+1. **Un singur total per categorie.** Doar `laptop-tablete-telefoane` are dump (1948).
+   Pentru celelalte 11 nu exista numar, iar hub-ul nu-l afiseaza — de aici `max_pages`
+   unic. O categorie cu peste 2400 de produse ar fi trunchiata tacut; nimic din masuratori
+   nu spune ca exista una, dar nimic nu spune nici ca nu exista.
+2. **Agregatul ramane neverificat** (vezi §2).
+3. **Al doilea dump „de listare" din AB-1 e de fapt hub-ul** (`url_final` =
+   `/resigilate?ref=hdr_resigilate`) — eticheta din numele fisierului induce in eroare.
+   Ramane util ca al doilea punct in TIMP, nu ca a doua categorie.
+4. **Oprirea e masurata pe O categorie.** `plast` s-a cerut doar pe
+   `laptop-tablete-telefoane`; se presupune ca celelalte 11 se comporta la fel, fiindca
+   sunt acelasi sablon.

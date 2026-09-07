@@ -123,6 +123,21 @@ Campurile unei intrari:
                                                     de apelant), luat din <form>-ul real
                                                     al magazinului (inclusiv hidden-urile
                                                     lui — SEARCH-0 §5a);
+                                     INTRARILE (EMAG-D) — un descriptor `listing`
+                                                    declara ori `url` (+
+                                                    `page_url_template` cand
+                                                    max_pages > 1), ori o lista
+                                                    `entries` de forma
+                                                    [{url, page_url_template,
+                                                    max_pages?}, ...] — SAU-EXCLUSIV,
+                                                    niciodata amandoua. `max_pages` per
+                                                    intrare e optional si cade inapoi pe
+                                                    cel al descriptorului. Forma cu
+                                                    lista e pentru magazinele fara URL
+                                                    agregat de reduceri: eMAG Resigilate
+                                                    isi imparte catalogul pe 12
+                                                    departamente, fiecare paginat in
+                                                    CALE. Pinuit de garda descriptorilor.
                                      selectorii de PRET — price_text SAU price_attr,
                                                     optional compare_text/compare_attr,
                                                     price_parse (valorile admise, si in
@@ -224,6 +239,148 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # ── EMAG-D, din dump-urile EMAG-1 (20-21 august) verificate live ────
+        "listing": {
+            # Forma cu LISTA, primul consumator al mecanismului. eMAG n-are un URL
+            # de reduceri agregat pe care sa merite sa mergem: exista
+            # `/resigilate` (7996 de produse, `rel=next` catre `/resigilate/p2`),
+            # dar adancimea lui n-a fost NICIODATA ceruta, nici la EMAG-1 nici la
+            # EMAG-D — cele 3 cereri ale rundei s-au dus pe forma de CATEGORIE.
+            # Deci se merge pe cele 12 departamente, care SUNT masurate, si nu se
+            # pariaza pe o paginare de 134 de pagini neverificata.
+            #
+            # Ordinea e a hub-ului (`category_panel_1_0` .. `_12_0`), slug-urile
+            # sunt luate verbatim din ancorele lui. Numarul de pagina sta la
+            # MIJLOC, intre categorie si `/d` — citit din `rel=next`:
+            # `<link rel="next" href="/resigilate/laptop-tablete-telefoane/p2/d">`.
+            "entries": [
+            # Laptop, Tablete & Telefoane
+            {"url": "https://www.emag.ro/resigilate/laptop-tablete-telefoane/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/laptop-tablete-telefoane/p{n}/d"},
+            # PC, Periferice & Software
+            {"url": "https://www.emag.ro/resigilate/pc-periferice-software/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/pc-periferice-software/p{n}/d"},
+            # TV, Audio-Video & Foto
+            {"url": "https://www.emag.ro/resigilate/tv-audio-video-foto/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/tv-audio-video-foto/p{n}/d"},
+            # Electrocasnice & Climatizare
+            {"url": "https://www.emag.ro/resigilate/electrocasnice-climatizare/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/electrocasnice-climatizare/p{n}/d"},
+            # Gaming, Carti & Birotica
+            {"url": "https://www.emag.ro/resigilate/gaming-carti-birotica/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/gaming-carti-birotica/p{n}/d"},
+            # Bacanie
+            {"url": "https://www.emag.ro/resigilate/alimente-bauturi/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/alimente-bauturi/p{n}/d"},
+            # Fashion
+            {"url": "https://www.emag.ro/resigilate/fashion/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/fashion/p{n}/d"},
+            # Ingrijire personala & Cosmetice
+            {"url": "https://www.emag.ro/resigilate/ingrijire-personala-cosmetice/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/ingrijire-personala-cosmetice/p{n}/d"},
+            # Casa, Gradina & Bricolaj
+            {"url": "https://www.emag.ro/resigilate/casa-bricolaj-petshop/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/casa-bricolaj-petshop/p{n}/d"},
+            # Sport & Travel
+            {"url": "https://www.emag.ro/resigilate/sport-activitati-aer-liber/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/sport-activitati-aer-liber/p{n}/d"},
+            # Auto, Moto & RCA
+            {"url": "https://www.emag.ro/resigilate/auto-moto-rca/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/auto-moto-rca/p{n}/d"},
+            # Jucarii, Copii & Bebe
+            {"url": "https://www.emag.ro/resigilate/jucarii-copii-bebe/d",
+             "page_url_template":
+                 "https://www.emag.ro/resigilate/jucarii-copii-bebe/p{n}/d"},
+            ],
+            # UNIC la nivel de descriptor, si nu din comoditate: hub-ul publica UN
+            # total (7996 de produse) si NICIUN numar per categorie, iar singura
+            # categorie cu dump propriu, `laptop-tablete-telefoane`, anunta 1948 de
+            # produse = 33 de pagini la 60/pagina. 40 e aia plus marja, conventia
+            # otter. Un plafon per intrare ar fi trebuit INVENTAT pentru celelalte
+            # unsprezece.
+            #
+            # Plafonul e o plasa, nu granita reala: oprirea masurata la EMAG-D pe
+            # `/p500/d` e GRILA GOALA PE 200 (180 KB, zero carduri), deci bucla se
+            # inchide singura pe prima conditie din `_scaneaza_domeniu` mult
+            # inaintea plafonului. Cele 18 aparitii de `card-item` din acel corp
+            # sunt placeholder-e de carusel de recomandari
+            # (`rec-card-item card-item js-card-item` cu `div.card-v2 card-shimmer`
+            # gol) — NU au `js-product-data`, si de aia clasa aia e obligatorie in
+            # selector. Capcana caruselului, a treia oara dupa LOT5 si powerup.
+            "max_pages": 40,
+            "currency": "RON",
+            # Cel mai din AFARA dintre cele patru niveluri imbricate cu 60 de
+            # noduri fiecare (`card-v2`, `card-v2-wrapper`, `card-v2-content` au
+            # acelasi numar): doar el poarta `data-product-id` / `data-offer-id` /
+            # `data-url` SI imaginea. `js-product-data` e obligatoriu in selector.
+            "card": "div.card-item.js-product-data",
+            # Ancora de titlu, nu `a[href]`: cardul are patru ancore catre acelasi
+            # produs (poza, titlu, rating, „Vezi Detalii"). Linkul ei pastreaza
+            # fragmentul `#used-products`, DELIBERAT — duce la sectiunea de oferte
+            # resigilate a PDP-ului, adica exact oferta din deal. `external_id` si
+            # `handle` se calculeaza pe CALE, deci fragmentul nu atinge dedup-ul.
+            "link": "a.card-v2-title",
+            # Acelasi nod da si titlul, iar el POARTA DEJA starea: `_text_of` intoarce
+            # „RESIGILAT: Telefon mobil Apple iPhone Air, 256GB, 5G, Light Gold" pe
+            # 60/60 de carduri, pe toate cele trei dump-uri de listare. De aceea NU
+            # se pune niciun prefix de titlu — ar produce „Resigilat: RESIGILAT: …".
+            "title": "a.card-v2-title",
+            "image_attr": ["src"],
+            # Pretul e SPART pe noduri, si merita spus ca nu e o problema:
+            # `<p class="product-new-price"><span class="fs-12">de la</span>
+            #  4.599<sup><small class="mf-decimal">,</small>99</sup> <span>Lei</span></p>`
+            # `_text_of` da „de la 4.599 , 99 Lei" (get_text(" ") pune spatii intre
+            # noduri), iar `_pret_eu_comma` sterge tot ce nu e cifra/punct/virgula —
+            # inclusiv „de la", spatiile si „Lei", niciunul cu cifre. Rezultat masurat:
+            # 4599.99, corect, pe 60/60.
+            #
+            # „de la" e pe 60/60: un resigilat are mai multe oferte (grade diferite),
+            # iar cardul arata cea mai ieftina — pretul real platibil, ca „Starting at"
+            # la direct-running.
+            "price_text": "p.product-new-price",
+            # `NOU 4.999,99 Lei` — pretul de vanzare CURENT al unitatii NOI a
+            # ACELUIASI produs, pe acelasi magazin. Incrucisat cu PDP-ul, care
+            # poarta verbatim `"recommended_retail_price":{"amount":4999.99,
+            # "is_visible":true,"label":"NOU"}` si afiseaza 4.999,99 ca pret
+            # principal si 4.599,99 ca oferta resigilata.
+            #
+            # ATENTIE la omonimie: aceeasi cheie JSON apare pe PDP si cu
+            # `"label":"PRP:"` si valoarea 6274.56 — ala e Pretul Recomandat de
+            # Producator, alt numar si alt lucru. Cardul arata „NOU".
+            #
+            # Prezent pe 59/60, si pe toate 59 STRICT peste pretul platit — zero
+            # referinte inversate sau inutile.
+            "compare_text": "p.pricing.rrp",
+            "price_parse": "eu_comma",
+            # `nemarcat`, si e cinstit de ce nu e nici min30 nici prp: pe listare
+            # zero „ultimele 30 de zile", zero „pret recomandat", zero „PRP", zero
+            # „Omnibus". („cel mai mic pret" apare doar in textul de ajutor al
+            # sortarii, iar „30 de zile" in politica de retur din <meta> — niciuna
+            # nu eticheteaza campul; lectia bergfreunde.) Referinta ramane insa cea
+            # mai buna posibila pentru un resigilat: acelasi SKU, acelasi magazin,
+            # unitate noua. Vocabularul registrului n-are un al patrulea termen.
+            "reference_kind": "nemarcat",
+            #
+            # FARA `stock_attr`: `data-availability-id` exista, dar e `2` pe 60/60,
+            # deci nu se poate deosebi de o constanta de sablon — capcana masurata
+            # pe toolnation si dovedita pe vivre.
+            #
+            # GRADUL resigilatului (ca nou / foarte buna / acceptabila) NU e in card:
+            # cautat pe toate 60, zero aparitii. Sta pe PDP, in sectiunea catre care
+            # duce chiar linkul cardului. Feed-ul spune „RESIGILAT: <produs>" fara
+            # grad — onest, dar mai putin decat stie magazinul.
+        },
         "overrides": {"price_selector": ".product-new-price"},
         "search": {"kind": "custom"},
         "notes": "RETAIL-3a",

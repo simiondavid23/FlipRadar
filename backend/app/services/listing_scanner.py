@@ -40,6 +40,27 @@ The card carries no numeric attribute either, so the strict attribute path was
 not an option. Hence `_pret_us_dot` and, with it, `price_parse` finally being
 READ instead of merely documented — see `_pret_of`.
 
+EMAG-D added `entries`: a descriptor may declare a LIST of listings instead of a
+single one. Some shops have no aggregated discount URL worth walking — eMAG
+Resigilate splits its 7996 resealed products across twelve department pages, each
+paginated in the PATH (`/resigilate/<cat>/p{n}/d`). Before this, such a shop could
+only enter the axis by picking one category and losing the rest.
+
+What is per ENTRY and what is per SCAN is the whole of the design, and both halves
+were chosen against a concrete failure:
+
+  * per ENTRY — `linkuri_vazute` and the page counter. "Clamp" means *this list
+    served me the previous page again*; two categories legitimately sharing a
+    product are not a clamp, and treating them as one would cut every category
+    after the first short. The page counter likewise: a 404 on page 1 of the
+    second category must stay an ERROR (the hub changed), which a global counter
+    would have swallowed as "end of pagination".
+  * per SCAN — `vazute` and `calificate`. SCAN-1's duplicate guard exists because
+    a product can be met twice; on eMAG that happens BETWEEN categories too, and
+    a per-entry reset would re-enter the memory block and die on the unique key.
+    `calificate` closes stale deals only after ALL entries, or the first category
+    would close the second one's deals.
+
 Reuses `deal_scanner` by IMPORT, never by copy: the threshold, the settings
 lookup, the R1/R2 evaluation and the state row are one implementation shared by
 both scanners, so the two sources cannot drift apart in what counts as a deal.
@@ -423,13 +444,46 @@ def extrage_carduri(html: str, descriptor: dict, domain: str) -> list[dict]:
     return iesire
 
 
-def _pagina_url(descriptor: dict, numar: int) -> str:
+def _intrari(descriptor: dict) -> list[dict]:
+    """The list of listing ENTRIES a descriptor declares, normalised to one shape.
+
+    EMAG-D — a descriptor may declare either a single `url` (+ its template) or a
+    list of `entries`, never both. The two forms differ only in how many listings
+    the shop needs walking; everything downstream (selectors, currency,
+    reference_kind) is per DOMAIN and stays at the top level. Normalising here
+    means `_scaneaza_domeniu` has one loop shape and the eighteen descriptors that
+    predate this key keep working untouched — the `url` form simply yields a
+    one-element list.
+
+    `max_pages` resolves per entry: its own value if it has one, else the
+    descriptor's. eMAG needs that fallback because the hub publishes ONE total
+    (7996 products) and no per-category count, so a per-entry cap could only be
+    invented.
+    """
+    brute = descriptor.get("entries")
+    if not brute:
+        return [{"url": descriptor["url"],
+                 "page_url_template": descriptor.get("page_url_template"),
+                 "max_pages": int(descriptor.get("max_pages") or 1)}]
+    return [{"url": intrare["url"],
+             "page_url_template": intrare.get("page_url_template"),
+             "max_pages": int(intrare.get("max_pages")
+                              or descriptor.get("max_pages") or 1)}
+            for intrare in brute]
+
+
+def _pagina_url(intrare: dict, numar: int) -> str:
     """Page 1 uses the MEASURED entry URL, not the template with n=1: the probes
     measured `/reduceri` and `/outlet/`, and there is no evidence that `?p=1` or
-    `/outlet/1/` behaves identically."""
+    `/outlet/1/` behaves identically.
+
+    Takes an ENTRY, not the descriptor (EMAG-D). The two are shaped alike on the
+    keys this reads, so a `url`-form descriptor still works verbatim — which is
+    why the eighteen existing tests that pass one kept passing.
+    """
     if numar == 1:
-        return descriptor["url"]
-    return descriptor["page_url_template"].format(n=numar)
+        return intrare["url"]
+    return intrare["page_url_template"].format(n=numar)
 
 
 def _e_primul_scan(db, domain: str) -> bool:
@@ -465,11 +519,25 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
 
     prag_r1 = _prag_r1(settings)
 
+    # EMAG-D — ce e per SCAN si ce e per INTRARE, si de ce.
+    #
+    # `vazute` ramane per SCAN: garda SCAN-1 exista fiindca un produs poate aparea
+    # de doua ori, iar pe eMAG asta se intampla si INTRE categorii (un produs
+    # listat si la „Laptop" si la „PC"), nu doar intre paginile aceleiasi liste.
+    # Resetat per intrare, al doilea contact ar re-intra in blocul de memorie si
+    # ar cadea pe cheia unica, exact bug-ul pe care SCAN-1 l-a reparat.
+    #
+    # `calificate` la fel: inchiderea dealurilor necalificate se face DUPA toate
+    # intrarile, altfel prima categorie ar inchide dealurile celei de-a doua.
+    #
+    # `linkuri_vazute`, in schimb, e per INTRARE (vezi bucla). Clamp-ul inseamna
+    # „lista asta mi-a servit iar pagina precedenta"; doua categorii care impart
+    # un produs NU sunt un clamp, si tratate ca atare ar taia a doua categorie
+    # dupa prima pagina.
     vazute: set[str] = set()
     # DEAL-2b — `calificate` != `vazute`: primul e "am citit produsul", al doilea
     # "produsul CHIAR e un deal acum". Inchiderea se face pe al doilea, vezi jos.
     calificate: set[str] = set()
-    linkuri_vazute: set[str] = set()
     produse_vazute = 0
     alerte = 0
     pagini = 0
@@ -477,160 +545,178 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
     # timeout de retea catre Discord sa nu mai prelungeasca tranzactia.
     de_notificat: list[Deal] = []
 
-    for numar in range(1, int(descriptor.get("max_pages") or 1) + 1):
-        if numar > 1:
+    intrari = _intrari(descriptor)
+    for indice_intrare, intrare in enumerate(intrari):
+        # Menajarea magazinului nu se opreste la granita dintre doua liste: fara
+        # pauza aici, ultima pagina a unei categorii si prima a urmatoarei ar
+        # pleca spate-in-spate.
+        if indice_intrare > 0:
             _pauza()
-        url = _pagina_url(descriptor, numar)
-        raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS, timeout=_TIMEOUT)
+        linkuri_vazute: set[str] = set()
+        pagini_intrare = 0
 
-        # VAL D — 404 pe o pagina > 1, cu cel putin o pagina reusita in ACELASI
-        # scan, e SFARSIT DE PAGINARE, nu esec. Masurat pe buzzsneakers (SNK-2):
-        # cele 39 de pagini raspund 200, iar pagina 40 da 404 — a treia forma de
-        # final, dupa „grila goala pe 200" si „pagina repetata" din docstring.
-        # Precedentul exista deja in codebase: `olx_scraper.py` are
-        # „404 = paginare depasita (pagina nu exista) -> stop curat, nu eroare".
-        #
-        # Miza nu e cosmetica: RuntimeError cade INAINTE de `db.commit()`, deci un
-        # 404 la final pierdea TOT scanul, inclusiv paginile deja citite.
-        #
-        # Doua granite, amandoua deliberate:
-        #   * pe pagina 1 (`pagini == 0`) 404 ramane EROARE — acolo inseamna
-        #     listare moarta (URL mutat, categorie stearsa), nu sfarsit;
-        #   * DOAR 404. Un 403 sau un 5xx e zid ori defectiune si trebuie sa se
-        #     vada ca eroare, nu sa fie confundat cu un final de paginare.
-        if (raspuns is not None and raspuns.status_code == 404
-                and numar > 1 and pagini > 0):
-            break
+        for numar in range(1, intrare["max_pages"] + 1):
+            if numar > 1:
+                _pauza()
+            url = _pagina_url(intrare, numar)
+            raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS,
+                                              timeout=_TIMEOUT)
 
-        if raspuns is None or raspuns.status_code != 200:
-            raise RuntimeError(
-                f"listare esuata la pagina {numar} "
-                f"(status: {getattr(raspuns, 'status_code', None)})")
-
-        carduri = extrage_carduri(raspuns.text, descriptor, domain)
-        linkuri_pagina = {c["url"] for c in carduri}
-
-        # --- composite stop condition (measured in LST-1b, see module docstring) ---
-        if not linkuri_pagina:
-            break                                   # empty grid: otter, caseking
-        if linkuri_pagina <= linkuri_vazute:
-            break                                   # clamp: noriel (p1), bergfreunde (last)
-        linkuri_vazute |= linkuri_pagina
-        pagini += 1
-
-        # D10 — doua interogari pe pagina in loc de doua per card. Pozitia e DUPA
-        # conditiile de oprire de mai sus: pe o pagina care declanseaza `break` n-are
-        # rost sa mai intrebam baza de date nimic.
-        ids_pagina = [c["external_id"] for c in carduri
-                      if c["external_id"] not in vazute]
-        memorii, dealuri = preincarca_pagina(db, domain, ids_pagina)
-
-        for card in carduri:
-            external_id = card["external_id"]
-            # SCAN-1 — a product ALREADY handled in this scan is skipped outright.
-            # A shop's listing re-sorts between requests, so an item on a page
-            # boundary can slide onto the next page and be seen twice. Without this
-            # guard the second sighting re-entered the memory block, and because
-            # `SessionLocal` runs with `autoflush=False` the row added by the first
-            # sighting was still invisible to the query — so a SECOND row was added
-            # and the commit died on the unique key. `vazute` already tracks exactly
-            # "seen in this scan", so no new bookkeeping is needed.
+            # VAL D — 404 pe o pagina > 1, cu cel putin o pagina reusita in ACELASI
+            # scan, e SFARSIT DE PAGINARE, nu esec. Masurat pe buzzsneakers (SNK-2):
+            # cele 39 de pagini raspund 200, iar pagina 40 da 404 — a treia forma de
+            # final, dupa „grila goala pe 200" si „pagina repetata" din docstring.
+            # Precedentul exista deja in codebase: `olx_scraper.py` are
+            # „404 = paginare depasita (pagina nu exista) -> stop curat, nu eroare".
             #
-            # A local set rather than a `flush()` after each add: flushing per
-            # product would break the insertmany batching at commit and cost ~13k
-            # round-trips on a scan the size of bergfreunde, to buy the same answer.
+            # Miza nu e cosmetica: RuntimeError cade INAINTE de `db.commit()`, deci un
+            # 404 la final pierdea TOT scanul, inclusiv paginile deja citite.
             #
-            # Skipping the whole iteration (not just the memory write) is deliberate:
-            # the FIRST sighting already read the old minimum and decided the deal.
-            # Re-evaluating on the second one would compare the price against a
-            # minimum this same scan has just lowered, inventing a discount.
-            if external_id in vazute:
-                continue
-            produse_vazute += 1
-            vazute.add(external_id)
+            # Doua granite, amandoua deliberate:
+            #   * pe pagina 1 (`pagini_intrare == 0`) 404 ramane EROARE — acolo
+            #     inseamna listare moarta (URL mutat, categorie stearsa), nu sfarsit;
+            #   * DOAR 404. Un 403 sau un 5xx e zid ori defectiune si trebuie sa se
+            #     vada ca eroare, nu sa fie confundat cu un final de paginare.
+            #
+            # EMAG-D — contorul e cel AL INTRARII, nu cel global. Cu `pagini > 0`,
+            # un 404 pe pagina 1 a categoriei a doua ar fi fost inghitit ca „final
+            # de paginare" doar fiindca prima categorie citise deja pagini, iar o
+            # categorie moarta ar fi disparut din scan in tacere — exact ce trebuie
+            # sa se auda, fiindca inseamna ca hub-ul s-a schimbat.
+            if (raspuns is not None and raspuns.status_code == 404
+                    and numar > 1 and pagini_intrare > 0):
+                break
 
-            # --- R2 memory: the OLD minimum is read before being updated ---
-            memorie = memorii.get(external_id)
-            if memorie is None:
-                min_price_vechi = None               # first sighting: R2 has no history
-                db.add(ShopPriceMemory(
-                    shop_domain=domain, external_id=external_id,
-                    min_price=card["price"], last_price=card["price"],
-                    last_seen_at=acum))
-            else:
-                min_price_vechi = memorie.min_price
-                memorie.min_price = min(memorie.min_price, card["price"])
-                memorie.last_price = card["price"]
-                memorie.last_seen_at = acum
+            if raspuns is None or raspuns.status_code != 200:
+                raise RuntimeError(
+                    f"listare esuata la pagina {numar} "
+                    f"(status: {getattr(raspuns, 'status_code', None)})")
 
-            discount_pct, reason = _evalueaza(
-                card["price"], card["compare_at"], min_price_vechi, prag,
-                prag_r1=prag_r1)
-            if discount_pct is None:
-                continue
-            calificate.add(external_id)
+            carduri = extrage_carduri(raspuns.text, descriptor, domain)
+            linkuri_pagina = {c["url"] for c in carduri}
 
-            deal = dealuri.get(external_id)
-            if deal is None:
-                deal = Deal(
-                    shop_domain=domain, external_id=external_id,
-                    handle=card["handle"], title=card["title"], url=card["url"],
-                    image_url=card.get("image_url"), currency=moneda, price=card["price"],
-                    compare_at_price=card["compare_at"], discount_pct=discount_pct,
-                    reason=reason, sizes_available=[],
-                    min_price_seen=min_price_vechi, state="nou",
-                    deal_source="listing_scan",
-                    first_seen_at=acum, last_seen_at=acum)
-                db.add(deal)
-                db.flush()
-                if not primul_scan:
-                    de_notificat.append(deal)
-            else:
-                # D7: the state belongs to the USER, so it stays untouched —
-                # `ignorat` stays `ignorat`. No alert on reappearance.
-                deal.title = card["title"]
-                # IMG-1b — `or deal.image_url`: un scan in care extractia da None
-                # (tema schimbata, card fara poza in acea zi) nu STERGE o poza deja
-                # avuta. Pierderea ar fi vizibila imediat in feed, iar recuperarea ar
-                # cere un scan reusit ulterior.
-                deal.image_url = card.get("image_url") or deal.image_url
-                deal.url = card["url"]
-                deal.handle = card["handle"]
-                deal.price = card["price"]
-                deal.compare_at_price = card["compare_at"]
-                deal.discount_pct = discount_pct
-                deal.reason = reason
-                deal.min_price_seen = min_price_vechi
-                deal.last_seen_at = acum
-                deal.ended_at = None
+            # --- composite stop condition (measured in LST-1b, see module docstring) ---
+            if not linkuri_pagina:
+                break                                   # empty grid: otter, caseking
+            if linkuri_pagina <= linkuri_vazute:
+                break                                   # clamp: noriel (p1), bergfreunde (last)
+            linkuri_vazute |= linkuri_pagina
+            pagini += 1
+            pagini_intrare += 1
 
-        # D6 — commit dupa FIECARE pagina, nu o data la finalul domeniului.
-        # Motivul e lock-ul de scriere SQLite: cu un singur commit la final,
-        # tranzactia traversa si `_pauza()`-ul si fetch-ul HTTP al paginii
-        # urmatoare, deci pe un domeniu mare lock-ul de scriere se tinea zeci de
-        # secunde. busy_timeout-ul celorlalti scriitori (30s) expira si cadeau in
-        # lant cu "database is locked". Comitand per pagina, lock-ul se tine sub
-        # o secunda intre doua pauze, deci restul aplicatiei apuca sa scrie.
-        #
-        # Pozitia e la SFARSITUL corpului buclei, deci dupa procesarea cardurilor
-        # paginii curente si inainte de fetch-ul urmatoarei. Toate cele trei
-        # iesiri timpurii (404 = paginare depasita, grila goala, pagina repetata)
-        # cad INAINTE de bucla pe carduri, deci cand una se declanseaza ultima
-        # pagina procesata cu succes a fost deja comisa la iteratia ei.
-        #
-        # Consecinta asumata: `db.rollback()`-ul din apelant anuleaza acum doar
-        # pagina curenta, nu tot domeniul — paginile deja comise raman. E
-        # acceptabil: blocul de inchidere pe `calificate` ruleaza doar la final,
-        # deci un domeniu picat la jumatate nu inchide nimic gresit, iar scanul
-        # urmator recalculeaza si corecteaza.
-        db.commit()
-        # Notificarea pleaca DOAR pentru randuri deja comise: altfel am putea
-        # anunta un deal pe care un rollback ulterior l-ar face sa nu fi existat.
-        # Plafonul se verifica aici, nu la append, ca sa ramana global pe domeniu.
-        for deal in de_notificat:
-            if alerte < _MAX_ALERTE and send_deal_notification(deal, settings):
-                alerte += 1
-        de_notificat.clear()
+            # D10 — doua interogari pe pagina in loc de doua per card. Pozitia e DUPA
+            # conditiile de oprire de mai sus: pe o pagina care declanseaza `break` n-are
+            # rost sa mai intrebam baza de date nimic.
+            ids_pagina = [c["external_id"] for c in carduri
+                          if c["external_id"] not in vazute]
+            memorii, dealuri = preincarca_pagina(db, domain, ids_pagina)
+
+            for card in carduri:
+                external_id = card["external_id"]
+                # SCAN-1 — a product ALREADY handled in this scan is skipped outright.
+                # A shop's listing re-sorts between requests, so an item on a page
+                # boundary can slide onto the next page and be seen twice. Without this
+                # guard the second sighting re-entered the memory block, and because
+                # `SessionLocal` runs with `autoflush=False` the row added by the first
+                # sighting was still invisible to the query — so a SECOND row was added
+                # and the commit died on the unique key. `vazute` already tracks exactly
+                # "seen in this scan", so no new bookkeeping is needed.
+                #
+                # A local set rather than a `flush()` after each add: flushing per
+                # product would break the insertmany batching at commit and cost ~13k
+                # round-trips on a scan the size of bergfreunde, to buy the same answer.
+                #
+                # Skipping the whole iteration (not just the memory write) is deliberate:
+                # the FIRST sighting already read the old minimum and decided the deal.
+                # Re-evaluating on the second one would compare the price against a
+                # minimum this same scan has just lowered, inventing a discount.
+                if external_id in vazute:
+                    continue
+                produse_vazute += 1
+                vazute.add(external_id)
+
+                # --- R2 memory: the OLD minimum is read before being updated ---
+                memorie = memorii.get(external_id)
+                if memorie is None:
+                    min_price_vechi = None               # first sighting: R2 has no history
+                    db.add(ShopPriceMemory(
+                        shop_domain=domain, external_id=external_id,
+                        min_price=card["price"], last_price=card["price"],
+                        last_seen_at=acum))
+                else:
+                    min_price_vechi = memorie.min_price
+                    memorie.min_price = min(memorie.min_price, card["price"])
+                    memorie.last_price = card["price"]
+                    memorie.last_seen_at = acum
+
+                discount_pct, reason = _evalueaza(
+                    card["price"], card["compare_at"], min_price_vechi, prag,
+                    prag_r1=prag_r1)
+                if discount_pct is None:
+                    continue
+                calificate.add(external_id)
+
+                deal = dealuri.get(external_id)
+                if deal is None:
+                    deal = Deal(
+                        shop_domain=domain, external_id=external_id,
+                        handle=card["handle"], title=card["title"], url=card["url"],
+                        image_url=card.get("image_url"), currency=moneda, price=card["price"],
+                        compare_at_price=card["compare_at"], discount_pct=discount_pct,
+                        reason=reason, sizes_available=[],
+                        min_price_seen=min_price_vechi, state="nou",
+                        deal_source="listing_scan",
+                        first_seen_at=acum, last_seen_at=acum)
+                    db.add(deal)
+                    db.flush()
+                    if not primul_scan:
+                        de_notificat.append(deal)
+                else:
+                    # D7: the state belongs to the USER, so it stays untouched —
+                    # `ignorat` stays `ignorat`. No alert on reappearance.
+                    deal.title = card["title"]
+                    # IMG-1b — `or deal.image_url`: un scan in care extractia da None
+                    # (tema schimbata, card fara poza in acea zi) nu STERGE o poza deja
+                    # avuta. Pierderea ar fi vizibila imediat in feed, iar recuperarea ar
+                    # cere un scan reusit ulterior.
+                    deal.image_url = card.get("image_url") or deal.image_url
+                    deal.url = card["url"]
+                    deal.handle = card["handle"]
+                    deal.price = card["price"]
+                    deal.compare_at_price = card["compare_at"]
+                    deal.discount_pct = discount_pct
+                    deal.reason = reason
+                    deal.min_price_seen = min_price_vechi
+                    deal.last_seen_at = acum
+                    deal.ended_at = None
+
+            # D6 — commit dupa FIECARE pagina, nu o data la finalul domeniului.
+            # Motivul e lock-ul de scriere SQLite: cu un singur commit la final,
+            # tranzactia traversa si `_pauza()`-ul si fetch-ul HTTP al paginii
+            # urmatoare, deci pe un domeniu mare lock-ul de scriere se tinea zeci de
+            # secunde. busy_timeout-ul celorlalti scriitori (30s) expira si cadeau in
+            # lant cu "database is locked". Comitand per pagina, lock-ul se tine sub
+            # o secunda intre doua pauze, deci restul aplicatiei apuca sa scrie.
+            #
+            # Pozitia e la SFARSITUL corpului buclei, deci dupa procesarea cardurilor
+            # paginii curente si inainte de fetch-ul urmatoarei. Toate cele trei
+            # iesiri timpurii (404 = paginare depasita, grila goala, pagina repetata)
+            # cad INAINTE de bucla pe carduri, deci cand una se declanseaza ultima
+            # pagina procesata cu succes a fost deja comisa la iteratia ei.
+            #
+            # Consecinta asumata: `db.rollback()`-ul din apelant anuleaza acum doar
+            # pagina curenta, nu tot domeniul — paginile deja comise raman. E
+            # acceptabil: blocul de inchidere pe `calificate` ruleaza doar la final,
+            # deci un domeniu picat la jumatate nu inchide nimic gresit, iar scanul
+            # urmator recalculeaza si corecteaza.
+            db.commit()
+            # Notificarea pleaca DOAR pentru randuri deja comise: altfel am putea
+            # anunta un deal pe care un rollback ulterior l-ar face sa nu fi existat.
+            # Plafonul se verifica aici, nu la append, ca sa ramana global pe domeniu.
+            for deal in de_notificat:
+                if alerte < _MAX_ALERTE and send_deal_notification(deal, settings):
+                    alerte += 1
+            de_notificat.clear()
 
     # --- deals that no longer QUALIFY are ENDED, not deleted ---
     # DEAL-2b: the criterion used to be `not in vazute`, so only VANISHED products
