@@ -44,7 +44,9 @@ from app.scrapers.auto.listings._common import (
     safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
-from app.utils.listing_dates import FUS_ANUNTURI, din_fus, to_naive_bucuresti
+from app.utils.listing_dates import (
+    FUS_ANUNTURI, acum_piata, din_fus, to_naive_bucuresti,
+)
 
 _BASE = "https://www.kleinanzeigen.de"
 
@@ -164,7 +166,7 @@ def _parse_card_date(text, now=None):
     # in alt fus, cele doua capete ale conversiei ar sta pe ceasuri diferite. Pe un
     # laptop din Romania coincid, dar pe o masina in UTC „Heute, 23:40" primea ziua
     # URMATOARE — exact bug-ul pe care conversia asta trebuia sa-l previna.
-    acum = to_naive_bucuresti(now if now is not None else datetime.now(FUS_ANUNTURI))\
+    acum = (to_naive_bucuresti(now) if now is not None else acum_piata())\
         .replace(tzinfo=FUS_ANUNTURI).astimezone(ZoneInfo(_FUS_SITE))\
         .replace(tzinfo=None)
 

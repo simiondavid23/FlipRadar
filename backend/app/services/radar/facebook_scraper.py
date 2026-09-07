@@ -832,11 +832,14 @@ def _search_sesiune(
                     elif cat_id != str(category):
                         continue
 
+                # TZ-3c — ceasul PIETEI, ca pe calea logat-out (`_naiv_local`). Oglinda
+                # exacta a scriitorului din `facebook_auto_scraper`; gasit tot de garda pe
+                # coloana, dupa ce auditul il ratase.
                 ct = _deep_first(o, "creation_time")
                 listed_at = None
                 if isinstance(ct, (int, float)) and ct > 1_000_000_000:
                     try:
-                        listed_at = datetime.fromtimestamp(ct)
+                        listed_at = to_naive_bucuresti(ct)
                     except (OverflowError, OSError, ValueError):
                         listed_at = None
 

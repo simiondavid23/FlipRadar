@@ -50,6 +50,29 @@ def _text_fingerprint(text: str) -> str:
     return "txt_" + hashlib.sha1(n.encode()).hexdigest()[:16]
 
 
+def _e_mai_veche_decat_rularea(posted_at, last_run_at) -> bool:
+    """True daca postarea e anterioara ultimei rulari — criteriul de OPRIRE a derularii.
+
+    TZ-3c — cele doua argumente vin de pe CEASURI DIFERITE, si de-aia exista functia asta:
+    `posted_at` e ora declarata de Facebook, adusa in `FUS_ANUNTURI` (ceasul PIETEI), iar
+    `last_run_at` e stampila noastra, scrisa cu `acum_local()` (ceasul SISTEMULUI).
+    Comparate direct, pragul se deplaseaza cu offsetul dintre ele: sub `TZ=UTC` `posted_at`
+    e cu 3 h INAINTEA lui `last_run_at`, deci oprirea nu se declansa niciodata si scraperul
+    recitea la nesfarsit postari deja vazute; pe un server inaintea Bucurestiului s-ar fi
+    oprit prea devreme, sarind postari noi.
+
+    Se aduce ceasul SISTEMULUI pe cel al PIETEI, nu invers: `posted_at` trebuie sa ramana
+    ora de pe Facebook. `.astimezone()` pe un naiv ii ataseaza fusul MASINII — exact
+    inversa lui `la_ora_sistemului`, si singurul loc din proiect unde se merge in directia
+    asta. Orice lipsa -> False: fara ambele capete nu se opreste derularea (tolerant).
+    """
+    if posted_at is None or last_run_at is None:
+        return False
+    if last_run_at.tzinfo is None:
+        last_run_at = last_run_at.astimezone()      # naiv de sistem -> aware
+    return posted_at < to_naive_bucuresti(last_run_at)
+
+
 def _permalink_url(group_url: str, post_id: Optional[str]) -> Optional[str]:
     """URL-ul direct al postarii (M4 — cardul din feed ducea doar la grup).
     Doar pentru ID-uri numerice reale; pentru fingerprint-uri de text nu exista
@@ -185,16 +208,11 @@ async def scrape_facebook_group(
                     # deci familia `listed_at`: `to_naive_bucuresti` o aduce in ora
                     # anunturilor.
                     #
-                    # TZ-3, precizare: comparatia de mai jos cu `last_run_at` pune fata
-                    # in fata cele DOUA ceasuri ale proiectului — `posted_at` e pe ceasul
-                    # PIETEI, `last_run_at` pe al NOSTRU (`acum_local`). Pe masina de
-                    # productie sunt acelasi ceas, deci pragul e exact; pe o masina in alt
-                    # fus se deplaseaza cu diferenta dintre ele, adica se recitesc (sau se
-                    # sar) cateva ore de postari. E consecinta ACCEPTATA a variantei A din
-                    # TZ-1, nu o scapare: `posted_at` trebuie sa arate ca pe Facebook, iar
-                    # `last_run_at` trebuie sa fie ceasul masinii. Nu confunda cu bug-urile
-                    # reparate la TZ-3, unde ACEEASI valoare se scria si se citea pe
-                    # ceasuri diferite.
+                    # TZ-3c — comparatia cu `last_run_at` pune fata in fata cele doua
+                    # ceasuri ale proiectului, deci trece prin `_e_mai_veche_decat_rularea`,
+                    # care aduce stampila noastra pe ceasul pietei. Pana atunci era
+                    # consecinta „acceptata" a variantei A din TZ-1; masuratoarea a aratat
+                    # ca nu e acceptabila — oprirea nu se mai declansa deloc sub `TZ=UTC`.
                     posted_at = None
                     time_el = await article.query_selector("abbr[data-utime]")
                     if time_el:
@@ -203,7 +221,7 @@ async def scrape_facebook_group(
                             posted_at = to_naive_bucuresti(int(utime))
 
                     # Daca am ajuns la postari mai vechi decat last_run_at, opreste
-                    if last_run_at and posted_at and posted_at < last_run_at:
+                    if _e_mai_veche_decat_rularea(posted_at, last_run_at):
                         stop_scraping = True
                         break
 

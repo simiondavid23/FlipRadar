@@ -705,10 +705,18 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         description     = text[:2000],
         score           = score,
         grade           = grade,
-        # FBG-2 (M3) — data REALA a postarii FB (posted_at); created_at e momentul
-        # INSERT-ului nostru (comentariul vechi pretindea altceva) si ramane fallback.
+        # FBG-2 (M3) — data REALA a postarii FB (`posted_at`).
         # TZ-1 — `posted_at` din grupurile FB vine naiv-UTC (fromtimestamp(tz=utc)).
-        listed_at       = to_naive_bucuresti(post.get("posted_at") or post.get("created_at")),
+        #
+        # TZ-3c — rezerva pe `created_at` A DISPARUT. `created_at` e momentul INSERT-ului
+        # NOSTRU, scris cu `acum_local()`: ca rezerva pentru `listed_at` spunea o minciuna
+        # dubla — alta valoare (cand am vazut-o noi, nu cand a fost postata) si alt ceas
+        # (al sistemului, intr-o coloana de piata). Fiind naiva, conversia nici n-o atingea,
+        # deci ceasul masinii intra nefiltrat in coloana. Fara `posted_at`, `listed_at`
+        # ramane NULL — o data lipsa e onesta, una inventata nu. Consumatorii tolereaza
+        # NULL: sortarea din feed cade pe `found_at`, exportul scrie gol, cardul afiseaza
+        # doar „gasit".
+        listed_at       = to_naive_bucuresti(post.get("posted_at")),
         found_at        = acum_local(),              # TZ-1: ceasul nostru (ramura FBG)
         last_checked_at = acum_local(),
     )
@@ -811,9 +819,13 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                     FacebookGroupConfig.is_active == True,
                 ).all()
                 for cfg in configs:
-                    # coloana FacebookGroupPost.created_at e naivă-UTC (default=datetime.utcnow);
-                    # migrarea completă pe timezone-aware rămâne post-licență.
-                    cutoff = acum_local().replace(tzinfo=None) - timedelta(hours=48)
+                    # TZ-3c — comentariul de aici sustinea ca `FacebookGroupPost.created_at`
+                    # e naiva-UTC cu `default=datetime.utcnow`. Nu mai e adevarat din TZ-2:
+                    # modelul scrie `acum_local()`, adica ceasul SISTEMULUI. Filtrul de mai
+                    # jos era si atunci corect (compara `acum_local()` cu o coloana scrisa
+                    # de acelasi ceas), dar motivul scris era gresit — si un motiv gresit
+                    # e cel care duce urmatoarea atingere in sant.
+                    cutoff = acum_local() - timedelta(hours=48)
                     posts = db.query(FacebookGroupPost).filter(
                         FacebookGroupPost.config_id == cfg.id,
                         FacebookGroupPost.created_at >= cutoff,

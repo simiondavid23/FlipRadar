@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
 from app.scrapers.auto.listings._common import IMPERSONATE, build_headers, safe_soup
-from app.utils.listing_dates import din_fus, iso_to_naive_bucuresti
+from app.utils.listing_dates import din_fus, iso_to_naive_bucuresti, to_naive_bucuresti
 
 _EMPTY = {"images": [], "description": None, "seller_name": None, "listed_at": None}
 
@@ -369,7 +369,11 @@ def fetch_facebook_detail(url: str, session_path: Optional[str] = None) -> dict:
                 for t in _collect_scalar(data, ("creation_time", "listing_time")):
                     if isinstance(t, (int, float)) and t > 1_000_000_000:
                         try:
-                            out["listed_at"] = datetime.utcfromtimestamp(int(t)); break
+                            # TZ-3c — `utcfromtimestamp` scria ora UTC ca si cum ar fi fost
+                            # ora Bucurestiului: 3 h in urma pe ORICE masina, inclusiv pe
+                            # cea de productie. Scriitor gasit de garda pe coloana, nu de
+                            # audit — nu-l cauta nimeni, fiindca nu fusese niciodata bug.
+                            out["listed_at"] = to_naive_bucuresti(int(t)); break
                         except (ValueError, OSError):
                             pass
     except Exception:

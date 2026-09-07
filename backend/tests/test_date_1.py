@@ -14,6 +14,7 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import create_engine, inspect, text
 
 _FIX_OLX_OFFER = os.path.join(os.path.dirname(__file__), "fixtures", "olx_offer.json")
@@ -401,6 +402,153 @@ def test_input_naiv_ramane_neschimbat():
     from app.utils.listing_dates import iso_to_naive_bucuresti
 
     assert iso_to_naive_bucuresti("2026-09-02T12:54:54") == datetime(2026, 9, 2, 12, 54, 54)
+
+
+# ── TZ-3c: garda pe COLOANA, nu pe bug ────────────────────────────────────────
+
+# Cele patru coloane care traiesc pe ceasul PIETEI: tot ce spune site-ul despre „cand s-a
+# intamplat". Criteriul de includere in garda de mai jos e „SCRIE una dintre ele", nu „a
+# fost candva bug" — exact lectia TZ-3c, unde auditul a ratat doi scriitori (`detail.py` si
+# calea cu sesiune din `facebook_scraper`) tocmai fiindca nimeni nu-i reclamase.
+_COLOANE_DE_PIATA = {"listed_at", "refreshed_at", "posted_at", "auction_date"}
+
+# Constructiile care aduc ceasul MASINII (sau UTC brut) intr-o astfel de coloana:
+#   * `fromtimestamp(x)` fara `tz=` — epoch citit in fusul masinii;
+#   * `utcfromtimestamp(x)`         — epoch citit in UTC si predat ca ora locala;
+#   * `.astimezone()` gol           — aware adus la fusul masinii.
+# Scutirile sunt pe (fisier, functie), nu pe fisier: restul modulului ramane pazit.
+_SCUTIRI_CEAS_MASINA = {
+    ("app/scrapers/facebook_group_scraper.py", "_e_mai_veche_decat_rularea"):
+        "singurul drum invers permis: aduce stampila NOASTRA pe ceasul pietei, "
+        "ca sa compare cu `posted_at` (TZ-3c)",
+    ("app/utils/radar_scanner.py", "_mark_platform_scanned"):
+        "capatul de SCRIERE al stampilei de scan — ceasul sistemului, nu o coloana "
+        "de piata; citirea o desface cu `la_ora_sistemului` (TZ-3)",
+}
+
+
+def _scriitori_de_piata():
+    """(cale relativa, arbore) pentru fiecare modul din `app/` care scrie o coloana de piata.
+
+    Inventarul se CALCULEAZA, nu se pinuieste: un scraper nou care scrie `listed_at` intra
+    singur sub garda, fara ca cineva sa-si aminteasca sa-l adauge. Detectia acopera cele
+    trei forme prin care ajunge o valoare in coloana — argument cu nume (`listed_at=...`),
+    cheie de dict (`"listed_at": ...`) si atribuire pe atribut (`row.listed_at = ...`).
+    """
+    import ast
+    import io as _io
+    import os
+
+    radacina_app = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app")
+    for radacina, dirs, fisiere in os.walk(radacina_app):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        for f in sorted(fisiere):
+            if not f.endswith(".py"):
+                continue
+            cale = os.path.join(radacina, f)
+            arbore = ast.parse(_io.open(cale, encoding="utf-8").read())
+            scrie = False
+            for n in ast.walk(arbore):
+                if isinstance(n, ast.keyword) and n.arg in _COLOANE_DE_PIATA:
+                    scrie = True
+                elif isinstance(n, ast.Dict) and any(
+                        isinstance(k, ast.Constant) and k.value in _COLOANE_DE_PIATA
+                        for k in n.keys):
+                    scrie = True
+                elif isinstance(n, ast.Assign) and any(
+                        isinstance(t, ast.Attribute) and t.attr in _COLOANE_DE_PIATA
+                        for t in n.targets):
+                    scrie = True
+                if scrie:
+                    break
+            if scrie:
+                relativ = os.path.relpath(cale, os.path.dirname(radacina_app))
+                yield relativ.replace(os.sep, "/"), arbore
+
+
+def _ceasuri_de_masina(arbore, relativ):
+    """(linie, ce) pentru fiecare ceas de masina din arbore, fara functiile scutite."""
+    import ast
+
+    scutite = {fn for (f, fn) in _SCUTIRI_CEAS_MASINA if f == relativ}
+    gasite = []
+    for n in ast.walk(arbore):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in scutite:
+            continue
+        if not isinstance(n, ast.Call) or not isinstance(n.func, ast.Attribute):
+            continue
+        if n.func.attr == "fromtimestamp" and not any(k.arg == "tz" for k in n.keywords):
+            gasite.append((n.lineno, "fromtimestamp fara tz"))
+        elif n.func.attr == "utcfromtimestamp":
+            gasite.append((n.lineno, "utcfromtimestamp"))
+        elif n.func.attr == "astimezone" and not n.args and not n.keywords:
+            gasite.append((n.lineno, "astimezone() gol"))
+    return gasite
+
+
+def test_tz3c_scriitorii_coloanelor_de_piata_nu_folosesc_ceasul_masinii():
+    """Nicio coloana de piata nu primeste ora masinii — pe TOTI scriitorii, nu doar pe cei stiuti.
+
+    Garda asta ar fi prins, fara sa fie tintita, cinci din cele sase cauze reparate la
+    TZ-3c, si a gasit doi scriitori pe care auditul manual ii ratase.
+    """
+    import ast
+
+    rele = {}
+    for relativ, arbore in _scriitori_de_piata():
+        # Functiile scutite se taie inainte de walk, ca scutirea sa fie pe FUNCTIE.
+        scutite = {fn for (f, fn) in _SCUTIRI_CEAS_MASINA if f == relativ}
+        if scutite:
+            for n in list(ast.walk(arbore)):
+                for camp, valoare in list(ast.iter_fields(n)):
+                    if isinstance(valoare, list):
+                        setattr(n, camp, [
+                            c for c in valoare
+                            if not (isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                    and c.name in scutite)])
+        gasite = _ceasuri_de_masina(arbore, relativ)
+        if gasite:
+            rele[relativ] = gasite
+    assert not rele, (
+        "ceas de masina intr-un modul care scrie o coloana de piata — foloseste "
+        f"`to_naive_bucuresti` / `din_fus`, sau scuteste functia cu motiv: {rele}")
+
+
+def test_tz3c_inventarul_de_scriitori_e_viu():
+    """Control anti-vid: garda de mai sus n-are voie sa fie verde fiindca nu vede nimic."""
+    scriitori = {relativ for relativ, _ in _scriitori_de_piata()}
+    assert len(scriitori) >= 25, f"inventarul s-a golit: {len(scriitori)}"
+    for asteptat in ("app/services/radar/vinted_scraper.py",
+                     "app/scrapers/auto/listings/facebook_auto_scraper.py",
+                     "app/services/radar/publi24_scraper.py",
+                     "app/scrapers/auto/lots/copart_public.py",
+                     "app/scrapers/auto/listings/detail.py",
+                     "app/services/radar/olx_scraper.py"):
+        assert asteptat in scriitori, asteptat
+
+
+@pytest.mark.parametrize("cheie,motiv", sorted(_SCUTIRI_CEAS_MASINA.items()))
+def test_tz3c_fiecare_scutire_e_reala(cheie, motiv):
+    """O scutire fara ceas de masina in ea scuza altceva decat crede autorul."""
+    import ast
+    import io as _io
+    import os
+
+    relativ, functie = cheie
+    cale = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        *relativ.split("/"))
+    arbore = ast.parse(_io.open(cale, encoding="utf-8").read())
+    corp = [n for n in ast.walk(arbore)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == functie]
+    assert corp, f"{relativ}: functia {functie} nu mai exista ({motiv})"
+    ceasuri = [n for n in ast.walk(corp[0])
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and ((n.func.attr == "fromtimestamp"
+                     and not any(k.arg == "tz" for k in n.keywords))
+                    or n.func.attr == "utcfromtimestamp"
+                    or (n.func.attr == "astimezone" and not n.args and not n.keywords))]
+    assert ceasuri, f"{relativ}::{functie}: scutire moarta ({motiv})"
 
 
 def test_niciun_astimezone_fara_argument_pe_caile_de_data():

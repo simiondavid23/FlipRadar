@@ -186,6 +186,9 @@ _FUSURI_FIXE_PERMISE = {
         "acelasi fus al sursei, pe pagina de detaliu Kleinanzeigen",
     "app/utils/radar_scanner.py":
         "capatul de SCRIERE al stampilei de scanare; citirea o desface cu la_ora_sistemului",
+    "app/scrapers/facebook_group_scraper.py":
+        "TZ-3c — `_e_mai_veche_decat_rularea`: singurul drum invers din proiect, aduce "
+        "stampila NOASTRA pe ceasul pietei ca sa o compare cu `posted_at`",
 }
 
 
@@ -275,12 +278,28 @@ _CEAS_PIETEI_PERMIS = {
     "app/services/radar/lajumate_scraper.py": "listed_at (LaJumate)",
     "app/services/radar/olx_scraper.py": "listed_at / refreshed_at (OLX Radar)",
     "app/services/real_estate_scanner.py": "_seed_from_raw + posturile FB: listed_at",
+    # TZ-3c — scriitori mutati pe ceasul pietei in runda asta.
+    "app/services/radar/vinted_scraper.py": "listed_at din timestamp-ul pozei (TZ-3c)",
+    "app/services/radar/publi24_scraper.py": "ancora „azi\"/„ieri\" a listed_at (TZ-3c)",
+    "app/scrapers/auto/listings/facebook_auto_scraper.py":
+        "listed_at din `creation_time`, calea cu sesiune (TZ-3c)",
+    "app/services/auto_lot_scanner.py": "auction_date, dupa stergerea duplicatului (TZ-3c)",
+    "app/utils/radar_scanner.py": "DOAR `_too_old` — vezi _CEAS_PIETEI_DOAR_IN_FUNCTIILE",
 }
 
-_SIMBOLURI_CEAS_PIETEI = ("to_naive_bucuresti", "iso_to_naive_bucuresti")
+_SIMBOLURI_CEAS_PIETEI = ("to_naive_bucuresti", "iso_to_naive_bucuresti", "acum_piata")
+
+# TZ-3c — cateva module tin AMBELE ceasuri, deci scutirea nu mai poate fi pe fisier.
+# `radar_scanner.py` e cazul-scoala: `_too_old` compara o valoare de PIATA si are nevoie
+# de ceasul pietei, dar `_platform_scan_due` citeste propria stampila si trebuie sa ramana
+# pe ceasul sistemului. Un singur rand de scutire pe fisier ar fi permis si a doua
+# folosire — adica exact regresia pe care `test_t2i` o pazeste.
+_CEAS_PIETEI_DOAR_IN_FUNCTIILE = {
+    "app/utils/radar_scanner.py": {"_too_old"},
+}
 
 
-def _ceas_pietei_din(sursa: str):
+def _ceas_pietei_din(sursa: str, doar_in=None):
     """(linie, simbol) pentru fiecare FOLOSIRE a ceasului pietei — import sau apel.
 
     Pe arbore, nu pe text: `db_migrate.py` si `olx_state.py` pomenesc simbolurile in
@@ -291,9 +310,22 @@ def _ceas_pietei_din(sursa: str):
     la treaba ar trece altfel neobservat.
     """
     arbore = ast.parse(sursa)
+    if doar_in:
+        # Functiile permise se taie din arbore: ce ramane sunt folosirile NEPERMISE.
+        for n in list(ast.walk(arbore)):
+            for camp, valoare in list(ast.iter_fields(n)):
+                if isinstance(valoare, list):
+                    setattr(n, camp, [
+                        c for c in valoare
+                        if not (isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                and c.name in doar_in)])
     gasite = []
     for n in ast.walk(arbore):
         if isinstance(n, ast.ImportFrom):
+            # Cand fisierul are functii permise, IMPORTUL lor de modul e implicat: nu
+            # exista alt fel de a-l aduce. Ce se pazeste sunt FOLOSIRILE, nu declaratia.
+            if doar_in:
+                continue
             for a in n.names:
                 if a.name in _SIMBOLURI_CEAS_PIETEI:
                     gasite.append((n.lineno, a.name))
@@ -308,9 +340,10 @@ def test_t2g_ceasul_pietei_doar_pe_caile_de_data():
     """Simbolurile `Europe/Bucharest` nu au voie in afara registrului de mai sus."""
     intrusi = {}
     for cale, relativ in _fisiere_app():
-        if relativ in _CEAS_PIETEI_PERMIS:
+        doar_in = _CEAS_PIETEI_DOAR_IN_FUNCTIILE.get(relativ)
+        if relativ in _CEAS_PIETEI_PERMIS and not doar_in:
             continue
-        gasite = _ceas_pietei_din(_sursa(cale))
+        gasite = _ceas_pietei_din(_sursa(cale), doar_in=doar_in)
         if gasite:
             intrusi[relativ] = gasite
     assert not intrusi, (
@@ -327,28 +360,45 @@ def test_t2h_fiecare_cale_de_data_chiar_foloseste_ceasul_pietei(relativ, motiv):
 
 
 def test_t2i_garda_prinde_un_apel_din_radar_scanner():
-    """Sabotajul, AUTOMAT: un `radar_scanner.py` care cheama ceasul pietei trebuie prins.
+    """Sabotajul, AUTOMAT: `_platform_scan_due` nu are voie sa cheme ceasul pietei.
 
-    Fara asta, `test_t2g` ar putea trece fiindca detectorul nu vede nimic nicaieri —
-    o garda verde din vid. Sursa sintetica e citita cu ACELASI detector, deci proba nu
-    depinde de repo si nu cere sa strici un fisier real ca s-o vezi rosie.
+    Fara asta, `test_t2g` ar putea trece fiindca detectorul nu vede nimic nicaieri — o
+    garda verde din vid. Sursa sintetica trece prin ACELASI detector si prin ACEEASI lista
+    de functii permise ca fisierul real, deci proba nu depinde de repo.
 
-    `radar_scanner.py` NU e ales la intamplare: e in `_FUSURI_FIXE_PERMISE` (are un
-    `astimezone()` gol legitim), deci arata de ce cele doua registre nu pot fi unul.
+    TZ-3c a facut testul mai ascutit, nu mai slab. Pana acum verifica doar ca
+    `radar_scanner.py` lipseste din registru — o proprietate care a incetat sa fie
+    adevarata cand `_too_old` a inceput sa masoare, pe drept, pe ceasul pietei. Acum
+    verifica exact granita care conteaza: in ACELASI fisier, `_too_old` are voie si
+    `_platform_scan_due` nu, fiindca prima compara o valoare de piata si a doua isi
+    citeste propria stampila.
     """
+    doar_in = _CEAS_PIETEI_DOAR_IN_FUNCTIILE["app/utils/radar_scanner.py"]
+    assert doar_in == {"_too_old"}
+
+    permis = """
+from app.utils.listing_dates import acum_piata
+
+def _too_old(listed_at, max_age_days, now=None):
+    return (now or acum_piata()) - listed_at > max_age_days
+"""
+    assert not _ceas_pietei_din(permis, doar_in=doar_in),         "`_too_old` compara o valoare de PIATA — are voie"
+
     sabotaj = """
-from app.utils.listing_dates import to_naive_bucuresti
+from app.utils.listing_dates import acum_piata, to_naive_bucuresti
+
+def _too_old(listed_at, max_age_days, now=None):
+    return (now or acum_piata()) - listed_at > max_age_days
 
 def _platform_scan_due(kw, now):
     return now >= to_naive_bucuresti(kw.last_scan_at)
 """
-    gasite = _ceas_pietei_din(sabotaj)
-    assert [s for _, s in gasite] == ["to_naive_bucuresti", "to_naive_bucuresti"], gasite
+    gasite = _ceas_pietei_din(sabotaj, doar_in=doar_in)
+    assert [simbol for _, simbol in gasite] == ["to_naive_bucuresti"], gasite
 
-    assert "app/utils/radar_scanner.py" not in _CEAS_PIETEI_PERMIS, (
-        "radar_scanner scrie stampila cu acum_local() — ceasul pietei n-are ce cauta acolo")
-    # Si chiar asa e azi: fisierul real nu foloseste simbolurile.
-    assert not _ceas_pietei_din(_sursa(_APP, "utils", "radar_scanner.py"))
+    # Si chiar asa e azi: singura folosire reala din fisier e in `_too_old`.
+    assert not _ceas_pietei_din(_sursa(_APP, "utils", "radar_scanner.py"),
+                                doar_in=doar_in)
 
 
 # ── T3 — stampila de scanare: scrisa si citita pe acelasi ceas ─────────────────

@@ -119,7 +119,8 @@ export default function REFeedPage() {
       if (sortBy === "ppm_asc")     return nullsLast(a.price_per_sqm, b.price_per_sqm, (x, y) => x - y);
       if (sortBy === "score_desc")  return nullsLast(a.score, b.score, (x, y) => y - x);
       // FRONT-1 — comparatorul comun (listingHelpers), aceeasi regula in toate feed-urile.
-      if (sortBy === "listed_desc")    return sortByDateDesc("listed_at")(a, b);
+      // TZ-3c — rezerva pe `found_at`: postarile FB fara `posted_at` au `listed_at` NULL.
+      if (sortBy === "listed_desc")    return sortByDateDesc("listed_at", "found_at")(a, b);
       if (sortBy === "refreshed_desc") return sortByDateDesc("refreshed_at")(a, b);
       return 0;
     });

@@ -29,6 +29,7 @@ from typing import Optional
 
 from app.scrapers.auto.listings._common import extract_year, extract_km, fold_auto
 from app.services.log_manager import log_manager
+from app.utils.listing_dates import to_naive_bucuresti
 # Piese DOVEDITE din Radar Piata (curl_cffi, fara Playwright). Import sigur — radar/
 # facebook_scraper nu importa nimic din scrapers/auto.
 from app.services.radar.facebook_scraper import (
@@ -336,11 +337,14 @@ def _search_sesiune(query: str = "", filters: dict = {}, page: int = 1,
 
         image_url = ((o.get("primary_listing_photo") or {}).get("image") or {}).get("uri")
         seller = o.get("marketplace_listing_seller") or {}
+        # TZ-3c — `creation_time` e epoch absolut; citit cu `datetime.fromtimestamp()` gol
+        # ajungea ora MASINII in `auto_feed_listings.listed_at`, coloana in care Autovit si
+        # OLX Auto scriu ora Bucurestiului. Acelasi camp nu poate insemna doua lucruri.
         ct = _deep_first(o, "creation_time")
         listed_at = None
         if isinstance(ct, (int, float)) and ct > 1_000_000_000:
             try:
-                listed_at = datetime.fromtimestamp(ct)
+                listed_at = to_naive_bucuresti(ct)
             except (OverflowError, OSError, ValueError):
                 listed_at = None
 

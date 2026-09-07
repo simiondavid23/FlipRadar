@@ -103,7 +103,15 @@ def test_listed_at_e_data_postarii_nu_a_insertului():
         db.close()
 
 
-def test_listed_at_fallback_created_at_cand_posted_lipseste():
+def test_listed_at_ramane_null_cand_posted_lipseste():
+    """TZ-3c — INVERSUL regulii de pana acum: fara `posted_at`, `listed_at` ramane NULL.
+
+    Rezerva pe `created_at` spunea o minciuna dubla: alta valoare (momentul INSERT-ului
+    nostru, nu al postarii) si alt ceas (`acum_local()`, adica al sistemului, intr-o
+    coloana de piata). Fiind naiva, conversia n-o atingea, deci ceasul masinii intra
+    nefiltrat. O data lipsa e onesta; una inventata nu — si consumatorii tolereaza NULL
+    (feed-ul se ordoneaza pe `found_at`, exportul scrie gol, cardul afiseaza doar „gasit").
+    """
     from app.database import SessionLocal
     db = SessionLocal()
     try:
@@ -111,7 +119,8 @@ def test_listed_at_fallback_created_at_cand_posted_lipseste():
         kw = _kw(db, u.id)
         post = _post(id=14, post_id="p14", posted_at=None)
         listing = _save_fb_group_post(db, post, kw, None, {}, None)
-        assert listing.listed_at == post["created_at"]
+        assert listing.listed_at is None
+        assert listing.found_at is not None, "anuntul ramane in feed, sortat pe found_at"
     finally:
         db.close()
 

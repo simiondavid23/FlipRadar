@@ -107,10 +107,23 @@ export function bumpInfo(listing, now = Date.now()) {
 // Extras aici fiindca sortarea era scrisa de trei ori, in trei pagini, cu trei tratari
 // diferite ale null-ului (radar folosea `-Infinity`, ceea ce da NaN cand ambele lipsesc,
 // adica ordine nespecificata). O regula, trei apelanti.
-export function sortByDateDesc(key) {
+// TZ-3c — `fallbackKey` optional: cand cheia principala lipseste, se foloseste ea.
+// Motivul concret: postarile din grupurile Facebook fara `posted_at` au acum `listed_at`
+// NULL (rezerva pe `created_at` a fost scoasa — inventa o data pe ceasul gresit). Fara
+// rezerva la sortare, toate ar cadea la coada lui „cele mai noi postate", chiar proaspat
+// gasite. Cu `found_at` ca rezerva raman aproximativ la locul lor.
+//
+// De stiut: `listed_at` e pe ceasul PIETEI iar `found_at` pe al SISTEMULUI. Amestecul e
+// acceptabil AICI si nicaieri altundeva — o sortare doar reordoneaza vecini apropiati, nu
+// trece un prag; eroarea maxima e offsetul dintre ceasuri, si zero pe masina de productie.
+export function sortByDateDesc(key, fallbackKey = null) {
+  const val = (x) => {
+    const t = msDin(x?.[key]);
+    return t !== null ? t : (fallbackKey ? msDin(x?.[fallbackKey]) : null);
+  };
   return (a, b) => {
-    const ta = msDin(a?.[key]);
-    const tb = msDin(b?.[key]);
+    const ta = val(a);
+    const tb = val(b);
     if (ta === null && tb === null) return 0;
     if (ta === null) return 1;
     if (tb === null) return -1;

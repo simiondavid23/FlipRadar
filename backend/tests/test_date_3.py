@@ -51,6 +51,19 @@ def _naiv_local_din_utc(iso: str) -> datetime:
             .astimezone(ZoneInfo("Europe/Bucharest")).replace(tzinfo=None))
 
 
+def _in_ora_pietei(epoch: int) -> datetime:
+    """Referinta calculata INDEPENDENT de cod: epoch -> naiv, ora Bucurestiului.
+
+    TZ-3c — pana acum referinta era `datetime.fromtimestamp(ts)`, adica fusul MASINII, si
+    oglindea implementarea de atunci a lui `_listed_at_din_poza`: cele doua greseli se
+    anulau, deci testul trecea oriunde. `listed_at` de la Vinted intra in aceeasi coloana
+    cu cel de la OLX, care e ora Bucurestiului, deci referinta trebuie sa fie acolo — la
+    fel ca `_naiv_local_din_utc` de mai sus, si din acelasi motiv.
+    """
+    return datetime.fromtimestamp(
+        epoch, tz=ZoneInfo("Europe/Bucharest")).replace(tzinfo=None)
+
+
 def _as24_detail(monkeypatch, html: str) -> dict:
     monkeypatch.setattr(dt, "_fetch", lambda url, referer: html)
     return dt.fetch_autoscout24_detail("https://www.autoscout24.ro/oferte/exemplu")
@@ -141,7 +154,7 @@ def test_t4_pe_dict_din_fixture():
     photo = _catalog()["items"][0]["photo"]
     assert photo["high_resolution"]["timestamp"] == _VINTED_TS
     rezultat = vs._listed_at_din_poza(photo)
-    assert rezultat == datetime.fromtimestamp(_VINTED_TS)
+    assert rezultat == _in_ora_pietei(_VINTED_TS)
     assert rezultat.tzinfo is None
 
 
@@ -164,7 +177,7 @@ def test_t4c_degradare_curata_fara_exceptie():
 
 def test_t4d_timestamp_ca_string_de_cifre_merge():
     assert (vs._listed_at_din_poza({"high_resolution": {"timestamp": str(_VINTED_TS)}})
-            == datetime.fromtimestamp(_VINTED_TS))
+            == _in_ora_pietei(_VINTED_TS))
 
 
 # ── T5 — bucla de scan Vinted duce data pana in rezultat ────────────────────────
@@ -182,7 +195,7 @@ def test_t5_scan_vinted_pe_catalogul_din_fixture(monkeypatch):
     assert out, "fixture-ul trebuie sa produca rezultate"
     assert all(r["listed_at"] is not None for r in out)
     assert all(r["listed_at"].tzinfo is None for r in out)
-    assert out[0]["listed_at"] == datetime.fromtimestamp(_VINTED_TS)
+    assert out[0]["listed_at"] == _in_ora_pietei(_VINTED_TS)
     # `refreshed_at` nu se emite la Vinted: poza nu spune nimic despre repromovare.
     assert all(r.get("refreshed_at") is None for r in out)
 

@@ -5,7 +5,7 @@ curenta, VIN, stare cheie/pornire) necesita cont — la scraping public le marca
 ca None si le listam in `requires_account`.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from app.utils.http_profile import DEFAULT_IMPERSONATE
 
@@ -91,14 +91,22 @@ def parse_money(raw) -> Optional[float]:
 
 
 def parse_epoch_ms(raw) -> Optional[str]:
-    """Copart/IAAI returneaza uneori datele ca epoch in milisecunde."""
+    """Copart/IAAI returneaza uneori datele ca epoch in milisecunde -> ISO CU OFFSET.
+
+    TZ-3c — offsetul (`+00:00`) e obligatoriu, nu cosmetic. `utcfromtimestamp().isoformat()`
+    dadea un string FARA offset, iar contractul lui `to_naive_bucuresti` e ca un moment
+    fara offset e DEJA in ora corecta: conversia devenea no-op si ora UTC ajungea in
+    `auction_date` ca si cum ar fi fost ora Bucurestiului. O licitatie de la 15:00 RO se
+    stoca 12:00 — pe ORICE masina, inclusiv pe cea de productie, deci nu era o problema
+    de fus, ci o dată gresita in feed.
+    """
     if raw is None:
         return None
     try:
         ts = int(raw)
         if ts > 10_000_000_000:  # ms
             ts = ts / 1000.0
-        return datetime.utcfromtimestamp(ts).isoformat()
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

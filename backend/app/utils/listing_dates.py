@@ -64,7 +64,8 @@ TZ-3 — CE RULEAZA UNDE, si ce mai are voie sa fixeze un fus.
     * ceasul NOSTRU  — `acum_local()` scrie, `la_ora_sistemului()` citeste. Fusul MASINII.
       Perechea de citire lipsea pana la TZ-3, si de aici veneau amestecurile: o valoare
       scrisa cu ceasul nostru era citita inapoi cu ceasul PIETEI, adica pe alt ceas.
-    * ceasul PIETEI  — `to_naive_bucuresti()` / `din_fus()`. `FUS_ANUNTURI`, Bucuresti FIXAT.
+    * ceasul PIETEI  — `to_naive_bucuresti()` / `din_fus()`, iar „acum" pe el e
+      `acum_piata()` (TZ-3c). `FUS_ANUNTURI`, Bucuresti FIXAT.
     * ceasul FACEBOOK — `_acum()` din nucleu, UTC aware (exceptia B de mai sus).
 
   Ce MAI fixeaza un fus, dupa runda, si de ce (lista e EXECUTABILA — `_FUSURI_FIXE_PERMISE`
@@ -99,6 +100,36 @@ TZ-3b — NUMELE, si a doua garda.
   diferite si tocmai diferenta e ce se pazeste: `radar_scanner.py` e in primul (are un
   `astimezone()` gol legitim, capatul de scriere al stampilei) si trebuie sa fie in AFARA
   celui de-al doilea. Un apel de ceas al pietei de acolo e prins de patru teste.
+
+TZ-3c — REGULA COMPARATIILOR, si granita dintre cele doua convenatii din baza.
+
+  GRANITA, pe coloane:
+    * ceasul PIETEI (`to_naive_bucuresti` / `din_fus`) — tot ce spune SITE-UL despre cand
+      s-a intamplat: `listed_at`, `refreshed_at`, `posted_at`, `auction_date`. Nu depinde
+      de masina, fiindca nici ora afisata pe olx.ro nu depinde.
+    * ceasul SISTEMULUI (`acum_local` / `la_ora_sistemului`) — tot ce observam NOI:
+      `found_at`, `created_at`, `last_checked_at`, jurnalul, stampilele de scan.
+
+  REGULA: o valoare se masoara pe ceasul EI. O comparatie sau o scadere cere ambele parti
+  pe acelasi ceas; cand difera, se aduce ceasul SISTEMULUI pe cel al PIETEI la momentul
+  comparatiei, NICIODATA invers. Producatorii nu se muta pe `la_ora_sistemului` — aia ar
+  strica ora afisata, care e tot rostul ceasului pietei. Singurul drum invers din proiect e
+  `facebook_group_scraper._e_mai_veche_decat_rularea`, si e invers doar in interiorul unei
+  comparatii, nu la scriere.
+
+  Ce s-a reparat sub regula asta: `_too_old` (scadea `listed_at` dintr-un `datetime.now()`
+  de sistem — fereastra de dezacord era exact offsetul), criteriul de oprire al grupurilor
+  FB, si patru producatori care scriau ceasul masinii intr-o coloana de piata (Vinted,
+  Facebook Auto, Publi24, plus `auction_date`-ul Copart, singurul care gresea DEJA pe
+  masina de productie: 15:00 RO se stoca 12:00).
+
+  GARDA: `tests/test_date_1.py::test_tz3c_scriitorii_coloanelor_de_piata_...` isi CALCULEAZA
+  inventarul — orice modul din `app/` care scrie una dintre cele patru coloane intra
+  automat sub interdictia ceasului de masina (`fromtimestamp` fara `tz=`, `utcfromtimestamp`,
+  `.astimezone()` gol). Criteriul e „scrie coloana", nu „a fost bug": auditul manual ratase
+  doi scriitori (`auto/listings/detail.py` si calea cu sesiune din `radar/facebook_scraper`)
+  tocmai fiindca nimeni nu-i reclamase. Scutirile sunt pe (fisier, FUNCTIE), cu motiv, si
+  fiecare e verificata ca e reala.
 
   CE GARANTEAZA CE. Testele care aserteaza ore absolute (TZ-1, TZ-2) dovedesc offsetul si
   au nevoie de fusul fixat de conftest. Doar testele de CONSISTENTA din `tests/test_tz_3.py`
@@ -166,6 +197,21 @@ def acum_local() -> datetime:
     intreaba ce ceas foloseste o comparatie.
     """
     return datetime.now()
+
+
+def acum_piata() -> datetime:
+    """Acum, ca datetime NAIV pe ceasul PIETEI (`FUS_ANUNTURI`) — perechea lui `acum_local`.
+
+    TZ-3c — exista fiindca „acum, in ora anunturilor" a devenit o intrebare pusa in patru
+    locuri: pragul de vechime (`_too_old`), ancora „azi"/„ieri" de la Publi24, ancora
+    „Heute"/„Gestern" de la Kleinanzeigen, si referinta din teste. Scrisa de mana, iesea
+    `to_naive_bucuresti(datetime.now(timezone.utc))` — corect, dar cu un ocol prin UTC pe
+    care garda TZ-2 il citea, pe drept, ca pe un ceas UTC strecurat inapoi in cod.
+
+    NU e un al treilea ceas: e acelasi `FUS_ANUNTURI` ca `to_naive_bucuresti`, doar cu
+    „acum" ca intrare. Cele doua ceasuri ale bazei raman doua.
+    """
+    return datetime.now(FUS_ANUNTURI).replace(tzinfo=None)
 
 
 def la_ora_sistemului(x) -> Optional[datetime]:

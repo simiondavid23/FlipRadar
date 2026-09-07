@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
 from app.services.log_manager import log_manager
+from app.utils.listing_dates import acum_piata
 from app.services.network import binding
 from app.services.radar.base_scraper import (
     build_headers, rate_limit_backoff, is_excluded, get_proxy_config,
@@ -123,12 +124,22 @@ def _este_reactualizare(raw: Optional[str]) -> bool:
     return any(e in _strip_accents(raw) for e in _ETICHETE_REACTUALIZARE)
 
 
-def _parse_date(raw: Optional[str]) -> Optional[datetime]:
-    """'29 iunie' (zi + luna RO, fara an), 'azi'/'ieri'."""
+def _parse_date(raw: Optional[str], now: Optional[datetime] = None) -> Optional[datetime]:
+    """'29 iunie' (zi + luna RO, fara an), 'azi'/'ieri' -> datetime NAIV, ora ANUNTURILOR.
+
+    TZ-3c — ancora e ceasul PIETEI, nu `datetime.now()`. Textul spune „azi" despre ziua de
+    pe publi24.ro, adica ziua romaneasca: pe o masina in UTC, intre 00:00 si 03:00 ora RO
+    e inca ziua precedenta, deci „azi" primea ieri si „ieri" alaltaieri. Aceeasi specie ca
+    bug-ul „Heute" de la Kleinanzeigen (TZ-3), pe alta platforma. Anul lipsa se deduce tot
+    din anul PIETEI, din acelasi motiv.
+
+    `now` e injectabil pentru teste (ca la `_parse_card_date`), si se ia NAIV in ora
+    anunturilor — aceeasi conventie ca valoarea intoarsa.
+    """
     if not raw:
         return None
     t = _strip_accents(raw).strip()
-    now = datetime.now()
+    now = now or acum_piata()
     if t.startswith("azi") or "astazi" in t:
         return now.replace(hour=0, minute=0, second=0, microsecond=0)
     if t.startswith("ieri"):

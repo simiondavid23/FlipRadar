@@ -5,8 +5,6 @@ aici avem run_auto_lot_scan_for_user(db, user_id) scopat per-user, iar
 run_auto_lot_scan_global(db) doar itereaza userii si deleaga per-user (ca la Radar).
 """
 import asyncio
-from datetime import datetime, timezone
-from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -19,7 +17,11 @@ from app.scrapers.auto.lots.iaai_public import search_iaai_lots
 from app.scrapers.auto.lots.sca_auctions import search_sca_lots
 from app.scrapers.auto.lots.openlane_scraper import search_openlane_lots
 from app.utils.ore_active import in_ore_active
-from app.utils.listing_dates import acum_local
+# TZ-3c — `auction_date` e ora DECLARATA de casa de licitatii (ceasul PIETEI),
+# nu momentul in care am vazut-o noi. Copia locala de `_parse_auction_date` de aici
+# facea `fromisoformat` fara conversie, deci scria alt ceas in aceeasi coloana ca
+# ruta de salvare manuala din `routers/auto.py`. O singura implementare, aici si acolo.
+from app.utils.listing_dates import acum_local, to_naive_bucuresti
 
 _SCRAPERS = {
     "copart": search_copart_lots,
@@ -39,15 +41,6 @@ def _build_query(kw: AutoLotKeyword) -> str:
     """Toate scraperele de loturi cauta pe `query` (text liber). Filtrele fine
     (an/dauna/bid/stat) le aplicam local pe rezultate — vezi _lot_matches_keyword."""
     return " ".join(x for x in [kw.make, kw.model] if x).strip()
-
-
-def _parse_auction_date(raw: Optional[str]) -> Optional[datetime]:
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
 
 
 def _lot_matches_keyword(lot: dict, kw: AutoLotKeyword) -> bool:
@@ -110,7 +103,7 @@ def _save_lot(db: Session, user_id: int, keyword_id: int, raw: dict) -> bool:
         if raw.get("buy_now_price") is not None:
             existing.buy_now_price = raw.get("buy_now_price")
         if raw.get("auction_date"):
-            existing.auction_date = _parse_auction_date(raw.get("auction_date"))
+            existing.auction_date = to_naive_bucuresti(raw.get("auction_date"))
         db.commit()
         return False
 
@@ -128,7 +121,7 @@ def _save_lot(db: Session, user_id: int, keyword_id: int, raw: dict) -> bool:
         damage_secondary=raw.get("damage_secondary"),
         location_city=raw.get("location_city"),
         location_state=raw.get("location_state"),
-        auction_date=_parse_auction_date(raw.get("auction_date")),
+        auction_date=to_naive_bucuresti(raw.get("auction_date")),
         thumbnail_url=raw.get("thumbnail_url"),
         source_url=source_url,
         current_bid=raw.get("current_bid"),

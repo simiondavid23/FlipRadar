@@ -13,7 +13,7 @@ import asyncio
 import json
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -38,7 +38,9 @@ from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 from app.services.radar.vinted_html import guard_status as vinted_guard_status
-from app.utils.listing_dates import acum_local, este_reactualizat, la_ora_sistemului
+from app.utils.listing_dates import (
+    acum_local, acum_piata, este_reactualizat, la_ora_sistemului,
+)
 from app.utils.ore_active import in_ore_active
 
 
@@ -1801,11 +1803,22 @@ def _mark_platform_scanned(kw, platform: str, now=None) -> None:
 
 def _too_old(listed_at, max_age_days, now=None) -> bool:
     """RAD-1 — True daca listed_at exista si e mai vechi de max_age_days zile.
-    listed_at e naiv local (conventia scraperelor); now injectabil pentru teste.
-    Lipsa datei sau a limitei -> False (tolerant)."""
+    listed_at e naiv in ora ANUNTURILOR (conventia scraperelor); now injectabil pentru teste.
+    Lipsa datei sau a limitei -> False (tolerant).
+
+    TZ-3c — `now` se ia de pe ceasul PIETEI, nu `datetime.now()`. `listed_at` traieste in
+    `FUS_ANUNTURI`; scazandu-l dintr-un ceas de sistem, rezultatul era deplasat exact cu
+    offsetul dintre cele doua. Masurat sub `TZ=UTC`, prag de o zi: intre 24 h si 27 h
+    anuntul iesea „proaspat" desi piata il stia vechi. Pe un server INAINTEA Bucurestiului
+    semnul se inverseaza si se aruncau anunturi bune.
+
+    Regula generala a rundei: o comparatie cere ambele parti pe acelasi ceas, iar cand
+    difera se aduce ceasul SISTEMULUI pe cel al PIETEI — nu invers. Invers ar insemna sa
+    muti `listed_at` pe ceasul masinii, adica sa strici ora afisata in feed.
+    """
     if not listed_at or not max_age_days:
         return False
-    now = now or datetime.now()
+    now = now or acum_piata()
     try:
         return (now - listed_at) > timedelta(days=int(max_age_days))
     except TypeError:

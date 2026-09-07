@@ -16,6 +16,7 @@ from app.services.network import binding
 from app.services.radar.base_scraper import is_excluded
 from app.services.radar import vinted_html
 from app.services.log_manager import log_manager
+from app.utils.listing_dates import to_naive_bucuresti
 
 
 # ── Singleton VintedWrapper (JSON brut) — reutilizat la toate apelurile ─────────
@@ -881,7 +882,14 @@ def _condition_label(api_label: Optional[str]) -> Optional[str]:
 
 
 def _listed_at_din_poza(photo):
-    """`photo.high_resolution.timestamp` -> datetime NAIV LOCAL; None cand lipseste.
+    """`photo.high_resolution.timestamp` -> datetime NAIV in ora ANUNTURILOR; None la lipsa.
+
+    TZ-3c — conversia e `to_naive_bucuresti`, nu `datetime.fromtimestamp()` gol. Epoch-ul
+    e un instant absolut, deci alegerea fusului la citire e o DECIZIE, iar aici singura
+    corecta e ceasul PIETEI: `radar_listings.listed_at` primeste de la OLX ora
+    Bucurestiului, si acelasi camp nu poate insemna doua lucruri dupa platforma. Masurat
+    sub `TZ=UTC` inainte de reparatie: acelasi instant iesea 12:00 de la Vinted si 15:00
+    de la OLX, in acelasi feed.
 
     DATE-3 — de ce poza da data anuntului: `/api/v2/catalog/items` NU expune
     `created_at`, `/api/v2/items/{id}` da 404, iar pagina itemului spune data doar
@@ -905,7 +913,7 @@ def _listed_at_din_poza(photo):
     if not ts:
         return None
     try:
-        return datetime.fromtimestamp(int(ts))   # naiv local (conventia scraperelor)
+        return to_naive_bucuresti(int(ts))       # ceasul PIETEI (TZ-3c)
     except (TypeError, ValueError, OSError, OverflowError):
         return None
 
@@ -1237,11 +1245,12 @@ def get_vinted_item_detail(item_id: str) -> Optional[dict]:
             attributes["Brand"] = brand["name"]
 
         # ── listed_at: cel mai vechi timestamp din URL-urile pozelor ──
+        # TZ-3c — acelasi ceas ca `_listed_at_din_poza`: ora PIETEI, nu a masinii.
         listed_at = None
         ts_list = [int(x) for x in re.findall(r"/(\d{10})\.webp", html)]
         if ts_list:
             try:
-                listed_at = datetime.fromtimestamp(min(ts_list))
+                listed_at = to_naive_bucuresti(min(ts_list))
             except (ValueError, OSError):
                 listed_at = None
 
