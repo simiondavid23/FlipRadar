@@ -17,6 +17,7 @@ REGULA DE TEST (lectia CUR-1 b2 / TIDY-1 a): tot ce e CABLARE se testeaza prin
 succesive — primul stabileste starea, urmatoarele masoara reaparitia.
 
 Fara retea: `_run_scraper` si `catalog_ron` sunt pinuite, notificarile capturate.
+FLAKE-1 — si enrichment-ul Vinted de fundal: vezi nota din `_scan`.
 """
 import json
 import uuid
@@ -94,6 +95,21 @@ def _scan(monkeypatch, uid: int, anunt: dict, notif=None, cursuri=None):
     # `_platform_scan_due` tine de cadenta, nu de SEEN-2: fara asta al doilea scan din
     # aceeasi secunda ar fi sarit ca „nu e due" si n-am masura nimic.
     monkeypatch.setattr(rs, "_platform_scan_due", lambda kw, p, now=None: True)
+    # FLAKE-1 — enrichment-ul Vinted de fundal (`_enrich_vinted_background`, rulat la
+    # finalul fiecarui `_scan_user`) era SINGURA cale pe care scanul mai iesea la retea
+    # din fisierul asta, si nu se vedea: poarta lui, `_enrich_due`, compara `time.time()`
+    # cu o stampila PROCESS-GLOBALA pe cheia (user_id, "vinted"), iar `user_id` e mereu 1
+    # (clean_db goleste tabelele, deci rowid-ul reporneste de la 1 la fiecare test). Cat
+    # timp suita e rapida, fereastra de 300 s (`_ENRICH_MIN_INTERVAL_S`) nu expira intre
+    # teste si enrichment-ul nu ruleaza. Pe o rulare incarcata expira, fetch-ul real catre
+    # vinted.ro pe un id inventat da 404, randul trece pe `status="removed"` si dispare din
+    # feed-ul implicit (`status == "active"`) — de aici flake-ul de la FRONT-1e, dependent
+    # de durata suitei, nu de cod.
+    #
+    # Taiem AMBELE jumatati, ca rezultatul sa nu mai atarne nici de ceasul masinii, nici
+    # de retea, si ca fisierul sa nu mai poata iesi in retea nici din greseala:
+    monkeypatch.setattr(rs, "_enrich_due", lambda user_id, kind: False)
+    monkeypatch.setattr(rs, "get_vinted_item_detail", lambda item_id: None)
 
     db = SessionLocal()
     try:
