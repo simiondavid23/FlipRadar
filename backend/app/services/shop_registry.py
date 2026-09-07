@@ -125,7 +125,15 @@ Campurile unei intrari:
                                                     lui — SEARCH-0 §5a);
                                      selectorii de PRET — price_text SAU price_attr,
                                                     optional compare_text/compare_attr,
-                                                    price_parse. OBLIGATORIU declarati
+                                                    price_parse (valorile admise, si in
+                                                    `listing`: pe TEXT "eu_comma"
+                                                    („1.393,94 lei") sau "us_dot"
+                                                    („$117.63", DEAL-D1) — citite acum
+                                                    chiar de `_pret_of`, o valoare
+                                                    necunoscuta ridica ValueError; pe
+                                                    ATRIBUT "attr_float", unde parserul
+                                                    strict e impus de calea de cod, nu de
+                                                    camp). OBLIGATORIU declarati
                                                     aici chiar daca sunt identici cu cei
                                                     din `listing`: acolo sunt scrisi pentru
                                                     pagini de REDUCERI si pe pagina de
@@ -1174,6 +1182,43 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
+        # DEAL-D1: moneda lipsea de la nivelul intrarii. Nu e o presupunere —
+        # ld+json declara USD pe PDP (G2F-1) si cardurile de listare poarta „$" pe
+        # 24/24 (LST-D1 §2.1), doua surse independente pe acelasi domeniu.
+        "currency": "USD",
+        # ── DEAL-D1, din sonda LST-D1 §2.1 ──────────────────────────────────
+        "listing": {
+            "url": "https://direct-running.com/outlet",
+            # PAGINA-UNICA, masurat: zero `rel=next`, zero `?page=`/`?p=`, zero
+            # token `pagination` in HTML-ul brut; incarcarea e pe buton („Show
+            # more"), deci NU exista `page_url_template`. Cu `max_pages: 1` bucla
+            # face o tura si `_pagina_url` intoarce `url`, fara sa atinga vreodata
+            # template-ul. Acoperire: 24 de carduri SSR din cele „1406 products"
+            # anuntate — tiparul bonami, unde infinite-scroll-ul e NON-SCOP.
+            "max_pages": 1,
+            # Din CARD, incrucisat pe 24/24: simbolul e „$", nu „€" — vezi `notes`.
+            "currency": "USD",
+            "card": "div.group.relative.w-full",
+            # `a[title]`, nu `a[href]`: cardul poarta 4 ancore, dintre care una
+            # catre /brands/<marca>. Ancora de titlu e singura cu atributul
+            # `title`.
+            "link": "a[title]",
+            "title": "a[title]",
+            "image_attr": ["src"],
+            "price_text": ".special-price .price",
+            "compare_text": ".old-price .price",
+            # MOTIVUL pentru care treapta `us_dot` exista (DEAL-D1): pe „$117.63"
+            # parserul european da 11763.0, fiindca sterge punctul ca separator de
+            # mii — masurat de LST-D1 §2.8, rulind acest descriptor prin
+            # `extrage_carduri` insusi. `attr_float` n-avea ce citi: cardul n-are
+            # niciun atribut numeric (0 `content=`, 0 `data-price*`). Domeniul e
+            # primul si singurul consumator al treptei.
+            "price_parse": "us_dot",
+            # `Starting at` pe 24/24 — pret „de la", nu eticheta legala. Singurul
+            # „30 days" din pagina e politica de retur („30 days to change your
+            # mind"), deci nu eticheteaza campul (lectia bergfreunde).
+            "reference_kind": "nemarcat",
+        },
         "notes": "G2F-1/G2F-2; domeniul REAL e FARA www — redirect MASURAT "
                  "www.direct-running.com -> direct-running.com. ld+json: Product + "
                  "Offer cu price / priceCurrency / availability. MONEDA E USD, nu EUR: "
@@ -1184,7 +1229,18 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "adresa, VAT sau numar de inregistrare in dump-uri, iar moneda "
                  "contrazice. Daca apare o dovada mai buna, campul se corecteaza. "
                  "Axa D: /outlet are 97 de carduri (div.group.theme-elitelab...) — "
-                 "val ULTERIOR — vezi docs/catalog_domain_log.md",
+                 "val ULTERIOR — vezi docs/catalog_domain_log.md. DEAL-D1, din sonda "
+                 "LST-D1: axa D intrata, cu DOUA corecturi la randul de mai sus. (1) "
+                 "Numarul: /outlet serveste 24 de carduri server-rendered, nu 97 — "
+                 "pagina anunta „1406 products\" si restul se incarca pe buton „Show "
+                 "more\", deci NU exista paginare server-side si acoperirea e cele 24 "
+                 "(tiparul bonami). Situl e SvelteKit. (2) Selectorul: clasele sunt "
+                 "utilitare Tailwind, iar `w-full` e OBLIGATORIU — "
+                 "`div.group.relative` singur prinde 48 de noduri, adica dublu. "
+                 "Fragilitate declarata: un refactor de layout poate schimba clasele "
+                 "fara sa schimbe produsul. Domeniul e primul consumator al treptei de "
+                 "parsare `us_dot`, adaugata tot la DEAL-D1: pretul din card e "
+                 "„$117.63\", pe care parserul european il citea 11763.0.",
     },
     "zooplus.ro": {
         "label": "Zooplus",
@@ -1193,6 +1249,39 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # ── DEAL-D1, din sonda LST-D1 §2.2 ──────────────────────────────────
+        "listing": {
+            "url": "https://www.zooplus.ro/shop/oameni_animale/promotii",
+            "page_url_template": "https://www.zooplus.ro/shop/oameni_animale/"
+                                 "promotii?p={n}",
+            # DERIVAT: „1 - 48 din 801 rezultate" -> 17 pagini reale, plus marja
+            # (conventia otter). Oprirea reala vine oricum din CLAMP: `?p=500`
+            # raspunde 200 cu EXACT cardurile paginii 1.
+            "max_pages": 22,
+            "currency": "RON",
+            # `data-zta`, NU clasa: `ProductCard_productCard__HRbGU` selecteaza
+            # acelasi set, dar `__HRbGU` e hash de build CSS-modules si moare la
+            # redeploy.
+            "card": "[data-zta='product-card']",
+            "link": "a[title]",
+            "title": "h2",
+            "image": "img[data-zta='product-slider-image']",
+            "image_attr": ["src"],
+            # Atribut numeric cu punct zecimal, exact una pe card (48/48) — se
+            # prefera textului „20,90 lei" si parserului de virgula.
+            "price_attr": ("meta[itemprop='price']", "content"),
+            "price_parse": "attr_float",
+            # DELIBERAT FARA `compare_*`. Singura referinta din card e etichetata
+            # `Individual` (12/48 pe p1, 19/48 pe p2, ZERO altfel), cu tooltipul
+            # „Pretul total al acelorasi produse daca sunt cumparate separat" — e
+            # o comparatie pachet-vs-bucata, nu un pret anterior. Citita ca
+            # `compare_at`, ar fabrica un deal pe fiecare multipack. Fraza
+            # Omnibus exista in subsol si in i18n, dar NU eticheteaza niciun camp
+            # de card (lectia bergfreunde). Consecinta: R1 nu porneste niciodata
+            # aici, dealurile vin din R2 — acelasi regim ca toolnation si
+            # buzzsneakers.
+            "reference_kind": "nemarcat",
+        },
         "notes": "G2F-3/G2F-4; Next.js. ld+json e un @graph, iar produsul e un "
                  "ProductGroup cu `hasVariant` (o varianta per gramaj/pachet), NU un "
                  "Product cu offers-lista: fiecare varianta isi poarta propriul Offer "
@@ -1212,7 +1301,16 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "/shop/pisici/hrana_uscata_pisici/purizon/pachete_de_testare/1347045) "
                  "— ID-ul numeric final e ancora, calea de categorii variaza. "
                  "Axa D: /shop/oameni_animale/promotii cu 817 produse si selector "
-                 "stabil — val ULTERIOR — vezi docs/catalog_domain_log.md",
+                 "stabil — val ULTERIOR — vezi docs/catalog_domain_log.md. "
+                 "DEAL-D1, din sonda LST-D1: axa D INTRATA, dar cu o CORECTIE la "
+                 "„selector stabil\" de mai sus — cardul se selecteaza pe "
+                 "`data-zta=\"product-card\"`, NU pe clasa. Clasa "
+                 "`ProductCard_productCard__HRbGU` selecteaza acelasi set de 48, dar "
+                 "sufixul `__HRbGU` e un hash de build CSS-modules si se schimba la "
+                 "orice redeploy; `data-zta` e atributul de test al magazinului. "
+                 "Numaratoarea anuntata azi e „1 - 48 din 801 rezultate\" (817 la "
+                 "G2F-4). Vezi descriptorul `listing` pentru de ce NU se citeste "
+                 "niciun pret taiat.",
     },
     "hornbach.ro": {
         "label": "Hornbach",
@@ -2101,6 +2199,46 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # ── DEAL-D1, din sonda LST-D1 §2.6 ──────────────────────────────────
+        "listing": {
+            # `forit.ro` redirecteaza la `www.forit.ro`: se pune direct destinatia.
+            "url": "https://www.forit.ro/resigilate/",
+            # Forma e `/pN/c` — cu `/c` final, NU `/page-N` si NU `?page=N`. Nu
+            # exista `rel=next`; href-urile brute (p2, p6, p7) sunt singura sursa,
+            # tiparul cellini.
+            "page_url_template": "https://www.forit.ro/resigilate/p{n}/c",
+            # DERIVAT: „(1–60 din 413 rezultate)" / 60 pe pagina = 7 pagini, plus
+            # marja. Oprirea reala e CLAMP: /p500/c redirecteaza la pagina 1.
+            "max_pages": 10,
+            "currency": "RON",
+            "card": ".p-card",
+            # `a.p-img` n-are text, dar e prima ancora si e stabila; titlul vine
+            # separat, din `div.p-title`.
+            "link": "a.p-img",
+            "title": "div.p-title",
+            "image": "img.p-img-real",
+            "image_attr": ["src"],
+            # Pretul e SPART intre noduri: `4.435,30` in div si „ lei" intr-un
+            # `span.cur` copil. `_text_of` concateneaza, deci selectorul de div e
+            # corect; o citire pe textul propriu al nodului l-ar rata.
+            "price_text": "div.p-price",
+            # Prezent pe 4 din 60 de carduri pe p1 — restul n-au reducere activa.
+            "compare_text": "div.p-price-old",
+            "price_parse": "eu_comma",
+            # Zero „30 de zile", zero „pret recomandat", zero PRP pe listare.
+            # Singurul „cel mai mic pret" din lot e in <title>-ul unui PDP, ca
+            # marketing — deci NU eticheteaza campul (lectia bergfreunde).
+            "reference_kind": "nemarcat",
+            #
+            # FARA `stock_attr`: `.p-stock` exista pe 60/60, dar valorile masurate
+            # sunt `p-stock-ok` si `p-stock-limited` — niciuna nu inseamna
+            # „epuizat".
+            #
+            # RESIGILATE: starea NU e in date structurate (`itemCondition` e
+            # `NewCondition` si pe desigilate), ci in NUME: 57/60 de carduri au
+            # „desigilat"/„resigilat" in `data-name`/`div.p-title` si in slug, deci
+            # titlul o duce singur in feed.
+        },
         "notes": "G4-V0b, sondat la WL-1. NU e intrare de browser, desi a intrat in "
                  "valul de browser: dump-urile HTTP ale lui WL-1 (pe profilul de "
                  "productie) dau 200 pe AMBELE PDP-uri, iar genericul extrage din ele "
@@ -2116,7 +2254,15 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "(`AT-150-RSO- desigilata`). Pe axa L se ignora (decizia resigilate), "
                  "pe axa D se consemneaza. Componente partajate de ignorat in orice "
                  "citire pe text: `21.99 Lei` (Curier Romania) si `300 lei` (pragul de "
-                 "livrare gratuita) — ld+json le ocoleste. PDP `/<slug>-bp<id>`.",
+                 "livrare gratuita) — ld+json le ocoleste. PDP `/<slug>-bp<id>`. "
+                 "DEAL-D1, din sonda LST-D1: axa D intrata pe `/resigilate/`, si aici "
+                 "starea CHIAR ajunge in feed fara munca in plus — 57 din cele 60 de "
+                 "carduri de pe pagina 1 au „desigilat\"/„resigilat\" chiar in titlu "
+                 "(`data-name` / `div.p-title`) si in slug, deci deal-ul nu poate "
+                 "parea produs nou. Cele doua componente partajate de mai sus s-au "
+                 "CONFIRMAT pe dump-uri: `300 lei` e in bara de sus („Livrare gratuita "
+                 "la comenzi peste 300 lei\") si apare si pe PDP-uri, `21.99 Lei` doar "
+                 "pe PDP-uri — selectorii din `listing` le ocolesc pe amandoua.",
     },
 
     # ── WL-3 — watchlist-ul conditionat, dupa sonda corectiva WL-4 ────────────
@@ -2129,8 +2275,17 @@ SHOP_REGISTRY: dict[str, dict] = {
         "category": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
-        "method": "jsonld",
+        # DEAL-D1: `jsonld` -> `shopify`. Nota WL-4 spunea „Shopify, dar NU pe
+        # fluxul `shopify`: enumerarea nu s-a masurat" — LST-D1 a masurat-o si e
+        # deschisa, deci conditia acelei fraze s-a implinit.
+        "method": "shopify",
         "status": "validated",
+        # Din `/cart.js` (LST-D1 §3). Pe calea `shopify` moneda NU vine din
+        # payload, o citeste extractorul din registru — camp obligatoriu.
+        "currency": "RON",
+        # Vine ODATA cu `method: shopify` — vezi acelasi comentariu la
+        # sneakerindustry.ro. Pinuit de `test_search_shopify_pe_toate_shopify`.
+        "search": {"kind": "shopify"},
         "notes": "WL-3, masurat la WL-4. ATENTIE la istoric: sonda WL-1 daduse "
                  "verdictul „custom pe stare structurata\", si era GRESIT — masurase "
                  "trei pagini `/pages/*` („Back to School\", „Modele Mac\", „Modele "
@@ -2138,8 +2293,27 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "produs. PDP-urile reale sunt `/products/<handle>` si poarta "
                  "`Product` + `ProductGroup`; genericul extrage FARA override, "
                  "masurat 2/2 (resigilat 4.699,99 RON, normal 4.999,99 RON). "
-                 "Shopify, dar NU pe fluxul `shopify`: enumerarea nu s-a masurat, "
-                 "deci ramane pe ld+json. `Offer` NU are `availability` — cheile "
+                 "MIGRAT la DEAL-D1 pe fluxul `shopify`: randul de mai jos spunea "
+                 "„enumerarea nu s-a masurat, deci ramane pe ld+json\", iar LST-D1 §3 "
+                 "a masurat-o — SHOPIFY_DESCHIS, 3 cereri, 3 raspunsuri 200, "
+                 "`powered-by: Shopify`, fara cookie `datadome`. Valorile: "
+                 "`/products.json?limit=5` intoarce 5 produse ale caror variante au "
+                 "`available` SI `compare_at_price` (5/5) — abatere de la tiparul "
+                 "SHOP-1, unde `.json` nu poarta `available` si de aceea se cerea "
+                 "`.js` per produs; aici enumerarea e suficienta. Pretul se "
+                 "incruciseaza exact pe ACEEASI varianta (id 58085408932104, sku "
+                 "`O_MVXR3HC/A_CV55VXR6LL`): `\"5349.99\"` string in enumerare, "
+                 "`534999` int in bani in `/products/<handle>.js`. `/cart.js` da "
+                 "`currency: RON`. Consecinta pentru `in_stock`: pe calea `shopify` "
+                 "vine din `available` al variantei, deci NU mai iese None ca pe "
+                 "ld+json (unde `Offer` n-are `availability` — vezi mai jos). "
+                 "RESIGILATE pe axa D: starea se citeste din handle si din nume, care "
+                 "au fost concordante pe 5/5 (`resigilat-<slug>` / „Resigilat: \"), in "
+                 "timp ce `product_type` NU e de incredere — doua din cele cinci "
+                 "produse resigilate aveau `product_type: Husa de protectie`, fara "
+                 "niciun cuvant despre stare. "
+                 "ISTORIC pe calea ld+json, valabil daca se revine la ea: `Offer` NU "
+                 "are `availability` — cheile "
                  "masurate sunt [@type, itemCondition, price, priceCurrency, "
                  "priceValidUntil, shippingDetails, url] — deci `in_stock` iese None, "
                  "si e ONEST (ca la biciclop.eu). Valoarea declarata e sectiunea de "
@@ -2303,6 +2477,39 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # ── DEAL-D1, din sonda LST-D1 §2.4 ──────────────────────────────────
+        "listing": {
+            "url": "https://www.footlocker.ro/ro/special-prices/",
+            # Numarul de pagina e in CALE, sub forma /pN/ — citit din ancora
+            # `title="next-page"`, care poarta si `data-page="2"`.
+            "page_url_template": "https://www.footlocker.ro/ro/special-prices/"
+                                 "p{n}/",
+            # CITAT, nu derivat: pagina declara `data-total-pages="38"`
+            # (`data-page-size="20"`), plus marja dupa conventia otter. Oprirea
+            # reala e CLAMP: /p500/ redirecteaza la pagina 1.
+            "max_pages": 45,
+            "currency": "RON",
+            # `.x-box` selecteaza acelasi set, dar e un nume prea generic ca sa
+            # reziste la un refactor de sablon.
+            "card": "article.x-product-box",
+            "link": "a.js-product-link",
+            "title": "h2.js-product-link",
+            "image_attr": ["src"],
+            "price_text": ".current-price",
+            "compare_text": ".recommended-price .price span[data-exchange-price]",
+            "price_parse": "eu_comma",
+            # Etichetat EXPLICIT si vizibil: „Pret de vanzare recomandat:", cu
+            # explicatia magazinului („pretul de vanzare initial pe care l-a avut
+            # produsul"). Alternativa masurata, tot etichetata, e
+            # `.lowest-price .price` („Cel mai mic pret pe 30 de zile:") — ar cere
+            # `reference_kind: "min30"`.
+            #
+            # DE STIUT: pe cele 60 de carduri masurate (p1+p2+plast),
+            # `current-price` e IDENTIC cu `recommended-price` — categoria n-avea
+            # nicio reducere activa in ziua sondei, deci `compare_at <= price` si
+            # R1 nu califica nimic.
+            "reference_kind": "prp",
+        },
         "notes": "G4-V3b; a intrat prin valul de browser dar NU e intrare de browser — "
                  "a treia oara cand se aplica regula, dupa forit.ro si lego.com. "
                  "Sonda G4-V3 l-a masurat randat (PDP cu ld+json `Product` + "
@@ -2317,7 +2524,14 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`/ro/<sectiune>/<categorie>/<subcategorie>/<slug>`. Stocul se "
                  "citeste din ld+json si POATE fi False pe produse afisate normal "
                  "(masurat `in_stock: False` pe PDP-ul de proba, cu pagina servita "
-                 "fara eroare).",
+                 "fara eroare). DEAL-D1, din sonda LST-D1: axa D intrata pe "
+                 "`/ro/special-prices/`. DE STIUT la primul scan: pe cele 60 de "
+                 "carduri masurate (p1+p2+plast) `current-price` == "
+                 "`recommended-price` == `lowest-price` — categoria n-avea NICIO "
+                 "reducere activa in ziua sondei, deci `compare_at <= price` si R1 nu "
+                 "califica nimic la baseline; dealurile vor veni din R2. Pagina isi "
+                 "declara singura adancimea (`data-total-pages=\"38\"`, "
+                 "`data-page-size=\"20\"`), iar /p500/ redirecteaza la pagina 1.",
     },
 
     # ── G4-V4b — epilogul axei L ──────────────────────────────────────────────
@@ -2377,22 +2591,54 @@ SHOP_REGISTRY: dict[str, dict] = {
         "category": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
-        "method": "og",
+        # DEAL-D1: `og` -> `shopify`. Enumerarea e DESCHISA, masurat — vezi `notes`.
+        "method": "shopify",
         "status": "validated",
+        # Din `/cart.js`, masurat la DEAL-D1. Pe calea `shopify` moneda NU vine din
+        # payload, o citeste extractorul de aici — deci campul e obligatoriu, nu
+        # decorativ.
+        "currency": "RON",
+        # Vine ODATA cu `method: shopify`, nu ca decizie separata: mecanismul e API
+        # de PLATFORMA (`/search/suggest.json`), disponibil pe orice magazin
+        # Shopify prin constructie, iar absenta lui ar fi o omisiune care ar face
+        # magazinul sa lipseasca TACIT din pagina „Scanare Magazine". Pinuit de
+        # `test_search_shopify_pe_toate_shopify`.
+        "search": {"kind": "shopify"},
         # `og:title` e numele SITULUI („Sneaker Industry - SNKR IND."), nu al
         # produsului. `h1` e unic pe PDP si poarta numele real, verificat pe DOUA
-        # pagini: „On Cloud 6 Geo WP" si „On Cloudzone".
+        # pagini: „On Cloud 6 Geo WP" si „On Cloudzone". INERT de la DEAL-D1:
+        # calea `shopify` citeste numele din payload si intoarce
+        # `override_applied: False`. Se pastreaza fiindca descrie calea `og`, la
+        # care s-ar reveni daca enumerarea s-ar inchide din nou.
         "overrides": {"name_selector": "h1"},
-        "notes": "SNK-2; deznodamantul celei mai lungi povesti din watchlist, si o "
-                 "CORECTIE de platforma. Domeniul a stat luni intregi drept „Shopify "
-                 "cu enumerarea inchisa\", pe temeiul ca `products.json` da 403 pe "
-                 "toate cele trei profiluri. Masurat la SNK-1: nu e Shopify deloc — "
-                 "header `powered-by: PrestaShop`, sesiune `PHPSESSID` + "
-                 "`PrestaShop-<hash>`, Cloudflare in fata. Deci 403-ul era Cloudflare "
-                 "pe o ruta STRAINA de platforma, nu o enumerare inchisa, iar "
-                 "consemnarea „se re-verifica daca se deschide enumerarea\" ramane "
-                 "fara obiect: nu se poate deschide ceva ce nu exista. Axa L merge pe "
-                 "fluxul standard, dar NU pe jsonld: PDP-urile n-au NICIUN ld+json. "
+        "notes": "SNK-2, RASTURNAT la LST-D1/DEAL-D1 — a DOUA corectie de platforma "
+                 "pe acelasi domeniu, in sens INVERS fata de prima. Istoric, ca sa nu "
+                 "se re-descopere: domeniul a stat luni intregi drept „Shopify cu "
+                 "enumerarea inchisa\" (403 pe `products.json`), apoi SNK-1 a masurat "
+                 "`powered-by: PrestaShop` + `PHPSESSID` + `PrestaShop-<hash>` si a "
+                 "scris ca „nu se poate deschide ceva ce nu exista\". Intre timp "
+                 "magazinul a MIGRAT INAPOI pe Shopify, iar asta invalideaza exact "
+                 "acea concluzie. Masurat la LST-D1 (2026-09-07), patru semnale "
+                 "independente: antet `powered-by: Shopify`; cookie-uri `_shopify_y` / "
+                 "`_shopify_s` (zero `PHPSESSID`); `/ro/reduceri-de-pret` "
+                 "REDIRECTEAZA la `/collections/reduceri`; cardul de listare e "
+                 "`product-card` (zero aparitii `product-miniature` in dump). "
+                 "ENUMERAREA E DESCHISA, masurat la DEAL-D1 cu 3 cereri: "
+                 "`/products.json?limit=5` -> 200 cu 5 produse, variantele purtand "
+                 "`available` + `price` + `compare_at_price` (5/5); `/cart.js` -> 200 "
+                 "cu `currency: RON`; `/products/60915795.js` -> 200, unde varianta "
+                 "54713477759322 are `price: 16900` = `\"169.00\"` x 100 din "
+                 "enumerare, `available: true`. Fara cookie `datadome`. De aceea "
+                 "`method: shopify` si NU un descriptor `listing`: enumerarea acopera "
+                 "tot catalogul, nu doar grila de reduceri, iar `compare_at_price` e "
+                 "referinta comerciantului (R1 pe pragul global), nu una de listare "
+                 "(R1 la 40%). Pe esantionul de 5, `compare_at_price` e null peste "
+                 "tot. Descriptorul CSS masurat de LST-D1 §2.3 ramane in raport ca "
+                 "REZERVA, daca enumerarea se inchide iar: card `.product-card` (48 pe "
+                 "pagina), `sale-price` / `compare-at-price`, `?page={n}`, oprire pe "
+                 "grila goala la `?page=500`, 819 produse. "
+                 "ISTORIC pe calea `og`, valabil doar daca se revine la ea: "
+                 "PDP-urile n-au NICIUN ld+json. "
                  "Metoda masurata e `og` (`product:price:amount`), pe doua PDP-uri cu "
                  "preturi diferite — 899,10 RON si 692,10 RON, moneda RON incrucisata "
                  "in og SI in afisaj. CAPCANE: (1) exista microdata cu un singur "
@@ -2404,10 +2650,11 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "rate Mokka, `.mokka-price-amount` = „74,93 RON/luna\". (3) Pretul "
                  "vechi exista, in `span.regular-price` (999,00 RON), dar FARA "
                  "<del>/<s> si fara nicio formulare de 30 de zile: Omnibus NEMARCAT. "
-                 "Axa D e nesondata: listarea `/ro/reduceri-de-pret` are 48 de carduri "
-                 "`article.product-miniature.home-product` cu forma de PDP "
-                 "`/ro/<categorie>/<id>-<id>-<slug>.html` — descriptor de scris la un "
-                 "val ulterior, nu de ghicit acum.",
+                 "Randul vechi „axa D e nesondata: 48 de carduri "
+                 "`article.product-miniature.home-product`, PDP "
+                 "`/ro/<categorie>/<id>-<id>-<slug>.html`\" e MORT odata cu migrarea: "
+                 "acele selectoare si acea forma de URL nu mai exista pe sit. Forma "
+                 "actuala de PDP e `/products/<handle>`.",
     },
     "nike.com": {
         "label": "Nike",

@@ -3253,3 +3253,149 @@ sondat: intai verdictul de L.
 ## 5. Cifra actualizata
 
 **95 -> 97 de domenii validate** (sneakerindustry.ro, nike.com).
+
+---
+
+# DEAL-D1 — Bucket A al axei D (sonda LST-D1, 2026-09-07)
+
+Sonda LST-D1 a masurat opt domenii deja validate pe axa L, pentru care listarea de
+reduceri era IDENTIFICATA in notele registrului dar NEMASURATA. Runda de fata scrie
+in registru exclusiv ce a iesit din raportul ei
+(`backend/scripts/diagnostics/dumps_lstd1/raport.md`), plus verificarea de enumerare
+pe care sonda o lasase deschisa.
+
+## 1. Bilantul
+
+| domeniu | listare | paginare | produse | referinta | verdict |
+|---|---|---|---|---|---|
+| zooplus.ro | `/shop/oameni_animale/promotii` | `?p={n}`, clamp la p1 | 801 (48/pag) | `nemarcat` — NU se citeste | **CSS_GRID, intrat** |
+| footlocker.ro | `/ro/special-prices/` | `/p{n}/`, clamp la p1 | 760 (`data-total-pages="38"` x 20) | `prp` („Pret de vanzare recomandat:") | **CSS_GRID, intrat** |
+| forit.ro | `/resigilate/` | `/p{n}/c`, clamp la p1 | 413 (60/pag) | `nemarcat` | **CSS_GRID, intrat** |
+| direct-running.com | `/outlet` | NICIUNA (buton „Show more") | 24 SSR din 1406 | `nemarcat` („Starting at") | **CSS_GRID, intrat** (`max_pages: 1`, tiparul bonami) |
+| sneakerindustry.ro | — | — | — | — | **SHOPIFY_DESCHIS -> `method: shopify`** |
+| istyle.ro | — | — | — | — | **SHOPIFY_DESCHIS -> `method: shopify`** |
+| cyberport.at | `/apple-und-zubehoer/outlet-a-b-ware-.html` | — | — | — | **BLOCAT, ramane in afara** |
+| elefant.ro | necunoscuta | — | — | — | **NEMASURAT, ramane in afara** |
+
+`listing_domains()`: 14 -> **18**. `shopify_domains()`: 13 -> **15**.
+
+## 2. Cele doua corectii de registru
+
+**sneakerindustry.ro — a DOUA corectie de platforma pe acelasi domeniu, in sens
+INVERS fata de prima.** Domeniul statuse „Shopify cu enumerarea inchisa" (403 pe
+`products.json`), apoi SNK-1 masurase `powered-by: PrestaShop` + `PHPSESSID` si
+scrisese ca „nu se poate deschide ceva ce nu exista". Intre timp magazinul a migrat
+INAPOI pe Shopify, ceea ce invalideaza exact acea concluzie. Patru semnale
+independente la LST-D1: antet `powered-by: Shopify`; cookie-uri `_shopify_y` /
+`_shopify_s`; `/ro/reduceri-de-pret` redirecteaza la `/collections/reduceri`; cardul
+e `product-card` (zero `product-miniature` in dump).
+
+Lectia nu e „registrul se mai invecheste" — asta se stia de la WL-4. E mai ingusta:
+**o nota care spune „nu se poate re-verifica, fiindca obiectul nu exista" isi pierde
+temeiul in tacere daca platforma se schimba.** SNK-1 anulase consemnarea „se
+re-verifica daca se deschide enumerarea"; corect atunci, gresit sase luni mai tarziu,
+si nimic din cod n-ar fi semnalat-o. Verificarea a costat 3 cereri.
+
+**zooplus.ro — „selector stabil" era o masuratoare pe jumatate.** Nota G2F-4 spunea
+ca listarea are „817 produse si selector stabil". Clasa `ProductCard_productCard__HRbGU`
+chiar selecteaza exact cele 48 de carduri — dar sufixul `__HRbGU` e un hash de build
+CSS-modules si moare la primul redeploy. Ancora corecta e atributul de test al
+magazinului, `data-zta="product-card"`. Un selector care merge azi nu e acelasi lucru
+cu unul stabil, iar diferenta se vede doar daca te uiti la CE anume e clasa.
+
+## 3. Decizia `compare_at` pe zooplus: campul exista si NU se citeste
+
+Singura referinta din cardul zooplus e etichetata `Individual`, cu tooltipul verbatim
+„Pretul total al acelorasi produse daca sunt cumparate separat" — adica suma acelorasi
+produse cumparate bucata cu bucata, o comparatie pachet-vs-bucata, **nu un pret
+anterior**. Distributia masurata pe toate cardurile:
+
+| pagina | carduri | cu referinta | eticheta `Individual` | eticheta „Pret normal" |
+|---|---:|---:|---:|---:|
+| p1 | 48 | 12 | 12 | **0** |
+| p2 | 48 | 19 | 19 | **0** |
+
+Pagina CONTINE fraza Omnibus („Pret normal = Cel mai mic pret la care a fost vandut
+produsul in ultimele 30 de zile"), dar in subsolul legal si in dictionarul i18n, nu pe
+un camp de card — lectia bergfreunde, a doua oara. Citita ca `compare_at`, referinta ar
+fabrica un deal pe fiecare multipack din catalog. Deci descriptorul zooplus n-are
+`compare_*`: R1 nu poate porni niciodata acolo, iar dealurile vin exclusiv din minimul
+istoric (R2), acelasi regim ca toolnation si buzzsneakers.
+
+Aceeasi forma, alt motiv, la **footlocker**: referinta exista si e etichetata explicit
+(„Pret de vanzare recomandat:", plus o a doua linie „Cel mai mic pret pe 30 de zile:"),
+dar pe cele 60 de carduri masurate `current == recommended == lowest`. Se citeste,
+fiindca poate diverge; doar ca la baseline nu califica nimic.
+
+## 4. Treapta de parsare `us_dot`
+
+Pana la DEAL-D1, `price_parse` era documentatie: orice descriptor pe `price_text` mergea
+prin `_pret_eu_comma`, care sterge punctul ca separator de mii. Corect pentru
+„1.393,94 lei"; fatal pentru „$117.63", care iesea **11763.0**. Nu e o deductie —
+LST-D1 §2.8 a trecut descriptorul propus prin `extrage_carduri` insusi si a citit
+valoarea.
+
+Calea de atribut nu era o alternativa: cardul direct-running n-are niciun atribut
+numeric (0 `content=`, 0 `data-price*`). Deci `_pret_us_dot`, oglinda stricta a
+parserului european (virgula = separator de mii si se sterge, punctul = zecimal si
+ramane), iar `_pret_of` chiar citeste acum `price_parse`. Valorile admise: pe text
+`eu_comma` (implicit, pentru cei zece descriptori anteriori) si `us_dot`; pe atribut
+`attr_float`. **O valoare necunoscuta ridica `ValueError`, nu cade pe un implicit** —
+un fallback tacit ar transforma o greseala de tastare in registru intr-un feed intreg
+de preturi de 100x care arata perfect plauzibil.
+
+De ce nu se ghiceste din sir: „1.299,00" si „1,299.00" inseamna acelasi lucru cu
+separatorii inversati, iar „117.63" inseamna 117.63 pentru un parser si 11763.0 pentru
+celalalt. Numai magazinul stie, deci numai registrul poate spune.
+
+## 5. Ramase in afara
+
+**cyberport.at — BLOCAT.** Poarta a intors `None` pe listare **cu profilul `chrome` din
+registru**, acelasi care merge pe PDP-uri de la G2B-2. Cererea directa de clasificare:
+403, `cf-mitigated: challenge`, `<title>Just a moment...`, markeri `cf_chl` x10, zero
+`turnstile`, zero captcha. Deci amprenta e suficienta pentru PDP si insuficienta pentru
+outlet — material pentru mecanismul de browser, nu pentru un descriptor CSS.
+
+**elefant.ro — NEMASURAT.** Home-ul raspunde 200 si e o pagina reala, dar nu poarta
+NICIUN link catre `lichidari-de-stoc` (zero href cu „lichidari", „outlet" sau
+„reducer"; singurele „promo" sunt categorii de carte). Ruta incercata a raspuns **503**
+cu o pagina de mentenanta servita de Cloudflare Workers (`<title>Maintenance Banner</title>`),
+deci indisponibilitate, NU blocaj anti-bot. Se reia cu `--only elefant.ro`, pornind de
+la URL-ul de lichidari incercat direct, nu cautat in home.
+
+## 6. Verificarea live a celor doua migrari
+
+O cerere per domeniu, prin exact functia de extractie pe care o foloseste add-by-link:
+
+| domeniu | `price` | `currency` | `in_stock` | `method` |
+|---|---|---|---|---|
+| istyle.ro (`resigilat-apple-13-inch-ipad-pro-m4-…`) | `5349.99` | RON | True | shopify |
+| sneakerindustry.ro (`60915795`) | `169.0` | RON | True | shopify |
+
+Ambele coincid cu valorile sondei. De notat pentru istyle: pe ld+json `in_stock` iesea
+`None` (`Offer` n-are `availability`); pe calea shopify vine din `available` al
+variantei, deci migrarea a castigat si un camp, nu doar acoperire.
+
+## 6b. `search` vine odata cu `method: shopify`, nu ca decizie separata
+
+Briefing-ul rundei ceruse sa NU se adauge `search` pe cele doua migrari („decizie
+separata"). Registrul nu permite asta: `test_search_shopify_pe_toate_shopify` cere
+`search.kind == "shopify"` pe FIECARE domeniu din `shopify_domains()`, iar cele 13
+intrari shopify anterioare il au toate. Argumentul gardei, verbatim din docstring-ul
+ei: mecanismul e API de PLATFORMA (`/search/suggest.json`), „disponibil pe orice
+magazin Shopify prin constructie — o intrare fara `search` ar fi o omisiune, nu o
+decizie", si fara garda magazinul „ar lipsi TACIT din pagina de cautare".
+
+Deci `search: {"kind": "shopify"}` s-a adaugat pe amandoua, cu doua consecinte de
+consemnat onest:
+
+* **Efect vizibil:** istyle.ro si sneakerindustry.ro apar de acum in pagina „Scanare
+  Magazine". Asta e schimbarea pe care briefing-ul voia s-o amane.
+* **Nemasurat:** `/search/suggest.json` NU s-a cerut pe niciunul din cele doua domenii
+  in runda asta (bugetul sondei a fost cheltuit pe enumerare). Disponibilitatea lui e
+  preluata din premisa gardei, nu dintr-o masuratoare pe aceste doua magazine.
+
+## 7. Cifra actualizata
+
+**97 de domenii validate, neschimbat** — DEAL-D1 n-a adaugat domenii, ci capabilitati
+pe domenii deja validate: 4 descriptori de listare, 2 migrari pe `shopify`.

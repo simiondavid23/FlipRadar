@@ -658,7 +658,13 @@ def test_listing_domains_exact_cele_din_registru():
                                  "buzzsneakers.ro", "intersport.ro",
                                  "regatuljocurilor.ro", "modivo.ro",
                                  "toolnation.nl", "ro.vivre.eu", "cellini.ro",
-                                 "bonami.ro"}
+                                 "bonami.ro",
+                                 # DEAL-D1 — Bucket A al axei D, din sonda LST-D1.
+                                 # sneakerindustry.ro NU e aici desi a fost sondat:
+                                 # enumerarea lui Shopify s-a masurat DESCHISA, deci
+                                 # a intrat pe `method: shopify`, nu pe descriptor.
+                                 "zooplus.ro", "footlocker.ro", "forit.ro",
+                                 "direct-running.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -714,6 +720,20 @@ def test_fiecare_descriptor_are_cheile_obligatorii():
                     f"{domeniu}: `{interzisa}` n-are sens pe calea de stare")
         else:
             assert d.get("price_parse"), f"{domeniu} nu are `price_parse`"
+            # DEAL-D1 — valoarea, nu doar prezenta. De cand `_pret_of` chiar o
+            # citeste, `price_parse` a incetat sa fie documentatie: o valoare
+            # necunoscuta pe calea de text opreste scanul domeniului la primul
+            # card, iar una gresit aleasa (eu_comma pe „$117.63") publica preturi
+            # de 100x. Garda perechea si campul, ca sa nu se poata scrie
+            # `attr_float` peste un `price_text`.
+            if d.get("price_attr"):
+                assert d["price_parse"] == "attr_float", (
+                    f"{domeniu}: `price_attr` merge prin parserul strict, deci "
+                    f"`price_parse` trebuie sa fie `attr_float`")
+            else:
+                assert d["price_parse"] in {"eu_comma", "us_dot"}, (
+                    f"{domeniu}: pe `price_text` valorile admise sunt "
+                    f"eu_comma / us_dot, nu {d['price_parse']!r}")
 
 
 # ── 8. DEAL-2b — pragul separat al lui R1 + inchiderea pe calificare ─────────
@@ -1215,3 +1235,225 @@ def test_img1b_normalizator_forme_acceptate(brut, asteptat):
 def test_img1b_normalizator_respinge(brut):
     """T2 — tot ce nu e o fotografie de produs utilizabila iese None, nu un URL rupt."""
     assert listing_scanner.normalizeaza_imagine(brut, "exemplu.ro") is None
+
+
+# ── DEAL-D1 — Bucket A al axei D (sonda LST-D1, 2026-09-07) ──────────────────
+#
+# Cele patru fixture-uri de mai jos sunt fragmente DECUPATE din dump-urile
+# `dumps_lstd1/<domeniu>_p1.html` (taietorul: `scripts/diagnostics/
+# taie_fixtures_deald1.py`), iar valorile asteptate sunt exact cele masurate in
+# raportul sondei. Toate testele trec prin `extrage_carduri()` cu descriptorul
+# DIN REGISTRU, niciodata cu unul copiat aici: un descriptor copiat ar continua
+# sa treaca dupa ce cel real s-ar strica, ceea ce e opusul unei gardei.
+
+
+def test_pret_us_dot():
+    """Treapta noua, pe cele cinci forme masurate.
+
+    `1,299.00` conteaza cel mai mult dintre ele: e singura care dovedeste ca
+    VIRGULA se sterge ca separator de mii. Fara acea stergere valoarea ar iesi
+    None (nu 1299.0), fiindca `fullmatch` respinge virgula ramasa — deci un card
+    de peste o mie de dolari ar disparea tacut din feed, nu ar aparea gresit.
+    """
+    from app.services.listing_scanner import _pret_us_dot
+
+    assert _pret_us_dot("$117.63") == 117.63
+    assert _pret_us_dot("$1,299.00") == 1299.0
+    assert _pret_us_dot("170.00") == 170.0
+    assert _pret_us_dot("$") is None, "fara cifre nu e pret, e simbol"
+    assert _pret_us_dot("12.34.56") is None, "doua puncte zecimale nu sunt un numar"
+
+
+def test_pret_of_alege_parserul_din_price_parse():
+    """ACELASI fragment, doua valori, in functie de un singur camp de registru.
+
+    Asta e defectul pe care treapta il evita, scris ca test: `$117.63` citit cu
+    parserul european da 11763.0 — de 100x prea mult, si perfect plauzibil intr-un
+    feed de sneakers. Nu se poate deduce din sir care parser e corect (`1.299,00`
+    si `1,299.00` inseamna acelasi lucru cu separatorii inversati), deci alegerea
+    trebuie sa vina din registru; testul pinuieste ca ea CHIAR e citita.
+    """
+    from bs4 import BeautifulSoup
+
+    from app.services.listing_scanner import _pret_of
+
+    card = BeautifulSoup(
+        '<div><span class="price">$117.63</span></div>', "html.parser").div
+
+    assert _pret_of(card, {"price_text": ".price", "price_parse": "us_dot"},
+                    "price_attr", "price_text", "direct-running.com") == 117.63
+    assert _pret_of(card, {"price_text": ".price", "price_parse": "eu_comma"},
+                    "price_attr", "price_text", "direct-running.com") == 11763.0
+    # Absent = eu_comma, pentru cei zece descriptori CSS scrisi inaintea DEAL-D1.
+    assert _pret_of(card, {"price_text": ".price"},
+                    "price_attr", "price_text", "x.ro") == 11763.0
+
+
+def test_price_parse_necunoscut_cade_zgomotos():
+    """O valoare necunoscuta ridica, nu cade inapoi pe un implicit.
+
+    Un fallback tacut ar transforma o greseala de tastare in registru intr-un feed
+    intreg de preturi gresite care arata normal. Asa, scanul domeniului moare la
+    primul card si apelantul ii scrie esecul in `ShopScanState`, fara sa opreasca
+    celelalte magazine.
+    """
+    descriptor = dict(listing_descriptor("direct-running.com"))
+    descriptor["price_parse"] = "xyz"
+
+    with pytest.raises(ValueError) as exc:
+        extrage_carduri(_fixture("direct-running.com"), descriptor,
+                        "direct-running.com")
+
+    assert "xyz" in str(exc.value)
+    assert "direct-running.com" in str(exc.value), "mesajul trebuie sa spuna CINE"
+
+
+def test_zooplus_pret_din_meta_fara_compare():
+    """zooplus: pretul din atribut, si NICIUN pret taiat — deliberat.
+
+    Fixture-ul are doua carduri anume: unul CU referinta in DOM (`Individual`,
+    23,70 lei) si unul fara. `compare_at` trebuie sa iasa None pe AMANDOUA. Daca
+    ar iesi None doar pe al doilea, testul n-ar dovedi nimic: ar putea insemna
+    „nu era nimic de citit", nu „am ales sa nu citim". Referinta aia e suma
+    acelorasi produse cumparate separat, nu un pret anterior — citita ca
+    `compare_at`, ar fabrica un deal pe fiecare multipack.
+    """
+    carduri = extrage_carduri(_fixture("zooplus.ro"),
+                              listing_descriptor("zooplus.ro"), "zooplus.ro")
+
+    assert len(carduri) == 2
+    assert all(c["compare_at"] is None for c in carduri), \
+        "referinta `Individual` NU se citeste, nici acolo unde exista"
+
+    primul = carduri[0]
+    assert primul["price"] == 20.9, "din meta[itemprop=price] content=20.9"
+    assert primul["title"] == "Felix KnabberMix Grill (3 x 60 g)"
+    assert primul["image_url"].startswith("https://media.zooplus.com/")
+
+    # Perechea afirmatiei de mai sus: nodul de referinta CHIAR e in fixture. Fara
+    # asta, `compare_at is None` s-ar putea multumi cu un fixture din care
+    # referinta lipseste, iar in ziua in care descriptorul ar capata din greseala
+    # un `compare_text`, garda ar tacea. Eticheta se pinuieste fiindca ea e
+    # argumentul: daca zooplus trece de la `Individual` la „Pret normal", decizia
+    # de a nu citi campul trebuie recantarita, si aici se vede prima.
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(_fixture("zooplus.ro"), "html.parser")
+    cu_referinta = [c for c in soup.select("[data-zta='product-card']")
+                    if c.select_one("[data-zta='reducedPriceRefPriceAmount']")]
+    assert len(cu_referinta) == 1, "fixture-ul are exact un card CU referinta"
+    assert "23,70" in cu_referinta[0].select_one(
+        "[data-zta='reducedPriceRefPriceAmount']").get_text()
+    assert cu_referinta[0].select_one(
+        "[data-zta='reducedPriceRefPriceLabel']").get_text(strip=True) == "Individual"
+
+
+def test_footlocker_prp_egal_cu_pretul():
+    """footlocker: referinta exista, e etichetata, si totusi nu produce niciun deal.
+
+    Pe cele 60 de carduri masurate la LST-D1 pretul curent era IDENTIC cu cel
+    recomandat. Testul pinuieste egalitatea ca fapt, nu ca defect: `compare_at ==
+    price` inseamna ca R1 nu califica (pragul cere o marja), deci baseline-ul
+    tacut al primului scan e asteptat, nu un simptom.
+    """
+    carduri = extrage_carduri(_fixture("footlocker.ro"),
+                              listing_descriptor("footlocker.ro"),
+                              "footlocker.ro")
+
+    assert len(carduri) == 1
+    c = carduri[0]
+    assert c["price"] == 274.99
+    assert c["compare_at"] == 274.99, "PRP == pretul platit: categoria n-avea reduceri"
+    assert c["title"] == "adidas Taekwondo Shoes"
+    assert c["url"] == ("https://footlocker.ro/ro/special-prices/"
+                        "adidas-adidas-taekwondo-shoes_1202852/")
+    # `src` e protocol-relativ in dump (`//footlockerroazure.lhscdn.com/...`).
+    assert c["image_url"].startswith("https://footlockerroazure.lhscdn.com/")
+
+
+def test_forit_pret_spart_si_old_price():
+    """forit: pretul e SPART intre noduri, iar taiatul e rar (4 din 60).
+
+    HANNSpad-ul are `1.393,94` in `div.p-price` si „ lei" intr-un `span.cur`
+    copil: o citire pe textul PROPRIU al nodului n-ar gasi nicio moneda si ar
+    rata cardul. Asus-ul are si `div.p-price-old`, deci fixture-ul acopera
+    ambele stari cu acelasi descriptor.
+    """
+    carduri = extrage_carduri(_fixture("forit.ro"),
+                              listing_descriptor("forit.ro"), "forit.ro")
+
+    assert len(carduri) == 2
+    hannspad, asus = carduri
+
+    assert hannspad["price"] == 1393.94
+    assert hannspad["compare_at"] is None, "cardul asta n-are `p-price-old`"
+    assert "Desigilata" in hannspad["title"], \
+        "starea de resigilat ajunge in feed prin TITLU (57/60 la LST-D1)"
+
+    assert asus["price"] == 4435.30
+    assert asus["compare_at"] == 5092.74
+    assert asus["compare_at"] > asus["price"]
+
+
+def test_direct_running_us_dot_prin_registru():
+    """direct-running: singurul consumator al treptei `us_dot`, prin registru.
+
+    Verifica si ca o singura intrare iese dintr-un card cu PATRU ancore catre
+    trei tinte (poza, „+-3 culori", titlul si `/brands/adidas`): daca `link` ar
+    fi un `a[href]` generic, cardul ar putea ajunge in feed sub URL-ul marcii.
+    """
+    carduri = extrage_carduri(_fixture("direct-running.com"),
+                              listing_descriptor("direct-running.com"),
+                              "direct-running.com")
+
+    assert len(carduri) == 1, "un card = o intrare, desi are 4 ancore"
+    c = carduri[0]
+    assert c["price"] == 117.63, "cu eu_comma ar fi iesit 11763.0"
+    assert c["compare_at"] == 170.0
+    assert c["title"] == "Puffer jacket Helionic"
+    assert c["url"] == ("https://direct-running.com/"
+                        "jn2099-puffer-jacket-adidas-helionic-black")
+    assert "/brands/" not in c["url"]
+
+
+def test_pagina_url_forit_si_footlocker():
+    """Cele doua forme de paginare in CALE, pinuite din registru.
+
+    Pagina 1 e URL-ul MASURAT, nu template-ul cu n=1 — `/resigilate/p1/c` si
+    `/special-prices/p1/` n-au fost cerute niciodata, deci nu se presupune ca
+    exista. Coada `/c` a lui forit e neobisnuita si tocmai de aceea se pinuieste:
+    fara ea, cererea cade pe alt URL si scanul se opreste dupa prima pagina.
+    """
+    forit = listing_descriptor("forit.ro")
+    assert listing_scanner._pagina_url(forit, 1) == "https://www.forit.ro/resigilate/"
+    assert listing_scanner._pagina_url(forit, 2) == "https://www.forit.ro/resigilate/p2/c"
+
+    fl = listing_descriptor("footlocker.ro")
+    assert listing_scanner._pagina_url(fl, 1) == \
+        "https://www.footlocker.ro/ro/special-prices/"
+    assert listing_scanner._pagina_url(fl, 2) == \
+        "https://www.footlocker.ro/ro/special-prices/p2/"
+
+
+def test_istyle_pe_shopify():
+    """istyle.ro: `jsonld` -> `shopify` la DEAL-D1, dupa ce sonda a masurat
+    enumerarea deschisa. Moneda e obligatorie pe calea shopify — payload-ul nu
+    o poarta, extractorul o citeste din registru — iar `listing` ar fi de
+    prisos: enumerarea acopera catalogul, nu doar grila de reduceri."""
+    from app.services.shop_registry import SHOP_REGISTRY, shopify_domains
+
+    assert "istyle.ro" in shopify_domains()
+    assert SHOP_REGISTRY["istyle.ro"]["currency"] == "RON"
+    assert "istyle.ro" not in listing_domains()
+
+
+def test_sneakerindustry_pe_shopify():
+    """sneakerindustry.ro: `og` -> `shopify`, a doua corectie de platforma pe
+    acelasi domeniu si in sens invers fata de prima (SNK-1 il mutase de pe
+    Shopify pe PrestaShop). Descriptorul CSS masurat de LST-D1 §2.3 ramane in
+    raport ca rezerva, dar NU in registru: enumerarea deschisa il face inutil."""
+    from app.services.shop_registry import SHOP_REGISTRY, shopify_domains
+
+    assert "sneakerindustry.ro" in shopify_domains()
+    assert SHOP_REGISTRY["sneakerindustry.ro"]["currency"] == "RON"
+    assert "sneakerindustry.ro" not in listing_domains()

@@ -32,6 +32,14 @@ Four facts from those probes shape the design and are not negotiable:
     matching the full class list finds zero cards. CSS selectors do subset
     matching natively, which is exactly why the descriptors are selectors.
 
+DEAL-D1 added a SECOND text parser. Until then every `price_text` descriptor went
+through `_pret_eu_comma`, which deletes the dot as a thousands separator — right
+for "1.393,94 lei", fatal for direct-running's "$117.63", which came out 11763.0
+when LST-D1 ran the proposed descriptor through this very module (report §2.8).
+The card carries no numeric attribute either, so the strict attribute path was
+not an option. Hence `_pret_us_dot` and, with it, `price_parse` finally being
+READ instead of merely documented — see `_pret_of`.
+
 Reuses `deal_scanner` by IMPORT, never by copy: the threshold, the settings
 lookup, the R1/R2 evaluation and the state row are one implementation shared by
 both scanners, so the two sources cannot drift apart in what counts as a deal.
@@ -141,6 +149,46 @@ def _pret_eu_comma(brut):
         return None
 
 
+def _pret_us_dot(brut):
+    """float from an AMERICAN price string: "$117.63", "$1,299.00", "170.00".
+
+    The mirror image of `_pret_eu_comma`, and exactly as strict: the comma is the
+    thousands separator and gets deleted, the dot is the decimal one and stays.
+    Anything that does not end up a clean number returns None and the card is
+    SKIPPED — a listing that changed its markup must lose products loudly, not
+    silently gain invented prices.
+
+    Measured on direct-running.com (LST-D1 §2.1): 24/24 cards priced with the
+    symbol BEFORE the amount and a dot decimal. Running them through the European
+    parser produced 11763.0 instead of 117.63 — a 100x error that looks perfectly
+    plausible in a feed, which is why the two parsers are separate functions
+    chosen by the descriptor and not one function guessing from the string.
+    """
+    if not isinstance(brut, str):
+        return None
+    # Same cleanup as the European parser, non-breaking space included.
+    curat = re.sub(r"[^\d.,]", "", brut.replace("\xa0", " "))
+    if not curat:
+        return None
+    curat = curat.replace(",", "")
+    if not re.fullmatch(r"\d+(?:\.\d+)?", curat):
+        return None
+    try:
+        return float(curat)
+    except ValueError:
+        return None
+
+
+# The text parsers a descriptor may name, by the value of its `price_parse`.
+# Absent is the same as "eu_comma": the ten CSS descriptors that predate DEAL-D1
+# all declare it, but the mapping stays tolerant so the key's meaning is
+# "which parser", not "a field you must remember to add".
+_PARSERE_TEXT = {
+    "eu_comma": _pret_eu_comma,
+    "us_dot": _pret_us_dot,
+}
+
+
 def _external_id(url: str) -> str:
     """Stable product id for a listing URL: `lst:` + SHA1 of the normalised PATH.
 
@@ -183,13 +231,26 @@ def _titlu_of(card, descriptor, link_nod) -> str:
     return _text_of(card.select_one(selector)) if selector else ""
 
 
-def _pret_of(card, descriptor, cheie_attr: str, cheie_text: str):
+def _pret_of(card, descriptor, cheie_attr: str, cheie_text: str, domain: str = ""):
     """Paid/struck price for a card, by whichever way the descriptor declares.
 
     `*_attr` reads a numeric ATTRIBUTE (otter's `data-price-amount="98"`,
     caseking's `content="619.90"`) — dot-decimal, so it goes through the strict
-    Shopify parser and never touches the comma logic. `*_text` reads the visible
-    text and goes through `_pret_eu_comma`.
+    Shopify parser and never touches the comma logic. That path is untouched.
+
+    `*_text` reads the visible text, and DEAL-D1 made the parser a choice instead
+    of a constant: `price_parse` names it — `eu_comma` (or absent, for the ten
+    descriptors written before this) for "1.393,94 lei", `us_dot` for
+    direct-running's "$117.63". The two cannot be told apart from the string
+    alone: "1.299,00" and "1,299.00" are both valid and mean the same amount,
+    while "117.63" means 117.63 to one parser and 11763.0 to the other. Only the
+    shop knows, so only the registry may say.
+
+    An unknown value raises instead of falling back. A silent default would let a
+    typo in the registry price every card through the wrong parser and publish a
+    feed of 100x-wrong deals that look entirely plausible; raising kills the scan
+    of that one domain at its first card, which the caller already records in
+    `ShopScanState` without stopping the other shops.
     """
     specificatie = descriptor.get(cheie_attr)
     if specificatie:
@@ -198,8 +259,15 @@ def _pret_of(card, descriptor, cheie_attr: str, cheie_text: str):
         return _pret_strict(nod.get(atribut)) if nod is not None else None
     selector = descriptor.get(cheie_text)
     if selector:
+        nume = descriptor.get("price_parse") or "eu_comma"
+        parser = _PARSERE_TEXT.get(nume)
+        if parser is None:
+            raise ValueError(
+                f"{domain or '<domeniu necunoscut>'}: `price_parse` necunoscut "
+                f"{nume!r} — valorile admise pe text sunt "
+                f"{sorted(_PARSERE_TEXT)}")
         nod = card.select_one(selector)
-        return _pret_eu_comma(_text_of(nod)) if nod is not None else None
+        return parser(_text_of(nod)) if nod is not None else None
     return None
 
 
@@ -334,12 +402,13 @@ def extrage_carduri(html: str, descriptor: dict, domain: str) -> list[dict]:
         url, link_nod = _link_of(card, descriptor, domain)
         if url is None:
             continue                      # a card with no link is not actionable
-        pret = _pret_of(card, descriptor, "price_attr", "price_text")
+        pret = _pret_of(card, descriptor, "price_attr", "price_text", domain)
         if pret is None or pret <= 0:
             continue                      # no valid paid price -> skip, never guess
         if not _in_stoc(card, descriptor):
             continue
-        compare_at = _pret_of(card, descriptor, "compare_attr", "compare_text")
+        compare_at = _pret_of(card, descriptor, "compare_attr", "compare_text",
+                              domain)
         if compare_at is not None and compare_at <= 0:
             compare_at = None
         iesire.append({
