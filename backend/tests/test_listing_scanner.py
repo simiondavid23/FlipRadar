@@ -31,6 +31,11 @@ FIXTURI = os.path.join(os.path.dirname(__file__), "fixtures", "listing")
 
 DOM = "otter.ro"          # intrare reala in registru, cu descriptor de listare
 
+# Parserele de TEXT pe care un descriptor le poate numi. Citite din scanner, nu
+# rescrise aici: o treapta noua adaugata acolo si uitata aici ar face garda sa
+# respinga un descriptor perfect valid, iar una stearsa acolo ar trece nevazuta.
+_PARSERE_ADMISE_TEXT = set(listing_scanner._PARSERE_TEXT)
+
 
 def _fixture(domeniu: str) -> str:
     with open(os.path.join(FIXTURI, f"{domeniu}_cards.html"), encoding="utf-8") as f:
@@ -667,7 +672,16 @@ def test_listing_domains_exact_cele_din_registru():
                                  "direct-running.com",
                                  # EMAG-D — primul descriptor pe forma `entries`
                                  # (12 categorii de resigilate).
-                                 "emag.ro"}
+                                 "emag.ro",
+                                 # DEAL-D2 — lotul „electronice RO", din sonda
+                                 # LST-D2. Cele cinci care au trecut controlul:
+                                 # altex si mediagalaxy sunt frati de platforma
+                                 # (descriptor identic in afara lui `url`), cel.ro
+                                 # intra FARA referinta, itgalaxy e primul care
+                                 # citeste pretul din atribut si referinta din
+                                 # text, iar evomag a cerut treapta `eu_sup`.
+                                 "altex.ro", "mediagalaxy.ro", "cel.ro",
+                                 "itgalaxy.ro", "evomag.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -744,10 +758,27 @@ def _verifica_descriptor(domeniu, d):
             assert d["price_parse"] == "attr_float", (
                 f"{domeniu}: `price_attr` merge prin parserul strict, deci "
                 f"`price_parse` trebuie sa fie `attr_float`")
+            # DEAL-D2 — cand pretul vine din atribut dar REFERINTA din text, o
+            # singura cheie n-are cum sa descrie amandoua caile: `attr_float` ar
+            # ajunge in `_PARSERE_TEXT` si ar ridica ValueError la primul card.
+            # Latura de referinta trebuie deci sa-si declare parserul ei
+            # (itgalaxy.ro, primul descriptor care amesteca cele doua cai).
+            if d.get("compare_text"):
+                assert d.get("compare_parse") in _PARSERE_ADMISE_TEXT, (
+                    f"{domeniu}: `price_attr` + `compare_text` cere "
+                    f"`compare_parse` din {sorted(_PARSERE_ADMISE_TEXT)}, "
+                    f"nu {d.get('compare_parse')!r}")
         else:
-            assert d["price_parse"] in {"eu_comma", "us_dot"}, (
+            assert d["price_parse"] in _PARSERE_ADMISE_TEXT, (
                 f"{domeniu}: pe `price_text` valorile admise sunt "
-                f"eu_comma / us_dot, nu {d['price_parse']!r}")
+                f"{' / '.join(sorted(_PARSERE_ADMISE_TEXT))}, "
+                f"nu {d['price_parse']!r}")
+        # `compare_parse` e optional peste tot, dar cand exista trebuie sa
+        # numeasca un parser de TEXT real.
+        if d.get("compare_parse"):
+            assert d["compare_parse"] in _PARSERE_ADMISE_TEXT, (
+                f"{domeniu}: `compare_parse` necunoscut "
+                f"{d['compare_parse']!r}")
 
 
 def _verifica_paginare(eticheta, sursa, max_pages):
@@ -1772,3 +1803,182 @@ def test_emag_descriptor_pe_entries():
         _verifica_descriptor("sintetic", {**baza, "entries": []})
     with pytest.raises(AssertionError):                  # intrare fara template
         _verifica_descriptor("sintetic", {**baza, "entries": [{"url": "https://x.ro/b"}]})
+
+
+# ── DEAL-D2 — lotul „electronice RO" (sonda LST-D2, 2026-09-07) ──────────────
+#
+# Fixture-urile sunt decupate din `dumps_lstd2/<domeniu>_p1.html`, cu cardurile
+# VERBATIM. Numerele de mai jos nu sunt inventate: fiecare apare in raportul
+# sondei (`dumps_lstd2/raport.md`, §3.1-3.11 si controlul din §4).
+#
+# altex/mediagalaxy pastreaza cardurile 1 si 3, nu 1 si 2: primele doua carduri
+# ale listarii au din intamplare acelasi pret (46 de preturi distincte pe 48 de
+# carduri), iar un fixture cu doua valori identice n-ar deosebi o citire per card
+# de una care scapa din scopul cardului.
+
+def test_pret_eu_sup():
+    """Treapta care a intrat pentru evomag: zecimalele vin dintr-un `<sup>` FARA
+    separator, iar `get_text(" ")` lasa in urma un spatiu.
+
+    Ultimele doua cazuri sunt cele care conteaza cel mai mult: parserul e STRICT,
+    deci o forma pe care n-o recunoaste intoarce None si cardul se pierde — nu se
+    ghiceste un numar plauzibil.
+    """
+    from app.services.listing_scanner import _pret_eu_sup
+
+    assert _pret_eu_sup("529 99 lei") == 529.99
+    assert _pret_eu_sup("NOU: 1.474 99 lei") == 1474.99
+    assert _pret_eu_sup("529 lei") == 529.0
+    # Delegare: cu virgula in sir, magazinul randeaza forma europeana normala.
+    assert _pret_eu_sup("1.474,99 lei") == 1474.99
+    assert _pret_eu_sup("529 9 lei") is None          # o singura zecimala
+    assert _pret_eu_sup("52 99 99") is None           # doua grupuri, ambiguu
+
+
+def test_pret_of_eu_sup_prin_price_parse():
+    """Acelasi fragment, doua trepte, doua rezultate — si asta e tot rostul cheii.
+
+    `eu_comma` pe markup-ul evomag da 52999.0: de 100 de ori pretul real, pe un
+    card care arata perfect normal. Testul pastreaza defectul EVITAT alaturi de
+    valoarea corecta, ca sa nu redevina o surpriza.
+    """
+    from bs4 import BeautifulSoup
+    from app.services.listing_scanner import _pret_of
+
+    card = BeautifulSoup(
+        '<div class="c"><span class="real_price">529'
+        '<sup class="price_sup">99</sup> lei</span></div>',
+        "html.parser").select_one(".c")
+
+    def _citeste(treapta):
+        return _pret_of(card, {"price_text": "span.real_price",
+                               "price_parse": treapta},
+                        "price_attr", "price_text", "evomag.ro")
+
+    assert _citeste("eu_sup") == 529.99
+    assert _citeste("eu_comma") == 52999.0
+
+
+def test_altex_carduri():
+    carduri = extrage_carduri(_fixture("altex.ro"), listing_descriptor("altex.ro"),
+                              "altex.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 1919.92                  # „de la 1.919 , 92 lei"
+    assert primul["compare_at"] == 2399.9              # „Nou: 2.399 , 90 lei"
+    assert primul["title"].startswith("Laptop MSI Modern 15")
+    assert primul["url"].startswith("https://altex.ro/")
+    # Fragmentul e PASTRAT deliberat: duce la sectiunea de resigilate a PDP-ului,
+    # adica exact oferta din deal. `handle` se calculeaza pe cale, deci nu-l atinge.
+    assert primul["url"].endswith("#resigilate")
+    assert "#" not in primul["handle"]
+    assert primul["image_url"].startswith("https://lcdn.altex.ro/")
+    # Al doilea card are ALTE valori: citirea e per card, nu o scapare de scop.
+    assert carduri[1]["price"] == 1759.92
+    assert carduri[1]["compare_at"] == 2199.9
+
+
+def test_cel_fara_compare():
+    """cel.ro intra pe axa D FARA referinta, si asta e o masuratoare, nu o scapare:
+    pe 60/60 de carduri parintele pretului poarta chiar clasa `noDiscount`."""
+    carduri = extrage_carduri(_fixture("cel.ro"), listing_descriptor("cel.ro"),
+                              "cel.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 219.0
+    assert primul["compare_at"] is None
+    assert primul["title"].endswith("Resigilat")       # starea e SUFIX in titlu
+    assert primul["url"].startswith("https://www.cel.ro/")
+    assert all(c["compare_at"] is None for c in carduri)
+
+
+def test_itgalaxy_pret_din_atribut_si_prp():
+    """Pretul platit vine din `data-pprice` (parser strict), referinta din textul
+    `.old-price` (virgula zecimala) — doua cai, doua parsere, un singur card.
+
+    Primul card N-ARE referinta: `.old-price` e pe 9/36 pe pagina 1, deci un
+    `compare_at is None` acolo e corect, nu o citire ratata.
+    """
+    carduri = extrage_carduri(_fixture("itgalaxy.ro"),
+                              listing_descriptor("itgalaxy.ro"), "itgalaxy.ro")
+
+    assert len(carduri) == 2
+    assert carduri[0]["price"] == 2815.99              # data-pprice="2815.99"
+    assert carduri[0]["compare_at"] is None
+    assert carduri[1]["price"] == 461.99
+    assert carduri[1]["compare_at"] == 525.0           # „PRP: 525,00 lei"
+
+
+def test_pagina_url_deal_d2():
+    """Cele trei sabloane de paginare ale rundei, confirmate LIVE (4 cereri).
+
+    Pagina 1 foloseste URL-ul MASURAT al intrarii, nu template-ul cu n=1 — de aia
+    prima asertie e pe `url`, nu pe forma template-ului.
+    """
+    from app.services.listing_scanner import _pagina_url
+
+    asteptat = {
+        "cel.ro": "https://www.cel.ro/resigilate/0i-2",
+        "itgalaxy.ro": "https://www.itgalaxy.ro/promotii/pagina2/",
+        "evomag.ro": ("https://www.evomag.ro/resigilate-produse-resigilate/"
+                      "filtru/pagina:2"),
+    }
+    for domeniu, pagina2 in asteptat.items():
+        d = listing_descriptor(domeniu)
+        intrare = {"url": d["url"],
+                   "page_url_template": d.get("page_url_template")}
+        assert _pagina_url(intrare, 1) == d["url"]
+        assert _pagina_url(intrare, 2) == pagina2
+
+
+def test_evomag_sup_prin_registru():
+    """Lantul intreg, prin descriptorul REAL: markup evomag -> `eu_sup` -> preturi
+    corecte. Fara treapta noua, ambele numere ar fi de 100 de ori mai mari."""
+    carduri = extrage_carduri(_fixture("evomag.ro"),
+                              listing_descriptor("evomag.ro"), "evomag.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 529.99                   # „529 99 lei"
+    assert primul["compare_at"] == 1474.99             # „NOU: 1.474 99 lei"
+    # Titlul poarta DEJA starea; de aia descriptorul nu adauga niciun prefix.
+    assert primul["title"].startswith("Resigilat!")
+    # Fara `www`: href-urile cardului sunt RELATIVE, iar `_link_of` le rezolva
+    # fata de cheia din registru (`https://<domeniu>/`). Identitatea nu sufera —
+    # `external_id` si `handle` se calculeaza pe CALE.
+    assert primul["url"].startswith(
+        "https://evomag.ro/resigilate-produse-resigilate/")
+    assert carduri[1]["price"] == 1999.99
+
+
+def test_mediagalaxy_carduri():
+    """Din fixture-ul PROPRIU, nu din al lui altex: „acelasi markup" e o
+    afirmatie care trebuie sa se sprijine pe dump-ul fiecarui magazin."""
+    carduri = extrage_carduri(_fixture("mediagalaxy.ro"),
+                              listing_descriptor("mediagalaxy.ro"),
+                              "mediagalaxy.ro")
+
+    assert len(carduri) == 2
+    assert carduri[0]["price"] == 1919.92
+    assert carduri[0]["compare_at"] == 2399.9
+    assert carduri[0]["url"].startswith("https://mediagalaxy.ro/")
+    assert carduri[0]["image_url"].startswith("https://lcdn.mediagalaxy.ro/")
+    assert carduri[1]["price"] == 1759.92
+
+
+def test_altex_mediagalaxy_frati_de_platforma():
+    """Jaccard 1.000 pe clasele cardului (LST-D2 §3.2): cele doua vitrine stau
+    peste acelasi catalog, cu acelasi markup.
+
+    Testul nu e decorativ — el impune ca o reparatie de selector facuta la unul sa
+    nu-l lase pe celalalt in urma, exact felul de divergenta tacuta pe care
+    registrul a fost creat s-o previna.
+    """
+    a = listing_descriptor("altex.ro")
+    m = listing_descriptor("mediagalaxy.ro")
+
+    assert a["url"] != m["url"]
+    assert {k: v for k, v in a.items() if k != "url"} == \
+           {k: v for k, v in m.items() if k != "url"}

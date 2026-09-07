@@ -200,6 +200,50 @@ def _pret_us_dot(brut):
         return None
 
 
+def _pret_eu_sup(brut):
+    """float from a European price whose DECIMALS live in a `<sup>` with NO
+    separator between them and the integer part: "529 99 lei", "NOU: 1.474 99 lei".
+
+    evomag renders `<span class="real_price">529<sup class="price_sup">99</sup>
+    lei</span>`. `_text_of` is `get_text(" ")`-based, so the sup becomes a separate
+    word and the string reaching a parser is "529 99 lei". Both parsers that
+    existed before this stripped every non-digit and read 52999.0 — a 100x error,
+    on 64/64 cards, measured by the LST-D2 control (§4). It is the direct-running
+    failure of DEAL-D1 with a different cause, which is why the answer is again a
+    NAMED parser the registry chooses, never a heuristic guessing from the string:
+    "529 99" and "52999" are indistinguishable once the space is gone.
+
+    A comma anywhere means the shop is rendering the normal European form on this
+    card, so the string goes to `_pret_eu_comma` verbatim. That delegation is what
+    keeps a domain from breaking the day it stops splitting the decimals — the
+    descriptor does not have to be edited in the same deploy.
+
+    As strict as its two siblings: anything that is not exactly `<integer>` or
+    `<integer> <two digits>` returns None and the card is SKIPPED. "529 9" (one
+    decimal digit) and "52 99 99" (two groups) are both None, deliberately — a
+    listing that changed its markup must lose products loudly, not silently gain
+    invented prices.
+    """
+    if not isinstance(brut, str):
+        return None
+    # Same cleanup as the other two, except the SPACE survives: here it is the
+    # separator that carries the meaning, not noise to delete.
+    curat = re.sub(r"[^\d.,\s]", "", brut.replace("\xa0", " "))
+    curat = re.sub(r"\s+", " ", curat).strip()
+    if not curat:
+        return None
+    if "," in curat:
+        return _pret_eu_comma(curat)
+    m = re.fullmatch(r"(\d{1,3}(?:\.\d{3})+|\d+)(?: (\d{2}))?", curat)
+    if not m:
+        return None
+    intreg = m.group(1).replace(".", "")
+    try:
+        return float(f"{intreg}.{m.group(2)}" if m.group(2) else intreg)
+    except ValueError:
+        return None
+
+
 # The text parsers a descriptor may name, by the value of its `price_parse`.
 # Absent is the same as "eu_comma": the ten CSS descriptors that predate DEAL-D1
 # all declare it, but the mapping stays tolerant so the key's meaning is
@@ -207,6 +251,7 @@ def _pret_us_dot(brut):
 _PARSERE_TEXT = {
     "eu_comma": _pret_eu_comma,
     "us_dot": _pret_us_dot,
+    "eu_sup": _pret_eu_sup,
 }
 
 
@@ -262,10 +307,12 @@ def _pret_of(card, descriptor, cheie_attr: str, cheie_text: str, domain: str = "
     `*_text` reads the visible text, and DEAL-D1 made the parser a choice instead
     of a constant: `price_parse` names it — `eu_comma` (or absent, for the ten
     descriptors written before this) for "1.393,94 lei", `us_dot` for
-    direct-running's "$117.63". The two cannot be told apart from the string
-    alone: "1.299,00" and "1,299.00" are both valid and mean the same amount,
-    while "117.63" means 117.63 to one parser and 11763.0 to the other. Only the
-    shop knows, so only the registry may say.
+    direct-running's "$117.63", `eu_sup` (DEAL-D2) for evomag's "529 99 lei",
+    where the decimals come out of a `<sup>` with no separator. None of the three
+    can be told apart from the string alone: "1.299,00" and "1,299.00" are both
+    valid and mean the same amount, "117.63" means 117.63 to one parser and
+    11763.0 to another, and "529 99" is 529.99 or 52999 depending only on how the
+    shop renders it. Only the shop knows, so only the registry may say.
 
     An unknown value raises instead of falling back. A silent default would let a
     typo in the registry price every card through the wrong parser and publish a
@@ -280,7 +327,22 @@ def _pret_of(card, descriptor, cheie_attr: str, cheie_text: str, domain: str = "
         return _pret_strict(nod.get(atribut)) if nod is not None else None
     selector = descriptor.get(cheie_text)
     if selector:
-        nume = descriptor.get("price_parse") or "eu_comma"
+        # DEAL-D2 — `compare_parse`, citit DOAR pe latura de referinta.
+        #
+        # `price_parse` a fost pana aici o cheie unica pe descriptor, si a mers
+        # fiindca nimeni nu amestecase caile: cele trei descriptoare cu
+        # `price_attr` (caseking, otter, tezyo) isi iau si referinta din atribut,
+        # iar zooplus n-are referinta deloc. itgalaxy.ro e primul care citeste
+        # pretul din ATRIBUT (`data-pprice="2815.99"`, parser strict impus de
+        # calea de cod) si referinta din TEXT („PRP: 525,00 lei") — doua parsere
+        # diferite, un singur camp. Fara cheia asta, `attr_float` ajungea in
+        # `_PARSERE_TEXT` si ridica ValueError la primul card.
+        #
+        # Optionala si fara efect pe cele 19 descriptoare de dinainte: absenta,
+        # se cade inapoi pe `price_parse`, adica exact linia dinainte.
+        nume = (descriptor.get("compare_parse")
+                if cheie_text == "compare_text" else None)
+        nume = nume or descriptor.get("price_parse") or "eu_comma"
         parser = _PARSERE_TEXT.get(nume)
         if parser is None:
             raise ValueError(

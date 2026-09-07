@@ -3587,3 +3587,179 @@ calculeaza pe CALE, deci nu atinge dedup-ul).
 4. **Oprirea e masurata pe O categorie.** `plast` s-a cerut doar pe
    `laptop-tablete-telefoane`; se presupune ca celelalte 11 se comporta la fel, fiindca
    sunt acelasi sablon.
+
+---
+
+## DEAL-D2 — lotul electronice RO pe axa D (sonda LST-D2, 2026-09-07)
+
+Sonda LST-D2 a triajat 13 domenii de electronice RO cu 44 de cereri, iar controlul ei
+(`dumps_lstd2/raport.md` §4) a trecut descriptorii propuși prin `extrage_carduri()` real
+pe dump-uri. Runda asta scrie în registru cei cinci care au trecut, adaugă treapta de
+parsare pe care unul dintre ei a cerut-o, și consemnează în `notes` motivul fiecărei
+ieșiri. Verdictele nu se redeschid aici: materia primă e raportul, nu o măsurătoare nouă.
+
+### 1. Cele 13 verdicte
+
+| domeniu | verdict | în registru |
+|---|---|---|
+| altex.ro | CSS_GRID | **descriptor** |
+| mediagalaxy.ro | CSS_GRID | **descriptor** (frate de platformă cu altex) |
+| cel.ro | CSS_GRID | **descriptor** |
+| itgalaxy.ro | CSS_GRID | **descriptor** |
+| evomag.ro | CSS_GRID | **descriptor** (a cerut `eu_sup`) |
+| vexio.ro | BLOCAT | doar `notes` |
+| pcgarage.ro | BLOCAT | doar `notes` |
+| senetic.ro | NEPOTRIVIT | doar `notes` |
+| usedproducts.ro | JS_ONLY | doar `notes` |
+| elefant.ro | JS_ONLY | doar `notes` |
+| flanco.ro | NEMĂSURAT (nu blocat) | doar `notes` |
+| flip.ro | NEMĂSURAT | doar `notes` |
+| carrefour.ro | NEMĂSURAT | doar `notes` |
+
+`listing_domains()`: 19 → **24**.
+
+### 2. Cei cinci intrați
+
+| domeniu | intrare | volum măsurat | paginare | referință |
+|---|---|---|---|---|
+| altex.ro | `/resigilate/` | 48 din 8052 anunțate | **niciuna în HTML brut** → `max_pages: 1` | `Nou:` pe 48/48 → `nemarcat` |
+| mediagalaxy.ro | `/resigilate/` | 48 din 7516 anunțate | idem | idem |
+| cel.ro | `/resigilate/` | 60/pagină, 2 pagini | `/resigilate/0i-{n}` | **niciuna** (`noDiscount` pe 60/60) |
+| itgalaxy.ro | `/promotii/` | 36/pagină × 770 pagini | `/promotii/pagina{n}/` | `.old-price`, 9/36 și 18/36 → `prp` |
+| evomag.ro | `/resigilate-produse-resigilate/` | 64/pagină, ≥11 pagini | `filtru/pagina:{n}` | `NOU:` pe 64/64 → `nemarcat` |
+
+Trei lucruri merită scoase în față, fiindcă sunt decizii, nu descrieri:
+
+* **`max_pages: 1` la altex/mediagalaxy e o măsurătoare, nu prudență.** Pagina anunță
+  „8052 produse" și nu poartă niciun link de pagină; butonul vine gol
+  (`<div class="Toolbar-next md:hidden"></div>`). Descriptorul vede deci 48 din ~8000,
+  și asta e tot ce se poate citi fără alt mecanism. Pista de adâncime e API-ul intern
+  `fenrir.altex.ro`, pe care producția îl folosește DEJA pentru căutare — rundă separată.
+* **cel.ro intră FĂRĂ `compare_*`.** Pe 60/60 de carduri singurul preț e `div.pret_n`,
+  iar clasa nodului părinte e chiar `noDiscount`. Un `compare_text` acolo ar fabrica o
+  reducere pe fiecare card; deal-urile rămân exclusiv pe R2 (minim istoric).
+* **`/promotii/` la itgalaxy e practic tot catalogul** (770 de pagini ≈ 27.700 de
+  produse). E situația din DEAL-2b, unde întreg outletul otter era permanent „redus" și
+  primul scan a produs 15.832 de deal-uri. Pragul R1 propriu căii de listare e ce ține
+  feed-ul în frâu; acoperirea referinței (9-18 din 36) e oricum sub jumătate.
+
+### 3. Treapta de parsare `eu_sup`
+
+evomag randează `<span class="real_price">529<sup class="price_sup">99</sup> lei</span>`.
+`_text_of` e `get_text(" ")`-based, deci șirul care ajunge la parser e `529 99 lei`, iar
+ambele trepte de dinainte îl citeau **52999.0** — de 100 de ori prea mult, pe 64/64 de
+carduri (controlul LST-D2 §4). E eșecul direct-running din DEAL-D1 cu altă cauză, deci
+răspunsul e din nou un parser NUMIT pe care registrul îl alege, nu o euristică: odată
+spațiul șters, „529 99" și „52999" sunt indistinctibile.
+
+`_pret_eu_sup` păstrează spațiul ca separator și acceptă exact două forme —
+`<întreg>` sau `<întreg> <două cifre>`:
+
+| intrare | ieșire |
+|---|---|
+| `529 99 lei` | 529.99 |
+| `NOU: 1.474 99 lei` | 1474.99 |
+| `529 lei` | 529.0 |
+| `1.474,99 lei` | 1474.99 (delegat la `eu_comma`) |
+| `529 9 lei` | **None** (o singură zecimală) |
+| `52 99 99` | **None** (două grupuri, ambiguu) |
+
+Delegarea pe virgulă nu e o comoditate: `powerup.ro` are tot zecimale în `<sup>`, dar
+al lui CONȚINE virgula, iar `eu_comma` îl digeră nemodificat (G2A-2). Aceeași delegare
+face ca evomag să nu se strice în ziua în care ar începe și el să pună separatorul.
+
+Valorile admise pe text sunt acum `eu_comma` | `us_dot` | `eu_sup`; pe atribut rămâne
+`attr_float`, impus de calea de cod.
+
+### 4. Cheia `compare_parse` — o coliziune de contract, găsită la scriere
+
+itgalaxy e **primul** descriptor care citește prețul plătit din ATRIBUT
+(`data-pprice="2815.99"`, 36/36) și referința din TEXT (`PRP: 525,00 lei`). Cele trei
+descriptoare cu `price_attr` de dinainte (caseking, otter, tezyo) își iau și referința
+din atribut, iar zooplus n-are referință deloc — deci faptul că `price_parse` e o cheie
+UNICĂ pe descriptor n-a fost niciodată pus la încercare.
+
+Pus la încercare, cade: garda cere `price_parse: "attr_float"` când există `price_attr`,
+iar `_pret_of` consultă aceeași cheie și pe latura de text, deci `attr_float` ajungea în
+`_PARSERE_TEXT` și ridica `ValueError` la primul card.
+
+Reparația e cheia opțională `compare_parse`, citită DOAR pe latura de referință și doar
+când există. Absentă, se cade înapoi pe `price_parse` — adică exact linia dinainte, deci
+cele 19 descriptoare vechi rămân neatinse. Garda descriptorilor o cere acum exact când
+`price_attr` și `compare_text` coexistă.
+
+### 5. Cele 4 cereri live
+
+Sonda LST-D2 citise ambele scheme de paginare din HTML-ul brut, dar nu ceruse nicio
+pagină 2 — detectorul ei nu cunoștea separatorii (`0i-` la cel, `:` la evomag), așa că
+șabloanele intraseră în raport marcate NEVERIFICATE. Confirmate acum
+(`sonda_deal_d2.py`, dump-uri în `dumps_deal_d2/`):
+
+| domeniu | etichetă | URL | status | octeți | carduri | rezultat |
+|---|---|---|---|---|---|---|
+| cel.ro | `p2` | `https://www.cel.ro/resigilate/0i-2` | 200 | 314 565 | 52 | **template confirmat** — 30 de căi noi față de p1, 22 comune |
+| cel.ro | `plast` | `…/resigilate/0i-500` | 200 | 66 473 | **0** | oprirea e **GRILĂ GOALĂ** |
+| evomag.ro | `p2` | `…/filtru/pagina:2` | 200 | 550 540 | 64 | **template confirmat** — 64 de căi noi, 0 comune |
+| evomag.ro | `plast` | `…/filtru/pagina:500` | 200 | 308 449 | **17** | oprirea e **CLAMP pe ultima pagină** |
+
+Ambele semnături de oprire sunt deja acoperite de `_scaneaza_domeniu`, fără nicio linie
+nouă: `if not linkuri_pagina: break` prinde grila goală (cel), iar
+`if linkuri_pagina <= linkuri_vazute: break` prinde clamp-ul (evomag) — a doua condiție
+din triada măsurată la LST-1b.
+
+Cele 22 de căi comune între p1 și p2 la cel.ro nu sunt un semn că template-ul e greșit:
+dump-ul p1 e din seara precedentă, iar listarea se re-sortează între cereri. Garda
+SCAN-1 (`vazute`, pe `external_id`) tratează deja exact cazul ăsta.
+
+Prima verificare a lui `eu_sup` pe pagini PROASPETE, nu pe fixture: evomag p2 a dat
+149.99 / 199.0 pe primul card și plast 1699.99 / 2599.99 — forme corecte, nu de 100 de
+ori mai mari.
+
+### 6. Capcanele nou documentate
+
+Patru, toate din LST-D2, toate arătând ca o măsurătoare reușită și nu ca o eroare:
+
+1. **Caruselul, a patra oară** (după LOT5, powerup, eMAG). Pagina de outlet a lui
+   senetic randează server-side DOAR un `outlet-glide` de 25 de produse — 25/25 au un
+   strămoș `glide__slide`, și nu există nicio grilă. Un carusel are exact forma unei
+   grile; singura deosebire e strămoșul.
+2. **`rel=next` de SIT, nu de pagină.** Pe senetic, pagina de outlet poartă
+   `<link rel="next" href="https://www.senetic.ro/?page=2/">` — trimite la HOME cu un
+   parametru inutil. `rel=next` e autoritar doar dacă URL-ul lui PĂSTREAZĂ calea intrării.
+3. **`/campanii/` e prefixul listărilor la carrefour**, nu un marcaj de editorial.
+   Penalizarea generică a împins singura candidată needitorială în frunte — pagina de
+   REGULAMENTE de tombolă — care avea 13 blocuri link+sumă, destule cât să treacă pragul
+   de „carduri". 5 din 6 cereri irosite.
+4. **`None` din poartă ≠ blocat.** Pe flanco, poarta a întors `None`, dar cererea directă
+   cu ACELAȘI profil (firefox135) a dat 200 și 881 KB de pagină reală, iar `classify()`
+   rulat pe chiar acel corp întoarce `Outcome.OK`. Redirectul e către
+   `https://www.flanco.ro:443/` (port explicit), deci cauza e în lanțul de hopuri al
+   porții, nu în sit. Atinge și axa L — de investigat separat.
+
+### 7. Rămase în afară
+
+| domeniu | motiv |
+|---|---|
+| vexio.ro | Challenge Cloudflare (403, `cf-mitigated: challenge`, titlu „Just a moment...") chiar pe rădăcina domeniului, cu profilul implicit. |
+| pcgarage.ro | Același challenge, la prima cerere de listare. Dacă se deblochează, e candidat pentru forma `entries`: PDP-ul listează TREI secțiuni de desigilate și CINCI de extra-reduceri, fără niciun URL agregat. |
+| senetic.ro | NEPOTRIVIT: outletul SSR e un carusel de 25, zero referință pe 25/25. Axa D n-are pe ce se sprijini — nici R1 (fără preț tăiat), nici R2 credibil (nu se știe dacă cele 25 sunt tot outletul sau o rotație). Cardul arată totuși ambele prețuri, etichetate explicit: `div.price_our_net` „5 613,99 RON fara TVA" și `div.price_our_gross` „6 792,93 RON cu TVA", raportul 1,21 confirmat și pe listare. |
+| usedproducts.ro | JS_ONLY: `/reduceri` răspunde 200 dar e o cochilie RSC de 43 KB al cărei text vizibil e exact titlul paginii, iar blobul `self.__next_f` are 32 KB și ZERO chei de preț. |
+| elefant.ro | JS_ONLY. Scheletul e cartografiat complet — URL-ul real, paginarea `?pag={n}`, 8.260 de produse, grila goală la `?pag=500` — dar cele 60 de plăci sunt goale: Intershop le randează prin `ViewProduct-RenderProductComponents` per SKU, adică o A DOUA cerere. Ruta scurtă `/lichidari-de-stoc` dă 503 persistent. |
+| flanco.ro | NEMĂSURAT, și NU blocat (v. §6.4). |
+| flip.ro | NEMĂSURAT: home-ul are ZERO ancore `<a href>` în 377 KB (shell Next.js pur), deci intrarea nu se poate descoperi din navigație. Piste din `__NEXT_DATA__`: catalogul general e `/magazin/`, fațetele conțin `promo=GENIUS-DEAL`. |
+| carrefour.ro | NEMĂSURAT (v. §6.3). Pistele reale: `/campanii/oferte-saptamanale` și `/campanii/reduceri-de-gama`. |
+
+### 8. Limitele oneste
+
+1. **Adâncimea la altex/mediagalaxy rămâne 48 din ~8000.** Nu e o limitare a
+   descriptorului, ci a HTML-ului: paginarea nu există în corp.
+2. **`max_pages` la cel.ro e 3 pe două pagini văzute.** Paginatorul poartă doar `0i-1` și
+   `0i-2`; dacă listarea crește, plafonul taie tăcut — dar oprirea măsurată (grilă goală)
+   se declanșează oricum înaintea lui pe volumul de azi.
+3. **`max_pages` la evomag e 14 pe 11 pagini văzute în corp.** Oprirea reală e clamp-ul,
+   prins de a doua condiție a scanerului; plafonul e doar plasă.
+4. **Referința la itgalaxy e sub jumătate** (9/36 pe p1, 18/36 pe p2, 0/36 pe pagina 500)
+   și eticheta `PRP:` e inconsistentă chiar în cadrul aceluiași câmp (4 din 9, 9 din 18).
+   Câmpul e același; doar eticheta lipsește uneori.
+5. **Adâncimea reală a lui itgalaxy (770 de pagini) nu se scanează**, `max_pages: 40` e
+   buget, nu graniță — convenția otter.
