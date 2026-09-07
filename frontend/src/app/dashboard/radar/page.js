@@ -166,10 +166,14 @@ export default function RadarFeedPage() {
   const displayedListings = useMemo(() => {
     let arr = listings;
     if (hideRisky) arr = arr.filter((l) => !l.seller_risk);
-    // FRONT-1 — comparatorul comun `sortByDateDesc` (listingHelpers): aceeasi regula de
-    // null-la-coada in toate cele trei feed-uri. Varianta veche cu `-Infinity` dadea NaN
-    // cand ambele date lipseau, adica ordine nespecificata.
-    if (sortBy === "listed_desc")    arr = [...arr].sort(sortByDateDesc("listed_at"));
+    // FRONT-1 — comparatorul comun `sortByDateDesc` (listingHelpers): aceeasi regula in
+    // toate cele trei feed-uri. Varianta veche cu `-Infinity` dadea NaN cand ambele date
+    // lipseau, adica ordine nespecificata.
+    //
+    // TZ-3c — rezerva pe `found_at`, ca la Imobiliare: Okazii nu produce NICIODATA
+    // `listed_at`, deci fara rezerva toate anunturile lui se scufundau la coada lui „cele
+    // mai noi postate", oricat de proaspat gasite. Cu rezerva se intrepatrund cu restul.
+    if (sortBy === "listed_desc")    arr = [...arr].sort(sortByDateDesc("listed_at", "found_at"));
     if (sortBy === "refreshed_desc") arr = [...arr].sort(sortByDateDesc("refreshed_at"));
     return arr;
   }, [listings, hideRisky, sortBy]);

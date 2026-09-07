@@ -107,11 +107,16 @@ export function bumpInfo(listing, now = Date.now()) {
 // Extras aici fiindca sortarea era scrisa de trei ori, in trei pagini, cu trei tratari
 // diferite ale null-ului (radar folosea `-Infinity`, ceea ce da NaN cand ambele lipsesc,
 // adica ordine nespecificata). O regula, trei apelanti.
-// TZ-3c — `fallbackKey` optional: cand cheia principala lipseste, se foloseste ea.
-// Motivul concret: postarile din grupurile Facebook fara `posted_at` au acum `listed_at`
-// NULL (rezerva pe `created_at` a fost scoasa — inventa o data pe ceasul gresit). Fara
-// rezerva la sortare, toate ar cadea la coada lui „cele mai noi postate", chiar proaspat
-// gasite. Cu `found_at` ca rezerva raman aproximativ la locul lor.
+// TZ-3c — `fallbackKey` optional: cand cheia principala lipseste, se foloseste ea. Toate
+// cele trei feed-uri o dau ca `sortByDateDesc("listed_at", "found_at")`, si niciunul n-o da
+// pe `refreshed_desc`: acolo null inseamna „n-a fost repromovat niciodata", deci coada e
+// raspunsul corect, nu o rezerva.
+//
+// `listed_at` lipseste des si din motive diferite: Okazii nu-l expune DELOC, iar postarile
+// din grupurile Facebook fara `posted_at` il au NULL de cand rezerva pe `created_at` a fost
+// scoasa (inventa o data pe ceasul gresit). Fara rezerva, un anunt Okazii gasit acum cinci
+// minute cadea sub unul postat acum o luna — sortarea „cele mai noi" ii ascundea tocmai pe
+// cei mai noi. Cu `found_at` se intrepatrund cu restul.
 //
 // De stiut: `listed_at` e pe ceasul PIETEI iar `found_at` pe al SISTEMULUI. Amestecul e
 // acceptabil AICI si nicaieri altundeva — o sortare doar reordoneaza vecini apropiati, nu

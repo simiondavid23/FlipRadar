@@ -200,7 +200,9 @@ export default function AutoFeedPage() {
       if (sortBy === "year_desc")  return nullsLast(a.year, b.year, (x, y) => y - x);
       if (sortBy === "km_asc")     return nullsLast(a.km, b.km, (x, y) => x - y);
       // FRONT-1 — comparatorul comun (listingHelpers), aceeasi regula in toate feed-urile.
-      if (sortBy === "listed_desc")    return sortByDateDesc("listed_at")(a, b);
+      // TZ-3c — rezerva pe `found_at`: un anunt fara data de piata se ordoneaza dupa cand
+      // l-am gasit noi, intrepatruns cu celelalte, nu scufundat la coada.
+      if (sortBy === "listed_desc")    return sortByDateDesc("listed_at", "found_at")(a, b);
       if (sortBy === "refreshed_desc") return sortByDateDesc("refreshed_at")(a, b);
       return 0;
     });
