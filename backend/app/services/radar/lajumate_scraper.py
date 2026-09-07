@@ -52,7 +52,7 @@ from app.services.radar.base_scraper import (
     classify, report_outcome, Outcome,
 )
 from app.utils.http_profile import DEFAULT_IMPERSONATE
-from app.utils.listing_dates import to_naive_local
+from app.utils.listing_dates import to_naive_bucuresti
 
 
 _IMPERSONATE = DEFAULT_IMPERSONATE   # profil unic, vezi app/utils/http_profile.py
@@ -143,7 +143,7 @@ def _parse_dt(s) -> Optional[datetime]:
         return None
     brut = str(s).strip()
     if brut.endswith("Z") or brut.endswith("z"):
-        convertit = to_naive_local(brut)
+        convertit = to_naive_bucuresti(brut)
         if convertit is not None:
             return convertit
     t = brut.replace("T", " ").replace("Z", "").split(".")[0].strip()

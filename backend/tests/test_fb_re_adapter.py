@@ -15,7 +15,7 @@ import pytest
 
 from app.services.log_manager import log_manager
 from app.scrapers.real_estate import facebook_real_estate as fb
-from app.utils.listing_dates import to_naive_local
+from app.utils.listing_dates import to_naive_bucuresti
 
 CAT_CHIRII = "1468271819871448"
 CAT_CANAPEA = "1583634935226685"
@@ -230,7 +230,7 @@ def test_seed_from_raw_digera_dictul_produs(nucleu):
     # `creation_time` aware-UTC, iar pana acum ajungea in DB cu ora de perete UTC (SQLite
     # arunca offset-ul), adica 3 h in urma. Asertia isi pastreaza intentia — acelasi
     # MOMENT — dar in conventia noua.
-    assert seed["listed_at"] == to_naive_local(_ACUM)
+    assert seed["listed_at"] == to_naive_bucuresti(_ACUM)
     assert seed["listed_at"].tzinfo is None
 
 

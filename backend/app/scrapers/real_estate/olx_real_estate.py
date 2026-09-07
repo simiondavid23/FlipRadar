@@ -18,7 +18,7 @@ from app.scrapers.real_estate._common import (
 )
 from app.scrapers.real_estate.re_categories import apply_re_filters, RE_FILTER_ALIASES
 from app.services.log_manager import log_manager
-from app.utils.listing_dates import iso_to_naive_local, normalize_iso
+from app.utils.listing_dates import iso_to_naive_bucuresti, normalize_iso
 from app.utils.olx_state import extract_olx_ad_meta
 
 _BASE = "https://www.olx.ro"
@@ -94,11 +94,11 @@ def _parse_iso_dt(s):
     """ISO 8601 cu offset ('2026-07-07T12:08:09+03:00') -> datetime NAIV local
     (consecvent cu conventia listed_at a scraperelor).
 
-    HOTFIX CI — nu mai e o copie locala: deleaga la `iso_to_naive_local`, care
+    HOTFIX CI — nu mai e o copie locala: deleaga la `iso_to_naive_bucuresti`, care
     converteste EXPLICIT la Europe/Bucharest, nu la fusul masinii (vezi nota din
     services/radar/olx_scraper.py::_parse_iso_dt).
     """
-    return iso_to_naive_local(s)
+    return iso_to_naive_bucuresti(s)
 
 
 def _first_int(text):

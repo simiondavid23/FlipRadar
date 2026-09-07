@@ -7,7 +7,7 @@ Runda e REFACTORIZARE: cele trei copii locale ale aceleiasi parsari
 paritate compara iesirea de azi cu `fixtures/olx_meta_expected.json` — oracol generat
 din cele trei functii VECHI, inainte de orice modificare, si nemairegenerat.
 
-Al doilea obiectiv: `iso_to_naive_local` / `normalize_iso` s-au mutat in
+Al doilea obiectiv: `iso_to_naive_bucuresti` / `normalize_iso` s-au mutat in
 `utils/listing_dates.py` (le foloseau Autovit, Storia si AutoScout24, module fara nicio
 legatura cu OLX). Fara re-export de compatibilitate — T5 pinuieste si absenta lor.
 """
@@ -198,21 +198,21 @@ def test_t4c_imobiliare_parseaza_state_ul_o_singura_data(monkeypatch):
 # ── T5 — helperii de data au plecat in listing_dates ────────────────────────────
 
 def test_t5_helperii_sunt_in_listing_dates_si_nu_mai_sunt_in_olx_state():
-    assert hasattr(listing_dates, "iso_to_naive_local")
+    assert hasattr(listing_dates, "iso_to_naive_bucuresti")
     assert hasattr(listing_dates, "normalize_iso")
     # fara re-export de compatibilitate: un import vechi trebuie sa pice zgomotos
-    assert not hasattr(olx_state, "iso_to_naive_local")
+    assert not hasattr(olx_state, "iso_to_naive_bucuresti")
     assert not hasattr(olx_state, "normalize_iso")
 
 
 def test_t5b_comportamentul_helperilor_e_neschimbat():
     """Mutare VERBATIM — aceleasi asertii ca la DATE-2 (T11), pe noul modul."""
-    a = listing_dates.iso_to_naive_local("2026-08-01T06:45:38Z")
-    b = listing_dates.iso_to_naive_local("2026-08-01T09:45:38+03:00")
+    a = listing_dates.iso_to_naive_bucuresti("2026-08-01T06:45:38Z")
+    b = listing_dates.iso_to_naive_bucuresti("2026-08-01T09:45:38+03:00")
     assert a == b and a.tzinfo is None
-    assert listing_dates.iso_to_naive_local("2026-08-01T06:45:38") == datetime(
+    assert listing_dates.iso_to_naive_bucuresti("2026-08-01T06:45:38") == datetime(
         2026, 8, 1, 6, 45, 38)
-    assert listing_dates.iso_to_naive_local(None) is None
+    assert listing_dates.iso_to_naive_bucuresti(None) is None
     assert listing_dates.normalize_iso("2026-08-01T06:45:38Z") == "2026-08-01T06:45:38+00:00"
     assert listing_dates.normalize_iso("2026-09-06 14:20:32") == "2026-09-06 14:20:32"
     assert listing_dates.normalize_iso(None) is None

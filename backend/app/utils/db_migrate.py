@@ -500,7 +500,7 @@ def _tz1_backfill_ore_locale(conn, inspector) -> None:
         (`creation_time` / `posted_at`, epoch UTC). OLX trimitea `+03:00`, deci era corect.
 
     Ce NU se atinge: `refreshed_at` (venea cu offset, era corect), `listed_at` pe Radar si
-    Auto (deja ora locala prin `_naiv_local` / `iso_to_naive_local`), si coloanele de timp
+    Auto (deja ora locala prin `_naiv_local` / `iso_to_naive_bucuresti`), si coloanele de timp
     care nu se afiseaza (`last_checked_at`, `seen_at`, `last_scan_at`, ...) — raman UTC,
     consecvent cu comparatiile lor, si sunt tema unei runde separate.
 

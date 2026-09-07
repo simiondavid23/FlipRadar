@@ -51,7 +51,7 @@ from app.services.radar.exclusion_engine import keyword_digits_match
 # ca sa se poata reconstrui cheia de cluster pentru jurnal: detectorul intoarce doar
 # `{id: motive}`, si NU se modifica pentru nevoia de logare a apelantului.
 from app.services.radar.amprenta_ferma import detecteaza_ferme, titlu_cheie
-from app.utils.listing_dates import to_naive_local
+from app.utils.listing_dates import to_naive_bucuresti
 # Helper pur (fara dependinte) — nu poate crea ciclu de import. Vezi R1 in _parse_price.
 from app.utils.number_format import parse_number
 from app.utils.http_profile import DEFAULT_IMPERSONATE
@@ -376,14 +376,14 @@ def _naiv_local(dt):
     ISO) fiindca scanner-ul lui face `fromisoformat` — conventii diferite per
     consumator, fiecare respectata.
 
-    TZ-3 — deleaga la `to_naive_local`, adica la `FUS_ANUNTURI`, nu la fusul MASINII.
+    TZ-3 — deleaga la `to_naive_bucuresti`, adica la `FUS_ANUNTURI`, nu la fusul MASINII.
     Vechiul `.astimezone()` gol facea ca `listed_at` de pe Facebook sa fie singurul din
     baza masurat pe alt ceas decat restul (OLX, Storia, Kleinanzeigen trec toate prin
-    `to_naive_local`): pe un server in UTC, doua anunturi postate in aceeasi clipa
+    `to_naive_bucuresti`): pe un server in UTC, doua anunturi postate in aceeasi clipa
     aratau ore diferite in acelasi feed, dupa platforma. Pe masina de productie (GTB)
     valoarea e neschimbata. `_too_old` masoara in ZILE, deci ramane la fel de corect.
     """
-    return to_naive_local(dt) if dt else None
+    return to_naive_bucuresti(dt) if dt else None
 
 
 def _ferma_activa() -> bool:

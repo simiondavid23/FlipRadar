@@ -20,7 +20,7 @@ copie locala a aceluiasi regex + dublu-decode — `_extract_olx_numeric_ids` la 
 au disparut; tot ce citeau vine acum din acelasi dict, dintr-o singura trecere prin
 `ads[]`. Masurat: o parsare costa ~470 ms pe pagina de 3,3 MB.
 
-Helperii de data (`iso_to_naive_local`, `normalize_iso`) au plecat in
+Helperii de data (`iso_to_naive_bucuresti`, `normalize_iso`) au plecat in
 `utils/listing_dates.py`: ii foloseau si Autovit, Storia si AutoScout24, module fara
 nicio legatura cu OLX. NU exista re-export de compatibilitate — importurile s-au
 corectat la sursa, deliberat, ca un import vechi sa pice zgomotos, nu tacut.

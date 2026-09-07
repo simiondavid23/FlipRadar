@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
 from app.scrapers.auto.listings._common import IMPERSONATE, build_headers, safe_soup
-from app.utils.listing_dates import din_fus, iso_to_naive_local
+from app.utils.listing_dates import din_fus, iso_to_naive_bucuresti
 
 _EMPTY = {"images": [], "description": None, "seller_name": None, "listed_at": None}
 
@@ -270,7 +270,7 @@ def fetch_autoscout24_detail(url: str) -> dict:
     # Nici listarea nu are data (masurat: 20 de anunturi, zero chei de data), deci
     # `listed_at` vine DOAR pe calea asta, on-demand.
     detalii = ((data.get("props") or {}).get("pageProps") or {}).get("listingDetails")
-    listed_at = iso_to_naive_local(
+    listed_at = iso_to_naive_bucuresti(
         (detalii or {}).get("createdTimestampWithOffset")
         if isinstance(detalii, dict) else None)
     return {"images": images, "description": description,

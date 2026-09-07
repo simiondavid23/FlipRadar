@@ -7,7 +7,7 @@ primeste — un string fara offset e citit de browser ca ora locala, adica a ace
 Doua ceasuri, deliberat separate (varianta A, confirmata de David):
   * `acum_local()` — ceasul NOSTRU (`found_at`, `log_entries.created_at`, pragurile de
     cleanup / retentie / filtre): ora sistemului;
-  * `to_naive_local()` / `din_fus()` — ora DECLARATA de platforma (`listed_at`,
+  * `to_naive_bucuresti()` / `din_fus()` — ora DECLARATA de platforma (`listed_at`,
     `refreshed_at`): `FUS_ANUNTURI`, ca „postat 12:54" sa arate ca pe olx.ro.
 Pe masina de productie (GTB Standard Time) cele doua dau exact aceeasi valoare.
 
@@ -26,7 +26,7 @@ from app.utils.listing_dates import (
     FUS_ANUNTURI,
     acum_local,
     din_fus,
-    to_naive_local,
+    to_naive_bucuresti,
 )
 
 _UTC = timezone.utc
@@ -37,46 +37,46 @@ def _in_fus_anunturi(aware: datetime) -> datetime:
     return aware.astimezone(FUS_ANUNTURI).replace(tzinfo=None)
 
 
-# ── T1 — `to_naive_local` ───────────────────────────────────────────────────────
+# ── T1 — `to_naive_bucuresti` ───────────────────────────────────────────────────────
 
 def test_t1_datetime_aware_se_converteste():
     aware = datetime(2026, 8, 1, 6, 45, 38, tzinfo=_UTC)
-    assert to_naive_local(aware) == _in_fus_anunturi(aware)
-    assert to_naive_local(aware).tzinfo is None
+    assert to_naive_bucuresti(aware) == _in_fus_anunturi(aware)
+    assert to_naive_bucuresti(aware).tzinfo is None
     # vara UTC+3: 06:45 UTC -> 09:45
-    assert to_naive_local(aware) == datetime(2026, 8, 1, 9, 45, 38)
+    assert to_naive_bucuresti(aware) == datetime(2026, 8, 1, 9, 45, 38)
 
 
 def test_t1b_datetime_naiv_ramane_neschimbat():
     """Contractul: un naiv e DEJA in ora corecta, nu se mai atinge."""
     naiv = datetime(2026, 8, 1, 6, 45, 38)
-    assert to_naive_local(naiv) == naiv
+    assert to_naive_bucuresti(naiv) == naiv
 
 
 def test_t1c_stringuri_in_toate_formele():
     asteptat = datetime(2026, 8, 1, 9, 45, 38)
-    assert to_naive_local("2026-08-01T06:45:38Z") == asteptat
-    assert to_naive_local("2026-08-01T06:45:38+00:00") == asteptat
-    assert to_naive_local("2026-08-01T09:45:38+03:00") == asteptat
+    assert to_naive_bucuresti("2026-08-01T06:45:38Z") == asteptat
+    assert to_naive_bucuresti("2026-08-01T06:45:38+00:00") == asteptat
+    assert to_naive_bucuresti("2026-08-01T09:45:38+03:00") == asteptat
     # fara offset: se ia ca atare, nu se ghiceste nimic
-    assert to_naive_local("2026-08-01T09:45:38") == asteptat
+    assert to_naive_bucuresti("2026-08-01T09:45:38") == asteptat
 
 
 def test_t1d_epoch():
     epoch = 1788699920
-    assert to_naive_local(epoch) == _in_fus_anunturi(
+    assert to_naive_bucuresti(epoch) == _in_fus_anunturi(
         datetime.fromtimestamp(epoch, tz=_UTC))
 
 
 def test_t1e_degradare_curata():
     for rau in (None, "", "   ", "maine", "32.13.2026", object(), True, [], {}):
-        assert to_naive_local(rau) is None, rau
+        assert to_naive_bucuresti(rau) is None, rau
 
 
 def test_t1f_ora_de_iarna():
     """ZoneInfo, nu offset fix: iarna Romania e UTC+2."""
-    assert to_naive_local("2026-01-15T08:00:00Z") == datetime(2026, 1, 15, 10, 0)
-    assert to_naive_local("2026-07-15T08:00:00Z") == datetime(2026, 7, 15, 11, 0)
+    assert to_naive_bucuresti("2026-01-15T08:00:00Z") == datetime(2026, 1, 15, 10, 0)
+    assert to_naive_bucuresti("2026-07-15T08:00:00Z") == datetime(2026, 7, 15, 11, 0)
 
 
 # ── T2 — `din_fus` ──────────────────────────────────────────────────────────────

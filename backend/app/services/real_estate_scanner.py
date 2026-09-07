@@ -20,7 +20,7 @@ from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
 from app.services.log_manager import log_manager, set_log_user
 from app.utils.ore_active import in_ore_active
-from app.utils.listing_dates import acum_local, la_ora_sistemului, to_naive_local
+from app.utils.listing_dates import acum_local, la_ora_sistemului, to_naive_bucuresti
 
 
 def _within_hours(kw: RealEstateKeyword) -> bool:
@@ -37,7 +37,7 @@ def _polling_due(kw, now: datetime) -> bool:
     Fallback 30 min = default-ul RE (polling_interval_minutes), NU 5 ca la Radar.
 
     TZ-3 — conversia unui aware vechi se face cu `la_ora_sistemului`, nu cu
-    `to_naive_local`: `last_scan_at` e scris cu ceasul NOSTRU (`acum_local()`), deci se
+    `to_naive_bucuresti`: `last_scan_at` e scris cu ceasul NOSTRU (`acum_local()`), deci se
     citeste tot cu el. Pe ceasul PIETEI, un aware `+00:00` ajungea 3 ore in viitor pe un
     server in UTC si keyword-ul nu mai era scadent niciodata — aceeasi semnatura ca la
     `radar_scanner._platform_scan_due`.
@@ -97,12 +97,12 @@ def _seed_from_raw(raw: dict) -> dict:
     # listed_at: string ISO (emis de scraperul OLX) -> datetime; lipsa/invalid -> None.
     # DATE-1: acelasi tratament pentru refreshed_at (ultima reactualizare pe platforma),
     # tinut separat ca o repromovare sa nu treaca drept data primei publicari.
-    # TZ-1 — `to_naive_local` in loc de `fromisoformat` gol: Storia `createdAtFirst` si
+    # TZ-1 — `to_naive_bucuresti` in loc de `fromisoformat` gol: Storia `createdAtFirst` si
     # Facebook `creation_time` vin in UTC (`Z`), iar SQLite arunca offset-ul si pastra
     # ora de perete UTC — pe ACELASI anunt Storia iesea `refreshed_at` corect (venea cu
     # `+03:00`) si `listed_at` cu 3 h in urma. Stringul FARA offset ramane neschimbat.
     def _iso(cheie):
-        return to_naive_local(raw.get(cheie))
+        return to_naive_bucuresti(raw.get(cheie))
 
     listed_at = _iso("listed_at")
     refreshed_at = _iso("refreshed_at")
@@ -708,7 +708,7 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         # FBG-2 (M3) — data REALA a postarii FB (posted_at); created_at e momentul
         # INSERT-ului nostru (comentariul vechi pretindea altceva) si ramane fallback.
         # TZ-1 — `posted_at` din grupurile FB vine naiv-UTC (fromtimestamp(tz=utc)).
-        listed_at       = to_naive_local(post.get("posted_at") or post.get("created_at")),
+        listed_at       = to_naive_bucuresti(post.get("posted_at") or post.get("created_at")),
         found_at        = acum_local(),              # TZ-1: ceasul nostru (ramura FBG)
         last_checked_at = acum_local(),
     )

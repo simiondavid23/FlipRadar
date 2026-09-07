@@ -17,7 +17,7 @@ from curl_cffi import requests as curl_requests
 
 from app.services.radar.base_scraper import build_headers, rate_limit_backoff, is_excluded, get_proxy_config
 from app.utils.http_profile import DEFAULT_IMPERSONATE
-from app.utils.listing_dates import iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_bucuresti
 from app.utils.olx_state import extract_olx_ad_meta
 
 
@@ -308,12 +308,12 @@ def _parse_iso_dt(s) -> Optional[datetime]:
     """ISO 8601 cu offset ('2026-07-07T12:08:09+03:00') -> datetime NAIV local
     (consecvent cu conventia listed_at a scraperelor).
 
-    HOTFIX CI — deleaga la `iso_to_naive_local`, care converteste EXPLICIT la
+    HOTFIX CI — deleaga la `iso_to_naive_bucuresti`, care converteste EXPLICIT la
     Europe/Bucharest. Copia locala facea `.astimezone()` fara argument, adica la fusul
     MASINII: pe un runner UTC datele ieseau cu 3 ore mai putin decat ora reala a
     anuntului. Nu se duplica regula de fus in scraper; traieste intr-un singur loc.
     """
-    return iso_to_naive_local(s)
+    return iso_to_naive_bucuresti(s)
 
 
 def fetch_olx_offer_details(numeric_id) -> dict:
@@ -678,8 +678,8 @@ def search_olx(
                 # DATE-2 — datele structurate BAT textul cardului: „Reactualizat azi" de
                 # pe card e o singura data cu doua semantici, iar state-ul le da separat.
                 # Cardul (cablat la DATE-1) ramane fallback pentru ad-urile lipsa din meta.
-                creat = iso_to_naive_local(m.get("created"))
-                reactualizat = iso_to_naive_local(m.get("refreshed"))
+                creat = iso_to_naive_bucuresti(m.get("created"))
+                reactualizat = iso_to_naive_bucuresti(m.get("refreshed"))
                 if creat:
                     item["listed_at"] = creat
                 if reactualizat:

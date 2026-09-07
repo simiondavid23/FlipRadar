@@ -27,7 +27,7 @@ tare se da rulandu-le sub `TZ=UTC`:
 
 Cele TREI ceasuri ale proiectului, ca sa nu se mai amestece (vezi `utils/listing_dates`):
   * ceasul NOSTRU      — `acum_local()` scrie, `la_ora_sistemului()` citeste: fusul MASINII;
-  * ceasul PIETEI      — `to_naive_local()` / `din_fus()`: `FUS_ANUNTURI`, Bucuresti FIXAT;
+  * ceasul PIETEI      — `to_naive_bucuresti()` / `din_fus()`: `FUS_ANUNTURI`, Bucuresti FIXAT;
   * ceasul FACEBOOK    — `_acum()` din nucleu: UTC aware, cu `FUS_LOCAL` pentru forma orara.
 """
 import ast
@@ -42,7 +42,7 @@ from app.utils.listing_dates import (
     FUS_ANUNTURI,
     acum_local,
     din_fus,
-    iso_to_naive_local,
+    iso_to_naive_bucuresti,
     la_ora_sistemului,
 )
 
@@ -74,7 +74,11 @@ def test_t1_conftest_fixeaza_fusul_la_nivel_de_modul():
             n = coada.pop()
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 continue        # aici incepe codul care ruleaza mai tarziu — nu ne uitam
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)                and n.func.attr == "setdefault"                and any(isinstance(a, ast.Constant) and a.value == "TZ" for a in n.args):
+            e_setdefault = (isinstance(n, ast.Call)
+                            and isinstance(n.func, ast.Attribute)
+                            and n.func.attr == "setdefault")
+            if e_setdefault and any(isinstance(a, ast.Constant) and a.value == "TZ"
+                                    for a in n.args):
                 gasite.append(n)
             coada.extend(ast.iter_child_nodes(n))
         return gasite
@@ -82,7 +86,8 @@ def test_t1_conftest_fixeaza_fusul_la_nivel_de_modul():
     # Cautarea PORNESTE de la corpul modulului si se opreste la prima `def`: un
     # setdefault ajuns intr-un fixture nu mai e vazut deloc, deci pica pe numar.
     apeluri = _setdefault_pe_tz(arbore.body)
-    assert len(apeluri) == 1,         "exact un setdefault pe TZ, la NIVEL DE MODUL (intr-un fixture ruleaza prea tarziu)"
+    assert len(apeluri) == 1, (
+        "exact un setdefault pe TZ, la NIVEL DE MODUL (intr-un fixture ruleaza prea tarziu)")
     assert apeluri[0].args[1].value == "Europe/Bucharest"
 
     # `tzset` exista doar pe Unix; pe Windows blocul trebuie sa fie no-op, nu AttributeError.
@@ -120,8 +125,12 @@ def test_t1d_documentul_de_handover_spune_unde_ruleaza_ce():
     assert "TZ-3" in doc
     assert "TZ=Europe/Bucharest" in doc, "trebuie scris UNDE si CU CE ruleaza CI-ul"
     assert "tests/test_tz_3.py" in doc, "testele de consistenta trebuie citabile"
-    for ceas in ("acum_local()", "la_ora_sistemului()", "to_naive_local()"):
+    for ceas in ("acum_local()", "la_ora_sistemului()", "to_naive_bucuresti()"):
         assert ceas in doc, ceas
+    # TZ-3b: de ce s-a schimbat numele trebuie sa ramana citibil dupa ce nimeni nu-si mai
+    # aminteste numele vechi — altfel redenumirea sterge tocmai explicatia bug-ului.
+    assert "to_naive_local" in doc, "motivul redenumirii trebuie sa poarte numele vechi"
+    assert "_CEAS_PIETEI_PERMIS" in doc, "a doua garda trebuie citabila din handover"
 
 
 def test_t1c_ci_ruleaza_cu_acelasi_fus():
@@ -136,7 +145,7 @@ def test_t2_la_ora_sistemului_e_perechea_de_citire_a_lui_acum_local():
     """Proprietatea, adevarata in ORICE fus: acelasi moment, acelasi ceas, aceeasi ora.
 
     Asta e contractul care lipsea. `acum_local()` SCRIE pe ceasul masinii; pana la TZ-3,
-    citirea inapoi se facea pe alocuri cu `to_naive_local`, adica pe ceasul PIETEI.
+    citirea inapoi se facea pe alocuri cu `to_naive_bucuresti`, adica pe ceasul PIETEI.
     """
     acum_aware = datetime.now(timezone.utc)
     delta = la_ora_sistemului(acum_aware) - acum_local()
@@ -144,7 +153,7 @@ def test_t2_la_ora_sistemului_e_perechea_de_citire_a_lui_acum_local():
 
 
 def test_t2b_naivul_se_intoarce_neschimbat():
-    """Contractul e simetric cu `to_naive_local`: un naiv e DEJA pe ceasul cerut."""
+    """Contractul e simetric cu `to_naive_bucuresti`: un naiv e DEJA pe ceasul cerut."""
     naiv = datetime(2026, 7, 15, 14, 23, 45)
     assert la_ora_sistemului(naiv) is naiv
 
@@ -167,7 +176,8 @@ _FUSURI_FIXE_PERMISE = {
     "app/utils/listing_dates.py":
         "mecanismele insele: FUS_ANUNTURI (ceasul pietei) + la_ora_sistemului (ceasul nostru)",
     "app/scrapers/facebook/planner.py":
-        "exceptia B — forma orara a traficului catre Facebook, ancorata in piata (planner.py:51-52)",
+        "exceptia B — forma orara a traficului catre Facebook, "
+        "ancorata in piata (planner.py:51-52)",
     "app/main.py":
         "orarul joburilor (cron) e ancorat in piata romaneasca, nu in masina; vezi planner.py:47",
     "app/scrapers/auto/listings/kleinanzeigen_auto.py":
@@ -238,6 +248,107 @@ def test_t2f_fiecare_intrare_din_registru_e_reala(relativ, motiv):
     """Lista nu are voie sa putrezeasca: o scutire fara fus fix scuza altceva decat crede."""
     cale = os.path.join(_BACKEND, *relativ.split("/"))
     assert _fusuri_fixe_din(cale), f"{relativ}: scutire moarta ({motiv})"
+
+
+# ── T2g — ceasul PIETEI, tinut pe caile de data ────────────────────────────────
+
+# TZ-3b. `to_naive_bucuresti` / `iso_to_naive_bucuresti` fixeaza `Europe/Bucharest`, deci
+# au voie DOAR acolo unde valoarea e o ora DECLARATA de o platforma (`listed_at`,
+# `refreshed_at`, `posted_at`). Chemate pe o valoare scrisa cu `acum_local()`, muta ora in
+# viitor pe orice masina care nu e in Romania — asa au aparut cele patru amestecuri
+# reparate la TZ-3, pe cand functia se numea `to_naive_local` si suna a ceas de sistem.
+#
+# Registru SEPARAT de `_FUSURI_FIXE_PERMISE`, nu acelasi: listele au fisiere diferite,
+# si tocmai diferenta e ce se pazeste aici. `radar_scanner.py` e in primul (are un
+# `astimezone()` gol legitim, capatul de scriere al stampilei) si trebuie sa fie IN AFARA
+# celui de-al doilea — un apel de ceasul pietei de acolo e exact regresia de prins.
+_CEAS_PIETEI_PERMIS = {
+    "app/utils/listing_dates.py": "definitia insasi",
+    "app/routers/auto.py": "filtru pe listed_at, primit din query",
+    "app/scrapers/auto/listings/autovit_scraper.py": "listed_at / refreshed_at (Autovit)",
+    "app/scrapers/auto/listings/detail.py": "listed_at de pe pagina de detaliu",
+    "app/scrapers/auto/listings/kleinanzeigen_auto.py": "ancora zilei germane (TZ-3)",
+    "app/scrapers/auto/listings/olx_auto.py": "listed_at / refreshed_at (OLX Auto)",
+    "app/scrapers/facebook_group_scraper.py": "posted_at, epoch declarat de Facebook",
+    "app/scrapers/real_estate/olx_real_estate.py": "listed_at (OLX Imobiliare)",
+    "app/services/radar/facebook_scraper.py": "_naiv_local — listed_at (Radar Facebook)",
+    "app/services/radar/lajumate_scraper.py": "listed_at (LaJumate)",
+    "app/services/radar/olx_scraper.py": "listed_at / refreshed_at (OLX Radar)",
+    "app/services/real_estate_scanner.py": "_seed_from_raw + posturile FB: listed_at",
+}
+
+_SIMBOLURI_CEAS_PIETEI = ("to_naive_bucuresti", "iso_to_naive_bucuresti")
+
+
+def _ceas_pietei_din(sursa: str):
+    """(linie, simbol) pentru fiecare FOLOSIRE a ceasului pietei — import sau apel.
+
+    Pe arbore, nu pe text: `db_migrate.py` si `olx_state.py` pomenesc simbolurile in
+    docstring-uri ca sa explice ce conventie urmeaza datele, si n-au ce cauta in registru.
+    Proza nu produce `Name`/`ImportFrom`, deci se exclude singura — spre deosebire de
+    detectorul de fusuri fixe de mai sus, unde a trebuit filtrata explicit.
+    Ia si `import`-ul, nu doar apelul: un modul care aduce simbolul si abia apoi il pune
+    la treaba ar trece altfel neobservat.
+    """
+    arbore = ast.parse(sursa)
+    gasite = []
+    for n in ast.walk(arbore):
+        if isinstance(n, ast.ImportFrom):
+            for a in n.names:
+                if a.name in _SIMBOLURI_CEAS_PIETEI:
+                    gasite.append((n.lineno, a.name))
+        elif isinstance(n, ast.Name) and n.id in _SIMBOLURI_CEAS_PIETEI:
+            gasite.append((n.lineno, n.id))
+        elif isinstance(n, ast.Attribute) and n.attr in _SIMBOLURI_CEAS_PIETEI:
+            gasite.append((n.lineno, n.attr))
+    return gasite
+
+
+def test_t2g_ceasul_pietei_doar_pe_caile_de_data():
+    """Simbolurile `Europe/Bucharest` nu au voie in afara registrului de mai sus."""
+    intrusi = {}
+    for cale, relativ in _fisiere_app():
+        if relativ in _CEAS_PIETEI_PERMIS:
+            continue
+        gasite = _ceas_pietei_din(_sursa(cale))
+        if gasite:
+            intrusi[relativ] = gasite
+    assert not intrusi, (
+        "ceasul PIETEI folosit in afara cailor de data — daca valoarea e scrisa cu "
+        "`acum_local()`, citeste-o cu `la_ora_sistemului`; daca e o ora declarata de "
+        f"platforma, treci fisierul in _CEAS_PIETEI_PERMIS cu motiv: {intrusi}")
+
+
+@pytest.mark.parametrize("relativ,motiv", sorted(_CEAS_PIETEI_PERMIS.items()))
+def test_t2h_fiecare_cale_de_data_chiar_foloseste_ceasul_pietei(relativ, motiv):
+    """Simetricul lui `test_t2f`: o intrare care nu mai foloseste simbolul scuza altceva."""
+    cale = os.path.join(_BACKEND, *relativ.split("/"))
+    assert _ceas_pietei_din(_sursa(cale)), f"{relativ}: scutire moarta ({motiv})"
+
+
+def test_t2i_garda_prinde_un_apel_din_radar_scanner():
+    """Sabotajul, AUTOMAT: un `radar_scanner.py` care cheama ceasul pietei trebuie prins.
+
+    Fara asta, `test_t2g` ar putea trece fiindca detectorul nu vede nimic nicaieri —
+    o garda verde din vid. Sursa sintetica e citita cu ACELASI detector, deci proba nu
+    depinde de repo si nu cere sa strici un fisier real ca s-o vezi rosie.
+
+    `radar_scanner.py` NU e ales la intamplare: e in `_FUSURI_FIXE_PERMISE` (are un
+    `astimezone()` gol legitim), deci arata de ce cele doua registre nu pot fi unul.
+    """
+    sabotaj = """
+from app.utils.listing_dates import to_naive_bucuresti
+
+def _platform_scan_due(kw, now):
+    return now >= to_naive_bucuresti(kw.last_scan_at)
+"""
+    gasite = _ceas_pietei_din(sabotaj)
+    assert [s for _, s in gasite] == ["to_naive_bucuresti", "to_naive_bucuresti"], gasite
+
+    assert "app/utils/radar_scanner.py" not in _CEAS_PIETEI_PERMIS, (
+        "radar_scanner scrie stampila cu acum_local() — ceasul pietei n-are ce cauta acolo")
+    # Si chiar asa e azi: fisierul real nu foloseste simbolurile.
+    assert not _ceas_pietei_din(_sursa(_APP, "utils", "radar_scanner.py"))
 
 
 # ── T3 — stampila de scanare: scrisa si citita pe acelasi ceas ─────────────────
@@ -386,13 +497,13 @@ def test_t5_facebook_si_olx_dau_acelasi_naiv_pentru_acelasi_moment():
     """Doua anunturi postate in ACEEASI clipa trebuie sa arate aceeasi ora in feed.
 
     Pana la TZ-3, Facebook trecea prin `.astimezone()` gol (ceasul masinii) iar OLX prin
-    `iso_to_naive_local` (ceasul pietei): pe un server in UTC, acelasi moment aparea cu
+    `iso_to_naive_bucuresti` (ceasul pietei): pe un server in UTC, acelasi moment aparea cu
     trei ore diferenta, in functie de platforma.
     """
     from app.services.radar.facebook_scraper import _naiv_local
 
     moment = datetime(2026, 8, 1, 6, 45, 38, tzinfo=timezone.utc)
-    assert _naiv_local(moment) == iso_to_naive_local(moment.isoformat())
+    assert _naiv_local(moment) == iso_to_naive_bucuresti(moment.isoformat())
 
 
 def test_t5b_facebook_listed_at_e_in_ora_anunturilor():

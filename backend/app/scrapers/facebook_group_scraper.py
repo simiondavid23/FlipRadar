@@ -9,7 +9,7 @@ from typing import Optional
 from playwright.async_api import async_playwright
 
 from app.utils.cookie_crypto import normalize_cookies
-from app.utils.listing_dates import to_naive_local
+from app.utils.listing_dates import to_naive_bucuresti
 
 # FBG-2 (C2) — permalink-ul postarii din ancorele articolului. Formele intalnite:
 #   /groups/<gid>/posts/<pid>/            (forma canonica)
@@ -182,7 +182,7 @@ async def scrape_facebook_group(
                     new_found_in_batch += 1
 
                     # TZ-2 — `posted_at` e data DECLARATA de Facebook (epoch UTC),
-                    # deci familia `listed_at`: `to_naive_local` o aduce in ora
+                    # deci familia `listed_at`: `to_naive_bucuresti` o aduce in ora
                     # anunturilor.
                     #
                     # TZ-3, precizare: comparatia de mai jos cu `last_run_at` pune fata
@@ -200,7 +200,7 @@ async def scrape_facebook_group(
                     if time_el:
                         utime = await time_el.get_attribute("data-utime")
                         if utime and utime.isdigit():
-                            posted_at = to_naive_local(int(utime))
+                            posted_at = to_naive_bucuresti(int(utime))
 
                     # Daca am ajuns la postari mai vechi decat last_run_at, opreste
                     if last_run_at and posted_at and posted_at < last_run_at:

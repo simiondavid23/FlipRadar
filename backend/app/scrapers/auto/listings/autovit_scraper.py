@@ -15,7 +15,7 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
-from app.utils.listing_dates import iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_bucuresti
 
 _BASE = "https://www.autovit.ro"
 # Categorii confirmate (auto_categories.py). Orice altceva -> fallback "autoturisme".
@@ -225,8 +225,8 @@ async def search_autovit(make: str = "", model: str = "", filters: dict = {}, pa
                 gearbox=normalize_gearbox(card_text),
                 pret=pret, moneda=moneda, locatie=locatie,
                 source_url=href, thumbnail_url=thumb,
-                listed_at=iso_to_naive_local(_creat),
-                refreshed_at=iso_to_naive_local(_bump),
+                listed_at=iso_to_naive_bucuresti(_creat),
+                refreshed_at=iso_to_naive_bucuresti(_bump),
             ))
             if len(results) >= MAX_LISTINGS:
                 break

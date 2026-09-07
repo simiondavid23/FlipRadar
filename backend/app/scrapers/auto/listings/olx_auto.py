@@ -11,7 +11,7 @@ from app.scrapers.auto.listings._common import (
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters, AUTO_PLATFORM_CATEGORIES
 from app.services.log_manager import log_manager
-from app.utils.listing_dates import iso_to_naive_local
+from app.utils.listing_dates import iso_to_naive_bucuresti
 from app.utils.olx_state import extract_olx_ad_meta
 
 _BASE = "https://www.olx.ro"
@@ -123,7 +123,7 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
                 raw = loc_el.get_text(" ", strip=True)
                 locatie = raw.split("-")[0].strip() if "-" in raw else raw.strip()
 
-            # DATE-2 — conventia Auto e datetime NAIV LOCAL (vezi iso_to_naive_local).
+            # DATE-2 — conventia Auto e datetime NAIV LOCAL (vezi iso_to_naive_bucuresti).
             # `_olx_id` da exact cheia din meta (token-ul -ID<...>.html).
             _meta = date_map.get(_olx_id(href) or "") or {}
 
@@ -148,8 +148,8 @@ async def search_olx_auto(query: str = "", filters: dict = {}, page: int = 1) ->
                 year=extract_year(titlu), km=extract_km(titlu),
                 pret=pret, moneda=moneda, locatie=locatie,
                 source_url=href, thumbnail_url=thumb,
-                listed_at=iso_to_naive_local(_meta.get("created")),
-                refreshed_at=iso_to_naive_local(_meta.get("refreshed")),
+                listed_at=iso_to_naive_bucuresti(_meta.get("created")),
+                refreshed_at=iso_to_naive_bucuresti(_meta.get("refreshed")),
             ))
             if len(results) >= MAX_LISTINGS:
                 break

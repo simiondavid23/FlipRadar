@@ -1750,7 +1750,7 @@ def _platform_scan_due(kw, platform: str, now=None) -> bool:
     cele noi poarta offsetul local.
 
     TZ-3 — aducerea aware-ului la naiv se face cu `la_ora_sistemului`, NU cu
-    `to_naive_local`. Amandoua dau acelasi rezultat pe o masina din Romania, dar a doua
+    `to_naive_bucuresti`. Amandoua dau acelasi rezultat pe o masina din Romania, dar a doua
     duce la `FUS_ANUNTURI` (Bucuresti FIXAT): pe un server in UTC, stampila proprie
     scrisa `+00:00` se citea ca ora Bucurestiului, adica 3 ore in VIITOR, si `due` nu mai
     devenea True niciodata — scanarea se oprea tacut. Stampila e scrisa cu ceasul

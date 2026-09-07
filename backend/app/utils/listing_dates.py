@@ -4,7 +4,7 @@ si cele doua conventii ale proiectului.
 Cele doua conventii, stabilite la DATE-1 si nemodificate de atunci:
   * Radar si Auto tin `listed_at` / `refreshed_at` ca datetime NAIV LOCAL. Motivul e
     `_too_old` (RAD-1), care compara `datetime.now()` naiv cu data anuntului: un
-    datetime aware ar arunca TypeError acolo. -> `iso_to_naive_local`.
+    datetime aware ar arunca TypeError acolo. -> `iso_to_naive_bucuresti`.
   * Imobiliare emite STRING ISO din scraper si il trece prin `fromisoformat` in
     scanner. -> `normalize_iso`, ca stringul persistat sa aiba mereu aceeasi forma.
 
@@ -20,12 +20,12 @@ browser ca ora locala, adica a aceleiasi masini).
 Doua ceasuri, deliberat separate:
   * `acum_local()` — ceasul NOSTRU (`found_at`, `log_entries.created_at`, pragurile de
     cleanup/retentie/filtre): ora sistemului pe care ruleaza aplicatia;
-  * `to_naive_local()` / `din_fus()` — ora DECLARATA de platforma (`listed_at`,
+  * `to_naive_bucuresti()` / `din_fus()` — ora DECLARATA de platforma (`listed_at`,
     `refreshed_at`): `FUS_ANUNTURI`, ca „postat 12:54" sa arate ca pe olx.ro.
 Pe masina de productie (GTB Standard Time) cele doua dau exact aceeasi valoare.
 
 TZ-2 — regula s-a extins la TOATE coloanele de timp din baza: `acum_local()` peste tot,
-`to_naive_local()` pentru datele DECLARATE de sursa (`listed_at`, `refreshed_at`,
+`to_naive_bucuresti()` pentru datele DECLARATE de sursa (`listed_at`, `refreshed_at`,
 `posted_at`, `auction_date`). Nu mai exista niciun `utcnow()` pe o coloana din baza si
 niciun serializator care sa stampileze `Z` (`schemas/_types.py` a disparut).
 
@@ -63,8 +63,8 @@ TZ-3 — CE RULEAZA UNDE, si ce mai are voie sa fixeze un fus.
   Cele TREI ceasuri, care nu se amesteca NICIODATA intre ele:
     * ceasul NOSTRU  — `acum_local()` scrie, `la_ora_sistemului()` citeste. Fusul MASINII.
       Perechea de citire lipsea pana la TZ-3, si de aici veneau amestecurile: o valoare
-      scrisa cu ceasul nostru era citita inapoi cu `to_naive_local`, adica pe alt ceas.
-    * ceasul PIETEI  — `to_naive_local()` / `din_fus()`. `FUS_ANUNTURI`, Bucuresti FIXAT.
+      scrisa cu ceasul nostru era citita inapoi cu ceasul PIETEI, adica pe alt ceas.
+    * ceasul PIETEI  — `to_naive_bucuresti()` / `din_fus()`. `FUS_ANUNTURI`, Bucuresti FIXAT.
     * ceasul FACEBOOK — `_acum()` din nucleu, UTC aware (exceptia B de mai sus).
 
   Ce MAI fixeaza un fus, dupa runda, si de ce (lista e EXECUTABILA — `_FUSURI_FIXE_PERMISE`
@@ -82,6 +82,23 @@ TZ-3 — CE RULEAZA UNDE, si ce mai are voie sa fixeze un fus.
       SURSEI, intrarea in `din_fus`, care aterizeaza tot in `FUS_ANUNTURI`;
     * `utils/radar_scanner.py` — `astimezone()` gol pe capatul de SCRIERE al stampilei de
       scanare; citirea o desface cu `la_ora_sistemului`, deci perechea sta pe un ceas.
+
+TZ-3b — NUMELE, si a doua garda.
+
+  `to_naive_local` -> `to_naive_bucuresti`, `iso_to_naive_local` -> `iso_to_naive_bucuresti`
+  (52 + 50 de aparitii, 21 de fisiere). Numele vechi mintea exact acolo unde conta: „local"
+  se citea „ceasul masinii", cand functia fixeaza `Europe/Bucharest`. TOATE cele patru
+  amestecuri reparate la TZ-3 au intrat pe usa aia — cineva avea de citit inapoi o valoare
+  scrisa cu `acum_local()` si a ales functia al carei nume suna a pereche. Ca sa se vada de
+  ce a fost o capcana, si nu neglijenta: singura diferenta vizibila la locul apelului era
+  `to_naive_local` vs `la_ora_sistemului`, si amandoua pareau „ora locala".
+
+  Garda: `_CEAS_PIETEI_PERMIS` din `tests/test_tz_3.py` tine cele doua simboluri pe caile
+  de DATA (12 fisiere: scraperele + `routers/auto.py`), enumerate cu motiv, si le interzice
+  oriunde altundeva. Registru SEPARAT de `_FUSURI_FIXE_PERMISE`, fiindca listele au fisiere
+  diferite si tocmai diferenta e ce se pazeste: `radar_scanner.py` e in primul (are un
+  `astimezone()` gol legitim, capatul de scriere al stampilei) si trebuie sa fie in AFARA
+  celui de-al doilea. Un apel de ceas al pietei de acolo e prins de patru teste.
 
   CE GARANTEAZA CE. Testele care aserteaza ore absolute (TZ-1, TZ-2) dovedesc offsetul si
   au nevoie de fusul fixat de conftest. Doar testele de CONSISTENTA din `tests/test_tz_3.py`
@@ -160,22 +177,31 @@ def la_ora_sistemului(x) -> Optional[datetime]:
     mecanism in tot proiectul (TZ-3) — la fel cum `acum_local()` a strans intr-un loc
     toate `datetime.now()`-urile.
 
-    ATENTIE la nume, e capcana modulului: `to_naive_local` NU e ruda cu asta. Aia duce
-    la `FUS_ANUNTURI` (Europe/Bucharest, FIXAT), fiindca acolo traiesc orele DECLARATE
-    de platforme; asta duce la fusul MASINII, fiindca acolo traieste ceasul nostru. Pe
-    masina de productie (GTB) cele doua dau acelasi rezultat — de aceea amestecul lor a
-    putut sta ascuns pana cand suita a rulat pe un runner UTC.
+    Perechea de confundat e `to_naive_bucuresti`: aia duce la `FUS_ANUNTURI` (Bucuresti
+    FIXAT), fiindca acolo traiesc orele DECLARATE de platforme; asta duce la fusul
+    MASINII, fiindca acolo traieste ceasul nostru. Pe masina de productie (GTB) cele doua
+    dau acelasi rezultat — de aceea amestecul lor a putut sta ascuns pana cand suita a
+    rulat pe un runner UTC. Pana la TZ-3b cealalta se numea `to_naive_local`, si CHIAR
+    citea ca perechea asteia: cele patru amestecuri reparate la TZ-3 s-au strecurat toate
+    pe numele ala. Redenumirea e jumatate din reparatie; cealalta jumatate e garda
+    `_CEAS_PIETEI_PERMIS` din `tests/test_tz_3.py`, care tine simbolul pe caile de data.
 
     Naivul de la intrare se intoarce NESCHIMBAT (contractul e ca un naiv e deja pe
-    ceasul nostru), la fel ca la `to_naive_local`. `None` la lipsa sau tip nesuportat.
+    ceasul nostru), la fel ca la `to_naive_bucuresti`. `None` la lipsa sau tip nesuportat.
     """
     if not isinstance(x, datetime):
         return None
     return x.astimezone().replace(tzinfo=None) if x.tzinfo is not None else x
 
 
-def to_naive_local(x) -> Optional[datetime]:
+def to_naive_bucuresti(x) -> Optional[datetime]:
     """Orice moment venit de la o platforma -> datetime NAIV, in ora anunturilor.
+
+    TZ-3b — s-a numit `to_naive_local` pana acum, si numele mintea in singurul fel care
+    conta: „local" se citea „ceasul masinii", cand de fapt functia fixeaza
+    `Europe/Bucharest`. Toate cele patru amestecuri de fusuri reparate la TZ-3 au intrat
+    prin usa aia — cineva avea de citit inapoi o valoare scrisa cu `acum_local()` si a
+    ales functia al carei nume suna la fel. Numele nou nu mai lasa loc de citit gresit.
 
     Accepta: datetime aware (convertit), datetime naiv (intors NESCHIMBAT — contractul
     e ca naivul e DEJA in ora corecta), string ISO cu sau fara offset (`Z` normalizat),
@@ -225,7 +251,7 @@ def din_fus(dt_naiv, nume_fus: str) -> Optional[datetime]:
     if not isinstance(dt_naiv, datetime):
         return None
     if dt_naiv.tzinfo is not None:
-        return to_naive_local(dt_naiv)
+        return to_naive_bucuresti(dt_naiv)
     try:
         sursa = ZoneInfo(nume_fus)
     except Exception:
@@ -250,7 +276,7 @@ def normalize_iso(s) -> Optional[str]:
     return txt
 
 
-def iso_to_naive_local(s) -> Optional[datetime]:
+def iso_to_naive_bucuresti(s) -> Optional[datetime]:
     """String ISO -> datetime NAIV LOCAL (conventia Radar/Auto).
 
     Aceeasi semantica ca `_naiv_local` din `services/radar/facebook_scraper.py`
@@ -266,7 +292,11 @@ def iso_to_naive_local(s) -> Optional[datetime]:
     HOTFIX CI — conversia se face la `FUS_ANUNTURI` (Europe/Bucharest), EXPLICIT, nu la
     fusul masinii: rezultatul trebuie sa fie acelasi pe laptop si pe runner-ul UTC.
 
-    TZ-1 — a devenit un alias subtire peste `to_naive_local`, care face acelasi lucru
-    dar accepta si datetime si epoch. Numele ramane: are patru consumatori.
+    TZ-1 — a devenit un alias subtire peste `to_naive_bucuresti`, care face acelasi lucru
+    dar accepta si datetime si epoch. A supravietuit fiindca isi anunta intrarea (un
+    STRING ISO) in nume, si fiindca are cinci module consumatoare.
+
+    TZ-3b — redenumit din `iso_to_naive_local` odata cu functia pe care o inveleste,
+    pentru acelasi motiv: „local" se citea „ceasul masinii".
     """
-    return to_naive_local(s)
+    return to_naive_bucuresti(s)

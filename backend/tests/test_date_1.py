@@ -375,7 +375,7 @@ def test_iso_parser_da_ora_bucurestiului_indiferent_de_offsetul_din_input():
     Asertia e pe o valoare FIXA (nu derivata din ceasul masinii), deci testul are
     acelasi verdict pe orice runner — asta e tot rostul lui.
     """
-    from app.utils.listing_dates import iso_to_naive_local
+    from app.utils.listing_dates import iso_to_naive_bucuresti
 
     asteptat = datetime(2026, 9, 2, 12, 54, 54)          # 2 sept = ora de vara, UTC+3
     for intrare in ("2026-09-02T12:54:54+03:00",         # cum trimite OLX vara
@@ -383,24 +383,24 @@ def test_iso_parser_da_ora_bucurestiului_indiferent_de_offsetul_din_input():
                     "2026-09-02T09:54:54Z",
                     "2026-09-02T11:54:54+02:00",
                     "2026-09-02T04:54:54-05:00"):
-        assert iso_to_naive_local(intrare) == asteptat, intrare
+        assert iso_to_naive_bucuresti(intrare) == asteptat, intrare
 
 
 def test_iso_parser_respecta_ora_de_iarna():
     """Romania trece pe UTC+2 iarna — de aia e ZoneInfo, nu un offset fix de +3."""
-    from app.utils.listing_dates import iso_to_naive_local
+    from app.utils.listing_dates import iso_to_naive_bucuresti
 
-    assert iso_to_naive_local("2026-01-15T08:00:00+00:00") == datetime(2026, 1, 15, 10, 0)
-    assert iso_to_naive_local("2026-01-15T10:00:00+02:00") == datetime(2026, 1, 15, 10, 0)
+    assert iso_to_naive_bucuresti("2026-01-15T08:00:00+00:00") == datetime(2026, 1, 15, 10, 0)
+    assert iso_to_naive_bucuresti("2026-01-15T10:00:00+02:00") == datetime(2026, 1, 15, 10, 0)
     # aceeasi zi calendaristica, vara: +3
-    assert iso_to_naive_local("2026-07-15T08:00:00+00:00") == datetime(2026, 7, 15, 11, 0)
+    assert iso_to_naive_bucuresti("2026-07-15T08:00:00+00:00") == datetime(2026, 7, 15, 11, 0)
 
 
 def test_input_naiv_ramane_neschimbat():
     """Fara offset nu se ghiceste nimic — valoarea e deja locala prin conventie."""
-    from app.utils.listing_dates import iso_to_naive_local
+    from app.utils.listing_dates import iso_to_naive_bucuresti
 
-    assert iso_to_naive_local("2026-09-02T12:54:54") == datetime(2026, 9, 2, 12, 54, 54)
+    assert iso_to_naive_bucuresti("2026-09-02T12:54:54") == datetime(2026, 9, 2, 12, 54, 54)
 
 
 def test_niciun_astimezone_fara_argument_pe_caile_de_data():
@@ -413,7 +413,7 @@ def test_niciun_astimezone_fara_argument_pe_caile_de_data():
     convertea la fusul masinii, „fiindca acolo contractul e relativ la `datetime.now()`";
     dar iesirea lui e `listed_at`, coloana care traieste in `FUS_ANUNTURI` peste tot
     altundeva, deci Facebook era singura platforma care scria alt ceas in acelasi camp.
-    Acum deleaga la `to_naive_local`, ca OLX si Storia.
+    Acum deleaga la `to_naive_bucuresti`, ca OLX si Storia.
 
     SCUTITA, prin nume: `listing_dates.la_ora_sistemului` — helperul UNIC pentru ceasul
     sistemului (perechea lui `acum_local()`). Acolo fusul masinii e raspunsul CORECT, si

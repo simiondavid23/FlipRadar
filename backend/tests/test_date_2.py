@@ -15,7 +15,7 @@ from datetime import datetime
 
 # OLX-STATE-1: helperii de data au plecat in `utils/listing_dates`; parserul de state
 # a ramas in `utils/olx_state`. Doar importurile s-au re-tintit, nicio asertie.
-from app.utils.listing_dates import iso_to_naive_local, normalize_iso
+from app.utils.listing_dates import iso_to_naive_bucuresti, normalize_iso
 from app.utils.olx_state import extract_olx_ad_meta, extract_olx_state
 
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -428,9 +428,9 @@ def test_t10_autovit_alinierea_e_pe_data_id_nu_pe_pozitie(monkeypatch):
 
     prin_id = {r["external_id"]: r for r in rezultate}
     # X1 e ULTIMUL in urqlState (luna 03) desi e PRIMUL card -> proba ca nu e pozitional.
-    assert prin_id["X1"]["listed_at"] == iso_to_naive_local("2026-03-01T00:00:00Z")
-    assert prin_id["X1"]["refreshed_at"] == iso_to_naive_local("2026-03-15T00:00:00Z")
-    assert prin_id["X3"]["listed_at"] == iso_to_naive_local("2026-01-01T00:00:00Z")
+    assert prin_id["X1"]["listed_at"] == iso_to_naive_bucuresti("2026-03-01T00:00:00Z")
+    assert prin_id["X1"]["refreshed_at"] == iso_to_naive_bucuresti("2026-03-15T00:00:00Z")
+    assert prin_id["X3"]["listed_at"] == iso_to_naive_bucuresti("2026-01-01T00:00:00Z")
     for r in rezultate:
         assert r["listed_at"].tzinfo is None and r["refreshed_at"].tzinfo is None
 
@@ -451,18 +451,18 @@ def test_t10b_autovit_card_fara_corespondent_ramane_none(monkeypatch):
 # ── T11 — helperii de data ───────────────────────────────────────────────────────
 
 def test_t11_acelasi_moment_scris_in_doua_fusuri_da_acelasi_naiv_local():
-    a = iso_to_naive_local("2026-08-01T06:45:38Z")
-    b = iso_to_naive_local("2026-08-01T09:45:38+03:00")
+    a = iso_to_naive_bucuresti("2026-08-01T06:45:38Z")
+    b = iso_to_naive_bucuresti("2026-08-01T09:45:38+03:00")
     assert a == b
     assert a.tzinfo is None
 
 
-def test_t11b_iso_to_naive_local_degradare():
-    assert iso_to_naive_local(None) is None
-    assert iso_to_naive_local("") is None
-    assert iso_to_naive_local("maine") is None
+def test_t11b_iso_to_naive_bucuresti_degradare():
+    assert iso_to_naive_bucuresti(None) is None
+    assert iso_to_naive_bucuresti("") is None
+    assert iso_to_naive_bucuresti("maine") is None
     # input deja naiv: se intoarce neschimbat (e local prin conventie)
-    assert iso_to_naive_local("2026-08-01T06:45:38") == datetime(2026, 8, 1, 6, 45, 38)
+    assert iso_to_naive_bucuresti("2026-08-01T06:45:38") == datetime(2026, 8, 1, 6, 45, 38)
 
 
 def test_t11c_normalize_iso():
