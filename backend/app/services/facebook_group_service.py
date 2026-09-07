@@ -12,12 +12,13 @@ from app.services.real_estate.extractor import (
     passes_keyword_filter,
 )
 from app.utils.cookie_crypto import decrypt_cookies
+from app.utils.listing_dates import acum_local
 
 
 async def _process_config(db, config) -> int:
     """Scrapeaza si proceseaza un singur config. Seteaza last_run_at/status,
     commit. Returneaza numarul de postari noi gasite."""
-    now = datetime.utcnow()
+    now = acum_local()
     try:
         cookies = decrypt_cookies(config.cookies_encrypted)
 
@@ -120,7 +121,7 @@ async def run_facebook_group_checks():
     """
     db = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = acum_local()
 
         configs = db.query(FacebookGroupConfig).filter(
             FacebookGroupConfig.is_active == True,  # noqa: E712

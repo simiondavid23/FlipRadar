@@ -1,6 +1,7 @@
 from sqlalchemy import Column, BigInteger, Integer, Text, DateTime
 from datetime import datetime, timezone
 
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -17,4 +18,4 @@ class VintedCatalog(Base):
     code = Column(Text, nullable=True)
     path = Column(Text, nullable=False)      # ex. "Femei > Îmbrăcăminte > Rochii"
     depth = Column(Integer, nullable=False)  # 0 = rădăcină
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: acum_local())

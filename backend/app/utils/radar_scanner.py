@@ -38,7 +38,7 @@ from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 from app.services.radar.vinted_html import guard_status as vinted_guard_status
-from app.utils.listing_dates import este_reactualizat
+from app.utils.listing_dates import acum_local, este_reactualizat, to_naive_local
 from app.utils.ore_active import in_ore_active
 
 
@@ -1741,8 +1741,15 @@ def _parse_platform_last_scan(kw) -> dict:
 def _platform_scan_due(kw, platform: str, now=None) -> bool:
     """SCHED-1 — True daca intervalul de polling a expirat PENTRU ACEASTA platforma.
     Fallback pe last_scan_at (legacy) cand platforma nu are inca timestamp propriu —
-    la deploy nimic nu porneste ca 'prim-scan'. Tratarea naive/aware ca inainte."""
-    now = now or datetime.now(timezone.utc)
+    la deploy nimic nu porneste ca 'prim-scan'.
+
+    TZ-2 — ceasul e `acum_local()`, iar un `last` NAIV inseamna acum ORA LOCALA, nu UTC.
+    Coercitia veche (`replace(tzinfo=timezone.utc)`) ar fi facut, dupa conversia lui
+    `last_scan_at`, ca fiecare keyword sa para scadent inca 3 ore dupa deploy. Un `last`
+    AWARE ramane posibil: stampilele vechi din `platform_last_scan` poarta `+00:00`, iar
+    cele noi poarta offsetul local — ambele se aduc la naiv local prin `to_naive_local`.
+    """
+    now = now or acum_local()
     _stamps = _parse_platform_last_scan(kw)
     ts = _stamps.get(platform)
     if ts:
@@ -1759,16 +1766,23 @@ def _platform_scan_due(kw, platform: str, now=None) -> bool:
         last = kw.last_scan_at
     if last is None:
         return True
-    if last.tzinfo is None:
-        last = last.replace(tzinfo=timezone.utc)
+    if last.tzinfo is not None:
+        last = to_naive_local(last)
     return (now - last) >= timedelta(minutes=kw.poll_interval_minutes or 5)
 
 
 def _mark_platform_scanned(kw, platform: str, now=None) -> None:
-    """Scrie timestamp-ul platformei in JSON si actualizeaza last_scan_at (maxim global)."""
-    now = now or datetime.now(timezone.utc)
+    """Scrie timestamp-ul platformei in JSON si actualizeaza last_scan_at (maxim global).
+
+    TZ-2 — stringul din JSON se emite cu `astimezone()`, deci ora LOCALA cu offsetul
+    local (`+03:00`), nu naiv: e singurul timestamp al rundei care traieste ca text, si
+    un text auto-descriptiv poate fi citit fara sa stii ce conventie l-a scris. Cititorul
+    (`fromisoformat` in `_platform_scan_due`) accepta ambele forme, deci stampilele vechi
+    cu `+00:00` raman corecte fara backfill.
+    """
+    now = now or acum_local()
     d = _parse_platform_last_scan(kw)
-    d[platform] = now.isoformat()
+    d[platform] = now.astimezone().isoformat()
     kw.platform_last_scan = json.dumps(d)
     kw.last_scan_at = now
 
@@ -2257,7 +2271,7 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
         return _reaparitie_fara_rand(db, user, kw, platform, listing, settings,
                                      eur_ron, usd_ron, cursuri)
 
-    row.last_checked_at = datetime.now(timezone.utc)
+    row.last_checked_at = acum_local()
 
     try:
         new_price = float(listing.get("price")) if listing.get("price") else None
@@ -2729,7 +2743,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
             # FEED-AUDIT (A1): stampila se punea la SFARSITUL scanului -> intervalul
             # efectiv era interval + durata scanului, adica ~2x ("la 5 min" = ~10).
             # O capturam la inceput si o folosim la _mark_platform_scanned.
-            _scan_started_at = datetime.now(timezone.utc)
+            _scan_started_at = acum_local()
             # RAD-1 — prima scanare se judeca per platforma (SCHED-1), nu global.
             # FEED-AUDIT (A2): o platforma fara stampila proprie e prima EI scanare
             # (plafon strans + fara flood de notificari), chiar pe un keyword vechi;

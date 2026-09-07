@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -23,7 +24,7 @@ class Sale(Base):
     platform = Column(String, nullable=True)
     buyer = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
-    sold_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    sold_at = Column(DateTime, default=lambda: acum_local())
+    created_at = Column(DateTime, default=lambda: acum_local())
 
     user = relationship("User")

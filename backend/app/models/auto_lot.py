@@ -2,6 +2,7 @@
 # Schema de baza; modulul care o populeaza vine separat.
 from sqlalchemy import Column, Integer, String, Text, DateTime, Numeric, JSON, Boolean, ForeignKey
 from datetime import datetime
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -38,4 +39,4 @@ class AutoLot(Base):
     # Feed monitorizat: active/saved/ignored (independent de coloana `saved` de mai sus).
     status = Column(String(20), default="active")
     last_seen_at = Column(DateTime, nullable=True)  # ultima data cand scanerul a mai vazut lotul
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: acum_local())

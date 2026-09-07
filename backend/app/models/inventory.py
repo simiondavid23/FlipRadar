@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -17,8 +18,8 @@ class InventoryItem(Base):
     currency = Column(String, default="RON", nullable=False)
     source = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
-    purchased_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    purchased_at = Column(DateTime, default=lambda: acum_local())
+    created_at = Column(DateTime, default=lambda: acum_local())
+    updated_at = Column(DateTime, default=lambda: acum_local(), onupdate=lambda: acum_local())
 
     user = relationship("User")

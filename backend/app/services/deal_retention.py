@@ -61,6 +61,7 @@ from app.models.deal import Deal
 from app.models.shop_price_memory import ShopPriceMemory
 from app.models.shop_scan_state import ShopScanState
 from app.services.log_manager import log_manager
+from app.utils.listing_dates import acum_local
 
 
 def _zile(nume: str, implicit: int) -> int:
@@ -103,7 +104,7 @@ def run_deal_cleanup(db) -> dict:
     prinde si o scrie in consola, iar jobul urmator reincearca. Curatenia care
     esueaza pe jumatate ar fi mai rea decat una care nu ruleaza deloc.
     """
-    acum = datetime.now(timezone.utc)
+    acum = acum_local()
     prag_stale = acum - timedelta(days=DEAL_STALE_DAYS)
     prag_retentie = acum - timedelta(days=DEAL_RETENTION_DAYS)
     prag_memorie = acum - timedelta(days=DEAL_MEMORY_DAYS)

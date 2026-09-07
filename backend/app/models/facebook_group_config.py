@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -19,4 +20,4 @@ class FacebookGroupConfig(Base):
     cookies_saved_at = Column(DateTime, nullable=True)  # data salvarii cookies
     last_run_at = Column(DateTime, nullable=True)
     last_run_status = Column(String(50), nullable=True)  # "ok" | "eroare" | "cookies_expirate"
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: acum_local())

@@ -123,6 +123,7 @@ def config_din_env() -> ConfigPlanificator:
     )
 
 
+# TZ-2 — EXCEPTIE: aici naivul CHIAR inseamna UTC (conventia interna a subsistemului FB).
 def _ca_utc(dt: Optional[datetime]) -> Optional[datetime]:
     """Datetime-ul citit din DB, adus la UTC aware.
 
@@ -295,6 +296,7 @@ class Planificator:
         pica in functie de cand e rulat.
         """
         t = acum if acum is not None else self._acum()
+        # TZ-2 — EXCEPTIE: naivul e UTC aici, nu ora locala; vezi FUS_LOCAL mai sus.
         if t.tzinfo is None:
             t = t.replace(tzinfo=timezone.utc)
         return t.astimezone(ZoneInfo(FUS_LOCAL)).hour

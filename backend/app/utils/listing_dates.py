@@ -23,6 +23,32 @@ Doua ceasuri, deliberat separate:
   * `to_naive_local()` / `din_fus()` — ora DECLARATA de platforma (`listed_at`,
     `refreshed_at`): `FUS_ANUNTURI`, ca „postat 12:54" sa arate ca pe olx.ro.
 Pe masina de productie (GTB Standard Time) cele doua dau exact aceeasi valoare.
+
+TZ-2 — regula s-a extins la TOATE coloanele de timp din baza: `acum_local()` peste tot,
+`to_naive_local()` pentru datele DECLARATE de sursa (`listed_at`, `refreshed_at`,
+`posted_at`, `auction_date`). Nu mai exista niciun `utcnow()` pe o coloana din baza si
+niciun serializator care sa stampileze `Z` (`schemas/_types.py` a disparut).
+
+EXCEPTIILE, singurele locuri unde UTC ramane corect, si de ce:
+
+  A. CONTRACT EXTERN — valoarea e produsa SAU consumata de altcineva decat aplicatia:
+     * `utils/auth.py` — `exp` din JWT: il decodeaza biblioteca, dupa RFC;
+     * `services/license_service.py` — expirarea cheii de licenta, emisa in afara;
+     * `scrapers/facebook/bootstrap.py` — `captured_at`, prospetimea sesiunii FB, si
+       `facebook_group_configs.cookies_saved_at`: se judeca fata de ce spune Facebook;
+     * `scrapers/facebook/atingere.py` — marcajul `...Z` al aceleiasi sesiuni;
+     * `routers/health.py` — raspuns citit de monitorizare, ISO cu offset.
+
+  B. CONTRACT INTERN, subsistemul Facebook (`scrapers/facebook/{executor,planner,
+     bazin,parse}.py`, coloanele `fb_scan_state.last_run_at`/`next_due_at` si
+     `fb_pool.prima_vedere_at`/`ultima_vedere_at`). Acolo `_acum()` intoarce UTC AWARE,
+     naivul din baza INSEAMNA UTC, iar forma orara a traficului se citeste in
+     `FUS_LOCAL = Europe/Bucharest`, FIXAT explicit. Motivul e in `planner.py:51-52`:
+     „un server in alt fus n-are voie sa schimbe forma traficului catre Facebook".
+     E aceeasi specie ca `FUS_ANUNTURI` — o regula ancorata in PIATA, nu in masina —
+     deci a urma ceasul sistemului ar fi fost o regresie, nu o uniformizare. Fiecare
+     coercitie „naiv inseamna UTC" de acolo poarta un comentariu `TZ-2 — EXCEPTIE`.
+     `services/radar/amprenta_ferma.py` citeste canonicul FB, deci intra tot aici.
 """
 from datetime import datetime, timedelta
 from typing import Optional

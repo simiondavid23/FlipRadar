@@ -32,13 +32,14 @@ def _within_hours(kw: RealEstateKeyword) -> bool:
 def _polling_due(kw, now: datetime) -> bool:
     """PURA: True daca intervalul de polling per keyword a expirat de la ultimul scan.
 
-    `now` (aware UTC) e injectat pentru testabilitate. Un last_scan_at naiv (fara tzinfo)
-    e considerat UTC — aceeasi conventie ca la Radar.
+    `now` (naiv local, `acum_local()`) e injectat pentru testabilitate. Un last_scan_at
+    naiv e considerat ORA LOCALA — aceeasi conventie ca la Radar (TZ-2).
     Fallback 30 min = default-ul RE (polling_interval_minutes), NU 5 ca la Radar.
     """
     if kw.last_scan_at is None:
         return True
-    last = kw.last_scan_at.replace(tzinfo=timezone.utc) if kw.last_scan_at.tzinfo is None else kw.last_scan_at
+    # TZ-2 — naiv inseamna acum ora LOCALA (ca `now`); doar un aware vechi se converteste.
+    last = to_naive_local(kw.last_scan_at) if kw.last_scan_at.tzinfo is not None else kw.last_scan_at
     elapsed = now - last
     return elapsed >= timedelta(minutes=kw.polling_interval_minutes or 30)
 
@@ -333,10 +334,10 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
                     existing.price_per_sqm = (
                         round(new_price / existing.area_sqm, 2)
                         if existing.area_sqm else None)
-                    existing.last_price_change_at = datetime.now(timezone.utc)
+                    existing.last_price_change_at = acum_local()
                     log_manager.emit("real_estate", "WARN",
                         f"Preț scăzut {drop*100:.0f}%: {title[:60]}")
-        existing.last_checked_at = datetime.now(timezone.utc)
+        existing.last_checked_at = acum_local()
         db.commit()
         return None, "duplicat"  # deja existent (nu e nou)
 
@@ -432,7 +433,7 @@ def _save_listing(db: Session, kw: RealEstateKeyword,
         listed_at       = seed["listed_at"],
         refreshed_at    = seed["refreshed_at"],
         found_at        = acum_local(),              # TZ-1: ceasul nostru
-        last_checked_at = datetime.now(timezone.utc),
+        last_checked_at = acum_local(),
     )
     db.add(listing)
     db.commit()
@@ -703,7 +704,7 @@ def _save_fb_group_post(db: Session, post: dict, kw: RealEstateKeyword,
         # TZ-1 — `posted_at` din grupurile FB vine naiv-UTC (fromtimestamp(tz=utc)).
         listed_at       = to_naive_local(post.get("posted_at") or post.get("created_at")),
         found_at        = acum_local(),              # TZ-1: ceasul nostru (ramura FBG)
-        last_checked_at = datetime.now(timezone.utc),
+        last_checked_at = acum_local(),
     )
     db.add(listing)
     db.commit()
@@ -732,7 +733,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
     # Polling per keyword: scheduler-ul da tick des (5 min), dar scanam DOAR keyword-urile
     # scadente (decizia in _polling_due). Scan-ul manual paseaza force_polling=True si ocoleste
     # intervalul. Daca niciunul nu e scadent -> return FARA log (tick-ul de 5 min nu spameaza).
-    now = datetime.now(timezone.utc)
+    now = acum_local()
     keywords = _due_keywords(keywords, now, force_polling)
     if not keywords:
         return
@@ -806,7 +807,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
                 for cfg in configs:
                     # coloana FacebookGroupPost.created_at e naivă-UTC (default=datetime.utcnow);
                     # migrarea completă pe timezone-aware rămâne post-licență.
-                    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=48)
+                    cutoff = acum_local().replace(tzinfo=None) - timedelta(hours=48)
                     posts = db.query(FacebookGroupPost).filter(
                         FacebookGroupPost.config_id == cfg.id,
                         FacebookGroupPost.created_at >= cutoff,
@@ -881,7 +882,7 @@ def run_real_estate_scan(db: Session, user_id: Optional[int] = None,
         # Marcheaza scanul efectiv pentru polling-ul per keyword — DUPA procesare, indiferent de
         # rezultat (0 anunturi sau eroare deja logata). Un keyword sarit de _within_hours NU
         # ajunge aici, deci NU "consuma" intervalul.
-        kw.last_scan_at = datetime.now(timezone.utc)
+        kw.last_scan_at = acum_local()
         db.commit()
     set_log_user(None)  # MON-4 — dupa bucla, emit-urile redevin system
 
@@ -1000,7 +1001,7 @@ def run_cleanup(db: Session) -> int:
             db.delete(listing)
             deleted += 1
         else:
-            listing.last_checked_at = datetime.now(timezone.utc)
+            listing.last_checked_at = acum_local()
         time.sleep(random.uniform(0.4, 1.0))
 
     db.commit()

@@ -117,7 +117,10 @@ def _pret(c):
 
 def _moment(c):
     """`listed_at` ca datetime comparabil. Naivul se citeste ca UTC — altfel un feed cu
-    momente amestecate ar ridica TypeError la scadere, adica exact intr-un scaner."""
+    momente amestecate ar ridica TypeError la scadere, adica exact intr-un scaner.
+
+    TZ-2 — EXCEPTIE, si e corect asa: sursa e canonicul Facebook, unde `listed_at` e
+    UTC AWARE (`parse.py:302`), NU o coloana din baza. Nimic de convertit aici."""
     la = c.get("listed_at")
     if la is None or not hasattr(la, "tzinfo"):
         return None

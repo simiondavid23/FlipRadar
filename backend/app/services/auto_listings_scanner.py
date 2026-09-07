@@ -212,7 +212,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         AutoFeedListing.external_id == ext_id,
     ).first()
     if existing:
-        existing.last_checked_at = datetime.now(timezone.utc)
+        existing.last_checked_at = acum_local()
         _alerta = False
         # SAVED-BRIDGE: reaparitia unui anunt cunoscut aduce pretul curent —
         # actualizam randul (pret + grad recalculat) in loc sa-l lasam inghetat
@@ -341,7 +341,7 @@ def _save_listing(db: Session, kw: AutoKeyword, raw: dict,
         listed_at    = raw.get("listed_at"),
         refreshed_at = raw.get("refreshed_at"),
         found_at     = acum_local(),                 # TZ-1: ceasul nostru, ora sistemului
-        last_checked_at = datetime.now(timezone.utc),
+        last_checked_at = acum_local(),
     )
     db.add(listing)
     db.commit()

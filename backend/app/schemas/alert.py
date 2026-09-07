@@ -1,6 +1,6 @@
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
-from app.schemas._types import UTCDateTime
 from app.schemas.product import ProductResponse
 
 
@@ -45,8 +45,8 @@ class AlertResponse(BaseModel):
     drop_pct: Optional[float] = None
     is_active: bool
     is_triggered: bool
-    triggered_at: Optional[UTCDateTime] = None
-    created_at: UTCDateTime
+    triggered_at: Optional[datetime] = None
+    created_at: datetime
     product: Optional[ProductResponse] = None
 
     model_config = ConfigDict(from_attributes=True)

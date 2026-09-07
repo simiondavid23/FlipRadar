@@ -5,6 +5,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -65,7 +66,7 @@ class Deal(Base):
     # Snapshot informativ din memoria de pret la momentul deal-ului.
     min_price_seen = Column(Float, nullable=True)
     state = Column(String(10), nullable=False, default="nou", index=True)
-    first_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    last_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    first_seen_at = Column(DateTime, default=lambda: acum_local(), nullable=False)
+    last_seen_at = Column(DateTime, default=lambda: acum_local(), nullable=False)
     ended_at = Column(DateTime, nullable=True)
     promoted_product_id = Column(Integer, ForeignKey("products.id"), nullable=True)

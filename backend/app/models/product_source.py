@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -23,8 +24,8 @@ class ProductSource(Base):
     # sursa ar fi putut fi inserat de oricate ori).
     variant = Column(String, nullable=False, default="", server_default="")
     last_checked_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: acum_local())
+    updated_at = Column(DateTime, default=lambda: acum_local(), onupdate=lambda: acum_local())
 
     __table_args__ = (UniqueConstraint("product_id", "source", "variant", name="uq_product_source_variant"),)
 

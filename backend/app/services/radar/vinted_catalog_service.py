@@ -16,6 +16,7 @@ from app.services.radar import vinted_html
 from app.services.radar.exclusion_engine import normalize
 from app.services.log_manager import log_manager
 from app.models.vinted_catalog import VintedCatalog
+from app.utils.listing_dates import acum_local
 
 
 _CATALOG_URL = "https://www.vinted.ro/catalog"
@@ -166,7 +167,7 @@ def refresh_catalog_tree(db) -> dict:
             f"Catalog Vinted: doar {len(nodes)} noduri (<{_MIN_NODES}) — esec, NU sterg datele vechi")
         return {"ok": False, "reason": "too_few", "count": len(nodes)}
 
-    now = datetime.now(timezone.utc)
+    now = acum_local()
     try:
         db.query(VintedCatalog).delete()
         db.bulk_insert_mappings(VintedCatalog, [{**n, "updated_at": now} for n in nodes])

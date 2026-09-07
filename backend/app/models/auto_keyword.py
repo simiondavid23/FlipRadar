@@ -1,6 +1,7 @@
 from sqlalchemy import (Boolean, Column, Float, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -38,4 +39,4 @@ class AutoKeyword(Base):
     grade_a_min              = Column(Float, nullable=True)   # NULL = foloseste implicit (40)
     grade_b_min              = Column(Float, nullable=True)   # NULL = foloseste implicit (25)
     grade_c_min              = Column(Float, nullable=True)   # NULL = foloseste implicit (10)
-    created_at               = Column(TIMESTAMP, server_default=func.now())
+    created_at               = Column(TIMESTAMP, default=lambda: acum_local())

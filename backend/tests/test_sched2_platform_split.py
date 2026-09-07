@@ -13,6 +13,7 @@ import app.services.auto_listings_scanner as auto_scanner
 import app.services.real_estate_scanner as re_scanner
 from app.services.auto_listings_scanner import AUTO_PLATFORMS, run_auto_scan
 from app.services.real_estate_scanner import RE_PLATFORMS, run_real_estate_scan
+from app.utils.listing_dates import acum_local
 
 
 @pytest.fixture
@@ -168,7 +169,7 @@ def test_re_polling_ul_ramane_autoritatea_scadentei(monkeypatch, _fix_bnr):
         kw = (db.query(RealEstateMonitorKeyword)
               .filter(RealEstateMonitorKeyword.user_id == user.id,
                       RealEstateMonitorKeyword.platform == "storia").first())
-        kw.last_scan_at = datetime.now(timezone.utc)   # tocmai scanat -> nescadent
+        kw.last_scan_at = acum_local()   # TZ-2: ceasul local; tocmai scanat -> nescadent
         db.commit()
         scanate = _spy(monkeypatch, re_scanner)
         run_real_estate_scan(db, platform="storia")

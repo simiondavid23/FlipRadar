@@ -56,6 +56,7 @@ from app.services.deal_scanner import (
     _evalueaza, _prag, _pret_strict, _scrie_stare, _settings, preincarca_pagina,
 )
 from app.services.shop_registry import listing_descriptor, listing_domains
+from app.utils.listing_dates import acum_local
 
 # HTML listing pages are an order of magnitude heavier than `/products.json`
 # (1-2.6 MB each in the probes), so the pause between pages is longer than the
@@ -383,7 +384,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
         raise RuntimeError(f"{domain} nu are descriptor de listare")
 
     moneda = descriptor.get("currency")
-    acum = datetime.now(timezone.utc)
+    acum = acum_local()
 
     # Anti-avalanche (design decision, deliberate): on a domain's FIRST successful
     # scan nothing is sent to Discord. R1 is free on this path — every card that

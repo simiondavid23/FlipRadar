@@ -211,6 +211,7 @@ def _citeste_cache() -> Optional[Bootstrap]:
         brut = json.loads(cale.read_text(encoding="utf-8"))
         captat = datetime.fromisoformat(brut["captured_at"])
         if captat.tzinfo is None:
+            # TZ-2 — EXCEPTIE (contract extern): prospetimea sesiunii FB se judeca in UTC.
             captat = captat.replace(tzinfo=timezone.utc)
         varsta_h = (datetime.now(timezone.utc) - captat).total_seconds() / 3600
         if varsta_h > _ttl_ore():

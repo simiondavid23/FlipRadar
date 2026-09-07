@@ -6,6 +6,7 @@ noul modul "Imobiliare Monitor" (feed scorat + zone normalizate).
 from sqlalchemy import (Boolean, Column, Integer, JSON, Numeric,
                         String, Text, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -38,7 +39,7 @@ class RealEstateMonitorKeyword(Base):
     active_hours_start       = Column(Integer)
     active_hours_end         = Column(Integer)
     polling_interval_minutes = Column(Integer, default=30)
-    created_at               = Column(TIMESTAMP, server_default=func.now())
+    created_at               = Column(TIMESTAMP, default=lambda: acum_local())
     # Ultimul scan efectiv — folosita de polling-ul per keyword (_polling_due, IM-4).
     last_scan_at             = Column(TIMESTAMP)
     # Termeni exclusi pe titlu+descriere, aplicati local in post-filtru (_matches_exclusions, IM-6).

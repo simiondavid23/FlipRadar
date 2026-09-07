@@ -27,7 +27,8 @@ class _KwStub:
         self.poll_interval_minutes = poll
 
 
-_NOW = datetime(2026, 8, 2, 12, 0, 0, tzinfo=timezone.utc)
+# TZ-2 — ceasul scadentei e naiv local.
+_NOW = datetime(2026, 8, 2, 12, 0, 0)
 
 
 # ── A1: stampila la inceput -> intervalul real e cel promis ──────────────────────

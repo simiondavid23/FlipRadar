@@ -74,6 +74,7 @@ from app.services.log_manager import set_log_user
 from app.services.deal_scanner import _evalueaza, _prag, _scrie_stare, _settings
 from app.services.listing_scanner import _e_primul_scan, _prag_r1
 from app.services.shop_registry import catalog_api_descriptor, catalog_api_domains
+from app.utils.listing_dates import acum_local
 
 # Fereastra API: EXACT 50 de elemente (masurat VTX-3, vezi docstring).
 _FEREASTRA = 50
@@ -401,7 +402,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
     # Baza din descriptor, nu din cheia de registru: cheia e `f64.ro`, dar API-ul
     # raspunde pe `www.f64.ro` — vezi comentariul din registru.
     baza = descriptor.get("base") or f"https://{domain}"
-    acum = datetime.now(timezone.utc)
+    acum = acum_local()
     primul_scan = _e_primul_scan(db, domain)
     prag_r1 = _prag_r1(settings)
 

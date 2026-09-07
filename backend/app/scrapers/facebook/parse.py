@@ -160,6 +160,7 @@ def filtreaza_dupa_varsta(canonice, ore_max: float, *, acum=None) -> list[dict]:
             out.append(c)                     # nedatat: se pastreaza, vezi docstring
             continue
         if la.tzinfo is None:                 # aware/naiv nu se compara direct
+            # TZ-2 — EXCEPTIE: `listed_at` din canonicul FB e UTC aware; naivul e UTC.
             la = la.replace(tzinfo=timezone.utc)
         if la >= prag:
             out.append(c)

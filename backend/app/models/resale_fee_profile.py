@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -42,8 +43,8 @@ class ResaleFeeProfile(Base):
     verified_at = Column(String, nullable=True)
     note = Column(String, nullable=True)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: acum_local())
+    updated_at = Column(DateTime, default=lambda: acum_local(),
+                        onupdate=lambda: acum_local())
 
     user = relationship("User")

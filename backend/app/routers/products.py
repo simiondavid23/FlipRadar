@@ -43,6 +43,7 @@ from app.services.product_page_extractor import (
 )
 # LOT1 — politica de identitate a URL-ului per magazin (vezi create_product_from_url).
 from app.services.shop_registry import url_identity_of
+from app.utils.listing_dates import acum_local
 
 _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
@@ -106,7 +107,7 @@ def attach_source_to_product(
             current_price=price,
             currency=currency or "EUR",
             variant=variant,
-            last_checked_at=datetime.now(timezone.utc),
+            last_checked_at=acum_local(),
         )
         db.add(ps)
         product.sources.append(ps)
@@ -117,7 +118,7 @@ def attach_source_to_product(
             ps.currency = currency
         if source_url:
             ps.source_url = source_url
-        ps.last_checked_at = datetime.now(timezone.utc)
+        ps.last_checked_at = acum_local()
 
     if price is not None:
         db.add(PriceHistory(
@@ -528,7 +529,7 @@ def create_product(
             current_price=new_product.current_price,
             currency=new_product.currency or "EUR",
             variant=product_data.variant,
-            last_checked_at=datetime.now(timezone.utc),
+            last_checked_at=acum_local(),
         ))
 
     if new_product.current_price:
@@ -821,7 +822,7 @@ def refresh_product_price(
         raise HTTPException(status_code=400, detail="Produsul nu are nicio sursa scrapeable.")
 
     results: List[RefreshSourceResult] = []
-    now = datetime.now(timezone.utc)
+    now = acum_local()
     for i, ps in enumerate(product.sources):
         if i > 0:
             time.sleep(random.uniform(*_SCRAPE_DELAY_RANGE))

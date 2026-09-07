@@ -26,6 +26,7 @@ from app.models.shop_price_memory import ShopPriceMemory
 from app.models.shop_scan_state import ShopScanState
 from app.services.log_manager import log_manager, set_log_user
 from app.services.shop_registry import SHOP_REGISTRY, shopify_domains
+from app.utils.listing_dates import acum_local
 
 # D9 — pragul global implicit, cand userul nu si-a pus unul.
 DEFAULT_DISCOUNT_THRESHOLD = 20.0
@@ -236,7 +237,7 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
     from app.services.discord_service import send_deal_notification
 
     moneda = (SHOP_REGISTRY.get(domain) or {}).get("currency")
-    acum = datetime.now(timezone.utc)
+    acum = acum_local()
     vazute: set[str] = set()
     # DEAL-2b — `calificate` != `vazute`: primul e "am citit produsul", al doilea
     # "produsul CHIAR e un deal acum". Inchiderea se face pe al doilea, vezi jos.
@@ -388,7 +389,7 @@ def _scrie_stare(db, domain: str, status: str, produse: int = 0,
     if stare is None:
         stare = ShopScanState(shop_domain=domain)
         db.add(stare)
-    stare.last_scan_at = datetime.now(timezone.utc)
+    stare.last_scan_at = acum_local()
     stare.last_status = status
     stare.products_seen = produse
     stare.deals_active = deals_active
@@ -482,7 +483,7 @@ def record_refresh_diff_deal(db, *, product, ps, old_price, new_price, min30):
     # Stabil per INSTANTA de sursa (produs + magazin + varianta sunt deja unice pe
     # ProductSource), si mult sub 64 de caractere.
     external_id = f"src:{ps.id}"
-    acum = datetime.now(timezone.utc)
+    acum = acum_local()
     existent = (db.query(Deal)
                 .filter(Deal.shop_domain == shop_domain,
                         Deal.external_id == external_id)

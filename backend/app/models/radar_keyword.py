@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, ForeignKey, Text, JSON
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -50,4 +51,4 @@ class RadarKeyword(Base):
     # RP-2 — fraze care neutralizează excluderi (JSON listă), folosite doar în `advanced`.
     exclude_exceptions = Column(Text, nullable=True)
     last_scan_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=lambda: acum_local(), nullable=False)

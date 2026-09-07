@@ -1306,7 +1306,7 @@ def update_settings(
         s.platform_lajumate_enabled = bool(data.platform_lajumate_enabled)
     if data.platform_publi24_enabled is not None:
         s.platform_publi24_enabled = bool(data.platform_publi24_enabled)
-    s.updated_at = datetime.now(timezone.utc)
+    s.updated_at = acum_local()
     db.commit()
     db.refresh(s)
     return _settings_to_dict(s)

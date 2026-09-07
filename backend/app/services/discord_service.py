@@ -23,7 +23,7 @@ from typing import Optional
 import requests as req
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.utils.listing_dates import este_reactualizat
+from app.utils.listing_dates import acum_local, este_reactualizat
 
 
 class DiscordNotificationService:
@@ -80,7 +80,7 @@ class DiscordNotificationService:
     def _is_duplicate(self, listing_id: str, module: str,
                       webhook_url: str, db: Session) -> bool:
         from sqlalchemy import text
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff = acum_local() - timedelta(hours=24)
         result = db.execute(
             text("SELECT 1 FROM discord_notifications_sent "
                  "WHERE listing_id=:lid AND module=:mod AND webhook_url=:wh AND sent_at>:cutoff LIMIT 1"),
@@ -95,7 +95,7 @@ class DiscordNotificationService:
             text("INSERT INTO discord_notifications_sent (listing_id, module, webhook_url, sent_at) "
                  "VALUES (:lid, :mod, :wh, :now) ON CONFLICT DO NOTHING"),
             {"lid": listing_id, "mod": module, "wh": webhook_url,
-             "now": datetime.now(timezone.utc)}
+             "now": acum_local()}
         )
         db.commit()
 
@@ -138,7 +138,7 @@ class DiscordNotificationService:
 
             if resp.status_code in (200, 204):
                 item.status = "sent"
-                item.sent_at = datetime.now(timezone.utc)
+                item.sent_at = acum_local()
                 db.commit()
                 self._mark_sent(item.listing_id, item.module, item.webhook_url, db)
             else:
@@ -157,7 +157,7 @@ class DiscordNotificationService:
     def cleanup_stale(self, db: Session) -> None:
         """La startup: marchează pending mai vechi de 1h ca failed (stale)."""
         from sqlalchemy import text
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        cutoff = acum_local() - timedelta(hours=1)
         db.execute(
             text("UPDATE discord_queue SET status='failed', error_msg='Stale la restart' "
                  "WHERE status='pending' AND created_at < :cutoff"),
@@ -575,7 +575,7 @@ def cleanup_old_queue_rows(db) -> dict:
     from datetime import datetime, timezone, timedelta
     from sqlalchemy import text as _text
     from app.models.discord_queue_db import DiscordQueueItem
-    now = datetime.now(timezone.utc)
+    now = acum_local()
     sent = db.query(DiscordQueueItem).filter(
         DiscordQueueItem.status == "sent",
         DiscordQueueItem.sent_at < now - timedelta(days=7),

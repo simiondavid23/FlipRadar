@@ -19,6 +19,7 @@ from app.scrapers.auto.lots.iaai_public import search_iaai_lots
 from app.scrapers.auto.lots.sca_auctions import search_sca_lots
 from app.scrapers.auto.lots.openlane_scraper import search_openlane_lots
 from app.utils.ore_active import in_ore_active
+from app.utils.listing_dates import acum_local
 
 _SCRAPERS = {
     "copart": search_copart_lots,
@@ -80,7 +81,7 @@ def _save_lot(db: Session, user_id: int, keyword_id: int, raw: dict) -> bool:
     Pe lot deja vazut NU face un `continue` orb: actualizeaza campurile volatile
     (bid/buy-now/data licitatie) + last_seen_at (evitam bug-ul din radar_scanner)."""
     platform = raw.get("platform")
-    now = datetime.now(timezone.utc)
+    now = acum_local()
 
     raw_url = (raw.get("source_url") or "").strip()
     source_url = raw_url if raw_url.startswith("http") else None  # ignora placeholder gen JavaScript:void(0)
@@ -269,7 +270,7 @@ def run_auto_lot_scan_for_user(db: Session, user_id: int) -> dict:
                 db.rollback()
                 log_manager.emit("auto_lots", "ERR", f"Salvare lot esuata: {str(exc)[:80]}")
 
-        kw.last_scan_at = datetime.now(timezone.utc)
+        kw.last_scan_at = acum_local()
         db.commit()
         stats["keywords_scanned"] += 1
         log_manager.emit("auto_lots", "OK",

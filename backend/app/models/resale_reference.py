@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -43,8 +44,8 @@ class ResaleReference(Base):
     fetched_at = Column(DateTime, nullable=True)
     is_primary = Column(Boolean, nullable=False, default=False)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: acum_local())
+    updated_at = Column(DateTime, default=lambda: acum_local(),
+                        onupdate=lambda: acum_local())
 
     product = relationship("Product")

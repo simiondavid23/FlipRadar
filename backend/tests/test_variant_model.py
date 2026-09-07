@@ -118,10 +118,14 @@ def test_migrarea_adauga_variant_si_pastreaza_datele(tmp_path):
                          "currency, in_stock, variant, last_checked_at, created_at, "
                          "updated_at FROM product_sources ORDER BY id")
     assert len(rows) == 2
+    # TZ-2 — `_portable_migrations` ruleaza si backfill-ul `tz2b_retail`, care aduce
+    # `last_checked_at`/`created_at`/`updated_at` din UTC in ora locala. Ianuarie =
+    # UTC+2 la Bucuresti, deci +2 h; testul asta pinuieste rebuild-ul de tabela (nu se
+    # pierde niciun rand, `variant` devine ''), iar orele se compara dupa conversie.
     assert rows[0] == (1, 1, "emag.ro", "https://emag.ro/a", 100.0, "RON", 1, "",
-                       "2026-01-02 10:00:00", "2026-01-01 09:00:00", "2026-01-02 10:00:00")
+                       "2026-01-02 12:00:00", "2026-01-01 11:00:00", "2026-01-02 12:00:00")
     assert rows[1] == (2, 1, "altex.ro", "https://altex.ro/a", 120.5, "RON", None, "",
-                       None, "2026-01-01 09:30:00", "2026-01-01 09:30:00")
+                       None, "2026-01-01 11:30:00", "2026-01-01 11:30:00")
     engine.dispose()
 
 

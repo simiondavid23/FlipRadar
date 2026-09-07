@@ -8,7 +8,8 @@ from types import SimpleNamespace
 
 from app.services.real_estate_scanner import _polling_due, _due_keywords
 
-_NOW = datetime(2026, 7, 11, 12, 0, 0, tzinfo=timezone.utc)
+# TZ-2 — `_polling_due` compara pe ceasul local naiv (vezi test_radar_sched).
+_NOW = datetime(2026, 7, 11, 12, 0, 0)
 
 
 def _kw(last_scan_at=None, interval=30):

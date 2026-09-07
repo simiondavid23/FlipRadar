@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, Numeric
 from datetime import datetime
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -24,4 +25,4 @@ class FacebookGroupPost(Base):
     facilitati = Column(String(200), nullable=True)    # "parcare, balcon"
     posted_at = Column(DateTime, nullable=True)
     # FBG-2 (m1): is_read a fost sters odata cu endpoint-urile de postari brute.
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: acum_local())

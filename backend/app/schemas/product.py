@@ -1,6 +1,6 @@
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
-from app.schemas._types import UTCDateTime
 
 
 class ProductCreate(BaseModel):
@@ -50,7 +50,7 @@ class ProductSourceResponse(BaseModel):
     in_stock: Optional[bool] = None
     # FASHION-1a — marimea urmarita la aceasta sursa; "" = fara varianta.
     variant: str = ""
-    last_checked_at: Optional[UTCDateTime] = None
+    last_checked_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,7 +62,7 @@ class ProductSourceSuggestionResponse(BaseModel):
     name: Optional[str] = None
     price: Optional[float] = None
     currency: str
-    created_at: UTCDateTime
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,7 +83,7 @@ class ProductResponse(BaseModel):
     original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str
-    created_at: UTCDateTime
+    created_at: datetime
     sources: List[ProductSourceResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -125,7 +125,7 @@ class PriceHistoryResponse(BaseModel):
     source: Optional[str] = None
     # FASHION-1a — marimea careia ii apartine pretul; "" = fara varianta.
     variant: str = ""
-    recorded_at: UTCDateTime
+    recorded_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

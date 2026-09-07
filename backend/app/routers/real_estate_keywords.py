@@ -493,7 +493,7 @@ def save_manual_listing(
         score           = score,
         grade           = grade,
         found_at        = acum_local(),              # TZ-1: ceasul nostru
-        last_checked_at = datetime.now(timezone.utc),
+        last_checked_at = acum_local(),
     )
     db.add(listing)
     db.commit()

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -33,8 +34,8 @@ class User(Base):
     ai_provider = Column(String(20), nullable=True)   # None -> "groq"
     ai_api_key = Column(String, nullable=True)        # plain — instanta locala single-user
     ai_model = Column(String(100), nullable=True)     # None -> default-ul furnizorului
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: acum_local())
+    updated_at = Column(DateTime, default=lambda: acum_local(), onupdate=lambda: acum_local())
 
     # Relationships
     tracked_items = relationship("TrackedProduct", back_populates="user", cascade="all, delete-orphan")

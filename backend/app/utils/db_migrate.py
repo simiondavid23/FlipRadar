@@ -339,6 +339,153 @@ def _portable_migrations(conn, inspector):
     # ora locala. Fara conversie, tot ce e vechi ar sari cu 3 ore.
     _tz1_backfill_ore_locale(conn, inspector)
 
+    # TZ-2 — restul coloanelor de timp, in TREI grupuri cu registru separat (vezi
+    # `_TZ2_GRUPURI`). Trei intrari in loc de una fiindca registrul nu cunoaste
+    # aplicarea partiala: daca o singura migrare ar cadea pe ultimul tabel, reluarea
+    # ar reconverti tot ce apucase sa scrie.
+    for _nume in _TZ2_GRUPURI:
+        _tz2_backfill_grup(conn, inspector, _nume)
+
+
+# --- TZ-2: coloanele convertite, pe grupuri ------------------------------------
+# Ordinea in fiecare grup e mic -> mare: la o cadere, cat mai mult e deja aplicat.
+# NU apar aici, deliberat: `listed_at`/`refreshed_at`/`found_at` (TZ-1, deja locale),
+# `fb_scan_state.*` si `fb_pool.*` (subsistemul Facebook, UTC prin contract intern),
+# `facebook_group_configs.cookies_saved_at` (contract extern cu Facebook), si
+# `inventory_items.purchased_at` / `sales.sold_at` — acolo utilizatorul poate trimite
+# el data prin API (`schemas/inventory.py:18`, `schemas/sale.py:20`), deci NU se poate
+# dovedi ca toate randurile existente au fost scrise de ceasul nostru. Default-ul lor
+# s-a mutat pe `acum_local`, dar randurile vechi raman neatinse.
+_TZ2_GRUPURI = {
+    "tz2a_feed": [
+        ("radar_keywords", "last_scan_at"), ("radar_keywords", "created_at"),
+        ("real_estate_keywords", "last_scan_at"), ("real_estate_keywords", "created_at"),
+        ("auto_keywords", "created_at"),
+        ("auto_lot_keywords", "created_at"), ("auto_lot_keywords", "last_scan_at"),
+        ("radar_settings", "updated_at"), ("radar_message_templates", "created_at"),
+        ("shop_scan_state", "last_scan_at"),
+        ("auto_lot", "auction_date"), ("auto_lot", "last_seen_at"),
+        ("auto_lot", "created_at"),
+        ("facebook_group_configs", "created_at"), ("facebook_group_configs", "last_run_at"),
+        ("facebook_group_posts", "posted_at"), ("facebook_group_posts", "created_at"),
+        ("real_estate_listings", "last_checked_at"),
+        ("real_estate_listings", "last_price_change_at"),
+        ("radar_listings", "last_checked_at"),
+        ("radar_seen_ids", "seen_at"),
+        ("auto_feed_listings", "last_checked_at"),
+        ("deals", "ended_at"), ("deals", "first_seen_at"), ("deals", "last_seen_at"),
+        ("shop_price_memory", "last_seen_at"),
+    ],
+    "tz2b_retail": [
+        ("users", "created_at"), ("users", "updated_at"),
+        ("alerts", "triggered_at"), ("alerts", "created_at"),
+        ("tracked_products", "added_at"),
+        ("resale_fee_profiles", "created_at"), ("resale_fee_profiles", "updated_at"),
+        ("resale_references", "fetched_at"), ("resale_references", "created_at"),
+        ("resale_references", "updated_at"),
+        ("sales", "created_at"),
+        ("inventory_items", "created_at"), ("inventory_items", "updated_at"),
+        ("products", "created_at"), ("products", "updated_at"),
+        ("product_sources", "created_at"), ("product_sources", "updated_at"),
+        ("product_sources", "last_checked_at"),
+        ("product_source_suggestions", "created_at"),
+        ("price_history", "recorded_at"),
+    ],
+    "tz2c_rest": [
+        ("push_subscriptions", "created_at"),
+        ("auto_listing", "created_at"), ("auto_listing", "last_seen_at"),
+        ("real_estate_listing", "created_at"), ("real_estate_listing", "last_seen_at"),
+        ("vinted_catalogs", "updated_at"),
+        ("discord_queue", "created_at"), ("discord_queue", "sent_at"),
+    ],
+}
+
+_TZ2_BATCH = 5000
+
+
+def _tz2_progres(conn, tabel: str, coloana: str) -> int:
+    """Ultimul rowid convertit pentru (tabel, coloana); 0 daca nu s-a inceput.
+
+    Marcajul traieste in `schema_migrations`, sub forma `tz2p:<tabel>.<coloana>:<rowid>`,
+    si se scrie in ACEEASI tranzactie ca batch-ul pe care il confirma. De aici vine
+    reluabilitatea: o cadere la batch-ul 9 din 14 nu reconverteste primele 8.
+    """
+    prefix = "tz2p:" + tabel + "." + coloana + ":"
+    rand = conn.execute(
+        text("SELECT migration_name FROM schema_migrations "
+             "WHERE migration_name LIKE :p"), {"p": prefix + "%"}).fetchone()
+    if not rand:
+        return 0
+    try:
+        return int(str(rand[0]).rsplit(":", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+def _tz2_backfill_grup(conn, inspector, nume: str) -> None:
+    """UTC -> ora locala pe coloanele grupului, in batch-uri de 5.000 pe rowid.
+
+    O tranzactie per BATCH (nu per migrare): pe `shop_price_memory` sunt ~67.000 de
+    randuri, iar o singura tranzactie ar tine baza blocata exact cand serviciul
+    porneste. Conversia e per rand, prin `astimezone()`, deci DST-ul fiecarui rand se
+    aplica singur — un `+3` uniform ar strica randurile de iarna.
+    """
+    if _applied(conn, nume):
+        return
+    import time as _time
+    pornit = _time.monotonic()
+    total = {}
+    try:
+        for tabel, coloana in _TZ2_GRUPURI[nume]:
+            if not _table_exists(inspector, tabel) or not _column_exists(inspector, tabel, coloana):
+                continue
+            ultim = _tz2_progres(conn, tabel, coloana)
+            convertite = 0
+            while True:
+                # Marginea de rowid a batch-ului se ia pe TOATE randurile, nu doar pe
+                # cele nenule: altfel un bloc intreg de NULL-uri ar opri avansul.
+                marginea = conn.execute(text(
+                    "SELECT MAX(rowid) FROM (SELECT rowid FROM " + tabel +
+                    " WHERE rowid > :u ORDER BY rowid LIMIT " + str(_TZ2_BATCH) + ")"),
+                    {"u": ultim}).scalar()
+                if marginea is None:
+                    break
+                randuri = conn.execute(text(
+                    "SELECT rowid, " + coloana + " FROM " + tabel +
+                    " WHERE rowid > :u AND rowid <= :m AND " + coloana + " IS NOT NULL"),
+                    {"u": ultim, "m": marginea}).fetchall()
+                for rid, valoare in randuri:
+                    local = _tz1_utc_in_local(valoare)
+                    if local is None:
+                        continue
+                    conn.execute(text(
+                        "UPDATE " + tabel + " SET " + coloana + " = :v WHERE rowid = :id"),
+                        {"v": local, "id": rid})
+                    convertite += 1
+                ultim = int(marginea)
+                conn.execute(text("DELETE FROM schema_migrations "
+                                  "WHERE migration_name LIKE :p"),
+                             {"p": "tz2p:" + tabel + "." + coloana + ":%"})
+                conn.execute(text("INSERT INTO schema_migrations (migration_name) "
+                                  "VALUES (:n)"),
+                             {"n": "tz2p:" + tabel + "." + coloana + ":" + str(ultim)})
+                conn.commit()
+            if convertite:
+                total[tabel + "." + coloana] = convertite
+
+        conn.execute(text("DELETE FROM schema_migrations WHERE migration_name LIKE :p"),
+                     {"p": "tz2p:%"})
+        conn.execute(text("INSERT INTO schema_migrations (migration_name) VALUES (:n)"),
+                     {"n": nume})
+        conn.commit()
+        detaliu = ", ".join(k + "=" + str(v) for k, v in sorted(total.items())) or "nimic de convertit"
+        print("[DB Migrate] Applied: " + nume +
+              " in {:.1f}s".format(_time.monotonic() - pornit) + " (" + detaliu + ")")
+    except Exception as exc:
+        conn.rollback()
+        print("[DB Migrate] Failed: " + nume + " -> " + str(exc) +
+              " (batch-urile confirmate raman; reluarea continua de unde a ramas)")
+
 
 def _tz1_backfill_ore_locale(conn, inspector) -> None:
     """UTC -> ora locala pe coloanele de timp AFISATE, o singura data.

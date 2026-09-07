@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -18,7 +19,7 @@ class ProductSourceSuggestion(Base):
     name = Column(String, nullable=True)
     price = Column(Float, nullable=True)
     currency = Column(String, default="EUR", nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: acum_local())
 
     __table_args__ = (UniqueConstraint("product_id", "source", name="uq_product_suggestion_source"),)
 

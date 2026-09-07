@@ -1,7 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 from datetime import datetime
-from app.schemas._types import UTCDateTime
 
 
 _ALLOWED_CURRENCIES = {"EUR", "RON", "USD"}
@@ -77,6 +76,6 @@ class InventoryItemResponse(BaseModel):
     source: Optional[str] = None
     notes: Optional[str] = None
     purchased_at: Optional[datetime] = None
-    created_at: UTCDateTime
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

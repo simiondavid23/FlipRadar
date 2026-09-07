@@ -1,9 +1,9 @@
 """FASHION-3a — scheme pentru profilurile de taxe si referintele de revanzare."""
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas._types import UTCDateTime
 
 
 class FeeProfileCreate(BaseModel):
@@ -82,7 +82,7 @@ class ResaleReferenceResponse(BaseModel):
     ref_currency: str
     source_url: Optional[str] = None
     mode: str
-    fetched_at: Optional[UTCDateTime] = None
+    fetched_at: Optional[datetime] = None
     is_primary: bool
     # Calculate LIVE la fiecare raspuns, niciodata stocate: netul depinde de
     # profilul de taxe curent, care se poate edita oricand.

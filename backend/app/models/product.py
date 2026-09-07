@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -26,8 +27,8 @@ class Product(Base):
     original_price = Column(Numeric(10, 2), nullable=True)
     resale_price = Column(Float, nullable=True)
     currency = Column(String, default="EUR")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: acum_local())
+    updated_at = Column(DateTime, default=lambda: acum_local(), onupdate=lambda: acum_local())
 
     user = relationship("User")
     price_history = relationship("PriceHistory", back_populates="product", cascade="all, delete-orphan")

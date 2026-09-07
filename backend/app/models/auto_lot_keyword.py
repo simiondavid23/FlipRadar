@@ -6,6 +6,7 @@
 from sqlalchemy import (Boolean, Column, Integer, Numeric,
                         String, TIMESTAMP, ForeignKey)
 from sqlalchemy.sql import func
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -29,4 +30,4 @@ class AutoLotKeyword(Base):
     active_hours_end         = Column(Integer)
     polling_interval_minutes = Column(Integer, default=15)
     last_scan_at             = Column(TIMESTAMP)
-    created_at               = Column(TIMESTAMP, server_default=func.now())
+    created_at               = Column(TIMESTAMP, default=lambda: acum_local())

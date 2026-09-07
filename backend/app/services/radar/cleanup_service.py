@@ -98,7 +98,7 @@ def cleanup_sold_listings(db: Session) -> int:
     updated = 0
     for listing in candidates:
         new_status = _check_url(listing.url, listing.platform)
-        listing.last_checked_at = datetime.now(timezone.utc)
+        listing.last_checked_at = acum_local()
         # CLEAN-1 — 'unknown' (blocat/eroare/neverificabil) NU atinge statusul; doar
         # last_checked_at avanseaza, ca rotatia sa treaca mai departe la urmatoarele.
         if new_status not in ("active", "unknown"):
@@ -124,7 +124,7 @@ def cleanup_removed_listings_daily(db: Session) -> int:
     candidati -> terminare garantata, zero sarituri.
     """
     cutoff = acum_local() - timedelta(hours=6)       # TZ-1: idem
-    run_started = datetime.now(timezone.utc)
+    run_started = acum_local()
     BATCH_SIZE = 50
     MAX_CHECKS = 1000   # plafon de siguranta per rulare (ajustabil)
     total_checked = 0
@@ -150,7 +150,7 @@ def cleanup_removed_listings_daily(db: Session) -> int:
         batch_deleted = 0
         for listing in candidates:
             result = _check_url(listing.url, listing.platform)
-            listing.last_checked_at = datetime.now(timezone.utc)
+            listing.last_checked_at = acum_local()
             total_checked += 1
             if result in ("removed", "sold"):
                 db.delete(listing)

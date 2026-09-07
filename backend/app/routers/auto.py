@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.rate_limit import limiter
+from app.utils.listing_dates import to_naive_local
 from app.database import get_db
 from app.models.user import User
 from app.models.auto_lot import AutoLot
@@ -188,12 +189,11 @@ def _lot_to_dict(lot: AutoLot) -> dict:
 
 
 def _parse_auction_date(raw: Optional[str]) -> Optional[datetime]:
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
+    """TZ-2 — `auction_date` e data DECLARATA de casa de licitatii, nu ceasul nostru:
+    familia `listed_at`, deci `to_naive_local` (ora anunturilor), nu `acum_local`.
+    Inainte se persista aware, iar SQLite ii arunca offsetul si pastra ora de perete
+    UTC — licitatia de la 09:00 aparea in card la 09:00 desi era 12:00 la noi."""
+    return to_naive_local(raw)
 
 
 @router.post("/lots/save")

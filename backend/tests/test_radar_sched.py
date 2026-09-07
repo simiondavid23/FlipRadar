@@ -12,7 +12,11 @@ from app.utils.radar_scanner import (
     _mark_platform_scanned, _parse_platform_last_scan, _platform_scan_due,
 )
 
-_NOW = datetime(2026, 7, 17, 12, 0, 0, tzinfo=timezone.utc)
+# TZ-2 — ceasul scadentei e acum `acum_local()`, deci NAIV local. Un `now` aware ar
+# ridica TypeError la scadere. Stampila din JSON pleaca insa cu OFFSETUL local
+# (`astimezone()`), ca textul sa fie auto-descriptiv — de aici `.astimezone()` in
+# asertiile de mai jos.
+_NOW = datetime(2026, 7, 17, 12, 0, 0)
 
 
 def _kw(platform_last_scan=None, last_scan_at=None, poll=5):
@@ -112,7 +116,7 @@ def test_poll_interval_none_cade_pe_5_minute():
 def test_mark_roundtrip():
     kw = _kw()
     _mark_platform_scanned(kw, "olx", now=_NOW)
-    assert _parse_platform_last_scan(kw) == {"olx": _NOW.isoformat()}
+    assert _parse_platform_last_scan(kw) == {"olx": _NOW.astimezone().isoformat()}
     assert _platform_scan_due(kw, "olx", now=_NOW) is False
 
 
@@ -127,19 +131,19 @@ def test_mark_pastreaza_celelalte_platforme():
     kw = _kw(platform_last_scan=_js(vinted=vechi))
     _mark_platform_scanned(kw, "olx", now=_NOW)
     d = _parse_platform_last_scan(kw)
-    assert d == {"vinted": vechi.isoformat(), "olx": _NOW.isoformat()}
+    assert d == {"vinted": vechi.isoformat(), "olx": _NOW.astimezone().isoformat()}
 
 
 def test_mark_suprascrie_aceeasi_platforma():
     kw = _kw(platform_last_scan=_js(olx=_NOW - timedelta(hours=1)))
     _mark_platform_scanned(kw, "olx", now=_NOW)
-    assert _parse_platform_last_scan(kw) == {"olx": _NOW.isoformat()}
+    assert _parse_platform_last_scan(kw) == {"olx": _NOW.astimezone().isoformat()}
 
 
 def test_mark_peste_json_corupt_nu_crapa():
     kw = _kw(platform_last_scan="{stricat")
     _mark_platform_scanned(kw, "olx", now=_NOW)
-    assert _parse_platform_last_scan(kw) == {"olx": _NOW.isoformat()}
+    assert _parse_platform_last_scan(kw) == {"olx": _NOW.astimezone().isoformat()}
 
 
 # ── Sincronizarea listei de platforme ───────────────────────────────────────────

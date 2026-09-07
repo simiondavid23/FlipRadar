@@ -30,6 +30,7 @@ from app.services.discord_service import (
     build_alert_embed, build_drop_alert_embed, build_flash_deal_embed,
     build_restock_embed, send_price_alert_notification,
 )
+from app.utils.listing_dates import acum_local
 
 _SCRAPE_DELAY_RANGE = (0.6, 1.4)
 
@@ -163,7 +164,7 @@ def _refresh_all_scrapeable_products(db: Session) -> tuple[int, dict[int, float]
     refreshed = 0
     price_drops: dict[int, float] = {}
     touched_products: dict[int, Product] = {}
-    now = datetime.now(timezone.utc)
+    now = acum_local()
     for i, ps in enumerate(rows):
         if i > 0:
             time.sleep(random.uniform(*_SCRAPE_DELAY_RANGE))
@@ -343,7 +344,7 @@ def check_alerts() -> int:
 
             if triggered:
                 alert.is_triggered = True
-                alert.triggered_at = datetime.now(timezone.utc)
+                alert.triggered_at = acum_local()
                 triggered_count += 1
 
                 # ALERT-1 — notificare Discord pe webhook-ul dedicat (bloc independent:

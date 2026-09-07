@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, JSON
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -42,4 +43,4 @@ class RadarSettings(Base):
     listing_r1_threshold = Column(Float, nullable=True)
     deal_scan_enabled = Column(Boolean, default=True, nullable=False)
     deal_shops_disabled = Column(JSON, default=list)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: acum_local(), onupdate=lambda: acum_local(), nullable=False)

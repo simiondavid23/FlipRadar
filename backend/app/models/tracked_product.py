@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+from app.utils.listing_dates import acum_local
 from app.database import Base
 
 
@@ -19,7 +20,7 @@ class TrackedProduct(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
     monitoring_active = Column(Boolean, default=False, nullable=False)
-    added_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    added_at = Column(DateTime, default=lambda: acum_local())
 
     user = relationship("User", back_populates="tracked_items")
     product = relationship("Product", back_populates="tracked_items")
