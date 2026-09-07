@@ -689,7 +689,20 @@ def test_listing_domains_exact_cele_din_registru():
                                  # zecimal cu punct (`us_dot`), iar carrefour e al
                                  # doilea consumator al treptei `eu_sup`.
                                  "carrefour.ro", "brickdepot.ro", "snipes.com",
-                                 "sneakersnstuff.com", "footshop.ro"}
+                                 "sneakersnstuff.com", "footshop.ro",
+                                 # DEAL-D4 - lotul „fashion + beauty", din sonda
+                                 # LST-D4. nichiduta e al DOILEA descriptor pe
+                                 # forma `entries` (17 fatete), dupa eMAG;
+                                 # officeshoes a cerut cheia `title_from:
+                                 # link_title`; epantofi e frate de platforma cu
+                                 # modivo (eobuwie). Raman in afara: answear
+                                 # (nicio candidata), trendyol (JS_ONLY), asos
+                                 # (grila curata dar pe vitrina GBP) si marionnaud
+                                 # (STATE, candidat de `state_extractor`).
+                                 "aboutyou.ro", "fashiondays.ro", "epantofi.ro",
+                                 "spartoo.ro", "officeshoes.ro", "prm.com",
+                                 "notino.ro", "douglas.ro", "parfumdreams.de",
+                                 "zalando.ro", "nichiduta.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -726,6 +739,12 @@ def _verifica_descriptor(domeniu, d):
     for cheie in ("max_pages", "currency", "reference_kind"):
         assert d.get(cheie), f"{domeniu} nu are `{cheie}`"
     assert d["reference_kind"] in {"prp", "min30", "nemarcat"}
+    # DEAL-D4 — `title_from` e optional, dar cand exista trebuie sa numeasca un mod
+    # pe care `_titlu_of` chiar il stie: o valoare necunoscuta ar cadea TACUT pe
+    # selectorul `title`, adica exact felul de descriptor care pare sa mearga.
+    if d.get("title_from"):
+        assert d["title_from"] in {"link_aria_label", "link_title"}, (
+            f"{domeniu}: `title_from` necunoscut {d['title_from']!r}")
 
     # EMAG-D — intrarile: ori `url`, ori `entries`, niciodata amandoua si
     # niciodata niciuna. Ambele deodata ar fi ambiguu exact ca `card` +
@@ -2148,3 +2167,326 @@ def test_link_cu_spatiu_se_codifica():
             == "https://exemplu.ro/a%20b/c.html")
     assert BeautifulSoup(html_nbsp, "html.parser").select_one("a")["href"] == \
         "/a b/c.html"
+
+
+# ── DEAL-D4 ───────────────────────────────────────────────────────────────────
+# Lotul „fashion + beauty” din sonda LST-D4: 11 magazine, unul pe forma `entries`.
+# Fixture-urile sunt decupate din dump-urile care AU LIVRAT acolo (fashiondays din
+# `p1b`, restul din `p1`), iar valorile de mai jos sunt exact cele masurate — nu
+# rotunjite, nu recalculate. Unde exista carduri CU si FARA referinta (epantofi,
+# prm, zalando, douglas), fixture-ul are cate unul din fiecare: „compare_at e None
+# aici” e o afirmatie despre MAGAZIN, nu despre un selector rupt.
+
+
+def test_aboutyou_omnibus():
+    """Omnibus scris pe card sub numele „Ultimul preț minim”, langa un „Preț
+    original” care e PRP — descriptorul il alege explicit pe primul.
+
+    Al doilea card pinuieste bug-ul pe care fixture-ul l-a scos la iveala: acolo
+    `div[data-value="true"]` are DOI copii (`<span><s>70,32 lei</s></span>` si
+    `<span> -2%</span>`), iar fara `> span:first-child` `_pret_eu_comma` lipea
+    cifra procentului si dadea 70.322. Controlul LST-D4 se uitase doar la primul
+    card, unde nodul e simplu — de aia numarul gresit a supravietuit pana aici.
+    """
+    carduri = extrage_carduri(_fixture("aboutyou.ro"),
+                              listing_descriptor("aboutyou.ro"), "aboutyou.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 242.9
+    assert primul["compare_at"] == 218.61
+    assert primul["title"] == "Poșete 'Rue St-Guillaume'"
+    assert primul["url"] == ("https://aboutyou.ro/p/karl-lagerfeld/"
+                             "po-ete-rue-st-guillaume-30413495")
+    assert carduri[1]["compare_at"] == 70.32, "nu 70.322: procentul nu e pret"
+
+
+def test_fashiondays_din_atribute():
+    """Pretul si Omnibus-ul vin din ATRIBUTE, nu din text.
+
+    Textul vizibil are zecimalele intr-un `<sup>` („299 99 lei”), deci ar cere
+    `eu_sup`; ancora poarta insa chiar numarul, cu punct zecimal. Referinta e
+    `data-cmmp30-price` (Cel Mai Mic Pret 30 de zile), NU `data-gtm-price-rrp`
+    (599.99, PRP-ul) — amandoua sunt pe acelasi card, iar alegerea trebuie sa se
+    vada aici, nu doar in comentariul din registru.
+    """
+    d = listing_descriptor("fashiondays.ro")
+    carduri = extrage_carduri(_fixture("fashiondays.ro"), d, "fashiondays.ro")
+
+    assert d["price_parse"] == "attr_float"
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 299.99
+    assert primul["compare_at"] == 339.99, "cmmp30, nu rrp (599.99)"
+    # `src` e un placeholder (`/images/blank_310x465.png`), poza reala e in
+    # `data-original` — ordinea din `image_attr` e cea care decide.
+    assert primul["image_url"].startswith("https://fdcdn.akamaized.net/")
+    assert "blank_310x465" not in primul["image_url"]
+
+
+def test_epantofi_omnibus_partial():
+    """Omnibus pe 28 din 76 de carduri: prezenta lui e o proprietate a CARDULUI.
+
+    Fixture-ul are unul din fiecare fel tocmai ca `compare_at is None` sa nu poata
+    fi confundat cu un selector care nu prinde niciodata.
+    """
+    carduri = extrage_carduri(_fixture("epantofi.ro"),
+                              listing_descriptor("epantofi.ro"), "epantofi.ro")
+
+    assert len(carduri) == 2
+    cu_ref, fara_ref = carduri
+    assert cu_ref["price"] == 174.9
+    assert cu_ref["compare_at"] == 196.0
+    assert fara_ref["price"] == 369.9
+    assert fara_ref["compare_at"] is None, "cardul asta n-are linia de Omnibus"
+
+
+def test_spartoo_preturi_separate():
+    """`span.productlist_prix` contine AMBELE preturi, deci nu poate fi citit.
+
+    Textul lui unit e „841,00 Lei 630,75 Lei”; citit ca atare, `_pret_eu_comma` ar
+    da 841630.75. Se citesc nodurile dinauntru: `s` = referinta, `span` = platit.
+    Linkul cardului e relativ FARA slash initial, iar `_link_of` il rezolva fata de
+    radacina domeniului — exact unde stau PDP-urile spartoo.
+    """
+    carduri = extrage_carduri(_fixture("spartoo.ro"),
+                              listing_descriptor("spartoo.ro"), "spartoo.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 630.75
+    assert primul["compare_at"] == 841.0
+    assert primul["price"] != 841630.75
+    assert primul["url"] == ("https://spartoo.ro/"
+                             "Helly-Hansen-GARIBALDI-V4-x15480018.php")
+
+
+def test_officeshoes_link_title():
+    """Ancora produsului e A DOUA, iar titlul sta in atributul ei `title`.
+
+    Prima ancora a cardului e sigla MARCII (`a.logo` -> `/branduri/calvin-klein`):
+    un `link: "a"` ar scoate 48 de carduri cu 10 URL-uri distincte, adica o
+    masuratoare falsa care arata a duplicate responsive. Iar `a.send-search` n-are
+    text (doar un `<img>`), deci titlul vine din `title_from: "link_title"` —
+    `h2.product_list_title` ar da doar modelul, fara marca.
+    """
+    d = listing_descriptor("officeshoes.ro")
+    carduri = extrage_carduri(_fixture("officeshoes.ro"), d, "officeshoes.ro")
+
+    assert d["title_from"] == "link_title"
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 359.0
+    assert primul["compare_at"] == 599.0
+    assert primul["title"] == "Calvin Klein Pantofi sport Kobe M 1C"
+    assert "/branduri/" not in primul["url"], "sigla marcii nu e produsul"
+    assert primul["url"].endswith(
+        "/incaltaminte-calvin-klein-pantofi-sport-kobe-m-1c/100156")
+
+
+def test_prm_doua_noduri_de_pret():
+    """Cardurile NEREDUSE au alt nod de pret decat cele reduse.
+
+    46 din 80 n-au `priceSaleMinimal`, ci `priceRegular__`. Cu un singur selector,
+    descriptorul citea 34 de carduri din 80 — o pierdere de 57% care arata a
+    succes, fiindca cele citite erau corecte.
+    """
+    d = listing_descriptor("prm.com")
+    carduri = extrage_carduri(_fixture("prm.com"), d, "prm.com")
+
+    assert "priceSaleMinimal" in d["price_text"]
+    assert "priceRegular__" in d["price_text"]
+    assert len(carduri) == 2
+    redus, neredus = carduri
+    assert redus["price"] == 84.9
+    # „Preț normal”, nu „Cel mai mic preț de la lansare” — alta semantica.
+    assert redus["compare_at"] == 94.9
+    assert neredus["price"] > 0
+    assert neredus["compare_at"] is None
+    assert d["reference_kind"] == "nemarcat"
+
+
+def test_notino_fara_compare():
+    """Al doilea pret de pe card e un CUPON, nu o referinta — deci nu se citeste.
+
+    „2.362 RON folosind codul shoppingdays” sta intr-un nod separat. Citit ca
+    referinta, ar fabrica reduceri care nu exista fara cod: raftul e R2-only.
+    """
+    d = listing_descriptor("notino.ro")
+    carduri = extrage_carduri(_fixture("notino.ro"), d, "notino.ro")
+
+    assert "compare_text" not in d and "compare_attr" not in d
+    assert len(carduri) == 2
+    assert carduri[0]["price"] == 2953.0
+    assert all(c["compare_at"] is None for c in carduri)
+
+
+def test_douglas_variante_si_lazy():
+    """Doua variante de camp pe acelasi raft, plus placi cu poza LENESA.
+
+    13 din 48 de carduri folosesc `-color` in loc de `price-type-discount`, iar
+    Omnibus-ul lor e taiat (`-strikethrough`); cu un singur `data-testid` pe
+    fiecare latura, descriptorul citea 35 din 48. Separat, placile de sub pliu au
+    `src` GOL si poza in `data-lazy-src` — fara el ieseau 15 din 35 fara imagine.
+    """
+    carduri = extrage_carduri(_fixture("douglas.ro"),
+                              listing_descriptor("douglas.ro"), "douglas.ro")
+
+    assert len(carduri) == 3
+    standard, varianta_color, lenes = carduri
+    assert standard["price"] == 453.0
+    assert standard["compare_at"] == 429.0
+    assert varianta_color["price"] == 399.0
+    assert varianta_color["compare_at"] == 405.0, "`-strikethrough`, tot Omnibus"
+    # Cardul lenes: `src` GOL in HTML, poza citita din `data-lazy-src`.
+    assert lenes["image_url"].startswith("https://media.douglas.ro/")
+    assert lenes["price"] == 231.0
+    # Pretul pe UNITATE („5,66 RON / 1 ml”) exista pe card si NU trebuie citit.
+    assert standard["price"] != 5.66
+
+
+def test_parfumdreams_pret_public_si_uvp():
+    """Se citeste pretul PUBLIC, nu cel de membru.
+
+    Cardul poarta trei preturi: 76,95 € (public), 69,26 € (premium, in nodul cu
+    variante Tailwind `premium:` si clasa `hidden`) si UVP 139,00 €. Citit gresit,
+    pretul de membru ar inventa o reducere pe care un vizitator n-o primeste.
+    """
+    d = listing_descriptor("parfumdreams.de")
+    carduri = extrage_carduri(_fixture("parfumdreams.de"), d, "parfumdreams.de")
+
+    assert d["currency"] == "EUR"
+    assert d["reference_kind"] == "prp"
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 76.95, "pretul public, nu 69.26 (membru)"
+    assert primul["compare_at"] == 139.0, "UVP"
+
+
+def test_zalando_structural():
+    """Selectori STRUCTURALI, fiindca magazinul n-are niciun carlig stabil.
+
+    Omnibus („Cel mai mic preț recent”) exista doar pe 3 din 24 de carduri, deci
+    al doilea card din fixture n-are referinta si asta e corect. `max_pages: 1` e
+    masurat, nu prudent: `/sale/2/` si `/sale/500/` redirecteaza amandoua la
+    pagina 1, iar p1 si plast au aceleasi 24 de URL-uri.
+    """
+    d = listing_descriptor("zalando.ro")
+    carduri = extrage_carduri(_fixture("zalando.ro"), d, "zalando.ro")
+
+    assert d["max_pages"] == 1
+    assert "page_url_template" not in d, "n-avem un URL de pagina 2 care sa mearga"
+    assert len(carduri) == 2
+    cu_ref, fara_ref = carduri
+    assert cu_ref["price"] == 127.0
+    assert cu_ref["compare_at"] == 134.0
+    assert fara_ref["compare_at"] is None
+
+
+def test_nichiduta_entries_si_pret():
+    """Forma `entries` (17 fatete) + pretul citit din nodul dinauntru.
+
+    `div.prices` contine si referinta („899 lei 503 lei”), deci se citeste
+    `.prices span`. Referinta n-are nod propriu — e text DIRECT al div-ului — deci
+    descriptorul n-are `compare_text` si raftul e R2-only.
+
+    URL-ul cardului: ancorele sunt relative FARA slash initial, iar pagina poarta
+    `<base href="https://www.nichiduta.ro/" />`. `_link_of` rezolva fata de
+    radacina domeniului din registru (`nichiduta.ro`, fara `www`), adica exact
+    ierarhia pe care o prescrie `<base>`: produsul e la RADACINA, nu sub categorie.
+    """
+    d = listing_descriptor("nichiduta.ro")
+    carduri = extrage_carduri(_fixture("nichiduta.ro"), d, "nichiduta.ro")
+
+    assert "compare_text" not in d and "compare_attr" not in d
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 503.0
+    assert primul["compare_at"] is None
+    assert primul["url"].startswith("https://nichiduta.ro/carucior-")
+    assert "/carucioare-copii/" not in primul["url"], "produsul e la RADACINA"
+    assert carduri[1]["price"] == 605.0
+
+    # A doua fateta, cu ACELASI descriptor: asta e ce face `entries` legitim.
+    with open(os.path.join(FIXTURI, "nichiduta.ro_cards_alt.html"),
+              encoding="utf-8") as f:
+        alt = extrage_carduri(f.read(), d, "nichiduta.ro")
+    assert alt and alt[0]["price"] > 0
+    assert alt[0]["url"].startswith("https://nichiduta.ro/perna-")
+
+    assert "url" not in d
+    urluri = [i["url"] for i in d["entries"]]
+    assert len(urluri) == len(set(urluri)) == 17
+    assert all("produse-cu:reducere" in u for u in urluri)
+    # Paginarea e INFIXATA — numarul sta la MIJLOC. Pagineaza doar fatetele carora
+    # li s-a MASURAT adancimea: peste ea magazinul ARUNCA fateta si serveste
+    # categoria intreaga, iar scannerul n-are cum sa deosebeasca asta.
+    cu_template = [i for i in d["entries"] if i.get("page_url_template")]
+    assert len(cu_template) == 2
+    for intrare in cu_template:
+        assert intrare["page_url_template"].endswith("/produse-cu:reducere")
+        assert "/p{n}/" in intrare["page_url_template"]
+
+
+def test_title_from_link_title():
+    """`title_from: "link_title"` — titlul din atributul ancorei, cu fallback.
+
+    Cheia s-a nascut din officeshoes, unde ancora produsului n-are text.
+    Fallback-ul conteaza la fel de mult: un deploy care scoate atributul trebuie sa
+    piarda MARCA, nu produsul.
+    """
+    descriptor = {"card": "div.c", "link": "a.p", "title": "h2",
+                  "title_from": "link_title", "price_text": "span",
+                  "price_parse": "eu_comma", "currency": "RON"}
+    cu_atribut = ('<div class="c"><a class="p" href="/x" title="X Y"><img/></a>'
+                  '<h2>doar modelul</h2><span>10,00 lei</span></div>')
+    assert extrage_carduri(cu_atribut, descriptor, "exemplu.ro")[0]["title"] == "X Y"
+
+    fara_atribut = cu_atribut.replace(' title="X Y"', "")
+    assert (extrage_carduri(fara_atribut, descriptor, "exemplu.ro")[0]["title"]
+            == "doar modelul")
+
+
+def test_pagina_url_deal_d4():
+    """Formele de paginare ale rundei, inclusiv cea INFIXATA.
+
+    `_pagina_url` intoarce `url` pentru pagina 1 si formateaza template-ul abia de
+    la 2 in sus, deci pagina 2 e locul unde forma se vede.
+    """
+    from app.services.listing_scanner import _intrari, _pagina_url
+
+    asteptat = {
+        "fashiondays.ro": "https://www.fashiondays.ro/s/sale-sale-sale-w?page=2",
+        "epantofi.ro": "https://epantofi.ro/c/epantofi/akcja:extraseptember_lp?p=2",
+        "prm.com": "https://prm.com/ro/s/final-sale?page=2",
+        "douglas.ro": "https://www.douglas.ro/ro/c/reduceri/05?page=2",
+        "parfumdreams.de": "https://www.parfumdreams.de/Angebote?p=2",
+    }
+    for domeniu, url in asteptat.items():
+        intrare = _intrari(listing_descriptor(domeniu))[0]
+        assert _pagina_url(intrare, 2) == url, domeniu
+        assert _pagina_url(intrare, 1) == listing_descriptor(domeniu)["url"]
+
+    # nichiduta: numarul de pagina la MIJLOC, nu la coada.
+    paginate = [i for i in _intrari(listing_descriptor("nichiduta.ro"))
+                if i.get("page_url_template")]
+    assert _pagina_url(paginate[0], 2) == (
+        "https://www.nichiduta.ro/carucioare-copii/carucioare-2-in-1/p2/"
+        "produse-cu:reducere")
+
+
+def test_douglas_max_pages_plafon():
+    """`max_pages` la douglas e PLAFON DUR, nu buget.
+
+    Masurat: `?page=2` da 48 de carduri disjuncte de pagina 1 (paginare reala), dar
+    `?page=500` intoarce PAGINA 1 — p1 si plast au aceleasi 48 de URL-uri. Nu
+    exista nicio semnatura de oprire: nici 404 (pe care scannerul il trateaza ca
+    final de paginare), nici grila goala. Clamp-ul lui `_scaneaza_domeniu` o prinde
+    abia dupa ce a re-citit o pagina intreaga, deci plafonul declarat aici e
+    singura oprire pe care descriptorul o poate garanta.
+    """
+    d = listing_descriptor("douglas.ro")
+
+    assert d["max_pages"] <= 20
+    assert d["page_url_template"], "plafon > 1 fara template n-ar fi citit"
+    assert "{n}" in d["page_url_template"]

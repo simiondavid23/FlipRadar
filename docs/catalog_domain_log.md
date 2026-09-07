@@ -4033,3 +4033,155 @@ o verificare încrucișată gratuită că e aceeași pagină.
   dovedesc un mecanism; `cf-cache-status: HIT` pe una și `cf-mitigated: challenge` pe cealaltă
   sunt însă două semnale independente care merg în aceeași direcție, iar GATE-2 adaugă o a
   treia observație pe forma normalizată (tot HIT, tot 200).
+
+---
+
+## DEAL-D4 — lotul fashion + beauty pe axa D (sonda LST-D4, 2026-09-08)
+
+Al patrulea val al axei D, transcris din raportul LST-D4
+(`backend/scripts/diagnostics/dumps_lstd4/raport.md`, §3.1–3.16 și §4). Cei 11 descriptori
+de mai jos trecuseră deja prin `extrage_carduri()` real acolo; runda a adăugat fixture-uri,
+teste, o cheie nouă și **trei cereri live** pentru ce rămăsese nemăsurat.
+
+**Cifra: `listing_domains()` 29 → 40.**
+
+### Cele 16 verdicte ale sondei
+
+| domeniu | verdict | intrat pe axa D |
+|---|---|---|
+| zalando.ro | CSS_GRID | **DA** |
+| aboutyou.ro | CSS_GRID | **DA** |
+| answear.ro | FĂRĂ_LISTARE | nu |
+| fashiondays.ro | CSS_GRID | **DA** |
+| epantofi.ro | CSS_GRID | **DA** |
+| spartoo.ro | CSS_GRID | **DA** |
+| officeshoes.ro | CSS_GRID | **DA** |
+| prm.com | CSS_GRID + STATE | **DA** |
+| trendyol.com | JS_ONLY | nu |
+| asos.com | CSS_GRID pe vitrină GBP | nu |
+| notino.ro | CSS_GRID | **DA** |
+| douglas.ro | CSS_GRID | **DA** |
+| marionnaud.ro | STATE | nu |
+| parfumdreams.de | CSS_GRID | **DA** |
+| nichiduta.ro | CSS_GRID + `entries` | **DA** |
+| jb-spielwaren.de | FĂRĂ_LISTARE | nu |
+
+### Cei 11 intrați
+
+| domeniu | intrare | volum / pagină | paginare | referință | monedă |
+|---|---|---|---|---|---|
+| zalando.ro | `/sale/?sale=true` | 24 | **niciuna** (`max_pages: 1`) | min30 pe 3/24 | RON |
+| aboutyou.ro | `/c/femei/sale-32543` | 30 | niciuna | min30 pe 30/30 | RON |
+| fashiondays.ro | `/s/sale-sale-sale-w` | 90 (6993 total) | `?page={n}`, 404 la coadă | min30 pe 90/90 | RON |
+| epantofi.ro | `akcja:extraseptember_lp` | 76 | `?p={n}`, 404 la coadă | min30 pe 28/76 | RON |
+| spartoo.ro | `/pantofi-ieftina.php` | 144 | niciuna | nemarcat pe 144/144 | RON |
+| officeshoes.ro | `/sale` | 48 | infinite scroll | nemarcat pe 48/48 | RON |
+| prm.com | `/ro/s/final-sale` | 80 | `?page={n}`, **500** la coadă | nemarcat pe 34/80 | RON |
+| notino.ro | `/shopping-days/` | 28 | niciuna | **fără** | RON |
+| douglas.ro | `/ro/c/reduceri/05` | 48 | `?page={n}`, **fără oprire** | min30 pe 47/48 | RON |
+| parfumdreams.de | `/Angebote` | 30 (449 total) | `?p={n}`, grilă goală | prp pe 30/30 | EUR |
+| nichiduta.ro | **`entries` × 17** | 60/fațetă | infixată, doar 2 fațete | **fără** | RON |
+
+### Cele trei cereri live
+
+| cerere | rezultat | ce a decis |
+|---|---|---|
+| `nichiduta …/carucioare-2-in-1/p2/produse-cu:reducere` | 200, **60 de carduri, 0 comune cu p1** | paginarea infixată e reală; template-ul intră |
+| `nichiduta …/p500/…` | 200, 60 de carduri, **40 comune cu p1** | **NU e o oprire** — v. mai jos |
+| `epantofi /c/epantofi/akcja:new_sale` | **404**, 0 carduri | analogia modivo NU se transferă; rămâne campania |
+
+**A treia formă de „sfârșit de paginare" care nu e un sfârșit.** Pe nichiduta, o pagină peste
+adâncimea reală a fațetei nu dă 404 și nu dă grilă goală: magazinul **aruncă fațeta** și
+servește categoria întreagă. Măsurat pe `p500`: răspuns 200, 60 de carduri, `canonical` devine
+`/carucioare-copii/carucioare-2-in-1/` (fără `produse-cu:reducere`), `<h1>` pierde „Cu
+Reducere", iar numărul de produse sare de la **201 la 520**. Cardurile alea sunt produse
+NEREDUSE, iar scannerul nu le poate deosebi: clamp-ul lui cere ca pagina să fie *submulțime* a
+celor deja văzute, și aici 20 din 60 sunt noi.
+
+Consecința în registru: descriptorul are `max_pages: 1`, iar **doar cele două fațete cărora
+li s-a măsurat adâncimea** paginează, cu plafon propriu — `carucioare-2-in-1` (201 produse, 4
+pagini) și `perne-de-alaptat` (134 produse, 3 pagini), citite din widget-ul de paginare al
+fiecăreia. Celelalte 15 stau pe o pagină până când cineva le măsoară volumul.
+
+### `title_from: "link_title"` (cheia nouă a rundei)
+
+officeshoes are, pe card, două ancore: prima e **sigla mărcii**
+(`<a class="logo" href=".../branduri/calvin-klein">`), a doua e produsul
+(`a.send-search`). Un `link: "a"` scotea 48 de carduri cu 10 URL-uri distincte — o măsurătoare
+falsă care arată exact ca duplicatele responsive. Iar ancora corectă **n-are text**, doar un
+`<img>`: numele complet stă în `title="Calvin Klein Pantofi sport Kobe M 1C"`, în timp ce
+`h2.product_list_title` dă doar modelul, fără marcă.
+
+`_titlu_of` primește deci a doua valoare de `title_from`, lângă `link_aria_label` (caseking).
+Fallback-ul e deliberat: dacă atributul dispare la un deploy, titlul cade pe selectorul
+`title` — se pierde marca, nu produsul. Garda descriptorilor pinuiește acum mulțimea
+`{link_aria_label, link_title}`: o valoare necunoscută ar cădea TACIT pe `title`.
+
+### Referința: trei decizii care nu se citesc din formă
+
+* **aboutyou** — cardul poartă „Preț original: 489,00 lei" (PRP) **și** „Ultimul preț minim:
+  218,61 lei" (Omnibus). Se citește Omnibus-ul. Fixture-ul a scos la iveală și un bug:
+  pe cardurile unde prețul curent e sub minim, nodul de valoare are doi copii
+  (`<span><s>70,32 lei</s></span><span> -2%</span>`), iar fără `> span:first-child`
+  `_pret_eu_comma` lipea cifra procentului — **70.322 în loc de 70.32**. Controlul LST-D4 se
+  uitase doar la primul card, unde nodul e simplu.
+* **douglas** — „PRP 798,00 RON" + „453,00 RON" + „Cel mai mic preț din ultimele 30 de zile
+  429,00 RON", toate etichetate. Se citește Omnibus-ul. Al patrulea preț de pe card,
+  `price-base-unit` („5,66 RON / 1 ml"), NU se citește.
+* **prm** — „Preț normal: 94,90 LEI" e referința; fraza „Cel mai mic preț **de la lansare**"
+  de pe același card **nu e Omnibus** (nu e „în ultimele 30 de zile"), deci `reference_kind`
+  rămâne `nemarcat`.
+
+Și două absențe deliberate: **notino** n-are `compare_*` fiindcă al doilea preț de pe card e
+un CUPON („2.362 RON folosind codul shoppingdays"), nu o referință tăiată; **nichiduta** n-are
+`compare_*` fiindcă prețul tăiat e text DIRECT al lui `div.prices`, fără nod propriu. Ambele
+rafturi sunt R2-only.
+
+### Formele noi de paginare
+
+* **infixată** — nichiduta pune numărul la MIJLOC:
+  `/carucioare-copii/carucioare-2-in-1/p2/produse-cu:reducere`.
+* **redirect la pagina 1** — zalando (`/sale/2/` și `/sale/500/` → `/sale/`) și douglas
+  (`?page=500` → pagina 1). Dovedit prin intersecția identităților de card, nu prin numărare:
+  la zalando p1 ∩ plast = 24/24, la douglas 48/48. La zalando raftul nici măcar nu e stabil
+  între două cereri (19 din 24 comune între p1 și p2), deci `max_pages: 1`; la douglas
+  paginarea e reală (p1 ∩ p2 = 0), dar fără nicio semnătură de oprire — `max_pages` e plafon
+  DUR, pinuit de test.
+
+### Ce face scannerul pe 5xx (contează pentru prm)
+
+`_scaneaza_domeniu` tratează ca **sfârșit de paginare doar 404**, și doar pe o pagină > 1 a
+unei intrări care a citit deja cel puțin o pagină. Orice alt status non-200 — inclusiv 5xx —
+ridică `RuntimeError`, iar excepția cade **înainte de `db.commit()`**: se pierde tot scanul
+domeniului, consemnat în `ShopScanState`. Comentariul din cod e explicit („DOAR 404. Un 403
+sau un 5xx e zid ori defecțiune și trebuie să se vadă ca eroare").
+
+Pentru prm asta e o plasă, nu o problemă rezolvată: coada listării dă **HTTP 500**, deci dacă
+`/ro/s/final-sale` are mai puțin de 25 de pagini, primul scan care trece de ea va eșua
+ZGOMOTOS. E de preferat unei erori tăcute, dar cere măsurarea adâncimii reale la o rundă
+viitoare.
+
+### Rămase în afară, cu motivul
+
+* **answear.ro** — home-ul are 219 de ancore și un nav de catalog complet, dar niciuna nu
+  poartă `reduceri|sale|outlet`. Singura campanie, `/s/back-to-school` („până la -25%"), ar fi
+  ieșit dacă lista de cuvinte a sondei ar fi conținut `procent`. Deci „nicio candidată sub
+  lista de cuvinte", nu „magazinul n-are reduceri".
+* **trendyol.com** — JS_ONLY. Candidata din home a fost un BANNER, nu o ancoră de navigație;
+  pagina de campanie are 0 jetoane de preț, 0 carduri și 0 colecții de produse în starea din
+  corp. O CATEGORIE (nu o campanie) rămâne nemăsurată.
+* **asos.com** — grila e curată (`li.productTile_U0clN`, 72 de plăci, paginare `?page={n}`
+  reală), dar servește **GBP** pe 72 din 72, iar locala validată pe axa L e
+  `store=ROE&currency=EUR&country=RO`, prin API-ul public `stockprice`. Lipsește doar
+  comutatorul de magazin; până atunci ar fi alt magazin.
+* **marionnaud.ro** — STATE. În DOM există doar 15 elemente cu link și preț, și alea sunt bara
+  de NAVIGAȚIE; raftul e în `searchModel.products` (20 pe pagină, 834 în total). Candidat
+  pentru un `state_extractor`.
+* **jb-spielwaren.de** — FĂRĂ_LISTARE, confirmat a doua oară cu cuvinte extinse
+  (`restposten|auslaufartikel|%`) pe un home proaspăt de 428 de ancore. plentyShop marchează
+  produsele cu `storeSpecial: Sonderangebot` în DATE, dar magazinul nu expune o categorie de
+  oferte în navigația server-side.
+
+Separat, o **corecție de monedă** la nota DEAL-D3 a lui endclothing: dump-ul aceleiași pagini,
+recitit cu un jeton de preț care cunoaște toate monedele, arată `RON972` / `RON294` — pagina
+servea RON, nu GBP. Verdictul JS_ONLY nu se schimbă (DOM-ul e gol), doar moneda din notă.

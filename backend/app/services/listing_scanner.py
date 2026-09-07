@@ -319,6 +319,16 @@ def _link_of(card, descriptor, domain: str):
 def _titlu_of(card, descriptor, link_nod) -> str:
     if descriptor.get("title_from") == "link_aria_label" and link_nod is not None:
         return (link_nod.get("aria-label") or "").strip()
+    # DEAL-D4 — officeshoes: ancora produsului n-are TEXT (doar un `<img>`), iar
+    # numele complet sta in atributul `title` al ei:
+    # `<a class="send-search" title="Calvin Klein Pantofi sport Kobe M 1C">`.
+    # `h2.product_list_title` exista, dar da doar modelul („Kobe M 1C"), fara marca.
+    # Lipsa atributului cade pe `title`, ca un deploy care-l scoate sa piarda marca,
+    # nu produsul.
+    if descriptor.get("title_from") == "link_title" and link_nod is not None:
+        din_atribut = (link_nod.get("title") or "").strip()
+        if din_atribut:
+            return din_atribut
     selector = descriptor.get("title")
     return _text_of(card.select_one(selector)) if selector else ""
 

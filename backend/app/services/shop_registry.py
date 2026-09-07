@@ -165,6 +165,16 @@ Campurile unei intrari:
                                                     cheie `price_parse` n-ar putea descrie
                                                     amandoua (itgalaxy.ro). Absent = se cade
                                                     inapoi pe `price_parse`.
+                                     title_from   — OPTIONAL, de unde se ia TITLUL cand el
+                                                    nu e textul unui nod. Valorile admise:
+                                                    "link_aria_label" (caseking) si
+                                                    "link_title" (DEAL-D4, officeshoes:
+                                                    ancora produsului n-are text, doar un
+                                                    <img>, iar numele complet e in
+                                                    `title=`). Ambele citesc ancora aleasa
+                                                    de `link`; `link_title` cade inapoi pe
+                                                    selectorul `title` daca atributul
+                                                    lipseste. Absent = textul lui `title`.
                                      OBLIGATORIU declarati
                                                     aici chiar daca sunt identici cu cei
                                                     din `listing`: acolo sunt scrisi pentru
@@ -577,7 +587,8 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-1b",
+        "notes": ("FASHION-1b"
+                 " DEAL-D4 - RAMAS IN AFARA axei D: home-ul are 219 de ancore si un nav de catalog complet, dar NICIUNA nu poarta `reduceri|sale|outlet`. Singura campanie, `/s/back-to-school` („pana la -25%”), ar fi iesit cu cuvantul `procent` in lista sondei - deci „nicio candidata sub lista de cuvinte”, nu „magazinul n-are reduceri”."),
     },
     "fashiondays.ro": {
         "label": "Fashion Days",
@@ -586,7 +597,38 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-1b",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            # NU `/shop/outlet-w/`: acela e un HUB (`<h1>ALEGE-TI MARIMEA</h1>`,
+            # `<h1>Prinde ofertele in functie de categorie</h1>`), 240 de aparitii
+            # ale sirului `product-card` si ZERO carduri cu pret. Listarea reala e
+            # campania, cu 6993 de produse anuntate.
+            "url": "https://www.fashiondays.ro/s/sale-sale-sale-w",
+            "page_url_template": "https://www.fashiondays.ro/s/sale-sale-sale-w?page={n}",
+            # `rel=next` corect, `p1 ∩ p2 = 0` din 90 (paginare reala), iar
+            # `?page=500` da 404 — semnatura de oprire curata, pe care scannerul o
+            # trateaza ca sfarsit de paginare (VAL D), nu ca eroare.
+            "max_pages": 40,
+            "currency": "RON",
+            "card": ".product-card",
+            "link": "a.campaign-item",
+            "title": "span.product-card-name",
+            # IMG-1a/1a2: `src` e un placeholder (`/images/blank_310x465.png`).
+            "image": "img.lazy",
+            "image_attr": ["data-original", "src"],
+            # Calea de ATRIBUT, si nu din eleganta: textul vizibil vine spart de un
+            # `<sup>` („299 99 lei"), deci ar cere `eu_sup` — ancora poarta insa
+            # chiar numarul, cu punct zecimal.
+            "price_attr": ["a.campaign-item", "data-gtm-price"],
+            # `cmmp30` = Cel Mai Mic Pret 30 de zile, adica Omnibus-ul, pe 90/90 de
+            # carduri. Coexista cu `data-gtm-price-rrp` (PRP, tot 90/90) — alegerea
+            # nu e o ghicire, semantica e scrisa CHIAR IN NUMELE campurilor.
+            "compare_attr": ["span[data-cmmp30-price]", "data-cmmp30-price"],
+            "price_parse": "attr_float",
+            "reference_kind": "min30",
+        },
+        "notes": ("FASHION-1b"
+                 " DEAL-D4 - axa D: campania `/s/sale-sale-sale-w` (90/pagina, 6993 de produse), NU `/shop/outlet-w/`, care e un hub fara preturi. Pretul si Omnibus-ul se citesc din ATRIBUTE (`data-gtm-price`, `data-cmmp30-price`), fiindca textul vizibil are zecimalele intr-un `<sup>`. `?page=500` -> 404, oprire curata."),
     },
     "epantofi.ro": {
         "label": "ePantofi",
@@ -595,7 +637,41 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-1b",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        # Frate de platforma cu modivo.ro (eobuwie), dovedit pe CLASE, nu pe numele
+        # platformei: `a.product-card-link`, `.price-container` si `.omnibus` sunt
+        # exact cheile descriptorului lui modivo din registru.
+        "listing": {
+            # ATENTIE: intrarea e o CAMPANIE CU TERMEN — pagina spune verbatim
+            # „Reducere la produsele selectate, la cumparaturi de la 379 lei /
+            # Valabil pana pe 08.09". Analogia cu modivo (`akcja:new_sale`) a fost
+            # CERUTA la DEAL-D4 si a raspuns 404 cu zero carduri, deci nu exista o
+            # intrare permanenta echivalenta. Cand campania expira, scanul va da 0
+            # carduri: asta NU e un bug de selectori, ci cererea de re-masurare a
+            # intrarii.
+            "url": "https://epantofi.ro/c/epantofi/akcja:extraseptember_lp",
+            "page_url_template": "https://epantofi.ro/c/epantofi/akcja:extraseptember_lp?p={n}",
+            # `p1 ∩ p2 = 4` din 76 (cele 4 carduri `sponsored`, care se repeta),
+            # iar `?p=500` da 404 — oprire curata.
+            "max_pages": 25,
+            "currency": "RON",
+            "card": ".product-list-item",
+            "link": "a.product-card-link",
+            "title": ".product-details > div:first-child",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image": "img.image",
+            "image_attr": ["src"],
+            "price_text": ".price-container",
+            # Omnibus etichetat, verbatim: „Prețul actual 174,90 Lei / Prețul
+            # inițial 213,00 Lei -17% / Cel mai mic preț 196,00 Lei -10%". Prezent
+            # pe 28 din 76 pe p1 si pe 31 din 76 pe p2 — restul cardurilor n-au
+            # linia, deci `compare_at` None acolo e CORECT, nu un selector rupt.
+            "compare_text": ".omnibus .line:nth-child(2) .value",
+            "price_parse": "eu_comma",
+            "reference_kind": "min30",
+        },
+        "notes": ("FASHION-1b"
+                 " DEAL-D4 - axa D, frate de platforma cu modivo.ro (eobuwie: aceleasi `a.product-card-link` / `.price-container` / `.omnibus`). Intrarea e o CAMPANIE cu termen („Valabil pana pe 08.09”), fiindca echivalentul permanent al lui modivo (`akcja:new_sale`) a fost CERUT la DEAL-D4 si da 404. Un scan cu 0 carduri inseamna campanie expirata, nu selectori rupti."),
     },
     "modivo.ro": {
         "label": "Modivo",
@@ -730,7 +806,44 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-2b",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            # Vitrina `/ro/`, cea validata pe axa L: radacina globala `prm.com/`
+            # are 11 KB si e o poarta de localizare, nu magazinul.
+            "url": "https://prm.com/ro/s/final-sale",
+            "page_url_template": "https://prm.com/ro/s/final-sale?page={n}",
+            # `p1 ∩ p2 = 0` din 80 — paginare reala. ATENTIE la coada: `?page=500`
+            # raspunde HTTP **500**, iar scannerul trateaza ca sfarsit de paginare
+            # DOAR 404; un 5xx pe pagina > 1 ridica RuntimeError si pierde TOT
+            # scanul domeniului (inainte de commit), consemnat in ShopScanState.
+            # Plafonul e deci si o plasa: daca `final-sale` are mai putin de 25 de
+            # pagini, primul scan care trece de coada va esua ZGOMOTOS — ceea ce e
+            # de preferat unei erori tacute, dar cere re-masurarea adancimii.
+            "max_pages": 25,
+            "currency": "RON",
+            # Clase de modul CSS cu hash de build (`__cAcr_`, `__eYDbk`): se prind
+            # pe PORTIUNEA STABILA a numelui, nu pe hash.
+            "card": "[class*='Products__productsFullWide']",
+            "link": "a",
+            "title": "[class*='productCardName']",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image": "img",
+            "image_attr": ["src", "srcset"],
+            # DOI selectori, si asta e o masuratoare: cardurile NEREDUSE (46 din
+            # 80) n-au `priceSaleMinimal`, ci `priceRegular__`. Cu unul singur,
+            # descriptorul citea 34 din 80 si arata a succes. `priceRegular__` nu
+            # se confunda cu `priceRegularMinimalLabel__`: acolo dupa
+            # `priceRegular` vine `M`, nu `_`.
+            "price_text": "[class*='priceSaleMinimal'], [class*='priceRegular__']",
+            # Primul nod cu clasa asta e „Preț normal: 94,90 LEI". Al doilea e
+            # „Cel mai mic preț DE LA LANSARE" — alta semantica decat Omnibus-ul
+            # („in ultimele 30 de zile"), de aia `reference_kind` NU e `min30`.
+            "compare_text": "[class*='priceRegularMinimalLabel']",
+            "price_parse": "eu_comma",
+            "reference_kind": "nemarcat",
+        },
+        "notes": ("FASHION-2b"
+                 " DEAL-D4 - axa D pe vitrina `/ro/`: `/s/final-sale`, 80 de carduri. Referinta e „Preț normal”, NU Omnibus: fraza „Cel mai mic preț DE LA LANSARE” de pe acelasi card e alta semantica. Cardurile nereduse au alt nod de pret, deci `price_text` are doi selectori. ATENTIE: `?page=500` da HTTP 500, iar scannerul trateaza ca final de paginare doar 404 - un 5xx ridica si pierde scanul domeniului."),
     },
     "sneakersnstuff.com": {
         "label": "Sneakersnstuff",
@@ -783,7 +896,47 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-4",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            "url": "https://www.aboutyou.ro/c/femei/sale-32543",
+            # Nicio paginare in HTML-ul brut, deci `p2` n-a fost nici macar cerut
+            # la sonda. 30 de carduri pe pagina; restul catalogului de sale cere
+            # alt mecanism (v. `notes`).
+            "max_pages": 1,
+            "currency": "RON",
+            # TOATE clasele magazinului sunt hash-uri de build (`.she0wnd`,
+            # `.w13wcbtj`) si se schimba la fiecare deploy — `data-testid`-urile
+            # sunt SINGURUL motiv pentru care domeniul e propozabil.
+            "card": "li[data-testid^='productTileTracker-']",
+            "link": "a[data-testid^='productTile-']",
+            "title": "[data-testid='productName']",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src", "srcset"],
+            # `<span data-testid="finalPrice"><span …>242,90 lei</span></span>`
+            "price_text": "[data-testid='finalPrice']",
+            # Omnibus-ul, cu eticheta vizibila „Ultimul preț minim:" si valoarea
+            # intr-un nod propriu (`div[data-value="true"]` = `218,61 lei`).
+            # Coexista cu `[data-testid='originalPrice']` = „Preț original:
+            # 489,00 lei", care e PRP-ul: cardul poarta DOUA referinte cu
+            # semantici diferite, iar descriptorul o alege explicit pe cea legala.
+            #
+            # `> span:first-child` NU e decor. Pe cardurile unde pretul curent e
+            # SUB minim, `div[data-value="true"]` are DOI copii:
+            # `<span><s>70,32 lei</s></span><span> -2%</span>`. Fara restrictia la
+            # primul, `_text_of` da „70,32 lei -2%" si `_pret_eu_comma` lipeste
+            # cifra procentului: 70.322 in loc de 70.32. Prins de fixture-ul
+            # DEAL-D4 pe al DOILEA card — controlul LST-D4 se uitase doar la primul.
+            "compare_text": ("[data-testid='lowestProductPrice30D'] "
+                             "[data-value='true'] > span:first-child"),
+            "price_parse": "eu_comma",
+            "reference_kind": "min30",
+            # ATENTIE la citirea marjelor: pe 6 din 30 de carduri pretul e
+            # precedat de „De la" („De la 199,00 lei"), langa „Mărimi disponibile",
+            # deci acolo e pretul VARIANTEI CELEI MAI IEFTINE, nu al produsului.
+            # Linkul duce la PDP-ul grupului, nu al marimii.
+        },
+        "notes": ("FASHION-4"
+                 " DEAL-D4 - axa D: `/c/femei/sale-32543`, 30 de carduri, o singura pagina (zero paginare in HTML-ul brut). Omnibus pe card sub numele „Ultimul preț minim” (`data-testid=lowestProductPrice30D`), langa un „Preț original” care e PRP. Descriptorul sta pe `data-testid`: clasele magazinului sunt hash-uri de build."),
     },
     "trendyol.com": {
         "label": "Trendyol",
@@ -792,7 +945,8 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-4",
+        "notes": ("FASHION-4"
+                 " DEAL-D4 - RAMAS IN AFARA axei D: JS_ONLY. Candidata din home a fost un BANNER (`a.banner-link`), nu o ancora de navigatie; pagina de campanie are 0 jetoane de pret, 0 carduri si 0 colectii de produse in blobul de stare. O CATEGORIE (nu o campanie) ramane nemasurata."),
     },
 
     # ── ACCESS-2 ──────────────────────────────────────────────────────────────
@@ -803,12 +957,13 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "ACCESS-2; DEAL-D3 - JS_ONLY pe axa D: `/eu/sale` raspunde 200 cu "
+        "notes": ("ACCESS-2; DEAL-D3 - JS_ONLY pe axa D: `/eu/sale` raspunde 200 cu "
                  "1,5 MB si ZERO carduri, iar `__NEXT_DATA__`-ul de 1,37 MB n-are "
                  "produse - cele 105 chei `price` din el sunt praguri de livrare "
                  "(`config/shipping/methods`), iar singurele array-uri mari sunt "
                  "arbori de categorii. Zero rezultate de cautare in corp, iar "
-                 "`algolia` apare de 14 ori: produsele vin client-side.",
+                 "`algolia` apare de 14 ori: produsele vin client-side."
+                 " DEAL-D4 - corectie de MONEDA la nota de mai sus: dump-ul aceleiasi pagini, recitit cu un jeton de pret care cunoaste toate monedele, arata `RON972` / `RON294` - pagina servea RON, nu GBP. Verdictul JS_ONLY nu se schimba (DOM-ul e gol), doar moneda din nota."),
     },
     "zalando.ro": {
         "label": "Zalando",
@@ -817,7 +972,45 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "ACCESS-2",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            "url": "https://www.zalando.ro/sale/?sale=true",
+            # `max_pages: 1` e o MASURATOARE, nu prudenta, si e cea mai tare din
+            # lot: sablonul `/sale/{n}/?sale=true` CHIAR apare in DOM
+            # (`<a href="/sale/274/?sale=true">`), dar `…/sale/2/` SI `…/sale/500/`
+            # redirecteaza amandoua catre `…/sale/?sale=true` — pagina 1. Dovedit
+            # pe identitatile cardurilor, nu pe numar: p1 ∩ plast = 24 din 24
+            # (identice), p1 ∩ p2 = 19 din 24. Deci paginarea nu exista
+            # server-side, iar raftul nici macar nu e stabil intre doua cereri.
+            # Fara `page_url_template`: garda il cere abia peste plafonul 1, si
+            # n-avem ce URL real sa punem.
+            "max_pages": 1,
+            "currency": "RON",
+            # ZERO carlige stabile pe acest magazin: niciun `data-testid`, doar
+            # hash-uri de build (`.Km7l2y`, `.Yb63TQ`, `.JT3_zV`). Singura ancora e
+            # STRUCTURA — `<article>` cu `<header><h3>` si un `<section>` cu trei
+            # `<p>`: platit, „Inițial:", „Cel mai mic preț recent:". E fragil prin
+            # constructie: orice redesign il rupe. Daca da 0 carduri pe un scan
+            # viitor, se RE-MASOARA, nu se ghiceste alt selector.
+            "card": "article:has(header h3)",
+            "link": "a",
+            "title": "header h3",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src", "srcset"],
+            # `<span class="…Km7l2y">127,00 lei</span>`, primul `<p>` al sectiunii.
+            "price_text": "section > p:first-child > span",
+            # Al TREILEA `<p>`: „Cel mai mic preț recent:" + `134,00 lei` + `-5%`.
+            # Exista doar pe cardurile CU Omnibus — 3 din 24 masurate — deci
+            # `compare_at` e None pe restul, si asta e corect, nu o pierdere.
+            "compare_text": "section > p:nth-child(3) > span:nth-child(2)",
+            "price_parse": "eu_comma",
+            # Eticheta e VIZIBILA pe card, verbatim „Cel mai mic preț recent:",
+            # langa un „Inițial:" NEMARCAT (nici <del>, nici clasa de taiere) pe
+            # toate 24. Se citeste Omnibus-ul, nu „Inițial".
+            "reference_kind": "min30",
+        },
+        "notes": ("ACCESS-2"
+                 " DEAL-D4 - axa D: `/sale/?sale=true` (24 de carduri, 308.498 de produse anuntate), Omnibus vizibil pe card („Cel mai mic preț recent”) dar doar pe 3 din 24. Selectori STRUCTURALI: magazinul n-are niciun `data-testid`, doar hash-uri de build. `max_pages: 1` MASURAT - `/sale/2/` si `/sale/500/` redirecteaza amandoua la pagina 1 (p1 identic cu plast pe 24 din 24), iar raftul difera intre doua cereri (19 din 24 comune)."),
     },
     "43einhalb.com": {
         "label": "43einhalb",
@@ -977,7 +1170,8 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "custom",
         "status": "validated",
-        "notes": "DISCOVERY-2",
+        "notes": ("DISCOVERY-2"
+                 " DEAL-D4 - RAMAS IN AFARA axei D, desi grila e curata: `li.productTile_U0clN`, 72 de placi, paginare `?page={n}` reala (p1 si p2 disjuncte). Listarea serveste insa GBP pe 72 din 72, iar locala validata pe axa L e `store=ROE&currency=EUR&country=RO` prin API-ul public `stockprice`. Lipseste doar comutatorul de magazin; pana atunci ar fi alt magazin."),
     },
 
     # ── SHOP-1a ───────────────────────────────────────────────────────────────
@@ -1420,12 +1614,13 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT2; plentyShop; LEGO retired + SALE; DEAL-D3 — nota aia despre "
+        "notes": ("LOT2; plentyShop; LEGO retired + SALE; DEAL-D3 — nota aia despre "
                  "SALE descrie o sectiune EDITORIALA: `/spezielle-lego-angebote-und-"
                  "gwp/` are titlul `Spezielle LEGO Angebote und GWPs` si "
                  "`<h1>Alle Unsere Aktuellen LEGO ® Aktionen, Angebote & GWPs</h1>`, "
                  "dar 2 jetoane de pret pe 236 KB, zero carduri si zero produse in "
-                 "blobul de stare. Re-sonda cu alta intrare.",
+                 "blobul de stare. Re-sonda cu alta intrare."
+                 " DEAL-D4 - FARA_LISTARE confirmat a doua oara, cu cuvinte EXTINSE (`restposten|auslaufartikel|%|sale|angebote`) pe un home proaspat de 428 de ancore: o singura candidata, chiar cea editoriala de mai sus. plentyShop marcheaza produsele cu `storeSpecial: Sonderangebot` in DATE, dar magazinul nu expune o categorie de oferte in navigatia server-side."),
     },
     "caseking.de": {
         "label": "Caseking",
@@ -2420,7 +2615,39 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "microdata",
         "status": "validated",
-        "notes": "LOT3",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            "url": "https://www.officeshoes.ro/sale",
+            # Infinite scroll: cardurile poarta `class="infinite_article"`, iar
+            # optiunile de pagina (24/48/96) sunt un `<select>`, nu linkuri.
+            "max_pages": 1,
+            "currency": "RON",
+            "card": ".product-article",
+            # PRIMA ancora a cardului e SIGLA MARCII
+            # (`<a class="logo" href=".../branduri/calvin-klein">`), nu produsul.
+            # Un `link: "a"` ar scoate 48 de carduri cu 10 URL-uri distincte — o
+            # masuratoare falsa care arata a duplicate responsive. Ancora
+            # produsului e a doua.
+            "link": "a.send-search",
+            # Ancora n-are TEXT (doar un `<img>`), iar numele complet sta in
+            # atributul ei `title`. `h2.product_list_title` exista si e fallback-ul,
+            # dar da doar modelul („Kobe M 1C"), fara marca.
+            "title_from": "link_title",
+            "title": "h2.product_list_title",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image": "img.product-prv",
+            "image_attr": ["data-img-article-main", "src"],
+            # Ambele numere stau pe ACELASI nod, cu punct zecimal:
+            # `<span class="old-price" data-new="359.00" data-old="599.00">`.
+            # Textul vizibil e „359,00Lei", fara spatiu inaintea monedei.
+            "price_attr": ["span.old-price", "data-new"],
+            "compare_attr": ["span.old-price", "data-old"],
+            "price_parse": "attr_float",
+            # Pret taiat pe 48 din 48, fara nicio eticheta legala langa camp.
+            "reference_kind": "nemarcat",
+        },
+        "notes": ("LOT3"
+                 " DEAL-D4 - axa D: `/sale`, 48 de carduri, infinite scroll (deci o pagina). Pretul si referinta vin din atribute pe acelasi nod (`data-new`/`data-old`). PRIMA ancora a cardului e sigla MARCII, nu produsul - de aia `link` e `a.send-search`; titlul e in `title=` pe ea, deci `title_from: link_title` (cheia noua a rundei)."),
     },
     "otter.ro": {
         "label": "Otter",
@@ -2461,8 +2688,35 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT3b; og:type propriu (non-standard); site-ul tolereaza dublu "
-                 "slash in cale — normalizat la salvare (C3)",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            "url": "https://www.spartoo.ro/pantofi-ieftina.php",
+            # Nicio paginare in HTML-ul brut al paginii — `p2` n-a fost cerut.
+            # 144 de carduri pe pagina, cel mai mare raft al lotului.
+            "max_pages": 1,
+            "currency": "RON",
+            "card": ".dis_zoomInfo",
+            # Linkul cardului e RELATIV FARA slash initial
+            # (`Helly-Hansen-GARIBALDI-V4-x15480018.php`), iar `_link_of` rezolva
+            # fata de `https://{domeniu}/` — exact unde stau PDP-urile spartoo.
+            "link": "a",
+            "title": "span.productlist_name",
+            # IMG-1a/1a2: `src` e `lazyLoader.gif`.
+            "image": "img.lazyZoom",
+            "image_attr": ["data-original", "src"],
+            # `span.productlist_prix` contine AMBELE preturi („841,00 Lei 630,75
+            # Lei"), deci nu poate fi citit ca atare — `_text_of` ar da 841630.75.
+            # `s` e referinta, `span`-ul dinauntru e pretul platit.
+            "price_text": "span.productlist_prix > span",
+            "compare_text": "span.productlist_prix s",
+            "price_parse": "eu_comma",
+            # Taiat semantic (`<s>`) pe 144 din 144, dar fara nicio eticheta de
+            # „30 de zile" sau „PRP" langa camp.
+            "reference_kind": "nemarcat",
+        },
+        "notes": ("LOT3b; og:type propriu (non-standard); site-ul tolereaza dublu "
+                 "slash in cale — normalizat la salvare (C3)"
+                 " DEAL-D4 - axa D: `/pantofi-ieftina.php`, 144 de carduri (cel mai mare raft al lotului), pret taiat semantic (`<s>`) pe 144 din 144, fara eticheta legala. `span.productlist_prix` contine AMBELE preturi, deci se citesc nodurile dinauntru. Zero paginare in HTML-ul brut."),
     },
     "boozt.com": {
         "label": "Boozt",
@@ -2493,7 +2747,8 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT4",
+        "notes": ("LOT4"
+                 " DEAL-D4 - RAMAS IN AFARA axei D: STATE. In DOM exista doar 15 elemente cu link si pret, si alea sunt bara de NAVIGATIE; raftul e in blobul de stare (`searchModel.products`, 20 pe pagina, 834 in total). Candidat pentru un `state_extractor`, nu pentru selectori CSS."),
     },
     "notino.ro": {
         "label": "Notino",
@@ -2503,7 +2758,31 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "impersonate": "firefox135",
-        "notes": "LOT4; deschis pe treapta din campul impersonate",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            # Campanie, 28 de produse. Treapta de impersonate vine din `impersonate`
+            # de mai sus (firefox135), aplicata de poarta.
+            "url": "https://www.notino.ro/shopping-days/",
+            # Nicio paginare in HTML-ul brut.
+            "max_pages": 1,
+            "currency": "RON",
+            "card": "[data-testid='product-container']",
+            "link": "a",
+            "title": "[data-testid='product-card-name']",
+            # IMG-1a/1a2: unde sta poza pe acest domeniu.
+            "image_attr": ["src", "srcset"],
+            # `<span data-testid="price-component">2.953</span>` +
+            # `<span data-testid="currency-component">RON</span>`.
+            "price_text": "[data-testid='product-price']",
+            # FARA `compare_*`, DELIBERAT. Al doilea pret de pe card e
+            # `2.362 RON folosind codul shoppingdays` — un CUPON intr-un nod
+            # separat, nu o referinta taiata. Citit ca referinta, ar produce
+            # „reduceri" care nu exista fara cod. Raftul asta e deci R2-only.
+            "price_parse": "eu_comma",
+            "reference_kind": "nemarcat",
+        },
+        "notes": ("LOT4; deschis pe treapta din campul impersonate"
+                 " DEAL-D4 - axa D: `/shopping-days/`, 28 de carduri, o pagina. FARA referinta, deliberat: al doilea pret de pe card („2.362 RON folosind codul shoppingdays”) e un CUPON intr-un nod separat, nu un pret taiat - raftul e R2-only."),
     },
     "parfumdreams.de": {
         "label": "Parfumdreams",
@@ -2512,8 +2791,43 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT4; pret in priceSpecification — clientul fix-ului de moneda; "
-                 "Grundpreis inchis manual: pretul e al flaconului",
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            "url": "https://www.parfumdreams.de/Angebote",
+            "page_url_template": "https://www.parfumdreams.de/Angebote?p={n}",
+            # `p1 ∩ p2 = 0` din 30 (paginare reala), iar `?p=500` raspunde 200 cu
+            # GRILA GOALA — oprirea pe care scannerul o cunoaste din LST-1b.
+            # 449 de produse anuntate.
+            "max_pages": 15,
+            "currency": "EUR",
+            # Tailwind pur: nicio clasa nu numeste lucrul, toate descriu aspectul.
+            # Singura ancora stabila de card e atributul.
+            "card": "div[data-product-id]",
+            "link": "a.group",
+            "title": "p.font-bold.break-words",
+            # IMG-1a/1a2: cardul are si `/images/Tip.svg` si `/images/ratingstars.svg`
+            # ca `<img>`, deci selectorul TREBUIE sa fie cel al pozei produsului.
+            "image": "img.card-hover",
+            "image_attr": ["src", "srcset"],
+            # Pretul PUBLIC. Nodul vecin, `span.hidden` cu variante Tailwind
+            # `premium:`, poarta pretul de MEMBRU (69,26 € fata de 76,95 €) — un
+            # vizitator obisnuit nu-l plateste, deci citit ca pret ar inventa o
+            # reducere.
+            "price_text": "span.inline",
+            # UVP. `:not(.article-description)` NU e cosmetic: fara el,
+            # `select_one` ia `p.article-description.text-xs.text-darkgraystrong`
+            # („Eau de Parfum Spray nachfüllbar"), care il PRECEDE in document.
+            "compare_text": "p.text-darkgraystrong.text-xs:not(.article-description)",
+            "price_parse": "eu_comma",
+            # UVP pe 30 din 30. Omnibus-ul EXISTA, dar doar in `data-props` JSON al
+            # ancorei (`LowestPriceLast30DaysTC_f`), iar `price_attr` cere un
+            # atribut strict numeric — necitibil pe calea actuala.
+            "reference_kind": "prp",
+            # NU se citeste Grundpreis-ul („100 ml (769,50 € / 1 l)"), nod separat.
+        },
+        "notes": ("LOT4; pret in priceSpecification — clientul fix-ului de moneda; "
+                 "Grundpreis inchis manual: pretul e al flaconului"
+                 " DEAL-D4 - axa D: `/Angebote`, 30 de carduri, 449 de produse, oprire pe grila goala. Referinta e UVP (PRP) pe 30 din 30; Omnibus-ul exista dar doar in `data-props` JSON, necitibil pe calea actuala. Nodul vecin al pretului e pretul de MEMBRU (`premium:`), care nu trebuie citit."),
     },
     "douglas.ro": {
         "label": "Douglas",
@@ -2522,9 +2836,47 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT4b; o pagina per volum, fara variante — fiecare volum e sursa "
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        "listing": {
+            "url": "https://www.douglas.ro/ro/c/reduceri/05",
+            "page_url_template": "https://www.douglas.ro/ro/c/reduceri/05?page={n}",
+            # PLAFON DUR, nu buget. `p1 ∩ p2 = 0` din 48 (paginare reala), dar
+            # `?page=500` intoarce PAGINA 1 — `p1 ∩ plast = 48 din 48`. Nu exista
+            # nicio semnatura de oprire: nici 404, nici grila goala. Clamp-ul
+            # scannerului (`linkuri_pagina <= linkuri_vazute`) o prinde abia dupa
+            # ce a re-citit o pagina intreaga, deci plafonul e singura oprire
+            # care se poate declara aici.
+            "max_pages": 20,
+            "currency": "RON",
+            # `data-testid` stabile peste hash-urile de build.
+            "card": "[data-testid='product-tile']",
+            "link": "a[data-testid='main-link']",
+            "title": "span[id^='product-tile-image-title']",
+            # IMG-1a/1a2: placile de sub pliu sunt LENESE (Swiper) — `src` gol,
+            # poza in `data-lazy-src`. Fara el, 15 din 35 de carduri ieseau fara
+            # imagine.
+            "image": "img.image",
+            "image_attr": ["src", "data-lazy-src", "srcset", "data-lazy-srcset"],
+            # DOI `data-testid` pe fiecare latura: 13 din 48 de carduri folosesc
+            # varianta `-color` a campului, iar Omnibus-ul lor e taiat
+            # (`-strikethrough`). Cu unul singur, descriptorul citea 35 din 48.
+            "price_text": ("[data-testid='price-type-discount'], "
+                           "[data-testid='price-type-discount-color']"),
+            # Omnibus ETICHETAT, verbatim „Cel mai mic preț din ultimele 30 de
+            # zile 429,00 RON", pe 47 din 48. Coexista cu „PRP 798,00 RON"
+            # (`price-type-original`), tot pe 47.
+            "compare_text": ("[data-testid='price-type-lowest'], "
+                             "[data-testid='price-type-lowest-strikethrough']"),
+            "price_parse": "eu_comma",
+            "reference_kind": "min30",
+            # NU se citeste `[data-testid='price-base-unit']`: acela e pretul pe
+            # UNITATE („80 ml (5,66 RON / 1 ml)"), nu al produsului — aceeasi
+            # capcana ca `Grundpreis` la parfumdreams, dar aici pe listare.
+        },
+        "notes": ("LOT4b; o pagina per volum, fara variante — fiecare volum e sursa "
                  "proprie; incadrarea Grup 3 din descoperire corectata: esec de "
-                 "ordonare, nu de site",
+                 "ordonare, nu de site"
+                 " DEAL-D4 - axa D: `/ro/c/reduceri/05`, 48 de carduri, Omnibus etichetat pe 47 din 48 („Cel mai mic preț din ultimele 30 de zile”), langa PRP. `max_pages` e PLAFON DUR: `?page=500` intoarce pagina 1, deci nu exista nicio semnatura de oprire. 13 din 48 de carduri folosesc varianta `-color` a campurilor, iar placile de sub pliu au poza in `data-lazy-src`."),
     },
     "sephora.ro": {
         "label": "Sephora",
@@ -2713,7 +3065,81 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT5b; pret dublu-sursat (ld+json + div.priceNEW), platitul in "
+        # ── DEAL-D4, din dump-urile LST-D4 (8 septembrie) ──────────────────
+        # Al DOILEA descriptor pe forma `entries`, dupa eMAG. Magazinul n-are URL
+        # agregat de reduceri: `/oferte-speciale` e un HUB (titlu si `h1` de oferte,
+        # zero produse, zero blob de stare) care isi expune insa cele 17 FATETE
+        # `/<categorie>/produse-cu:reducere`. URL-urile de mai jos sunt verbatim din
+        # ancorele hub-ului.
+        #
+        # Ca forma, `entries` a fost DOVEDITA, nu presupusa: doua fatete au fost
+        # cerute la LST-D4, iar selectorul primei aduce 60 de carduri si pe a doua,
+        # cu zero URL-uri comune intre ele — un singur set de selectori acopera tot.
+        "listing": {
+            # PAGINAREA E INFIXATA — numarul sta la MIJLOC, nu la coada:
+            # `<a class="pagenext circle shadow"
+            #     href="/carucioare-copii/carucioare-2-in-1/p2/produse-cu:reducere">`.
+            # Confirmata live la DEAL-D4: `p2` da 60 de carduri, ZERO comune cu `p1`.
+            #
+            # De ce plafonul descriptorului e 1 si doar DOUA intrari pagineaza:
+            # o pagina PESTE adancimea reala a fatetei nu da 404 si nici grila
+            # goala — magazinul ARUNCA fateta si serveste categoria intreaga.
+            # Masurat pe `p500`: raspuns 200, 60 de carduri,
+            # `canonical` devine `/carucioare-copii/carucioare-2-in-1/` (fara
+            # `produse-cu:reducere`), `h1` pierde „Cu Reducere", iar numarul de
+            # produse sare de la 201 la 520. Cardurile alea sunt produse
+            # NEREDUSE, iar scannerul nu le poate deosebi: clamp-ul lui cere ca
+            # pagina sa fie SUBMULTIME a celor vazute, si aici 20 din 60 sunt noi.
+            # Deci pagineaza doar fatetele carora li s-a MASURAT adancimea.
+            "max_pages": 1,
+            "entries": [
+                {"url": "https://www.nichiduta.ro/carucioare-copii/carucioare-3-in-1/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/carucioare-copii/carucioare-2-in-1/produse-cu:reducere",
+                 "page_url_template": "https://www.nichiduta.ro/carucioare-copii/carucioare-2-in-1/p{n}/produse-cu:reducere",
+                 "max_pages": 4},
+                {"url": "https://www.nichiduta.ro/carucioare-copii/carucioare-standard/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/carucioare-copii/carucioare-sport/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/scaune-auto-copii/scaune-cu-isofix/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/camera-copilului/tarcuri-copii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/camera-copilului/sisteme-de-siguranta-copii/produse-cu:reducere/tip-produs-19:bariere-protectie-pat-nic_140,porti-de-siguranta-nic_138,protectii"},
+                {"url": "https://www.nichiduta.ro/la-plimbare/triciclete-copii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/la-plimbare/trotinete-copii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/jucarii-de-exterior/tobogane-copii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/jucarii-de-exterior/casute-pentru-copii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/jucarii-de-exterior/gonflabile-si-bazine/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/jucarii-de-exterior/accesorii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/alimentatie/suzete-si-accesorii/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/articole-pentru-gravide/pompe-de-san/produse-cu:reducere"},
+                {"url": "https://www.nichiduta.ro/articole-pentru-gravide/perne-de-alaptat/produse-cu:reducere",
+                 "page_url_template": "https://www.nichiduta.ro/articole-pentru-gravide/perne-de-alaptat/p{n}/produse-cu:reducere",
+                 "max_pages": 3},
+                {"url": "https://www.nichiduta.ro/articole-pentru-gravide/recipiente-pentru-lapte/produse-cu:reducere"},
+            ],
+            "currency": "RON",
+            "card": ".listing_product_item",
+            # Ancorele cardului sunt RELATIVE FARA slash initial
+            # (`href="carucior-…-427420"`), iar pagina poarta
+            # `<base href="https://www.nichiduta.ro/" />`; canonicul unui produs e
+            # la RADACINA. `_link_of` rezolva fata de `https://{domeniu}/`, adica
+            # exact ce prescrie `<base>` — o rezolvare fata de URL-ul PAGINII ar da
+            # 404 (masurat la LST-D4, doua cereri arse asa).
+            "link": "a.h-prod-name",
+            "title": "span.prod_name",
+            # IMG-1a/1a2: `src` e `img/new/pix.gif`.
+            "image": "img.load_image",
+            "image_attr": ["data-src", "src"],
+            # `<div class="prices">899<sup>lei</sup><br/><span>503 <sup>lei</sup>
+            # </span></div>` — `.prices` intreg ar da „899 lei 503 lei" (899503.0).
+            "price_text": ".prices span",
+            # FARA `compare_text`, si nu din uitare: pretul taiat (PRP, per LOT5b)
+            # e TEXT DIRECT al lui `div.prices`, fara niciun nod propriu, deci nu
+            # exista selector CSS care sa-l izoleze. Reducerea e afisata ca badge
+            # (`<li class="discount circle shadow">-44 %</li>`), nu ca pret.
+            # Raftul asta e deci R2-only.
+            "price_parse": "eu_comma",
+            "reference_kind": "nemarcat",
+        },
+        "notes": ("LOT5b; pret dublu-sursat (ld+json + div.priceNEW), platitul in "
                  "date; ATENTIE la citirea marjelor: referinta taiata e PRP "
                  "(Pretul Recomandat de Producator, verbatim din tooltip), NU "
                  "minimul pe 30 de zile — procentele de reducere sunt fata de PRP DEAL-D3 - `/oferte-speciale` e un HUB: are titlu si `h1` de "
@@ -2721,7 +3147,8 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "zero stare. Isi expune insa fatetele: 17 ancore "
                  "`/<categorie>/produse-cu:reducere`, deci candidat pentru forma "
                  "`entries` (al doilea caz dupa eMAG). Niciuna dintre cele 17 n-a "
-                 "fost ceruta inca.",
+                 "fost ceruta inca."
+                 " DEAL-D4 - cele 17 fatete au intrat ca `entries` (al doilea caz dupa eMAG), dovedite: selectorul unei fatete aduce 60 de carduri si pe alta, cu zero URL-uri comune. Paginarea e INFIXATA (`/<cat>/p2/produse-cu:reducere`) si confirmata live, dar pagineaza doar cele DOUA fatete carora li s-a masurat adancimea: o pagina peste adancimea reala nu da 404, ci ARUNCA fateta si serveste categoria intreaga (masurat pe p500: canonical fara `produse-cu:reducere`, 520 de produse in loc de 201). Fara `compare_text`: pretul taiat e text direct al lui `div.prices`, fara nod propriu."),
     },
     "brickdepot.ro": {
         "label": "BrickDepot",
