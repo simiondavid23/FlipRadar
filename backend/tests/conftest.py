@@ -11,11 +11,31 @@ Reguli dure (nu ocoli):
 import os
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
+
+# ── 0. TZ-3: fusul suitei, ÎNAINTE de orice import ───────────────────────────
+# Conventia proiectului (TZ-1/TZ-2) e ca DB-ul tine ora LOCALA a masinii, deci orice
+# test care aserteaza o ora ABSOLUTA („06:45 UTC -> 09:45") presupune implicit un fus.
+# Pe laptop e Bucuresti; pe runner-ul GitHub Actions e UTC, unde offsetul e 0 si nouă
+# teste picau doar acolo. Fixam fusul aici, ca verdictul suitei sa nu depinda de masina.
+#
+# La NIVEL DE MODUL, nu intr-un fixture: unele module de test calculeaza constante de
+# fus la import, iar un fixture ar rula prea tarziu.
+#
+# `setdefault`, nu suprascriere: un `TZ=UTC pytest ...` explicit trebuie sa CASTIGE —
+# asa se verifica testele de consistenta din TZ-3, care trebuie sa treaca in orice fus.
+#
+# Pe Windows `time.tzset` nu exista si blocul e no-op (CRT-ul citeste `TZ` doar la
+# pornirea procesului, deci un `TZ=UTC` din shell functioneaza si acolo). Laptopul de
+# dezvoltare e deja pe Bucuresti, deci nu se pierde nimic.
+os.environ.setdefault("TZ", "Europe/Bucharest")
+if hasattr(time, "tzset"):
+    time.tzset()
 
 # ── 1. Bootstrap env, ÎNAINTE de orice import din `app` ──────────────────────────
 # backend/ pe sys.path ca `import app...` sa mearga indiferent de CWD / import-mode.

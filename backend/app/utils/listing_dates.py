@@ -49,6 +49,45 @@ EXCEPTIILE, singurele locuri unde UTC ramane corect, si de ce:
      deci a urma ceasul sistemului ar fi fost o regresie, nu o uniformizare. Fiecare
      coercitie „naiv inseamna UTC" de acolo poarta un comentariu `TZ-2 — EXCEPTIE`.
      `services/radar/amprenta_ferma.py` citeste canonicul FB, deci intra tot aici.
+
+TZ-3 — CE RULEAZA UNDE, si ce mai are voie sa fixeze un fus.
+
+  CI: suita ruleaza cu `TZ=Europe/Bucharest`, pus in DOUA locuri, deliberat:
+  `.github/workflows/ci.yml` (vizibil in log-ul rularii) si `tests/conftest.py`, la NIVEL
+  DE MODUL, cu `setdefault` (deci un `TZ=UTC pytest ...` explicit CASTIGA). Fara asta,
+  runner-ul GitHub era in UTC si sapte teste care asertau ore ABSOLUTE picau doar acolo —
+  o problema de mediu, nu de cod. Pe Windows blocul e no-op (`time.tzset` nu exista);
+  CRT-ul citeste `TZ` la pornirea procesului, deci `TZ=UTC` din shell functioneaza si
+  acolo, iar suita se poate rula sub alt fus si pe laptop.
+
+  Cele TREI ceasuri, care nu se amesteca NICIODATA intre ele:
+    * ceasul NOSTRU  — `acum_local()` scrie, `la_ora_sistemului()` citeste. Fusul MASINII.
+      Perechea de citire lipsea pana la TZ-3, si de aici veneau amestecurile: o valoare
+      scrisa cu ceasul nostru era citita inapoi cu `to_naive_local`, adica pe alt ceas.
+    * ceasul PIETEI  — `to_naive_local()` / `din_fus()`. `FUS_ANUNTURI`, Bucuresti FIXAT.
+    * ceasul FACEBOOK — `_acum()` din nucleu, UTC aware (exceptia B de mai sus).
+
+  Ce MAI fixeaza un fus, dupa runda, si de ce (lista e EXECUTABILA — `_FUSURI_FIXE_PERMISE`
+  din `tests/test_tz_3.py` o verifica pe tot `app/`, deci un al patrulea ceas nu mai poate
+  aparea tacit):
+    * `FUS_ANUNTURI` de mai jos si `la_ora_sistemului` — mecanismele insele;
+    * `scrapers/facebook/planner.py` — `FUS_LOCAL`, exceptia B;
+    * `main.py` — `timezone="Europe/Bucharest"` pe scheduler: ORARUL joburilor (cron de
+      noapte, mementoul de sesiune FB la 09:00) e ancorat in piata romaneasca, nu in
+      masina. Aceeasi specie ca `FUS_ANUNTURI`. De notat asimetria, DELIBERATA si
+      documentata: `utils/ore_active.py` judeca fereastra orara a keyword-urilor pe
+      `datetime.now()`, adica pe ceasul masinii (decizia FB-7a, pastrata ca atare) —
+      cele doua nu schimba valori intre ele, deci nu se pot corupe reciproc;
+    * `kleinanzeigen_auto.py` / `auto/listings/detail.py` — `Europe/Berlin` e fusul
+      SURSEI, intrarea in `din_fus`, care aterizeaza tot in `FUS_ANUNTURI`;
+    * `utils/radar_scanner.py` — `astimezone()` gol pe capatul de SCRIERE al stampilei de
+      scanare; citirea o desface cu `la_ora_sistemului`, deci perechea sta pe un ceas.
+
+  CE GARANTEAZA CE. Testele care aserteaza ore absolute (TZ-1, TZ-2) dovedesc offsetul si
+  au nevoie de fusul fixat de conftest. Doar testele de CONSISTENTA din `tests/test_tz_3.py`
+  — cele doua capete ale unei conversii pe acelasi ceas — tin conventia independent de
+  masina; ele se ruleaza `TZ=UTC pytest tests/test_tz_3.py` ca sa DISCRIMINEZE, fiindca pe
+  o masina din Romania cele doua ceasuri sunt acelasi ceas si ar trece si stricate.
 """
 from datetime import datetime, timedelta
 from typing import Optional
@@ -110,6 +149,29 @@ def acum_local() -> datetime:
     intreaba ce ceas foloseste o comparatie.
     """
     return datetime.now()
+
+
+def la_ora_sistemului(x) -> Optional[datetime]:
+    """Un moment AWARE (sau naiv-UTC prin conventie) -> datetime NAIV pe ceasul NOSTRU.
+
+    Perechea de conversie a lui `acum_local()`: acolo unde o valoare a fost scrisa cu
+    ceasul sistemului, ea trebuie CITITA tot cu ceasul sistemului. Exista ca functie, si
+    nu ca `.astimezone()` imprastiat, ca „fusul local al sistemului" sa aiba UN SINGUR
+    mecanism in tot proiectul (TZ-3) — la fel cum `acum_local()` a strans intr-un loc
+    toate `datetime.now()`-urile.
+
+    ATENTIE la nume, e capcana modulului: `to_naive_local` NU e ruda cu asta. Aia duce
+    la `FUS_ANUNTURI` (Europe/Bucharest, FIXAT), fiindca acolo traiesc orele DECLARATE
+    de platforme; asta duce la fusul MASINII, fiindca acolo traieste ceasul nostru. Pe
+    masina de productie (GTB) cele doua dau acelasi rezultat — de aceea amestecul lor a
+    putut sta ascuns pana cand suita a rulat pe un runner UTC.
+
+    Naivul de la intrare se intoarce NESCHIMBAT (contractul e ca un naiv e deja pe
+    ceasul nostru), la fel ca la `to_naive_local`. `None` la lipsa sau tip nesuportat.
+    """
+    if not isinstance(x, datetime):
+        return None
+    return x.astimezone().replace(tzinfo=None) if x.tzinfo is not None else x
 
 
 def to_naive_local(x) -> Optional[datetime]:

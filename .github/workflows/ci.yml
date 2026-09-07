@@ -10,6 +10,10 @@ jobs:
     env:
       SECRET_KEY: ci-secret-key-pentru-teste-0123456789abcdef
       GROQ_API_KEY: ci-dummy-groq-key
+      # TZ-3: runner-ul e in UTC, iar conventia proiectului e ora locala a masinii,
+      # deci testele care asertau ore absolute picau doar aici. `tests/conftest.py`
+      # face acelasi setdefault; asta il face vizibil in log-ul workflow-ului.
+      TZ: Europe/Bucharest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python

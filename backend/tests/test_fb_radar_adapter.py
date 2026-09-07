@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.utils.listing_dates import FUS_ANUNTURI
 from app.services.radar import facebook_scraper as fb
 
 CAT_GEACA = "1608022336159396"      # o categorie oarecare, folosita ca "ceruta"
@@ -547,8 +548,13 @@ def test_images_e_lista_goala_fara_poza(monkeypatch, nucleu):
 # ── 4. listed_at: naiv local, compatibil cu _too_old ─────────────────────────
 def test_listed_at_devine_naiv_local_pastrand_momentul(monkeypatch, nucleu):
     """Nu hardcodam ora (testul trebuie sa treaca in orice fus): verificam
-    PROPRIETATEA — varsta calculata in conventia naiv-locala e aceeasi cu varsta
-    calculata in UTC."""
+    PROPRIETATEA — varsta calculata in conventia naiva e aceeasi cu varsta in UTC.
+
+    TZ-3 — ceasul de referinta e `FUS_ANUNTURI`, nu `datetime.now()`. Pana acum
+    `_naiv_local` convertea la fusul MASINII, deci pe un laptop din Romania cele doua
+    coincideau si testul nu putea distinge intre ele. Acum `listed_at` de pe Facebook
+    aterizeaza in acelasi fus ca cel de pe OLX sau Storia, deci varsta se masoara
+    de acolo — si asertiunea tine identic sub `TZ=UTC`."""
     monkeypatch.setenv("FB_MOD", "logout")
     aware = datetime.now(timezone.utc) - timedelta(hours=3)
     nucleu.raspuns.append(_canonic("1", listed_at=aware))
@@ -556,7 +562,7 @@ def test_listed_at_devine_naiv_local_pastrand_momentul(monkeypatch, nucleu):
     r = fb.search_facebook("geaca", max_price=1000)[0]
 
     assert r["listed_at"].tzinfo is None, "conventia Radar/Auto e naiv LOCAL"
-    varsta_naiva = datetime.now() - r["listed_at"]
+    varsta_naiva = datetime.now(FUS_ANUNTURI).replace(tzinfo=None) - r["listed_at"]
     varsta_utc = datetime.now(timezone.utc) - aware
     assert abs((varsta_naiva - varsta_utc).total_seconds()) < 5
 

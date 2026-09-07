@@ -554,8 +554,16 @@ def _tz1_backfill_ore_locale(conn, inspector) -> None:
 
 
 def _tz1_utc_in_local(valoare):
-    """Un moment scris ca UTC (naiv sau string SQLite) -> datetime naiv, ora locala."""
+    """Un moment scris ca UTC (naiv sau string SQLite) -> datetime naiv, ora locala.
+
+    TZ-3 — conversia propriu-zisa e `la_ora_sistemului`, helperul UNIC pentru „fusul
+    local al masinii" (vezi `utils/listing_dates.py`). Backfill-ul aduce randurile vechi
+    pe ACELASI ceas cu care scrie de-acum `acum_local()`, deci cele doua nu se pot
+    departa; inainte, regula era duplicata aici ca `.astimezone()` gol.
+    """
     from datetime import datetime as _dt, timezone as _tz
+
+    from app.utils.listing_dates import la_ora_sistemului
 
     if isinstance(valoare, str):
         try:
@@ -565,7 +573,7 @@ def _tz1_utc_in_local(valoare):
     if not isinstance(valoare, _dt):
         return None
     aware = valoare if valoare.tzinfo is not None else valoare.replace(tzinfo=_tz.utc)
-    return aware.astimezone().replace(tzinfo=None)
+    return la_ora_sistemului(aware)
 
 
 def run_migrations():

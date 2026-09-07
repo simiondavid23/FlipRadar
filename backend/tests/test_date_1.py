@@ -407,21 +407,40 @@ def test_niciun_astimezone_fara_argument_pe_caile_de_data():
     """Garda structurala: `.astimezone()` fara argument = fusul masinii.
 
     Prinde regresia si pe un laptop din Romania, unde asertiile pe ora absoluta trec
-    oricum. `facebook_scraper._naiv_local` e EXCLUS deliberat: acolo contractul e
-    relativ la `datetime.now()` (vezi test_fb_radar_adapter / test_fb_auto_adapter,
-    care compara varsta naiva cu varsta UTC), deci fusul masinii e cel corect.
+    oricum.
+
+    TZ-3 — `facebook_scraper` a INTRAT sub garda. Fusese exclus cat timp `_naiv_local`
+    convertea la fusul masinii, „fiindca acolo contractul e relativ la `datetime.now()`";
+    dar iesirea lui e `listed_at`, coloana care traieste in `FUS_ANUNTURI` peste tot
+    altundeva, deci Facebook era singura platforma care scria alt ceas in acelasi camp.
+    Acum deleaga la `to_naive_local`, ca OLX si Storia.
+
+    SCUTITA, prin nume: `listing_dates.la_ora_sistemului` — helperul UNIC pentru ceasul
+    sistemului (perechea lui `acum_local()`). Acolo fusul masinii e raspunsul CORECT, si
+    tocmai ca sa nu mai fie nevoie de `.astimezone()` gol prin alte module exista.
     """
     import ast
     import inspect
 
     from app.scrapers.real_estate import olx_real_estate
-    from app.services.radar import olx_scraper
+    from app.services.radar import facebook_scraper, olx_scraper
     from app.utils import listing_dates
 
-    for modul in (listing_dates, olx_scraper, olx_real_estate):
+    scutite = {"la_ora_sistemului"}
+
+    for modul in (listing_dates, olx_scraper, olx_real_estate, facebook_scraper):
+        arbore = ast.parse(inspect.getsource(modul))
+        # Nodurile scutite se taie din arbore INAINTE de walk, ca scutirea sa fie pe
+        # FUNCTIE, nu pe fisier: restul modulului ramane pazit.
+        for n in list(ast.walk(arbore)):
+            for camp, valoare in list(ast.iter_fields(n)):
+                if isinstance(valoare, list):
+                    setattr(n, camp, [c for c in valoare
+                                      if not (isinstance(c, ast.FunctionDef)
+                                              and c.name in scutite)])
         # Se inspecteaza APELURILE, prin ast, nu textul: docstring-urile vorbesc
         # despre `astimezone().replace(tzinfo=None)` ca sa explice exact capcana asta.
-        goale = [n for n in ast.walk(ast.parse(inspect.getsource(modul)))
+        goale = [n for n in ast.walk(arbore)
                  if isinstance(n, ast.Call)
                  and isinstance(n.func, ast.Attribute)
                  and n.func.attr == "astimezone"

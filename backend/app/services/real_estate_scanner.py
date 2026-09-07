@@ -20,7 +20,7 @@ from app.services.real_estate.scorer import compute_re_score, get_zone_avg_ppm
 from app.services.real_estate.zones import normalize_zone, retroactive_normalize
 from app.services.log_manager import log_manager, set_log_user
 from app.utils.ore_active import in_ore_active
-from app.utils.listing_dates import acum_local, to_naive_local
+from app.utils.listing_dates import acum_local, la_ora_sistemului, to_naive_local
 
 
 def _within_hours(kw: RealEstateKeyword) -> bool:
@@ -35,11 +35,17 @@ def _polling_due(kw, now: datetime) -> bool:
     `now` (naiv local, `acum_local()`) e injectat pentru testabilitate. Un last_scan_at
     naiv e considerat ORA LOCALA — aceeasi conventie ca la Radar (TZ-2).
     Fallback 30 min = default-ul RE (polling_interval_minutes), NU 5 ca la Radar.
+
+    TZ-3 — conversia unui aware vechi se face cu `la_ora_sistemului`, nu cu
+    `to_naive_local`: `last_scan_at` e scris cu ceasul NOSTRU (`acum_local()`), deci se
+    citeste tot cu el. Pe ceasul PIETEI, un aware `+00:00` ajungea 3 ore in viitor pe un
+    server in UTC si keyword-ul nu mai era scadent niciodata — aceeasi semnatura ca la
+    `radar_scanner._platform_scan_due`.
     """
     if kw.last_scan_at is None:
         return True
     # TZ-2 — naiv inseamna acum ora LOCALA (ca `now`); doar un aware vechi se converteste.
-    last = to_naive_local(kw.last_scan_at) if kw.last_scan_at.tzinfo is not None else kw.last_scan_at
+    last = la_ora_sistemului(kw.last_scan_at)
     elapsed = now - last
     return elapsed >= timedelta(minutes=kw.polling_interval_minutes or 30)
 

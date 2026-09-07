@@ -38,7 +38,7 @@ from app.services.radar.scorer import calculate_score, compute_seller_risk
 from app.services.radar.exclusion_engine import check_exclusion
 from app.services.radar.vinted_scraper import search_vinted, get_vinted_item_detail, apply_vinted_detail
 from app.services.radar.vinted_html import guard_status as vinted_guard_status
-from app.utils.listing_dates import acum_local, este_reactualizat, to_naive_local
+from app.utils.listing_dates import acum_local, este_reactualizat, la_ora_sistemului
 from app.utils.ore_active import in_ore_active
 
 
@@ -1747,7 +1747,14 @@ def _platform_scan_due(kw, platform: str, now=None) -> bool:
     Coercitia veche (`replace(tzinfo=timezone.utc)`) ar fi facut, dupa conversia lui
     `last_scan_at`, ca fiecare keyword sa para scadent inca 3 ore dupa deploy. Un `last`
     AWARE ramane posibil: stampilele vechi din `platform_last_scan` poarta `+00:00`, iar
-    cele noi poarta offsetul local — ambele se aduc la naiv local prin `to_naive_local`.
+    cele noi poarta offsetul local.
+
+    TZ-3 — aducerea aware-ului la naiv se face cu `la_ora_sistemului`, NU cu
+    `to_naive_local`. Amandoua dau acelasi rezultat pe o masina din Romania, dar a doua
+    duce la `FUS_ANUNTURI` (Bucuresti FIXAT): pe un server in UTC, stampila proprie
+    scrisa `+00:00` se citea ca ora Bucurestiului, adica 3 ore in VIITOR, si `due` nu mai
+    devenea True niciodata — scanarea se oprea tacut. Stampila e scrisa cu ceasul
+    sistemului (`acum_local()`), deci trebuie citita tot cu ceasul sistemului.
     """
     now = now or acum_local()
     _stamps = _parse_platform_last_scan(kw)
@@ -1767,7 +1774,7 @@ def _platform_scan_due(kw, platform: str, now=None) -> bool:
     if last is None:
         return True
     if last.tzinfo is not None:
-        last = to_naive_local(last)
+        last = la_ora_sistemului(last)
     return (now - last) >= timedelta(minutes=kw.poll_interval_minutes or 5)
 
 
@@ -1779,6 +1786,11 @@ def _mark_platform_scanned(kw, platform: str, now=None) -> None:
     un text auto-descriptiv poate fi citit fara sa stii ce conventie l-a scris. Cititorul
     (`fromisoformat` in `_platform_scan_due`) accepta ambele forme, deci stampilele vechi
     cu `+00:00` raman corecte fara backfill.
+
+    TZ-3 — `astimezone()` fara argument e DELIBERAT aici: e acelasi ceas cu `acum_local()`
+    de deasupra, iar `_platform_scan_due` il desface cu `la_ora_sistemului`. Perechea
+    scriere/citire trebuie sa ramana pe acelasi fus; a se vedea testul de consistenta
+    `test_tz_3.py`, care o verifica sub `TZ=UTC`.
     """
     now = now or acum_local()
     d = _parse_platform_last_scan(kw)

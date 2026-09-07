@@ -183,9 +183,18 @@ async def scrape_facebook_group(
 
                     # TZ-2 — `posted_at` e data DECLARATA de Facebook (epoch UTC),
                     # deci familia `listed_at`: `to_naive_local` o aduce in ora
-                    # anunturilor. Comparatia de mai jos cu `last_run_at` ramane corecta
-                    # fiindca si acela e acum ora locala (`acum_local`) — ambele parti
-                    # s-au deplasat cu acelasi offset.
+                    # anunturilor.
+                    #
+                    # TZ-3, precizare: comparatia de mai jos cu `last_run_at` pune fata
+                    # in fata cele DOUA ceasuri ale proiectului — `posted_at` e pe ceasul
+                    # PIETEI, `last_run_at` pe al NOSTRU (`acum_local`). Pe masina de
+                    # productie sunt acelasi ceas, deci pragul e exact; pe o masina in alt
+                    # fus se deplaseaza cu diferenta dintre ele, adica se recitesc (sau se
+                    # sar) cateva ore de postari. E consecinta ACCEPTATA a variantei A din
+                    # TZ-1, nu o scapare: `posted_at` trebuie sa arate ca pe Facebook, iar
+                    # `last_run_at` trebuie sa fie ceasul masinii. Nu confunda cu bug-urile
+                    # reparate la TZ-3, unde ACEEASI valoare se scria si se citea pe
+                    # ceasuri diferite.
                     posted_at = None
                     time_el = await article.query_selector("abbr[data-utime]")
                     if time_el:

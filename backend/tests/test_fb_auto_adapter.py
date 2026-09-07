@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.utils.listing_dates import FUS_ANUNTURI
 from app.scrapers.auto.listings import facebook_auto_scraper as fa
 
 VEH = fa._vehicles_category_id()
@@ -248,6 +249,8 @@ def test_maparea_campurilor(monkeypatch, nucleu):
 
 
 def test_listed_at_naiv_local(monkeypatch, nucleu):
+    """TZ-3 — referinta e `FUS_ANUNTURI` (ca la Radar): `_naiv_local` nu mai converteste
+    la fusul masinii, deci proprietatea „varsta naiva == varsta UTC" tine in orice fus."""
     monkeypatch.setenv("FB_MOD", "logout")
     aware = datetime.now(timezone.utc) - timedelta(hours=5)
     nucleu.raspuns.append(_canonic("1", listed_at=aware))
@@ -255,7 +258,7 @@ def test_listed_at_naiv_local(monkeypatch, nucleu):
     r = fa.search_facebook_auto("bmw", {})[0]
 
     assert r["listed_at"].tzinfo is None
-    varsta_naiva = datetime.now() - r["listed_at"]
+    varsta_naiva = datetime.now(FUS_ANUNTURI).replace(tzinfo=None) - r["listed_at"]
     varsta_utc = datetime.now(timezone.utc) - aware
     assert abs((varsta_naiva - varsta_utc).total_seconds()) < 5
 

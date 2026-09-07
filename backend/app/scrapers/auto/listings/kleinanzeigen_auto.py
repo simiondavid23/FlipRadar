@@ -44,7 +44,7 @@ from app.scrapers.auto.listings._common import (
     safe_soup, thumb_from_img,
 )
 from app.scrapers.auto.listings.auto_categories import apply_confirmed_filters
-from app.utils.listing_dates import din_fus
+from app.utils.listing_dates import FUS_ANUNTURI, din_fus, to_naive_local
 
 _BASE = "https://www.kleinanzeigen.de"
 
@@ -156,9 +156,16 @@ def _parse_card_date(text, now=None):
         return None
     # TZ-1 — „Heute"/„Gestern" se judeca in ZIUA GERMANIEI, nu a masinii: intre
     # 00:00 si 01:00 ora Romaniei, la Berlin e inca ziua precedenta, deci un
-    # „Heute, 23:40" ar fi primit data de maine. `now` intra naiv-local si se muta
-    # in fusul sursa inainte de a decide ziua; rezultatul se intoarce prin `din_fus`.
-    acum = (now or datetime.now()).astimezone().astimezone(ZoneInfo(_FUS_SITE))\
+    # „Heute, 23:40" ar fi primit data de maine. `now` se muta in fusul sursa
+    # inainte de a decide ziua; rezultatul se intoarce prin `din_fus`.
+    #
+    # TZ-3 — ancora se citeste in `FUS_ANUNTURI`, nu in fusul MASINII. Iesirea trece
+    # prin `din_fus`, care aterizeaza tot in `FUS_ANUNTURI`: daca intrarea s-ar citi
+    # in alt fus, cele doua capete ale conversiei ar sta pe ceasuri diferite. Pe un
+    # laptop din Romania coincid, dar pe o masina in UTC „Heute, 23:40" primea ziua
+    # URMATOARE — exact bug-ul pe care conversia asta trebuia sa-l previna.
+    acum = to_naive_local(now if now is not None else datetime.now(FUS_ANUNTURI))\
+        .replace(tzinfo=FUS_ANUNTURI).astimezone(ZoneInfo(_FUS_SITE))\
         .replace(tzinfo=None)
 
     m_ora = _RE_ORA.search(t)
