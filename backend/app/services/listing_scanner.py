@@ -442,6 +442,14 @@ _RESPINSE_IMG_RE = re.compile(
 _MAX_IMG = 2048
 
 
+# IMG-2 — forma unui `srcset` REAL: unul sau mai multi candidati, fiecare urmat de
+# un descriptor de latime (`400w`) sau de densitate (`2x`), separati prin virgula.
+# Ancorat la ambele capete: o valoare care contine un srcset dar are si altceva
+# in jur nu e un srcset, iar un URL cu virgule in cale nu se potriveste deloc.
+_SRCSET_CU_DESCRIPTORI = re.compile(
+    r"^\S+\s+\d+(?:\.\d+)?[wx](?:\s*,\s*\S+\s+\d+(?:\.\d+)?[wx])*\s*$")
+
+
 def normalizeaza_imagine(valoare, domain: str) -> str | None:
     """URL absolut de imagine de produs, sau None. Public: testele il conduc direct.
 
@@ -461,15 +469,45 @@ def normalizeaza_imagine(valoare, domain: str) -> str | None:
         n-are cum sa distinga o insigna valida de o fotografie.
       * caseking.de — un al doilea `<img>` e eticheta energetica `.svg`, respinsa
         prin extensie.
+
+    IMG-2 — a saptea forma, si prima care a cerut o REGULA, nu o exceptie:
+    endclothing.com serveste pozele printr-un CDN de tip Cloudinary, unde
+    transformarile stau intr-un segment de CALE cu virgule:
+
+        https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,h_400
+               /prodmedia/media/catalog/product/B/R/BR_SS26-100-OAT_1_1.jpg
+
+    Taietorul de mai jos vedea virgulele si oprea la prima, adica exact la
+    `.../media/f_auto` — un URL sintactic valid, care da 404 (masurat la DEAL-D7,
+    alaturi de forma intreaga, care da 200 `image/jpeg`). Si e cel mai rau fel de
+    esec: feed-ul are un placeholder pentru imaginea LIPSA, dar n-are cum sa se
+    apere de una care pare sa existe.
+
+    Regula corecta vine din chiar definitia lui `srcset`: candidatii sunt separati
+    prin virgula, dar fiecare poarta un DESCRIPTOR — `<url> 400w` sau `<url> 2x`.
+    O virgula fara descriptor dupa ea nu separa nimic, e parte din cale. De aceea
+    taierea se face doar cand valoarea CHIAR arata a srcset; altfel URL-ul trece
+    intreg, cu virgule cu tot.
     """
     if not valoare:
         return None
     v = str(valoare).strip()
     if not v:
         return None
-    # srcset: „url 150w, url 300w" -> primul URL. Acelasi taietor acopera si forma
-    # cu un singur candidat urmat de descriptor („url 2x").
-    if "," in v or " " in v:
+    # IMG-2 — trei cazuri, in ordinea asta:
+    #
+    #   1. SRCSET CU DESCRIPTORI („url 150w, url 300w", „url 2x") -> primul
+    #      candidat. Descriptorul e ce dovedeste ca virgula separa: fara el,
+    #      valoarea poate fi la fel de bine un URL cu virgule in cale.
+    #   2. valoare cu SPATII dar fara descriptori („url1, url2", „url1 url2") ->
+    #      primul token, ca inainte. Forma nu s-a masurat pe niciun magazin, dar
+    #      taierea veche o acoperea, si o pastram ca sa nu schimbam decat ce
+    #      trebuie.
+    #   3. orice altceva, INCLUSIV o valoare cu virgule si fara spatii -> intreaga.
+    #      Aici intra Cloudinary-ul de la endclothing.
+    if _SRCSET_CU_DESCRIPTORI.match(v):
+        v = v.split(None, 1)[0].strip()
+    elif " " in v or "\t" in v:
         v = re.split(r"[,\s]", v, maxsplit=1)[0].strip()
     if not v or v.lower().startswith("data:"):
         return None

@@ -1016,7 +1016,12 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "gazdele `search{1,2,3}web.endclothing.com` sunt subdomenii ale "
                  "domeniului validat, deci allow-list-ul NU e obstacolul — poarta e "
                  "GET-only, iar forma de interogare Algolia cere POST. Masuratoarea "
-                 "pe fir a ramas NEFACUTA (LST-D7 §3.4)."),
+                 "pe fir a ramas NEFACUTA (LST-D7 §3.4)."
+                 " IMG-2 - imaginile INTRA: CDN-ul serveste pozele prin URL-uri cu"
+                 " virgule in calea de transformare"
+                 " (`f_auto,q_auto:eco,w_400,h_400`), pe care `normalizeaza_imagine`"
+                 " le taia la prima virgula; regula ei s-a stramtat la srcset-urile"
+                 " REALE (cele cu descriptori), deci URL-ul trece intreg."),
         # ── DEAL-D7, din dump-urile LST-D7 (p1 = all-sale, p1alt = sneakers) ─
         "listing": {
             "entries": [

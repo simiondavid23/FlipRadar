@@ -3613,16 +3613,11 @@ def test_endclothing_state_eur():
                              "aboutblank-bottle-t-shirt-ss26-100-oat.html")
     assert all(c["compare_at"] and c["compare_at"] > c["price"] for c in carduri)
 
-    # IMAGINEA e None DELIBERAT, si asta e o decizie, nu o scapare: CDN-ul
-    # serveste pozele prin URL-uri cu VIRGULE in segmentul de transformare
-    # (`f_auto,q_auto:eco,w_400,h_400`), pe care `normalizeaza_imagine` le taie la
-    # prima virgula — regula ei de `srcset`. Ar iesi
-    # `https://media.endclothing.com/media/f_auto`, o poza rupta pe fiecare card.
-    # Forma cu virgule e SINGURA care merge (masurata pe fir la DEAL-D7: 200,
-    # image/jpeg; fara segmentul de transformare, 404), deci pana cand
-    # normalizatorul invata sa taie doar inaintea unui descriptor de latime,
-    # raspunsul corect e „fara imagine".
-    assert all(c["image_url"] is None for c in carduri)
+    # Imaginea a fost None la DEAL-D7 — normalizatorul taia URL-ul CDN-ului la
+    # prima virgula — si intra abia de la IMG-2, care a stramtat regula de
+    # `srcset` la valorile cu descriptori. Verificarea ei sta in
+    # `test_endclothing_state_are_imagine`, ca sa se vada acolo si de ce.
+    assert all(c["image_url"] for c in carduri)
 
 
 def test_endclothing_entries_masurate():
@@ -3702,3 +3697,81 @@ def test_deal_d7_in_registru():
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
     assert len(listing_domains()) == 53
+
+
+# ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
+#
+# Masuratoarea care a pornit runda (DEAL-D7): endclothing serveste pozele prin
+# URL-uri de tip Cloudinary, cu transformarile intr-un segment de cale cu
+# virgule. Taietorul vechi oprea la prima virgula si producea
+# `https://media.endclothing.com/media/f_auto` — cerut pe fir, 404; forma
+# intreaga, 200 `image/jpeg`. Cel mai rau fel de esec: feed-ul are placeholder
+# pentru imaginea LIPSA, dar nu si pentru una care pare sa existe.
+
+def test_normalizeaza_imagine_pastreaza_virgulele_din_cale():
+    """Cele cinci forme masurate, in ordinea in care regula le decide.
+
+    Granita e DESCRIPTORUL, nu virgula: in `srcset` fiecare candidat e urmat de
+    `400w` sau `2x`, iar fara asta virgula e parte din cale. Ultimul caz e
+    intersport, pastrat aici ca santinela: completarea schemei `//` si query-ul
+    `?lm=` nu s-au atins.
+    """
+    from app.services.listing_scanner import normalizeaza_imagine
+
+    # 1. Cloudinary: virgule in CALE, niciun descriptor -> URL INTREG.
+    cloudinary = ("https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,"
+                  "h_400/prodmedia/media/catalog/product/B/R/BR_X_1_1.jpg")
+    assert normalizeaza_imagine(cloudinary, "media.endclothing.com") == cloudinary
+
+    # 2. srcset cu descriptori de latime -> primul candidat.
+    assert normalizeaza_imagine("https://a/x.jpg 150w, https://a/y.jpg 300w",
+                                "a") == "https://a/x.jpg"
+    # 3. un singur candidat, descriptor de densitate.
+    assert normalizeaza_imagine("https://a/x.jpg 2x", "a") == "https://a/x.jpg"
+    # 4. doua URL-uri separate prin virgula SI spatiu, fara descriptori: taierea
+    #    veche ramane, fiindca spatiul arata ca sunt doua valori.
+    assert normalizeaza_imagine("https://a/x.jpg, https://a/y.jpg",
+                                "a") == "https://a/x.jpg"
+    # 5. intersport, neatins: protocol-relativ + query.
+    assert normalizeaza_imagine("//a/x.jpg?lm=1", "a") == "https://a/x.jpg?lm=1"
+
+
+def test_srcset_cu_descriptori_ia_primul_candidat():
+    """Forma caseking — patru candidati, fiecare cu latimea lui — plus `2x`.
+
+    Testul nu e o repetare a celui de sus: acolo se apara URL-ul CU virgule, aici
+    se apara taierea care TREBUIE sa se intample. Cele doua reguli se pot strica
+    una pe alta, deci se pinuiesc amandoua.
+    """
+    from app.services.listing_scanner import normalizeaza_imagine
+
+    patru = ("https://a/1.jpg 200w, https://a/2.jpg 400w, "
+             "https://a/3.jpg 800w, https://a/4.jpg 1600w")
+    assert normalizeaza_imagine(patru, "a") == "https://a/1.jpg"
+
+    # Spatii in plus in jurul virgulelor si zecimale in descriptor: tot srcset.
+    assert normalizeaza_imagine("https://a/1.jpg 1x ,  https://a/2.jpg 1.5x",
+                                "a") == "https://a/1.jpg"
+    # Un URL cu virgule in cale SI un descriptor la coada e tot srcset, deci se
+    # taie la primul spatiu — nu la prima virgula.
+    assert normalizeaza_imagine("https://a/f_auto,w_400/1.jpg 400w",
+                                "a") == "https://a/f_auto,w_400/1.jpg"
+
+
+def test_endclothing_state_are_imagine():
+    """endclothing — cele 3 hit-uri din fixture ies acum CU poza.
+
+    URL-ul trebuie sa pastreze virgulele: forma intreaga e singura care raspunde
+    200 (masurat la DEAL-D7), iar cea taiata la prima virgula da 404.
+    """
+    from app.services.listing_state_extractors import endclothing_state
+
+    carduri = endclothing_state(_fixture_stare("endclothing.com"),
+                                listing_descriptor("endclothing.com"))
+
+    assert len(carduri) == 3
+    assert all(c["image_url"] for c in carduri), "poza pe 3/3"
+    for c in carduri:
+        assert c["image_url"].startswith("https://media.endclothing.com/media/")
+        assert "f_auto,q_auto" in c["image_url"], "virgulele din cale, pastrate"
+    assert carduri[0]["image_url"].endswith("/B/R/BR_SS26-100-OAT_1_1.jpg")

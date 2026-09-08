@@ -1098,27 +1098,20 @@ def answear_state(html: str, descriptor: dict) -> list[dict]:
 
 # ── endclothing.com — `__NEXT_DATA__` cu raspunsul Algolia inlinat ──────────
 #
-# IMAGINEA NU SE POATE RAPORTA, si merita scris de ce, fiindca arata a omisiune.
-#
-# Magazinul serveste pozele printr-un CDN de tip Cloudinary, unde transformarile
-# stau intr-un segment cu VIRGULE:
+# Sablonul de imagine. Magazinul serveste pozele printr-un CDN de tip Cloudinary,
+# unde transformarile stau intr-un segment de CALE cu virgule:
 #   https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,h_400
 #          /prodmedia/media/catalog/product/B/R/BR_SS26-100-OAT_1_1.jpg
-# Asta e SINGURA forma pe care pagina o emite (242 de aparitii; celelalte 818
-# URL-uri de pe acelasi CDN sunt bannere de categorie, alta cale), si e forma
-# care merge — verificata pe fir la DEAL-D7: 200, `image/jpeg`, 5.131 octeti.
-# Aceeasi cale FARA segmentul de transformare da 404.
+# E SINGURA forma pe care pagina o emite pentru produse (242 de aparitii;
+# celelalte 818 URL-uri de pe acelasi CDN sunt bannere de categorie, alta cale),
+# si e forma care merge — verificata pe fir la DEAL-D7: 200 `image/jpeg`, 5.131
+# octeti, in timp ce aceeasi cale FARA segmentul de transformare da 404.
 #
-# Dar `normalizeaza_imagine` taie la prima virgula, fiindca acolo virgula
-# inseamna „urmatorul candidat de `srcset`". Rezultatul ar fi
-# `https://media.endclothing.com/media/f_auto` — o imagine RUPTA pe fiecare card,
-# adica mai rau decat niciuna: feed-ul are deja un placeholder „FARA FOTO" pentru
-# lipsa, dar n-are cum sa se apere de un URL care pare valid.
-#
-# Deci extractorul trimite None, deliberat. Reparatia nu e aici: normalizatorul
-# ar trebui sa taie pe virgula doar cand urmeaza un descriptor de latime
-# (`\d+[wx]`), ceea ce ar atinge `listing_scanner.py` — in afara rundei asteia.
-# Cand se face, sablonul de mai jos e gata masurat.
+# La DEAL-D7 imaginea a iesit totusi None, fiindca `normalizeaza_imagine` taia la
+# prima virgula (regula ei de `srcset`) si ar fi produs
+# `https://media.endclothing.com/media/f_auto` — o poza rupta pe fiecare card,
+# adica mai rau decat niciuna. IMG-2 a stramtat regula aia la srcset-urile REALE
+# (cele cu descriptori), deci URL-ul trece acum intreg si imaginea se cableaza.
 _END_IMG = ("https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,h_400"
             "/prodmedia/media/catalog/product{cale}")
 
@@ -1178,11 +1171,15 @@ def endclothing_state(html: str, descriptor: dict) -> list[dict]:
         referinta = _pret_numeric(h.get(f"full_price_{id_site}"))
         if referinta is not None and referinta <= pret:
             referinta = None
-        # `small_image` exista pe toate hit-urile, dar URL-ul construit din el nu
-        # supravietuieste normalizatorului (v. comentariul lui `_END_IMG`), deci
-        # nu se raporteaza nicio imagine. Cardul ramane complet in rest.
+        # IMG-2 — `small_image` e o cale relativa la radacina CDN-ului
+        # (`/B/R/BR_<sku>_1_1.jpg`); `model_full_image` e rezerva. Verificarea pe
+        # `/` nu e decor: `model_crop_image` poarta valoarea literala
+        # `no_selection` cand produsul n-are decupaj, iar lipita in sablon ar da un
+        # URL sintactic valid care raspunde 404.
+        cale_poza = (h.get("small_image") or h.get("model_full_image") or "").strip()
+        poza = _END_IMG.format(cale=cale_poza) if cale_poza.startswith("/") else None
         iesire.append(_card(urllib.parse.urljoin(baza, f"{slug}.html"),
-                            h.get("name"), pret, referinta, None))
+                            h.get("name"), pret, referinta, poza))
     return iesire
 
 

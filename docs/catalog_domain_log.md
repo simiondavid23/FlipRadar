@@ -4925,3 +4925,73 @@ Trei corecții din LST-D7 §0/§6, toate despre unelte, nu despre magazine:
 * **answear e o campanie cu termen.** `/s/back-to-school` e singura candidată pe care home-ul o
   declară; dacă expiră, descriptorul moare tăcut. `data.count` din stare e 162 614 — tot catalogul,
   nu campania — deci adâncimea reală rămâne necunoscută.
+
+## IMG-2 — virgulele din calea unui CDN nu sunt separatori de `srcset`
+
+O rundă mică, dintr-o măsurătoare rămasă din DEAL-D7. `normalizeaza_imagine` tăia orice valoare la
+prima virgulă, fiindcă în `srcset` virgula separă candidații. Regula e prea largă: virgula apare și
+în **calea** unor CDN-uri.
+
+### Cazul care a scos-o la iveală
+
+endclothing.com servește pozele printr-un CDN de tip Cloudinary, cu transformările într-un segment
+de cale:
+
+```
+https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,h_400
+       /prodmedia/media/catalog/product/B/R/BR_SS26-100-OAT_1_1.jpg
+```
+
+Tăiată la prima virgulă, valoarea devine `https://media.endclothing.com/media/f_auto`. Măsurat pe
+fir la DEAL-D7, cu două cereri: forma întreagă răspunde **200 `image/jpeg`** (5 131 octeți), cea
+trunchiată **404**. Aceeași cale fără segmentul de transformare — tot **404**, deci nu există
+variantă fără virgule; e singura formă pe care magazinul o emite pentru produse (242 de apariții în
+pagină; celelalte 818 URL-uri de pe același CDN sunt bannere de categorie, altă cale).
+
+Din cauza asta, DEAL-D7 a lăsat `image_url = None` pe endclothing: un URL rupt e **mai rău** decât
+lipsa lui, fiindcă feed-ul are placeholder pentru imaginea absentă, dar n-are cum să se apere de una
+care pare să existe.
+
+### Regula nouă
+
+Ce dovedește că virgula separă e **descriptorul**: în `srcset` fiecare candidat e urmat de o lățime
+(`400w`) sau o densitate (`2x`). Fără descriptor, virgula e parte din cale. Deci:
+
+1. valoarea se potrivește cu `^\S+\s+\d+(?:\.\d+)?[wx](?:\s*,\s*\S+\s+\d+(?:\.\d+)?[wx])*\s*$` →
+   **primul candidat** (tot ce e înainte de primul spațiu);
+2. altfel, dacă are spații dar niciun descriptor (`url1, url2`) → primul token, ca înainte;
+3. altfel — inclusiv o valoare cu virgule și fără spații — **URL-ul întreg**.
+
+Măsurat pe cele cinci forme: Cloudinary rămâne neatins; `x.jpg 150w, y.jpg 300w` → `x.jpg`;
+`x.jpg 2x` → `x.jpg`; `x.jpg, y.jpg` → `x.jpg`; `//a/x.jpg?lm=1` → `https://a/x.jpg?lm=1`
+(intersport, neschimbat). Respingerile (`data:`, `.svg`, `.gif`, `_RESPINSE_IMG_RE`) și completarea
+schemei `//` n-au fost atinse.
+
+### Regresia
+
+Cele șase fixture-uri care conțin `srcset` real sau forme apropiate au fost citite prin
+`extrage_carduri` înainte și după schimbare, și comparate URL cu URL:
+
+| fixture | imagini | rezultat |
+|---|---|---|
+| intersport.ro (`data-src`, protocol-relativ + `?lm=`) | 30 | identic |
+| caseking.de | 3 | identic |
+| aboutyou.ro (`src` + `srcset`) | 2 | identic |
+| douglas.ro (4 atribute, cu `data-lazy-srcset`) | 3 | identic |
+| parfumdreams.de (`src` + `srcset`) | 2 | identic |
+| 43einhalb.com (`data-srcset`) | 2 | identic |
+
+**42 de imagini, zero schimbări.** endclothing trece de la 0 la **240/240** pe cele două categorii
+măsurate.
+
+### O regulă pentru controlul din sonde
+
+Controlul LST-D7 raportase „imagine 120/120" pe endclothing exact în timp ce fiecare URL era
+trunchiat: număra valorile **nenule**, iar un URL rupt e nenul. Un control care măsoară *prezența*,
+nu *forma*, confirmă tocmai ce n-ar trebui.
+
+`control_descriptori_lstd7.py` are de acum două cifre — `img=<nenule>/<valide>` — unde „validă"
+înseamnă că URL-ul mai poartă numele fișierului din sursă (extensie de imagine la coadă). Pe
+măsurătoarea de azi iese 120/120; cu normalizatorul vechi ar fi ieșit 120 nenule și **0** valide,
+adică bug-ul s-ar fi văzut în chiar runda care l-a produs. Regula rămâne pentru sondele viitoare:
+**imaginile se compară cu forma din DOM/stare, nu cu `is not None`.**
