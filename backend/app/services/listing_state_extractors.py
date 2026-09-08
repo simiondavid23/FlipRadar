@@ -996,6 +996,196 @@ def lego_apollo(html: str, descriptor: dict) -> list[dict]:
     return iesire
 
 
+# ── answear.ro — `window.__REACT_QUERY_STATE__` ─────────────────────────────
+#
+# Sablonul de imagine. Nu e ghicit: hit-urile poarta doar `{name, version}`, iar
+# forma URL-ului o da ld+json-ul ACELEIASI pagini, unde `image` e
+# `https://img2.ans-media.com/i/474x717/SS26-BDDZZC-80D_F1.avif?v=1779887811`
+# pentru produsul al carui `mainImage.name` e `SS26-BDDZZC-80D_F1.avif` si
+# `version` e `1779887811`. Verificat pe primul produs al listarii; aceeasi
+# metoda ca la `_BONAMI_IMG`, unde sablonul s-a derivat tot dintr-o sursa
+# autoritativa a paginii.
+_ANSWEAR_IMG = "https://img2.ans-media.com/i/474x717/{nume}?v={versiune}"
+
+_ANSWEAR_STARE = re.compile(r"window\.__REACT_QUERY_STATE__\s*=\s*")
+
+
+def react_query_state(html: str) -> dict | None:
+    """Cache-ul react-query al paginii, sau None.
+
+    Blobul e o ATRIBUIRE JS, nu un `<script type=application/json>`: se decodeaza
+    cu `raw_decode` de la pozitia semnului egal, ca la `rsc_initial_data`. Un
+    regex care ar cauta acolada de inchidere ar trebui sa numere acolade prin
+    siruri cu ghilimele escapate — exact ce face deja decodorul.
+    """
+    m = _ANSWEAR_STARE.search(html or "")
+    if not m:
+        return None
+    try:
+        obiect, _ = json.JSONDecoder().raw_decode(html[m.end():])
+    except Exception:                                            # noqa: BLE001
+        return None
+    return obiect if isinstance(obiect, dict) else None
+
+
+def answear_state(html: str, descriptor: dict) -> list[dict]:
+    """answear.ro — listarea din cache-ul react-query.
+
+    DE CE STARE SI NU CSS, cu cifre. Pagina are ancore `data-test` stabile
+    (`productCard`, `productItemLink`, `priceSaleWithMinimalDesktop`,
+    `priceWithMinimalDesktop`) — exact ce cauti cand clasele sunt module CSS cu
+    hash. Un descriptor scris pe ele arata impecabil si e gresit in DOUA feluri,
+    amandoua tacute (masurate la LST-D7 §3.2):
+
+      * `[data-test="priceSaleWithMinimalDesktop"]` poarta doar ETICHETA („Pret
+        actual:"), fara numar. Pretul iese None, deci `extrage_carduri` sare
+        TOATE cele 80 de carduri: zero produse, raportate ca „azi n-are reduceri".
+      * `[data-test="priceWithMinimalDesktop"]` poarta textul intreg al
+        Omnibusului — „Cel mai mic pret din ultimele 30 de zile inainte de
+        reducere: 309,90 LEI" — iar `eu_comma` lipeste cele doua numere si
+        intoarce 30309.9. O referinta de treizeci de mii de lei pe fiecare card.
+
+    Din stare ambiguitatea dispare: `price`, `priceRegular` si `priceMinimal` sunt
+    campuri numerice numite.
+
+    REFERINTA E `priceMinimal`, NU `priceRegular`. Cele doua NU sunt acelasi
+    lucru: diverg pe 7/80 (p1) si 27/80 (p2), de pilda `price 329.9,
+    priceRegular 478.9, priceMinimal 359.9`. `priceMinimal` e cel etichetat pe
+    card drept „cel mai mic pret din ultimele 30 de zile inainte de reducere",
+    adica referinta Omnibus; `priceRegular` e pretul de lista, mai mare, si un
+    descriptor pe el ar raporta reduceri mai mari decat cele legale. A doua oara
+    dupa modivo (LST-3b), unde doua linii ETICHETATE divergeau la fel.
+
+    Interogarea se alege dupa `queryKey[0] == "products"`, nu dupa pozitie: in
+    dump exista sase interogari (config, footer, menu, products, newsletter,
+    staticPages) si doar una are produse. O alegere pe indice ar tine pana la
+    primul deploy care schimba ordinea.
+    """
+    date = react_query_state(html)
+    interogari = (date or {}).get("queries")
+    if not isinstance(interogari, list):
+        return []
+    produse = None
+    for q in interogari:
+        cheie = (q or {}).get("queryKey")
+        if isinstance(cheie, list) and cheie and cheie[0] == "products":
+            produse = (((q.get("state") or {}).get("data")) or {}).get("items")
+            break
+    if not isinstance(produse, list) or not produse:
+        return []                    # fara interogare de produse = final/pagina goala
+
+    baza = _baza(descriptor)
+    iesire = []
+    for p in produse:
+        if not isinstance(p, dict):
+            continue
+        cale = (p.get("url") or "").strip()
+        pret = _pret_numeric(p.get("price"))
+        if not cale or pret is None or pret <= 0:
+            continue
+        referinta = _pret_numeric(p.get("priceMinimal"))
+        if referinta is not None and referinta <= pret:
+            referinta = None         # produs necoborat sub minimul de 30 de zile
+        poza = (p.get("productImages") or {}).get("mainImage")
+        url_poza = None
+        if isinstance(poza, dict) and poza.get("name"):
+            url_poza = _ANSWEAR_IMG.format(nume=poza["name"],
+                                           versiune=poza.get("version") or "")
+        iesire.append(_card(urllib.parse.urljoin(baza, cale), p.get("name"),
+                            pret, referinta, url_poza))
+    return iesire
+
+
+# ── endclothing.com — `__NEXT_DATA__` cu raspunsul Algolia inlinat ──────────
+#
+# IMAGINEA NU SE POATE RAPORTA, si merita scris de ce, fiindca arata a omisiune.
+#
+# Magazinul serveste pozele printr-un CDN de tip Cloudinary, unde transformarile
+# stau intr-un segment cu VIRGULE:
+#   https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,h_400
+#          /prodmedia/media/catalog/product/B/R/BR_SS26-100-OAT_1_1.jpg
+# Asta e SINGURA forma pe care pagina o emite (242 de aparitii; celelalte 818
+# URL-uri de pe acelasi CDN sunt bannere de categorie, alta cale), si e forma
+# care merge — verificata pe fir la DEAL-D7: 200, `image/jpeg`, 5.131 octeti.
+# Aceeasi cale FARA segmentul de transformare da 404.
+#
+# Dar `normalizeaza_imagine` taie la prima virgula, fiindca acolo virgula
+# inseamna „urmatorul candidat de `srcset`". Rezultatul ar fi
+# `https://media.endclothing.com/media/f_auto` — o imagine RUPTA pe fiecare card,
+# adica mai rau decat niciuna: feed-ul are deja un placeholder „FARA FOTO" pentru
+# lipsa, dar n-are cum sa se apere de un URL care pare valid.
+#
+# Deci extractorul trimite None, deliberat. Reparatia nu e aici: normalizatorul
+# ar trebui sa taie pe virgula doar cand urmeaza un descriptor de latime
+# (`\d+[wx]`), ceea ce ar atinge `listing_scanner.py` — in afara rundei asteia.
+# Cand se face, sablonul de mai jos e gata masurat.
+_END_IMG = ("https://media.endclothing.com/media/f_auto,q_auto:eco,w_400,h_400"
+            "/prodmedia/media/catalog/product{cale}")
+
+
+def endclothing_state(html: str, descriptor: dict) -> list[dict]:
+    """endclothing.com — categoriile de sale, din raspunsul Algolia INLINAT.
+
+    Pagina nu cheama API-ul ca sa afiseze prima grila: raspunsul e deja in
+    `__NEXT_DATA__`, la `props.initialProps.pageProps.initialAlgoliaState.results`
+    — 120 de hit-uri, plus `nbHits`, `nbPages`, `hitsPerPage` si chiar `params`-ul
+    cererii, cu filtrul de sale verbatim (`filters=NOT "sale_type":"not on sale"`).
+    DOM-ul are ZERO carduri (grila e randata client-side), deci CSS e imposibil.
+
+    MONEDA — capcana rundei, si motivul pentru care descriptorul spune EUR desi
+    magazinul afiseaza RON. Fiecare hit poarta `full_price_<N>` / `final_price_<N>`
+    pentru SAISPREZECE website-uri. Cel corect e `website_id` din
+    `config.country` (3 pe vitrina noastra), si se citeste DE ACOLO, nu dintr-o
+    constanta: acelasi cod trebuie sa ramana valid daca vitrina se schimba.
+    Valoarea de acolo e insa in moneda de BAZA, EUR, nu in `currency_code`:
+    pagina afiseaza `RON 552` pentru `full_price_3 = 105`, adica exact
+    `105 x 5.252101`, unde 5.252101 e `config.country.rate` — CURSUL MAGAZINULUI.
+    Descriptorul declara deci EUR si lasa conversia pe BNR; altfel am importa in
+    scorare cursul comercial al magazinului, care nu e cursul pietei.
+
+    `compare_at` = `full_price_<id>`, adica pretul dinainte de reducere al
+    aceluiasi produs. Nu poarta nicio eticheta legala pe pagina (nici Omnibus,
+    nici PRP), de unde `reference_kind: "nemarcat"` in registru.
+
+    Gazda si prefixul de locala NU sunt constante: vin din
+    `config.general.secure_store_url` (`https://www.endclothing.com/eu/`), iar
+    calea produsului e `<store_url><url_key>.html` — forma confirmata pe o ancora
+    reala a paginii, `/eu/aboutblank-bottle-t-shirt-ss26-100-oat.html`.
+    """
+    date = next_data(html)
+    props = (date or {}).get("props") or {}
+    stare = (((props.get("initialProps") or {}).get("pageProps") or {})
+             .get("initialAlgoliaState") or {})
+    hituri = (stare.get("results") or {}).get("hits")
+    config = ((props.get("initialState") or {}).get("config") or {})
+    tara = config.get("country") or {}
+    id_site = tara.get("website_id")
+    if not isinstance(hituri, list) or not hituri or not isinstance(id_site, int):
+        return []                    # fara hit-uri = categorie goala / final
+
+    baza = ((config.get("general") or {}).get("secure_store_url") or "").strip()
+    if not baza:
+        return []                    # fara gazda din stare nu se compune niciun URL
+
+    iesire = []
+    for h in hituri:
+        if not isinstance(h, dict):
+            continue
+        slug = (h.get("url_key") or "").strip()
+        pret = _pret_numeric(h.get(f"final_price_{id_site}"))
+        if not slug or pret is None or pret <= 0:
+            continue
+        referinta = _pret_numeric(h.get(f"full_price_{id_site}"))
+        if referinta is not None and referinta <= pret:
+            referinta = None
+        # `small_image` exista pe toate hit-urile, dar URL-ul construit din el nu
+        # supravietuieste normalizatorului (v. comentariul lui `_END_IMG`), deci
+        # nu se raporteaza nicio imagine. Cardul ramane complet in rest.
+        iesire.append(_card(urllib.parse.urljoin(baza, f"{slug}.html"),
+                            h.get("name"), pret, referinta, None))
+    return iesire
+
+
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
@@ -1014,4 +1204,9 @@ LISTING_STATE_EXTRACTORS = {
     # (categoria de reduceri + pagina de campanie), care difera prin ce
     # campuri emite query-ul din spate, nu prin structura.
     "lego_apollo": lego_apollo,
+    # DEAL-D7 — doua listari care NU sunt in DOM: answear.ro (cache react-query,
+    # unde CSS-ul are doua capcane tacute) si endclothing.com (raspuns Algolia
+    # inlinat, cu grila randata client-side). Familia ajunge la ZECE.
+    "answear_state": answear_state,
+    "endclothing_state": endclothing_state,
 }

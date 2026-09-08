@@ -576,7 +576,34 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "notes": ("FASHION-1b"
-                 " DEAL-D4 - RAMAS IN AFARA axei D: home-ul are 219 de ancore si un nav de catalog complet, dar NICIUNA nu poarta `reduceri|sale|outlet`. Singura campanie, `/s/back-to-school` („pana la -25%”), ar fi iesit cu cuvantul `procent` in lista sondei - deci „nicio candidata sub lista de cuvinte”, nu „magazinul n-are reduceri”."),
+                 " DEAL-D4 - RAMAS IN AFARA axei D: home-ul are 219 de ancore si un nav de catalog complet, dar NICIUNA nu poarta `reduceri|sale|outlet`. Singura campanie, `/s/back-to-school` („pana la -25%”), ar fi iesit cu cuvantul `procent` in lista sondei - deci „nicio candidata sub lista de cuvinte”, nu „magazinul n-are reduceri”."
+                 " LST-D7 - INTRA, dar pe STARE, si asta e chiar lectia: pagina are"
+                 " ancore `data-test` STABILE, iar descriptorul CSS scris pe ele e"
+                 " gresit in doua feluri tacute: `priceSaleWithMinimalDesktop` poarta"
+                 " doar eticheta („Pret actual:”), deci pretul iese None si TOATE cele"
+                 " 80 de carduri se sar; iar `priceWithMinimalDesktop` poarta textul"
+                 " intreg al Omnibusului („...ultimele 30 de zile...: 309,90 LEI”), din"
+                 " care `eu_comma` scoate 30309.9. Din stare, cele trei preturi sunt"
+                 " campuri numerice numite."),
+        # ── DEAL-D7, din dump-urile LST-D7 (p1/p2/plast) ────────────────────
+        "listing": {
+            # CAMPANIE CU TERMEN, si e singura candidata pe care home-ul o declara
+            # (a doua ancora cu procent duce la `/newsletter`, un formular). Daca
+            # expira, descriptorul moare TACUT — de urmarit la prima listare goala.
+            "url": "https://answear.ro/s/back-to-school",
+            "page_url_template": "https://answear.ro/s/back-to-school?page={n}",
+            # Paginarea E masurata: `?page=2` a dat 80 de produse noi, zero comune.
+            # Adancimea NU: `data.count` din stare e 162.614, adica tot catalogul,
+            # nu campania. 10 e plafon de buget; coada se inchide oricum singura —
+            # `?page=500` raspunde 500, iar un 5xx pe o pagina > 1 e sfarsit de
+            # intrare in scanner (STATE-1), cu paginile citite pastrate.
+            "max_pages": 10, "currency": "RON",
+            "state_extractor": "answear_state",
+            # `min30`: referinta e `priceMinimal`, campul etichetat pe card „cel mai
+            # mic pret din ultimele 30 de zile inainte de reducere". NU `priceRegular`
+            # — cele doua diverg pe 7/80 (p1) si 27/80 (p2).
+            "reference_kind": "min30",
+        },
     },
     "fashiondays.ro": {
         "label": "Fashion Days",
@@ -949,7 +976,19 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "JS_ONLY: grila CSS da 0 carduri, iar `numberOfItems` anunta "
                  "156 754 desi lista poarta 36 (prima pagina). `offers` n-are "
                  "pret de referinta -> doar R2. Categoriile sunt catalog intreg, "
-                 "nu listari de reduceri; fateta de reducere ramane nemasurata."),
+                 "Categoriile sunt catalog intreg, nu listari de reduceri; fateta de reducere ramane nemasurata. "
+                 "LST-D7 - masurata acum, si verdictul e NEPOTRIVIT: fateta de "
+                 "reducere NU EXISTA in niciun URL pe care pagina il declara. "
+                 "Cautarea in dump a gasit `?fl=<slug>` (slug-uri de campanie), "
+                 "`&sst=BEST_SELLER|MOST_FAVOURITE` (sortare, nu dupa reducere) si "
+                 "`&wc=`/`&attr=` (categorie si atribut) — niciun `indirim=`, "
+                 "`discount=` sau `sale=`. Nu s-a ghicit niciun parametru. Ce se "
+                 "putea cere, fiindca era citit verbatim din rutarea paginii: "
+                 "`/ro/flas-indirimler` -> 404 (ruta exista in router, nu si pe "
+                 "vitrina RO), `/ro/campaign/list/barbati/2` -> 200 dar e un WIDGET "
+                 "de 16 produse fara paginare, iar `/ro/campaign/list/"
+                 "back-to-school-sale/101627` -> 200 cu ZERO produse. Deci nici "
+                 "macar „16 produse per hub” nu e o forma stabila."),
     },
 
     # ── ACCESS-2 ──────────────────────────────────────────────────────────────
@@ -966,7 +1005,46 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "(`config/shipping/methods`), iar singurele array-uri mari sunt "
                  "arbori de categorii. Zero rezultate de cautare in corp, iar "
                  "`algolia` apare de 14 ori: produsele vin client-side."
-                 " DEAL-D4 - corectie de MONEDA la nota de mai sus: dump-ul aceleiasi pagini, recitit cu un jeton de pret care cunoaste toate monedele, arata `RON972` / `RON294` - pagina servea RON, nu GBP. Verdictul JS_ONLY nu se schimba (DOM-ul e gol), doar moneda din nota."),
+                 " DEAL-D4 - corectie de MONEDA la nota de mai sus: dump-ul aceleiasi pagini, recitit cu un jeton de pret care cunoaste toate monedele, arata `RON972` / `RON294` - pagina servea RON, nu GBP. Verdictul JS_ONLY nu se schimba (DOM-ul e gol), doar moneda din nota."
+                 "LST-D7 - DOM-ul ramane gol, dar pagina NU e JS_ONLY: raspunsul "
+                 "Algolia e INLINAT in `__NEXT_DATA__` "
+                 "(`initialAlgoliaState.results.hits`, 120 de hit-uri, cu nbHits/"
+                 "nbPages/hitsPerPage si `params`-ul cererii, filtrul de sale "
+                 "verbatim). Deci INTRA pe STARE. API-ul ramane deschis ca mecanism "
+                 "VIITOR, pentru adancime: componentele sunt toate in pagina "
+                 "(app id, cheia PUBLICA de cautare, indexul, parametrii), iar "
+                 "gazdele `search{1,2,3}web.endclothing.com` sunt subdomenii ale "
+                 "domeniului validat, deci allow-list-ul NU e obstacolul — poarta e "
+                 "GET-only, iar forma de interogare Algolia cere POST. Masuratoarea "
+                 "pe fir a ramas NEFACUTA (LST-D7 §3.4)."),
+        # ── DEAL-D7, din dump-urile LST-D7 (p1 = all-sale, p1alt = sneakers) ─
+        "listing": {
+            "entries": [
+                # DOAR cele doua categorii MASURATE. Hub-ul `/eu/sale` declara 28,
+                # dar celelalte 26 n-au fost cerute niciodata: un URL nemasurat n-are
+                # ce cauta intr-un descriptor (regula nichiduta).
+                {"url": "https://www.endclothing.com/eu/sale/all-sale",
+                 "max_pages": 1},
+                {"url": "https://www.endclothing.com/eu/sale/sneakers",
+                 "max_pages": 1},
+            ],
+            # `max_pages: 1` e MASURATOARE, nu comoditate: forma de URL a paginii 2
+            # nu apare NICAIERI in pagina — nici `?page=`, nici `/page/`, niciun
+            # `rel=next`. Paginarea se face client-side, prin Algolia. 120 de produse
+            # per categorie per scan, din 5.762 (all-sale) si 859 (sneakers).
+            "max_pages": 1,
+            # EUR, desi magazinul AFISEAZA RON. `final_price_3` (website_id 3, citit
+            # din `config.country`) e in moneda de BAZA: pagina arata `RON 552` pentru
+            # `full_price_3 = 105`, adica 105 x 5.252101, unde 5.252101 e
+            # `config.country.rate` — CURSUL MAGAZINULUI. Declarand EUR, conversia
+            # ramane la BNR; altfel am importa in scorare cursul comercial al
+            # magazinului, care nu e cursul pietei.
+            "currency": "EUR",
+            "state_extractor": "endclothing_state",
+            # `full_price_<id>` = pretul dinainte de reducere al aceluiasi produs,
+            # fara nicio eticheta legala pe pagina.
+            "reference_kind": "nemarcat",
+        },
     },
     "zalando.ro": {
         "label": "Zalando",
@@ -1755,7 +1833,18 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "urca in trei hopuri `computeruniverse.net/` -> 301 -> `www.` -> 307 "
                  "-> `/en` -> 200. Deci storefront-ul de aterizare e `/en`, nu `/de`. "
                  "Esecul de la LST-D5 ramane NEEXPLICAT si neremis; RATE si "
-                 "interstitiul au fost excluse cu cifre.",
+                 "Esecul de la LST-D5 ramane NEEXPLICAT si neremis; RATE si interstitiul au fost excluse cu cifre. "
+                 "LST-D7 - poarta E deschisa (200 pe `/de/o/outlet`; pe "
+                 "`/de/page/deals` un `None` tranzitoriu, apoi 200 direct), dar "
+                 "domeniul NU intra pe axa D: JS_ONLY, dovedit pe TREI pagini — "
+                 "hub-ul `/de/o/outlet` (792.576 octeti, 0 carduri, 18 jetoane de "
+                 "pret), pagina CMS `/de/page/deals` (662.901, 0 carduri) si o "
+                 "SUBCATEGORIE reala, `/de/o/outlet/hardware-komponenten-outlet` "
+                 "(893.191 octeti, 0 carduri, 6 jetoane de pret). Singurul lucru cu "
+                 "preturi din `__NEXT_DATA__` e un slider de recomandari Dynamic "
+                 "Yield (`template: DYReco`), nu grila. A treia pagina e cea care "
+                 "inchide discutia: nu e „am nimerit paginile gresite”. Reintrarea "
+                 "cere captura API-ului de listare, pe HTTP.",
     },
     "jb-spielwaren.de": {
         "label": "JB Spielwaren",
@@ -1864,7 +1953,49 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "„Promotion-Aktionen”), iar `/Outlet` arata doar un CARUSEL de "
                  "15 produse (`div.product-carousel-card`), nu o grila. Nicio "
                  "paginare in HTML-ul brut. Grila outlet reala, daca exista, sta "
-                 "sub linkurile de categorie din `/Outlet` — NEMASURATA.",
+                 "sub linkurile de categorie din `/Outlet` — NEMASURATA. "
+                 "LST-D7 - MASURATA si INTRA: `/Outlet/<categorie>` chiar are grila "
+                 "server-side, 24 de carduri pe pagina, cu pret, referinta, titlu si "
+                 "imagine. Motivul pentru care sonda o ratase e un punct orb al ei, "
+                 "nu al magazinului: cardul ESTE ancora, iar `identifica_carduri` "
+                 "cerea un `<a>` DESCENDENT (v. LST-D7 §6).",
+        # ── DEAL-D7, din dump-urile LST-D7 (p1/p2/plast pe Hardware, p1 pe Notebook)
+        "listing": {
+            "entries": [
+                # Hardware: singura careia i s-a masurat paginarea (p1 si p2 dau
+                # 24 de carduri fiecare, `p1 ∩ p2 = 0`).
+                {"url": "https://www.alternate.de/Outlet/Hardware",
+                 "page_url_template":
+                     "https://www.alternate.de/Outlet/Hardware?page={n}",
+                 "max_pages": 5},
+                # Notebook: masurata DOAR pe pagina 1 (acelasi selector, 24 de
+                # carduri). Fara adancime masurata nu primeste nici template, nici
+                # plafon > 1 — regula nichiduta: se pagineaza doar fatetele carora
+                # li s-a MASURAT adancimea.
+                {"url": "https://www.alternate.de/Outlet/Notebook", "max_pages": 1},
+                # Celelalte 15 subcategorii `/Outlet/*` exista in nav si NU intra:
+                # n-au fost cerute, iar un URL nemasurat e o presupunere, nu un
+                # descriptor.
+            ],
+            # Plafon de buget, nu adancime: `?page=500` intoarce 200 cu EXACT
+            # aceleasi 24 de URL-uri ca pagina 1 (`p1 ∩ plast = 24`), adica CLAMP,
+            # a doua oara dupa action.com. Bucla se inchide pe conditia compozita
+            # din scanner (pagina e submultime a celor deja vazute), nu pe plafon.
+            "max_pages": 5,
+            "currency": "EUR",
+            # Cardul e ANCORA (`<a class="card ... productBox ...">`), deci se
+            # descrie copilul lui unic si linkul se ia urcand: `@parent_a`, forma
+            # noriel de la LST-1, al doilea consumator al ei.
+            "card": "div.grid-container.listing a.productBox div.container",
+            "link": "@parent_a",
+            "title": "div.product-name",
+            "price_text": "span.price",
+            # `nemarcat`, si nu din deductie: langa pretul taiat magazinul pune un
+            # popover cu textul „Preis der Neuware" — pretul unitatii NOI, aceeasi
+            # semantica cu „Nou:" la altex si „NOU" la eMAG. Nu e Omnibus, nu e PRP.
+            "compare_text": "span.line-through",
+            "price_parse": "eu_comma", "reference_kind": "nemarcat",
+        },
     },
     # ── G2B — lotul EU de electronice (sonda 2026-08-18) ──────────────────────
     # Din cele 5 domenii sondate a intrat DOAR cyberport.at. Celelalte patru si
@@ -2790,7 +2921,40 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`challenges.cloudflare.com/turnstile/v0/…`). Nici aici "
                  "`_detecteaza_blocare` n-a prins: markerul „Just a moment” e DOAR in "
                  "`<title>`, iar corpul zice „Performing security verification” — "
-                 "v. GUARD-1 in docs/catalog_domain_log.md.",
+                 "v. GUARD-1 in docs/catalog_domain_log.md. "
+                 "LST-D7 - INTRA pe axa D, iar nota veche („pagina de promotii e o "
+                 "ATERIZARE, nu o listare”) era GRESITA: `/en` declara in nav CINCI "
+                 "listari de sale — `/en/deals/men`, `/en/deals/women` si trei "
+                 "praguri de procent. `/en/deals/men` are 48 de carduri, 48 de "
+                 "URL-uri, referinta si imagine 48/48, `p1 ∩ p2 = 0`. Poarta daduse "
+                 "`None` pe `/en/` fiindca acolo e un 301 catre `/en` (fara slash) "
+                 "pe care nu l-a dus la capat; pe forma canonica a mers din prima.",
+        # ── DEAL-D7, din dump-urile LST-D7 (p1/p2) + o cerere de verificare ──
+        "listing": {
+            "url": "https://www.sivasdescalzo.com/en/deals/men",
+            # `?p={n}`, citit din `<link rel=next>` din `<head>` — nu dintr-un
+            # `<a rel=next>` din corp, care pe alte magazine s-a dovedit sageata de
+            # carusel (corectia C2 a sondei, LST-D7 §0).
+            "page_url_template": "https://www.sivasdescalzo.com/en/deals/men?p={n}",
+            # Plafon de buget. Adancimea reala n-a fost masurata, dar coada DA:
+            # `?p=500` raspunde 200 cu GRILA GOALA (0 carduri, 463.957 octeti) —
+            # oprire curata, aceeasi semnatura ca la altex/flip/lego. Deci plafonul
+            # e plasa, iar bucla se inchide singura.
+            "max_pages": 20,
+            # Vitrina `/en` serveste USD — masurat la G1-1 pe trei surse
+            # independente si reconfirmat la LST-D7 din RSC-ul listarii
+            # (`"currency":"USD"`). Conversia o face BNR, ca la direct-running.
+            "currency": "USD",
+            "card": "#products-grid li.overflow-hidden",
+            "link": "a[href*=\"/en/p/\"]",
+            "title": "h3",
+            # In card, pretul platit si cel taiat sunt doua `<p>` frati; al doilea
+            # poarta `line-through`. `us_dot`: „$96.25" are punct zecimal.
+            "price_text": ".Product_Information_Container p.text-black",
+            "compare_text": ".Product_Information_Container p.line-through",
+            "price_parse": "us_dot", "reference_kind": "nemarcat",
+            # `/en/deals/women` exista in nav si NU intra: n-a fost masurata.
+        },
         # IMP-2: vezi nota. Pinuit pe profilul anterior fiindca acolo masuratoarea e
         # curata (4/4 OK), nu fiindca profilul nou ar fi gresit in general — pe
         # celelalte 72 de domenii e egal sau mai bun (3 deblocari). De re-masurat
@@ -4241,7 +4405,38 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "corp intoarce OK. Deci situl serveste pagina si poarta e cea "
                  "care refuza - al doilea caz dupa flanco. Afirmatia SNK-2 (fara "
                  "pret server-side pe listari) ramane NETESTATA: poarta n-a "
-                 "livrat corpul.",
+                 "livrat corpul. "
+                 "LST-D7 - TESTATA acum, pe dump-urile care EXISTAU deja la 200 "
+                 "(GATE-1 si LST-D3, acelasi URL, 875.547 vs 875.548 octeti): "
+                 "afirmatia e GRESITA pentru pagina asta. Listarea "
+                 "`/ro/w/promotional-styles-3vvvm` are 24 de carduri in DOM sub "
+                 "`#skip-to-products`, cu pret vizibil, plus 66 de `currentPrice` cu "
+                 "`currency: RON` in `__NEXT_DATA__`. Zero cereri cheltuite ca sa se "
+                 "afle: raspunsul era pe disc.",
+        # ── DEAL-D7, din `dumps_lstd3/nike.com_p1_direct.html` ───────────────
+        "listing": {
+            "url": "https://www.nike.com/ro/w/promotional-styles-3vvvm",
+            # In HTML-ul brut nu exista nicio paginare care sa pastreze calea
+            # intrarii: pagina incarca prin scroll infinit. 24 de carduri per scan.
+            "max_pages": 1, "currency": "RON",
+            "card": "#skip-to-products div.product-card",
+            "link": "[data-testid=\"product-card__link-overlay\"]",
+            "title": "[data-testid=\"product-card__link-overlay\"]",
+            # CAPCANA, a treia oara dupa altex si lego: `data-testid` inverseaza
+            # intuitia — `product-price` e pretul TAIAT pe cardurile reduse, iar cel
+            # platit sta in `product-price-reduced`. Descriptorul NU se sprijina insa
+            # pe ele, ci pe CLASELE de stare, care spun acelasi lucru fara ambiguitate
+            # si, mai ales, acopera si cardurile NEREDUSE:
+            #   `is--current-price` — pretul platit, prezent pe 24/24;
+            #   `is--striked-out`   — pretul taiat, prezent doar pe cele 3 reduse.
+            # Pe `data-testid` ar fi intrat doar cele 3 carduri reduse (cardurile
+            # nereduse n-au nodul `product-price-reduced`, deci ar fi fost sarite);
+            # asa intra toate 24, iar cele 21 nereduse au `compare_at` None si
+            # califica pe R2 (minim istoric), ca buzzsneakers si toolnation.
+            "price_text": ".product-price.is--current-price",
+            "compare_text": ".product-price.is--striked-out",
+            "price_parse": "eu_comma", "reference_kind": "nemarcat",
+        },
     },
 }
 

@@ -772,7 +772,21 @@ def test_listing_domains_exact_cele_din_registru():
                                  # dar acum cu dovada: pe HTTP poarta e deschisa
                                  # (200, 1,71 MB) si totusi grila nu e servita -
                                  # zero bloburi de stare, deci JS_ONLY.
-                                 "lego.com", "43einhalb.com"}
+                                 "lego.com", "43einhalb.com",
+                                 # DEAL-D7 - cele cinci din sonda LST-D7. Trei pe
+                                 # CSS: alternate.de (primul card care e el insusi
+                                 # ANCORA, deci `@parent_a`), sivasdescalzo.com
+                                 # (unde nota veche „pagina de promotii e o
+                                 # aterizare" s-a dovedit gresita) si nike.com
+                                 # (masurat pe dump-uri care existau deja, zero
+                                 # cereri). Doua pe STARE: answear.ro (unde CSS-ul
+                                 # avea doua capcane tacute) si endclothing.com
+                                 # (raspuns Algolia inlinat, DOM gol). Raman
+                                 # afara: computeruniverse.net (JS_ONLY pe trei
+                                 # pagini) si trendyol.com (fara fateta de
+                                 # reducere declarata de pagina).
+                                 "alternate.de", "sivasdescalzo.com", "nike.com",
+                                 "answear.ro", "endclothing.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -3386,3 +3400,305 @@ def test_deal_d6_in_registru():
     assert e43["reference_kind"] == "prp"
 
     assert {"lego.com", "43einhalb.com"} <= listing_domains()
+
+
+# ── DEAL-D7 — cele cinci intrari din sonda LST-D7 ────────────────────────────
+#
+# Trei pe CSS (alternate.de, sivasdescalzo.com, nike.com) si doua pe stare
+# (answear.ro, endclothing.com). Runda are doua teme, si amandoua se vad in
+# testele de mai jos:
+#
+#   * ce SPUNE pagina nu e ce MASOARA descriptorul. Pe answear, ancorele
+#     `data-test` sunt stabile si arata a solutie, dar una poarta doar eticheta
+#     („Pret actual:") si cealalta textul intreg al Omnibusului, din care
+#     `eu_comma` scoate 30309.9. Pe endclothing, `currency_code` spune RON si
+#     pretul din stare e in EUR.
+#   * cardul REDUS si cel NEREDUS trebuie sa iasa amandoua corect. Pe nike,
+#     descriptorul se sprijina pe clasele de STARE (`is--current-price` /
+#     `is--striked-out`), nu pe `data-testid`-uri: pe acelea ar fi intrat doar
+#     cele 3 carduri reduse din 24.
+
+
+def test_alternate_carduri():
+    """alternate.de — cardul e ANCORA, iar linkul se ia urcand (`@parent_a`).
+
+    Forma asta a costat o rundă: `identifica_carduri` din sondă cerea un `<a>`
+    DESCENDENT, deci un card `<a class="productBox">…</a>` ieșea invizibil și
+    domeniul raporta zero carduri cu grila întreagă în HTML (LST-D7 §6). În
+    producție forma exista deja — noriel o folosește din LST-1.
+
+    Al doilea card e DELIBERAT fără preț tăiat: 8 din cele 24 de pe pagina
+    măsurată n-au referință, iar acelea trebuie să intre cu `compare_at` None,
+    nu să fie sărite.
+    """
+    d = listing_descriptor("alternate.de")
+    carduri = extrage_carduri(_fixture("alternate.de"),
+                              dict(d, url=d["entries"][0]["url"]), "alternate.de")
+
+    assert d["currency"] == "EUR"
+    assert d["link"] == "@parent_a"
+    assert len(carduri) == 2
+    acer, asus = carduri
+
+    assert acer["price"] == 4066.0
+    assert acer["compare_at"] == 5509.0, "`span.line-through` = Preis der Neuware"
+    assert acer["title"].startswith("Acer Predator Helios 18")
+    assert acer["url"].startswith("https://www.alternate.de/"), "URL absolut"
+    assert acer["url"].endswith("/html/product/100219133")
+    assert acer["image_url"]
+
+    assert asus["price"] == 3150.0
+    assert asus["compare_at"] is None, "cardul fara pret taiat intra pe R2"
+
+
+def test_sivasdescalzo_carduri():
+    """sivasdescalzo.com — vitrina `/en` e in USD, deci `us_dot`.
+
+    Moneda nu e o presupunere: G1-1 a masurat-o pe trei surse independente
+    (ld+json, payload RSC, textul vizibil), iar LST-D7 a reconfirmat-o din RSC-ul
+    chiar al listarii. Conversia ramane la BNR, ca la direct-running.
+    """
+    d = listing_descriptor("sivasdescalzo.com")
+    carduri = extrage_carduri(_fixture("sivasdescalzo.com"), d,
+                              "sivasdescalzo.com")
+
+    assert d["currency"] == "USD"
+    assert d["price_parse"] == "us_dot", "„$96.25\" are punct zecimal, nu virgula"
+    assert len(carduri) == 2
+    stan, tricou = carduri
+
+    assert stan["price"] == 96.25
+    assert stan["compare_at"] == 175.0
+    assert "Stan Smith" in stan["title"]
+    assert "/en/p/" in stan["url"]
+    assert stan["image_url"]
+
+    assert tricou["price"] == 45.0
+    assert tricou["compare_at"] == 60.0
+
+
+def test_nike_redus_si_neredus():
+    """nike.com — pretul PLATIT se ia din clasa de stare, nu din `data-testid`.
+
+    Pe pagina de promotii doar 3 carduri din 24 sunt efectiv reduse. Nodul
+    `[data-testid="product-price-reduced"]` exista NUMAI pe alea, deci un
+    descriptor scris pe el ar fi sarit 21 de carduri perfect valide. Clasele spun
+    acelasi lucru fara gaura: `is--current-price` e pe 24/24 (pretul platit), iar
+    `is--striked-out` doar pe cele reduse (pretul vechi).
+
+    Inversarea `data-testid` merita retinuta oricum, fiindca e a treia oara dupa
+    altex si lego: acolo `product-price` e pretul TAIAT, nu cel platit.
+    """
+    d = listing_descriptor("nike.com")
+    carduri = extrage_carduri(_fixture("nike.com"), d, "nike.com")
+
+    assert d["currency"] == "RON"
+    assert len(carduri) == 2
+    redus, neredus = carduri
+
+    assert redus["price"] == 279.99, "pretul platit, din `.is--current-price`"
+    assert redus["compare_at"] == 399.99, "pretul taiat, din `.is--striked-out`"
+    assert redus["url"].startswith("https://www.nike.com/ro/t/")
+
+    assert neredus["price"] == 649.99, "acelasi selector citeste si cardul neredus"
+    assert neredus["compare_at"] is None, "fara `.is--striked-out` -> fara referinta"
+
+
+def test_answear_state_omnibus_din_priceMinimal():
+    """answear.ro — referinta e `priceMinimal`, NU `priceRegular`.
+
+    Cele doua sunt campuri diferite si diverg: pe paginile masurate, 7/80 (p1) si
+    27/80 (p2). Primul produs din fixture e chiar unul divergent — `price 329.9`,
+    `priceRegular 478.9`, `priceMinimal 359.9`. `priceMinimal` e cel etichetat pe
+    card „cel mai mic pret din ultimele 30 de zile inainte de reducere", adica
+    referinta Omnibus; pe `priceRegular` reducerea ar iesi 31% in loc de 8%.
+    A doua oara dupa modivo (LST-3b), unde doua linii etichetate divergeau la fel.
+
+    Ultima asertie tine de cealalta capcana: din DOM, `eu_comma` citeste
+    referinta ca 30309.9, fiindca eticheta contine „30 de zile". Din stare, nu
+    exista text de parsat.
+    """
+    import json as _json
+
+    from app.services.listing_state_extractors import (answear_state,
+                                                       react_query_state)
+
+    d = listing_descriptor("answear.ro")
+    html = _fixture_stare("answear.ro")
+    carduri = answear_state(html, d)
+
+    assert d["state_extractor"] == "answear_state"
+    assert d["reference_kind"] == "min30"
+    assert len(carduri) == 3
+    divergent, egal, neredus = carduri
+
+    # Fixture-ul TREBUIE sa poarte divergenta, altfel testul n-are ce dovedi.
+    stare = react_query_state(html)
+    produs = next(q for q in stare["queries"]
+                  if q["queryKey"][0] == "products")["state"]["data"]["items"][0]
+    assert produs["priceRegular"] == 478.9 and produs["priceMinimal"] == 359.9
+
+    assert divergent["price"] == 329.9
+    assert divergent["compare_at"] == 359.9, "`priceMinimal`, nu `priceRegular`"
+    assert divergent["compare_at"] != 478.9
+
+    assert egal["price"] == 249.9
+    assert egal["compare_at"] == 309.9
+    assert egal["compare_at"] != 30309.9, (
+        "din DOM, `eu_comma` ar lipi „30\" din „30 de zile\" de „309,90\"")
+
+    assert neredus["compare_at"] is None, (
+        "`priceMinimal <= price` -> produsul nu e sub minimul de 30 de zile")
+    assert _json.dumps(carduri[0], ensure_ascii=False)     # forma serializabila
+
+
+def test_answear_state_url_si_titlu():
+    """URL-ul, titlul si imaginea — cele trei care fac cardul utilizabil.
+
+    URL-ul se compune din `item.url` (relativ) peste gazda din descriptor, nu
+    dintr-o constanta: la LST-D7 toate cele 80 de URL-uri compuse asa s-au
+    regasit in ancorele DOM ale aceleiasi pagini (80/80).
+
+    Imaginea vine din `productImages.mainImage` — un `{name, version}`, nu un URL.
+    Sablonul e cel din ld+json-ul ACELEIASI pagini, unde produsul isi poarta poza
+    intreaga; aceeasi metoda ca la bonami (IMG-1c).
+    """
+    from app.services.listing_state_extractors import answear_state
+
+    d = listing_descriptor("answear.ro")
+    carduri = answear_state(_fixture_stare("answear.ro"), d)
+    _, egal, _ = carduri
+
+    assert egal["url"] == ("https://answear.ro/p/haveone-bluza-tip-camasa-pentru-"
+                           "femei-din-bumbac-bej-cu-efect-prespalat-cfl-q129-1811130")
+    assert egal["title"] == "Haveone bluză tip cămașă pentru femei din bumbac"
+    assert egal["image_url"] == ("https://img2.ans-media.com/i/474x717/"
+                                 "SS26-BDDZZC-80D_F1.avif?v=1779887811")
+    assert egal["handle"].startswith("/p/")
+    assert all(c["image_url"] for c in carduri), "poza pe 3/3"
+
+
+def test_endclothing_state_eur():
+    """endclothing.com — pretul e in EUR, desi magazinul AFISEAZA RON.
+
+    `final_price_3` (coloana website-ului nostru, citita din `config.country`) e
+    in moneda de BAZA. Pagina afiseaza `RON 552` pentru `full_price_3 = 105`,
+    adica 105 x 5.252101 — `config.country.rate`, CURSUL MAGAZINULUI. Declarand
+    EUR, conversia ramane la BNR; pe RON am fi importat in scorare cursul
+    comercial al magazinului si am fi umflat fiecare pret de cinci ori.
+
+    `website_id` se citeste din stare, nu e constanta: acelasi cod trebuie sa
+    ramana valid daca vitrina se schimba.
+    """
+    from app.services.listing_state_extractors import endclothing_state, next_data
+
+    d = listing_descriptor("endclothing.com")
+    html = _fixture_stare("endclothing.com")
+    carduri = endclothing_state(html, d)
+
+    assert d["state_extractor"] == "endclothing_state"
+    assert d["currency"] == "EUR", "moneda de BAZA, nu cea afisata"
+    assert d["reference_kind"] == "nemarcat"
+
+    tara = (next_data(html)["props"]["initialState"]["config"]["country"])
+    assert tara["website_id"] == 3
+    assert tara["currency_code"] == "RON" and tara["base_currency_code"] == "EUR", (
+        "fixture-ul trebuie sa pastreze chiar contradictia pe care o rezolvam")
+
+    assert len(carduri) == 3
+    tricou = carduri[0]
+    assert tricou["price"] == 38.0, "`final_price_3`"
+    assert tricou["compare_at"] == 95.0, "`full_price_3`"
+    assert tricou["url"] == ("https://www.endclothing.com/eu/"
+                             "aboutblank-bottle-t-shirt-ss26-100-oat.html")
+    assert all(c["compare_at"] and c["compare_at"] > c["price"] for c in carduri)
+
+    # IMAGINEA e None DELIBERAT, si asta e o decizie, nu o scapare: CDN-ul
+    # serveste pozele prin URL-uri cu VIRGULE in segmentul de transformare
+    # (`f_auto,q_auto:eco,w_400,h_400`), pe care `normalizeaza_imagine` le taie la
+    # prima virgula — regula ei de `srcset`. Ar iesi
+    # `https://media.endclothing.com/media/f_auto`, o poza rupta pe fiecare card.
+    # Forma cu virgule e SINGURA care merge (masurata pe fir la DEAL-D7: 200,
+    # image/jpeg; fara segmentul de transformare, 404), deci pana cand
+    # normalizatorul invata sa taie doar inaintea unui descriptor de latime,
+    # raspunsul corect e „fara imagine".
+    assert all(c["image_url"] is None for c in carduri)
+
+
+def test_endclothing_entries_masurate():
+    """Doar categoriile MASURATE intra in `entries`.
+
+    Hub-ul `/eu/sale` declara 28 de categorii, dar sonda a cerut DOUA
+    (`all-sale` si `sneakers`). Celelalte 26 n-au fost vazute niciodata, iar un
+    URL nemasurat intr-un descriptor e o presupunere care se descoperă abia la
+    primul scan care da 404. Regula vine de la nichiduta (DEAL-D4).
+
+    `max_pages: 1` e tot masuratoare: forma de URL a paginii 2 nu apare NICAIERI
+    in pagina — nici `?page=`, nici `/page/`, niciun `rel=next` — fiindca
+    paginarea se face client-side, prin Algolia.
+    """
+    d = listing_descriptor("endclothing.com")
+    intrari = d["entries"]
+
+    assert len(intrari) == 2, "doar cele doua categorii cerute de sonda"
+    assert len({i["url"] for i in intrari}) == 2
+    for intrare in intrari:
+        assert intrare["url"].startswith("https://www.endclothing.com/eu/sale/")
+        assert intrare["max_pages"] == 1
+        assert "page_url_template" not in intrare, (
+            "cu `max_pages: 1` template-ul n-ar fi citit niciodata")
+    assert d["max_pages"] == 1
+
+
+def test_pagina_url_deal_d7():
+    """Sabloanele de paginare ale rundei, prin `_intrari` + `_pagina_url`.
+
+    Pe alternate pagineaza DOAR prima intrare: `Hardware` are p1 si p2 masurate
+    (24 de carduri fiecare, zero comune), in timp ce `Notebook` a fost vazuta
+    doar pe pagina 1. Fara adancime masurata nu primeste template — regula
+    nichiduta, aplicata a doua oara.
+    """
+    from app.services.listing_scanner import _intrari, _pagina_url
+
+    alt = _intrari(listing_descriptor("alternate.de"))
+    assert len(alt) == 2
+    hardware, notebook = alt
+    assert _pagina_url(hardware, 1) == "https://www.alternate.de/Outlet/Hardware"
+    assert (_pagina_url(hardware, 2)
+            == "https://www.alternate.de/Outlet/Hardware?page=2")
+    assert notebook["max_pages"] == 1 and notebook["page_url_template"] is None
+
+    svd = _intrari(listing_descriptor("sivasdescalzo.com"))[0]
+    assert _pagina_url(svd, 1) == "https://www.sivasdescalzo.com/en/deals/men"
+    assert (_pagina_url(svd, 2)
+            == "https://www.sivasdescalzo.com/en/deals/men?p=2")
+
+    ans = _intrari(listing_descriptor("answear.ro"))[0]
+    assert (_pagina_url(ans, 2) == "https://answear.ro/s/back-to-school?page=2")
+
+    # endclothing si nike n-au template: paginarea lor nu e in pagina.
+    for domeniu in ("endclothing.com", "nike.com"):
+        for intrare in _intrari(listing_descriptor(domeniu)):
+            assert intrare["max_pages"] == 1
+            assert intrare["page_url_template"] is None
+
+
+def test_deal_d7_in_registru():
+    """Cei doi extractori noi, si cifra domeniilor de listare."""
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
+    assert "answear_state" in LISTING_STATE_EXTRACTORS
+    assert "endclothing_state" in LISTING_STATE_EXTRACTORS
+    assert len(LISTING_STATE_EXTRACTORS) == 10, (
+        "familia `state_extractor` a ajuns la zece")
+
+    for domeniu in ("alternate.de", "sivasdescalzo.com", "nike.com"):
+        d = listing_descriptor(domeniu)
+        assert d.get("card") and not d.get("state_extractor"), f"{domeniu} e CSS"
+    for domeniu in ("answear.ro", "endclothing.com"):
+        d = listing_descriptor(domeniu)
+        assert d.get("state_extractor") and not d.get("card")
+
+    assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
+            "endclothing.com"} <= listing_domains()
+    assert len(listing_domains()) == 53

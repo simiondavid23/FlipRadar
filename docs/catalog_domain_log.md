@@ -4817,3 +4817,111 @@ HTTP, unde poarta e deschisă, nu în browser, unde e 403.
 cerut niciunul. Domeniile de listare: 46 → **48**. Cele patru sabotaje ale rundei — `listPrice`
 doar prin referință, `formattedValue` fără rezervă, card nescopat, `image_attr` doar pe `src` —
 au fost verificate întâi că schimbă textul fișierului și apoi că fiecare pică exact garda ei.
+
+## DEAL-D7 — cele cinci intrări din LST-D7; 48 → 53 domenii de listare
+
+Sonda LST-D7 a măsurat șapte domenii; runda asta implementează cele cinci care intră. Trei pe CSS,
+fără nicio linie de cod nouă (**alternate.de**, **sivasdescalzo.com**, **nike.com**), și două prin
+extractoare de stare (**answear.ro**, **endclothing.com**), care duc familia `state_extractor` de
+la opt la **zece**.
+
+| domeniu | mecanism | carduri/pagină | referință | oprirea paginării |
+|---|---|---|---|---|
+| alternate.de | CSS, card-ancoră (`@parent_a`) | 24 | `nemarcat` („Preis der Neuware") | **CLAMP** la `?page=500` |
+| sivasdescalzo.com | CSS | 48 | `nemarcat` | **grilă goală** la `?p=500` |
+| nike.com | CSS | 24 (3 reduse) | `nemarcat` | fără paginare (scroll infinit) |
+| answear.ro | `answear_state` | 80 | **`min30`** (Omnibus) | `?page=2` măsurat; adâncimea nu |
+| endclothing.com | `endclothing_state` | 120/categorie | `nemarcat` | paginare client-side → o pagină |
+| computeruniverse.net | — | 0 | — | **JS_ONLY**, nu intră |
+| trendyol.com | — | — | — | **NEPOTRIVIT**, nu intră |
+
+### 1. Cele două capcane de semantică
+
+**answear.ro — ce spune pagina nu e ce măsoară descriptorul.** Pagina are ancore `data-test`
+stabile (`productCard`, `productItemLink`, `priceSaleWithMinimalDesktop`,
+`priceWithMinimalDesktop`) — exact ce cauți când clasele sunt module CSS cu hash. Descriptorul
+scris pe ele arată impecabil și greșește în două feluri, ambele tăcute:
+
+* `priceSaleWithMinimalDesktop` poartă doar **eticheta** („Preț actual:"), fără număr → prețul iese
+  `None` → `extrage_carduri` sare **toate cele 80 de carduri**, iar magazinul apare ca „azi n-are
+  reduceri";
+* `priceWithMinimalDesktop` poartă textul întreg al Omnibusului — „Cel mai mic preț din ultimele
+  **30** de zile înainte de reducere: 309,90 LEI" — din care `eu_comma` scoate **30 309,9**.
+
+De aceea domeniul intră pe STARE. Și acolo mai e o alegere care contează: referința e
+`priceMinimal`, **nu** `priceRegular`. Cele două diverg pe **7/80** (pagina 1) și **27/80** (pagina
+2) — de pildă `price 329.9`, `priceRegular 478.9`, `priceMinimal 359.9`, unde reducerea reală e 8%,
+nu 31%. `priceMinimal` e câmpul pe care cardul îl etichetează Omnibus. A doua oară după modivo
+(LST-3b), unde tot două linii etichetate divergeau.
+
+**endclothing.com — prețul e în EUR sub un preț afișat în RON.** Fiecare hit poartă
+`full_price_<N>` / `final_price_<N>` pentru șaisprezece website-uri; coloana corectă e `website_id`
+din `config.country` (3 la noi), citit din stare, nu constantă. Dar valoarea de acolo e în moneda de
+**bază**: pagina afișează `RON 552` pentru `full_price_3 = 105`, adică `105 × 5.252101`, unde
+5.252101 e `config.country.rate` — **cursul magazinului**. Descriptorul declară deci `EUR` și lasă
+conversia pe BNR; pe RON am fi importat în scorare cursul comercial al magazinului și am fi umflat
+fiecare preț de cinci ori.
+
+### 2. nike: prețul se citește din clasa de stare, nu din `data-testid`
+
+Raportul propusese `[data-testid="product-price-reduced"]` pentru prețul plătit — corect ca
+semantică (`product-price` e prețul **tăiat**, a treia inversare după altex și lego), dar nodul
+există **numai pe cardurile reduse**. Un descriptor pe el ar fi intrat cu 3 carduri din 24, sărind
+21 de produse valide.
+
+Măsurat pe același dump, clasele spun același lucru fără gaură: `is--current-price` e pe **24/24**
+(prețul plătit, și pe cardurile reduse, și pe cele nereduse), iar `is--striked-out` doar pe cele 3
+reduse. Descriptorul se sprijină pe ele: 24 de carduri, 3 cu referință, 21 pe R2. Devierea de la
+litera raportului e deliberată și e singura din rundă.
+
+### 3. O imagine care nu se poate raporta
+
+endclothing servește pozele printr-un CDN de tip Cloudinary, unde transformările stau într-un
+segment cu **virgule**: `…/media/f_auto,q_auto:eco,w_400,h_400/prodmedia/…/BR_SS26-100-OAT_1_1.jpg`.
+`normalizeaza_imagine` taie la prima virgulă — pentru ea, virgula separă candidații de `srcset` —
+deci ar rezulta `https://media.endclothing.com/media/f_auto`, adică o imagine **ruptă** pe fiecare
+card. Mai rău decât niciuna: feed-ul are placeholder pentru lipsă, dar n-are cum să se apere de un
+URL care pare valid.
+
+Verificat pe fir, cu două cereri: forma cu virgule răspunde **200 `image/jpeg`** (5 131 octeți), iar
+aceeași cale **fără** segmentul de transformare dă **404**. Deci nu există variantă fără virgule.
+Extractorul trimite `None` deliberat, iar reparația nu e la el: normalizatorul ar trebui să taie pe
+virgulă doar când urmează un descriptor de lățime (`\d+[wx]`) — și asta atinge `listing_scanner.py`,
+în afara rundei. Șablonul rămâne măsurat în cod, gata de cablat într-o linie.
+
+**Notă de metodă:** controlul LST-D7 raportase „imagine 120/120" tocmai fiindcă număra valorile
+nenule, iar URL-ul trunchiat e nenul. Un control care numără prezența, nu forma, confirmă exact ce
+n-ar trebui.
+
+### 4. Ce a adus sonda ca metodă, și rămâne
+
+Trei corecții din LST-D7 §0/§6, toate despre unelte, nu despre magazine:
+
+* **containerul de grilă = strămoșul comun**, nu „≥ 5 frați". Regula-frați pică pe grilele reale:
+  cardurile stau fiecare în coloana lui (43einhalb: 36 de carduri, 36 de părinți distincți).
+  Formularea care ține: aruncă întâi cardurile din antet/nav/subsol/carusel, apoi ia strămoșul comun
+  al celor rămase și urcă până la primul selector unic;
+* **garda pe tag-uri semantice și jetoane, nu pe substring**. Prima formă a aruncat 80 de carduri
+  reale pe answear, fiindcă grila stă sub `Products__productContainerWithLeftMenu__ZTM6y` — o clasă
+  de CSS-module care descrie *layoutul*. Cuvintele scurte (`menu`, `nav`, `header`) se acoperă prin
+  `<header>`/`<nav>`/`<footer>`; în lista de clase rămân doar cele compuse;
+* **cardul care ESTE ancora**. `identifica_carduri` cerea un `<a>` *descendent*, deci
+  `<a class="productBox">…</a>` ieșea invizibil: alternate.de raporta 0 carduri cu 24 de produse în
+  HTML. În producție forma exista deja — `link: "@parent_a"`, de la noriel (LST-1) — și acum are al
+  doilea consumator.
+
+### 5. Ce rămâne deschis
+
+* **Algolia ca mecanism viitor.** Pentru endclothing, adâncimea (5 762 de produse în `all-sale`,
+  49 de pagini) e accesibilă doar prin API. Toate componentele sunt în pagină (app id, cheia
+  **publică** de căutare, indexul, parametrii cu filtrul de sale verbatim), iar gazdele
+  `search{1,2,3}web.endclothing.com` sunt subdomenii ale unui domeniu validat — **allow-list-ul nu e
+  obstacolul**. Poarta e însă **GET-only** (`_parcurge_hopuri` cheamă `curl_requests.get`), iar
+  interogarea Algolia cere POST. Măsurătoarea pe fir a rămas nefăcută la LST-D7 (§3.4).
+* **Categoriile nemăsurate nu intră.** endclothing are 28 de categorii de sale în hub și două în
+  descriptor; alternate are 17 subcategorii de outlet și două, dintre care doar `Hardware` paginează
+  (`Notebook` a fost văzută pe o singură pagină). Regula nichiduta: se paginează doar fațetele
+  cărora li s-a măsurat adâncimea, și nu se scrie niciun URL nemăsurat.
+* **answear e o campanie cu termen.** `/s/back-to-school` e singura candidată pe care home-ul o
+  declară; dacă expiră, descriptorul moare tăcut. `data.count` din stare e 162 614 — tot catalogul,
+  nu campania — deci adâncimea reală rămâne necunoscută.
