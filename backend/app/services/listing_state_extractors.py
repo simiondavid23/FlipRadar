@@ -27,6 +27,7 @@ SARE, niciodata nu se ghiceste). Restul scannerului — memoria R2, `_evalueaza`
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import urllib.parse
@@ -492,6 +493,220 @@ def bonami_next(html: str, descriptor: dict) -> list[dict]:
     return iesire
 
 
+# -- flip.ro - `__NEXT_DATA__`, cache de react-query --------------------------
+def _identitate_exacta(card: dict, url: str) -> dict:
+    """STATE-1 - `external_id`/`handle` pe cale + QUERY, pentru flip.ro.
+
+    `_external_id` din scanner hasheaza doar CALEA, si pe buna dreptate: acolo
+    query-ul e de obicei `?utm_source=...`, iar acelasi produs ajuns pe doua rute
+    trebuie sa fie UN deal. La flip e invers, si registrul o spune deja prin
+    `url_identity: "exact"` (LOT1): starea unitatii - `?shape=Excelent` - face
+    parte din identitatea produsului. Acelasi model in doua grade are ACEEASI cale
+    si doua preturi diferite.
+
+    Fara garda asta, cele doua grade ar primi acelasi `external_id`, iar al doilea
+    ar fi sarit de garda SCAN-1 (produs deja vazut in scanul asta) - adica
+    jumatate de catalog ar disparea TACUT, si ar disparea tocmai varianta pe care
+    ordinea paginii o pune a doua.
+
+    Pe dump-ul LST-D3 cele 32 de cai sunt distincte, deci coliziunea nu se vede pe
+    o singura pagina; ea apare intre pagini (604 de produse, 19 pagini). Garda e
+    deci scrisa pe forma masurata a datelor si pe conventia de registru, nu pe o
+    coliziune observata - iar testul o fixeaza explicit.
+    """
+    parti = urllib.parse.urlsplit(url)
+    coada = f"?{parti.query}" if parti.query else ""
+    cale_si_query = (parti.path.rstrip("/").lower() or "/") + coada
+    card["external_id"] = "lst:" + hashlib.sha1(
+        cale_si_query.encode("utf-8")).hexdigest()
+    card["handle"] = (parti.path + coada)[:255]
+    return card
+
+
+def flip_next(html: str, descriptor: dict) -> list[dict]:
+    """flip.ro - `/magazin/`, listare din cache-ul react-query al lui `__NEXT_DATA__`.
+
+    Calea, verbatim din `dumps_lstd3/flip.ro_p1.html`:
+
+        props.pageProps.dehydratedState.queries[*].state.data.data.productsPage
+
+    - un array PLAT de 32 de obiecte (`total: 604`, deci 19 pagini). Cheile unui
+    produs, tot verbatim:
+
+        price                 1429.99   (float, RON)
+        retailPrice           2250      (pretul unitatii NOI a aceluiasi model)
+        previousPrice         1429.99   (EGAL cu `price` pe 32/32 - NU se citeste)
+        lowestPriceOfTheYear  false     (constant pe 32/32 - NU se citeste)
+        currency              "RON"
+        naming.title          "Apple iPhone 13, Midnight, 128 GB, Excelent"
+        pdpUrl                absolut, cu `?shape=Excelent`
+        imagePath             absolut, pe cdn.flip.ro
+        spec.shape            "EXCELENT"
+
+    TREI decizii, fiecare platita de o masuratoare:
+
+    1. Query-ul NU se ia dupa indice. `queries` are doua elemente si abia primul
+       are `productsPage`; al doilea (`plp-promotional-cards`) are `state.data`
+       None. Azi indicele 0 ar nimeri - dar ordinea unui cache de react-query nu e
+       un contract, iar ziua in care se inverseaza n-ar da o eroare, ci zero
+       produse, adica "magazinul n-are reduceri". Se alege deci query-ul al carui
+       `state.data.data.productsPage` E o lista.
+
+    2. `previousPrice` NU e referinta. E egal cu `price` pe 32/32 - exact capcana
+       constantei de la vivre. Citit ca `compare_at`, ar produce reduceri de 0%
+       pe tot catalogul. La fel `lowestPriceOfTheYear`, constant `false`.
+
+    3. `compare_at = retailPrice` doar cand e > `price`. Semantica e "pretul
+       unitatii NOI a aceluiasi model", aceeasi decizie ca "NOU" la eMAG si "Nou:"
+       la altex; de aceea `reference_kind: "nemarcat"`, nu `min30`. Pe dump
+       `retailPrice` exista pe 32/32 dar e > `price` doar pe 27/32 - restul au
+       `retailPrice: 0`, deci fara garda ar fi iesit o "reducere" de la zero.
+
+    Gradul ramane in titlu, si vine gratis: `naming.title` il are deja ca sufix.
+    """
+    date = next_data(html)
+    if not date:
+        return []
+    try:
+        interogari = date["props"]["pageProps"]["dehydratedState"]["queries"]
+    except (KeyError, TypeError):
+        return []
+    if not isinstance(interogari, list):
+        return []
+
+    produse = None
+    for interogare in interogari:
+        if not isinstance(interogare, dict):
+            continue
+        stare = (interogare.get("state") or {}).get("data")
+        interior = stare.get("data") if isinstance(stare, dict) else None
+        candidat = interior.get("productsPage") if isinstance(interior, dict) else None
+        if isinstance(candidat, list):
+            produse = candidat
+            break
+    if produse is None:
+        return []
+
+    iesire = []
+    for produs in produse:
+        if not isinstance(produs, dict):
+            continue
+        url = (produs.get("pdpUrl") or "").strip()
+        if not url:
+            continue
+        pret = _pret_numeric(produs.get("price"))
+        if pret is None or pret <= 0:
+            continue
+        referinta = _pret_numeric(produs.get("retailPrice"))
+        if referinta is not None and referinta <= pret:
+            referinta = None            # `retailPrice: 0`, sau egal cu pretul
+        titlu = ((produs.get("naming") or {}).get("title") or "").strip()
+        iesire.append(_identitate_exacta(
+            _card(url, titlu, pret, referinta, produs.get("imagePath")), url))
+    return iesire
+
+
+# -- marionnaud.ro - <script type="application/json"> (SAP Commerce/Spartacus) --
+_BLOC_JSON = re.compile(
+    r'<script[^>]*type=["\']application/json["\'][^>]*>(.*?)</script>', re.I | re.S)
+
+
+def _cauta_search_model(radacina, adancime: int = 0) -> list | None:
+    """Primul `searchModel.products` care e lista, oriunde in structura.
+
+    Se coboara in adancime fiindca `searchModel` sta sub o cheie care e un ID de
+    componenta CMS (`e2-breadcrumb-pageBreadCrumbs$`) - un literal pe care nu-l
+    putem lega in cod fara sa-l facem sa se rupa la prima reasezare a paginii.
+    """
+    if adancime > 8:
+        return None
+    if isinstance(radacina, dict):
+        model = radacina.get("searchModel")
+        if isinstance(model, dict) and isinstance(model.get("products"), list):
+            return model["products"]
+        for valoare in radacina.values():
+            gasit = _cauta_search_model(valoare, adancime + 1)
+            if gasit is not None:
+                return gasit
+    elif isinstance(radacina, list):
+        for element in radacina[:20]:
+            gasit = _cauta_search_model(element, adancime + 1)
+            if gasit is not None:
+                return gasit
+    return None
+
+
+def marionnaud_json(html: str, descriptor: dict) -> list[dict]:
+    """marionnaud.ro - `/promotii/c/F`, listare din blocul `application/json`.
+
+    Pagina are UN singur `<script type="application/json">`, FARA atribut `id`, si
+    cheile lui de radacina sunt nume de componente Spartacus. `searchModel` nu e
+    la radacina, ci sub prima dintre ele - calea verbatim din
+    `dumps_lstd4/marionnaud.ro_p1.html`:
+
+        $["e2-breadcrumb-pageBreadCrumbs$"].searchModel.products
+
+    Numele cheii aleia e un ID de componenta CMS, deci nu se poate pune in cod ca
+    literal fara sa devina fragil la prima reasezare a paginii. Se cauta deci
+    `searchModel` in adancime si se ia primul care are `products` lista.
+
+    `pagination`, verbatim: `{"currentPage": 0, "pageSize": 20, "totalPages": 42,
+    "totalResults": 834}` - paginare ZERO-INDEXATA, ceea ce conteaza pentru
+    descriptor (v. registrul).
+
+    Cheile unui produs, verbatim:
+
+        code                        "BP_45540"
+        name                        "La Vie est Belle Apa de Parfum"
+        url                         "/lancome/.../p/BP_45540"   RELATIV la radacina
+        price.value                 374        (NUMERIC - asta se citeste)
+        price.formattedValue        "374,00 RON"   (sir, cu virgula - NU se citeste)
+        price.currencyIso           "RON"
+        price.priceType             "BUY" sau "FROM"
+        images.PRIMARY.list.url     absolut, pe media.marionnaud.ro
+        masterBrand.name            "Lancome"
+
+    REFERINTA LIPSESTE, masurat pe 20/20: `otherPrices` e lista goala,
+    `otherPricesMap` gol, `priceRange` gol, iar `price.savePrice` e sirul vid.
+    Exista `promotions` pe 20/20, dar recompensa e un PROCENT
+    (`"formattedRewardValue": "33%"`), nu un pret anterior - un procent nu e o
+    referinta din care se poate reconstitui pretul vechi fara sa presupui baza de
+    calcul. Deci fara `compare_at` si `reference_kind: "nemarcat"`: raftul intra
+    pe axa D doar pe R2.
+
+    O rezerva de semantica, consemnata fiindca se vede in date: `priceType` are
+    doua valori, iar `FROM` inseamna "de la", adica pretul celei mai ieftine
+    variante de gramaj, nu al unui produs anume. Se citeste tot, fiindca ala e
+    pretul afisat pe card si tot el e cel pe care il vede clientul in raft.
+    """
+    for bloc in _BLOC_JSON.finditer(html or ""):
+        try:
+            date = json.loads(bloc.group(1), strict=False)
+        except Exception:                                        # noqa: BLE001
+            continue
+        produse = _cauta_search_model(date)
+        if produse is None:
+            continue
+
+        baza = _baza(descriptor)
+        iesire = []
+        for produs in produse:
+            if not isinstance(produs, dict):
+                continue
+            cale = (produs.get("url") or "").strip()
+            if not cale:
+                continue
+            pret = _pret_numeric((produs.get("price") or {}).get("value"))
+            if pret is None or pret <= 0:
+                continue
+            imagine = ((((produs.get("images") or {}).get("PRIMARY") or {})
+                        .get("list") or {}).get("url"))
+            iesire.append(_card(urllib.parse.urljoin(baza + "/", cale),
+                                produs.get("name"), pret, None, imagine))
+        return iesire
+    return []
+
+
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
@@ -500,4 +715,7 @@ LISTING_STATE_EXTRACTORS = {
     "vivre_rsc": vivre_rsc,
     "cellini_js": cellini_js,
     "bonami_next": bonami_next,
+    # STATE-1
+    "flip_next": flip_next,
+    "marionnaud_json": marionnaud_json,
 }

@@ -1474,6 +1474,28 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "url_identity": "exact",
+        # ── STATE-1 — axa D prin extractor de STARE, nu prin selectori CSS.
+        # Grila e hidratata client-side; datele vin din cache-ul react-query al
+        # lui `__NEXT_DATA__` (v. `flip_next`, unde stau cheile verbatim).
+        "listing": {
+            "url": "https://flip.ro/magazin/",
+            # MASURAT live (STATE-1 B3): `?page=2` intoarce 32 de carduri, 30 NOI
+            # fata de pagina 1, iar `queryKey`-ul din starea raspunsului devine
+            # `limit=32|offset=32` — deci parametrul E onorat si se traduce in
+            # offset. `?page=500` intoarce 200 cu grila GOALA (0 carduri prin
+            # extractor), adica oprire curata: conditia compozita din scanner o
+            # prinde fara sa aiba nevoie de un plafon exact.
+            "page_url_template": "https://flip.ro/magazin/?page={n}",
+            # `total` din stare: 604 la LST-D3, 577 la masuratoarea live — stocul
+            # de refurbished se misca zilnic. 604/32 -> 19 pagini, deci 19 e
+            # plafonul, cu oprirea REALA data de grila goala.
+            "max_pages": 19,
+            "currency": "RON",
+            "state_extractor": "flip_next",
+            # `retailPrice` = pretul unitatii NOI a aceluiasi model, aceeasi
+            # semantica cu „NOU" la eMAG si „Nou:" la altex. NU e Omnibus.
+            "reference_kind": "nemarcat",
+        },
         "notes": "LOT1; ?shape= semantic — starea e parte din identitatea sursei; "
                  "DEAL-D2 — NEMASURAT: home-ul are ZERO ancore `<a href>` in 377 KB "
                  "(shell Next.js pur), deci intrarea nu se poate descoperi din "
@@ -1487,7 +1509,15 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "(`..., 128 GB, Excelent`; 16 Excelent / 11 Ca nou / 5 Foarte bun) si "
                  "in `pdpUrl` ca `?shape=`, ceea ce confirma `url_identity: exact`. "
                  "CAPCANA: `lowestPriceOfTheYear` e `false` pe 32/32 — constanta de "
-                 "sablon, nu masuratoare (lectia vivre). Candidat `state_extractor`.",
+                 "sablon, nu masuratoare (lectia vivre). Candidat `state_extractor`. "
+                 "STATE-1 — INTRAT pe axa D prin `flip_next`. Paginare MASURATA "
+                 "live: `?page={n}` e onorat (se traduce in `offset` in queryKey, "
+                 "30 de produse noi pe pagina 2), iar `?page=500` da grila GOALA "
+                 "— oprire curata, fara plafon ghicit. Catalogul e INTEGRAL "
+                 "refurbished, deci `retailPrice` (referinta) e pretul unitatii "
+                 "NOI a aceluiasi model, nu un pret taiat al aceluiasi articol. "
+                 "Fateta `?promo=genius-deal` exista (citita din stare la DEAL-D2) "
+                 "dar NU e masurata ca listare separata.",
     },
     "usedproducts.ro": {
         "label": "Used Products",
@@ -2898,8 +2928,35 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # ── STATE-1 — axa D prin extractor de STARE (SAP Commerce/Spartacus).
+        # Raftul e in blobul `application/json`, nu in DOM (v. `marionnaud_json`).
+        "listing": {
+            "url": "https://www.marionnaud.ro/promotii/c/F",
+            # `max_pages: 1` si FARA template, MASURAT live (STATE-1 B3): starea
+            # anunta `totalPages: 42`, dar parametrul `?page=` e IGNORAT
+            # server-side — si `?page=1`, si `?page=500` intorc `currentPage: 0`
+            # si exact acelasi set de 20 de produse. Restul celor 42 de pagini se
+            # aduc client-side, dupa hidratare, prin API-ul Spartacus. Un template
+            # `?page={n}` ar cere deci 41 de pagini identice cu prima si le-ar
+            # taia abia garda de clamp, dupa ce le-a descarcat pe toate.
+            "max_pages": 1,
+            "currency": "RON",
+            "state_extractor": "marionnaud_json",
+            # FARA referinta, masurat pe 20/20: `otherPrices`, `otherPricesMap` si
+            # `priceRange` sunt goale, iar `savePrice` e sirul vid. `promotions`
+            # da un PROCENT, nu un pret anterior -> axa D doar pe R2.
+            "reference_kind": "nemarcat",
+        },
         "notes": ("LOT4"
-                 " DEAL-D4 - RAMAS IN AFARA axei D: STATE. In DOM exista doar 15 elemente cu link si pret, si alea sunt bara de NAVIGATIE; raftul e in blobul de stare (`searchModel.products`, 20 pe pagina, 834 in total). Candidat pentru un `state_extractor`, nu pentru selectori CSS."),
+                 " DEAL-D4 - RAMAS IN AFARA axei D: STATE. In DOM exista doar 15 elemente cu link si pret, si alea sunt bara de NAVIGATIE; raftul e in blobul de stare (`searchModel.products`, 20 pe pagina, 834 in total). Candidat pentru un `state_extractor`, nu pentru selectori CSS."
+                 " STATE-1 - INTRAT pe axa D prin `marionnaud_json`. Pretul se ia"
+                 " din `price.value` (NUMERIC), nu din `price.formattedValue`"
+                 " (sir cu virgula), iar `url` e RELATIV si se rezolva la radacina."
+                 " Paginarea din stare e ZERO-INDEXATA (`currentPage: 0`,"
+                 " `totalPages: 42`), dar parametrul `?page=` e IGNORAT"
+                 " server-side: masurat, `?page=1` si `?page=500` dau amandoua"
+                 " `currentPage: 0` si acelasi set de 20 -> `max_pages: 1`, fara"
+                 " template."),
     },
     "notino.ro": {
         "label": "Notino",

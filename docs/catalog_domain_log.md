@@ -4289,3 +4289,105 @@ DEAL-D2: **caruselul** folosește `price_our_net`/`price_our_gross`, **grila** f
   `outlet-electrocasnice-24919` 10, `outlet-servers-and-storage-9314` 3,
   `outlet-power-solutions-9318` 2) — materia pentru o formă `entries` dacă paginarea rămâne
   negăsibilă. Nemăsurate: niciuna n-a fost cerută.
+
+---
+
+## STATE-1 — flip.ro și marionnaud.ro pe axa D prin extractoare de stare; 5xx la pagina > 1
+
+Două domenii care așteptau de trei runde („candidat `state_extractor`") intră acum pe axa D,
+plus o robustețe în scanner măsurată la DEAL-D4. Familia `state_extractor` ajunge la **șase**,
+iar axa D la **44** de domenii.
+
+### 5xx la pagina > 1 = sfârșit de intrare, nu scan pierdut
+
+Regula veche era „DOAR 404 e tolerat; un 403/500 pe pagina 2 e un zid sau o defecțiune".
+Semantica era corectă — un 500 chiar nu e un sfârșit de paginare — dar prețul era greșit:
+`RuntimeError` cade **înainte** de `db.commit()`, deci un singur 500 la pagina 30 arunca și
+cele 29 de pagini deja citite. prm servește exact așa (HTTP 500 la coada listării, măsurat la
+LST-D4), iar cu 44 de domenii pe axă un 5xx tranzitoriu nu mai e o ipoteză.
+
+Acum, pe pagina > 1 a unei intrări care a citit deja cel puțin o pagină, **orice** non-200
+(5xx, 403, 429, sau `None` din poartă) încheie *intrarea*, lasă comis ce s-a citit și trece la
+intrarea următoare, cu un `logger.warning`. Două granițe rămân neatinse: pe **pagina 1** orice
+non-200 ridică în continuare (acolo înseamnă intrare moartă, care trebuie să se audă), iar
+**404** rămâne oprire **tăcută**. Diferența dintre cele două ramuri e tocmai zgomotul: un 500 e
+o anomalie a magazinului și merită o linie în log, un 404 e finalul normal al paginării.
+
+### flip.ro — `__NEXT_DATA__`, cache de react-query
+
+Calea, verbatim: `props.pageProps.dehydratedState.queries[*].state.data.data.productsPage` —
+array plat, 32 de obiecte, `total: 604`. Cheile unui produs:
+
+| cheie | valoare | ce facem |
+|---|---|---|
+| `price` | `1429.99` | prețul plătit |
+| `retailPrice` | `2250` | **referința**: prețul unității NOI a aceluiași model |
+| `previousPrice` | `1429.99` | **egal cu `price` pe 32/32** — NU se citește |
+| `lowestPriceOfTheYear` | `false` | constant pe 32/32 — NU se citește |
+| `naming.title` | „Apple iPhone 13, Midnight, 128 GB, Excelent" | gradul vine gratis în titlu |
+| `pdpUrl` | absolut, cu `?shape=Excelent` | identitate exactă |
+| `imagePath` | absolut, pe `cdn.flip.ro` | imaginea |
+
+Trei decizii, fiecare plătită de o măsurătoare:
+
+1. **Query-ul se alege după conținut, nu după indice.** `queries` are două elemente; al doilea
+   (`plp-promotional-cards`) are `state.data` None. Azi indicele 0 ar nimeri, dar ordinea unui
+   cache de react-query nu e un contract, iar ziua în care se inversează n-ar da o eroare — ar
+   da zero produse, adică „magazinul n-are reduceri".
+2. **`previousPrice` nu e referință** (capcana constantei, lecția vivre). Citit ca `compare_at`,
+   ar produce reduceri de 0% pe tot catalogul.
+3. **`compare_at = retailPrice` doar când e > `price`.** `retailPrice` există pe 32/32 dar e mai
+   mare decât prețul doar pe 27/32 — restul au `retailPrice: 0`, deci fără gardă ar fi ieșit o
+   „reducere" de la zero. Semantica („prețul unității NOI") e aceeași cu „NOU" la eMAG și „Nou:"
+   la altex, de unde `reference_kind: nemarcat`, nu `min30`.
+
+**Identitatea include query-ul.** Registrul spunea deja `url_identity: "exact"` (LOT1): starea
+unității — `?shape=Excelent` — face parte din identitate, iar același model în două grade are
+**aceeași cale** și două prețuri. `_external_id` hashează doar calea, pe bună dreptate pentru
+restul axei, deci extractorul îl recalculează local pe cale + query. Fără asta, cele două grade
+ar primi același id și al doilea ar fi sărit de garda SCAN-1 — jumătate de catalog dispărută
+tăcut. Pe pagina măsurată cele 32 de căi sunt distincte, deci coliziunea nu se vede pe o
+singură pagină; ea apare între cele 19.
+
+### marionnaud.ro — `<script type="application/json">` (SAP Commerce/Spartacus)
+
+Pagina are **un singur** bloc `application/json`, **fără** atribut `id`, iar `searchModel` nu e
+la rădăcină: calea verbatim e `$["e2-breadcrumb-pageBreadCrumbs$"].searchModel.products`. Cheia
+aia e un ID de componentă CMS, deci extractorul caută `searchModel` în adâncime în loc să lege
+un literal fragil. Cheile unui produs:
+
+| cheie | valoare | ce facem |
+|---|---|---|
+| `price.value` | `374` (numeric) | **prețul** |
+| `price.formattedValue` | `"374,00 RON"` | NU se citește — numărul există deja |
+| `url` | `/lancome/…/p/BP_45540` | **relativ**, se rezolvă la rădăcină |
+| `images.PRIMARY.list.url` | absolut, pe `media.marionnaud.ro` | imaginea |
+| `code`, `name`, `masterBrand.name` | `BP_45540`, „La Vie est Belle Apa de Parfum", „Lancôme" | — |
+
+**Referința lipsește, măsurat pe 20/20:** `otherPrices` e listă goală, `otherPricesMap` gol,
+`priceRange` gol, `price.savePrice` e șirul vid. Există `promotions` pe 20/20, dar recompensa e
+un **procent** („33%"), nu un preț anterior — iar dintr-un procent nu se reconstituie prețul
+vechi fără să presupui baza de calcul. Deci fără `compare_at`, `reference_kind: nemarcat`,
+axa D doar pe R2. O rezervă de semantică, consemnată fiindcă se vede în date: `priceType` are
+două valori, iar `FROM` înseamnă „de la" — prețul celei mai ieftine variante de gramaj.
+
+### Paginarea, măsurată live (4 cereri)
+
+| cerere | status | carduri | noi față de p1 | concluzie |
+|---|---|---|---|---|
+| flip `?page=2` | 200 | 32 | **30** | `?page={n}` **e onorat** |
+| flip `?page=500` | 200 | **0** | 0 | **grilă goală** = oprire curată |
+| marionnaud `?page=1` | 200 | 20 | 1 | `currentPage: 0` — **parametru ignorat** |
+| marionnaud `?page=500` | 200 | 20 | 1 | `currentPage: 0` — același set |
+
+**flip**: `?page=2` schimbă `queryKey`-ul stării în `limit=32|offset=32` — dovada că parametrul
+se traduce în offset. `?page=500` întoarce 200 cu grila goală, deci oprirea e curată și nu
+depinde de un plafon ghicit; `max_pages: 19` vine din `total`/`pageSize` (604/32), iar `total`
+însuși driftează (577 la măsurătoarea live — stoc de refurbished).
+
+**marionnaud**: paginarea din stare e **zero-indexată** (`currentPage: 0`, `totalPages: 42`),
+dar parametrul `?page=` e **ignorat server-side** — și `?page=1`, și `?page=500` întorc
+`currentPage: 0` și exact același set de 20 de produse. Restul celor 42 de pagini se aduc
+client-side, după hidratare, prin API-ul Spartacus. De aceea `max_pages: 1` și **fără**
+template: un `?page={n}` ar cere 41 de pagini identice cu prima și le-ar tăia abia garda de
+clamp, după ce le-a descărcat pe toate.

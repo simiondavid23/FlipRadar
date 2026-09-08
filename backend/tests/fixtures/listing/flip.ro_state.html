@@ -1,0 +1,17 @@
+<!-- STATE-1 - decupat programatic din
+     backend/scripts/diagnostics/dumps_lstd3/flip.ro_p1.html.
+     Doua produse din cele 32, cu calea de chei PASTRATA EXACT:
+     props.pageProps.dehydratedState.queries[*].state.data.data.productsPage
+
+     Primul query e INTENTIONAT cel fara `productsPage` (`state.data` None),
+     ca in dump-ul real inversat: un extractor care ia `queries[0]` orbeste
+     raporteaza zero produse, adica „magazinul n-are reduceri".
+
+     Al doilea produs are `retailPrice: 0` (<= `price`), deci `compare_at`
+     trebuie sa iasa None - nu o reducere de la zero.
+     `previousPrice` e EGAL cu `price` pe amandoua, ca in dump: e capcana
+     constantei, si nu trebuie sa influenteze nimic.
+-->
+<!DOCTYPE html><html><body><div id="__next"></div>
+<script id="__NEXT_DATA__" type="application/json">{"props": {"pageProps": {"dehydratedState": {"queries": [{"queryKey": ["plp-promotional-cards", "RO", "not-logged-in"], "state": {"data": null}}, {"queryKey": ["products-filters=|lang=RO|limit=32|offset=0|searchTerm=|sorting=BUY_RECOMMENDED-1--BUY_RECOMMENDED"], "state": {"data": {"data": {"productsPage": [{"id": 11254, "naming": {"categoryDisplayName": "Telefon mobil", "modelDisplayName": "iPhone 13", "shortTitle": "iPhone 13", "shortTitleWithBrand": "Apple iPhone 13", "configSummary": "Midnight, 128 GB, Excelent", "title": "Apple iPhone 13, Midnight, 128 GB, Excelent"}, "category": "SMARTPHONE", "brandName": "Apple", "modelName": "iPhone 13", "legacyModelName": "iPhone 13", "spec": {"color": "midnight", "storage": "128 GB", "shape": "EXCELENT"}, "legacyModelId": 68964, "legacyShapeId": 2, "legacySellId": 1331837, "legacySku": 10359, "stock": 50, "isDiscontinued": false, "currency": "RON", "price": 1429.99, "previousPrice": 1429.99, "retailPrice": 2250, "imagePath": "https://cdn.flip.ro/device-images/apple_iphone-13_midnight_sell_mip@_320.jpg", "pdpUrl": "https://flip.ro/magazin/apple/telefon-mobil-apple-iphone-13-128gb-midnight/68964/?shape=Excelent", "lowestPriceOfTheYear": false, "specialDeals": false, "installmentsFrom": 119, "geniusDealsDiscountAmount": 0, "geniusDealsDiscountPercent": 0}, {"id": 13360, "naming": {"categoryDisplayName": "Tabletă", "modelDisplayName": "iPad 10.2” (2021) 9th Gen Wifi", "shortTitle": "iPad 10.2” (2021) 9th Gen Wifi", "shortTitleWithBrand": "Apple iPad 10.2” (2021) 9th Gen Wifi", "configSummary": "64 GB, Space Gray, Ca nou", "title": "Apple iPad 10.2” (2021) 9th Gen Wifi, 64 GB, Space Gray, Ca nou"}, "category": "TABLET", "brandName": "Apple", "modelName": "iPad 10.2” (2021) 9th Gen Wifi", "legacyModelName": "iPad 10.2” (2021) 9th Gen Wifi", "spec": {"color": "space_gray", "storage": "64 GB", "shape": "CA_NOU"}, "legacyModelId": 75267665, "legacyShapeId": 1, "legacySellId": 1230474, "legacySku": 36187, "stock": 4, "isDiscontinued": true, "currency": "RON", "price": 1099.99, "previousPrice": 1099.99, "retailPrice": 0, "imagePath": "https://cdn.flip.ro/device-images/apple_ipad-10-2-2021-9th-gen-wifi_space-gray_sell_mip@_320.jpg", "pdpUrl": "https://flip.ro/magazin/apple/tableta-apple-ipad-10-2-2021-9th-gen-wifi-64gb-space-gray/75267665/?shape=Ca%20nou", "lowestPriceOfTheYear": false, "specialDeals": false, "installmentsFrom": 92, "geniusDealsDiscountAmount": 0, "geniusDealsDiscountPercent": 0}], "total": 604}}}}]}}}, "page": "/[category]", "query": {"category": "magazin"}, "buildId": "sKAmPDyH-L2sX8yNL-81e"}</script>
+</body></html>

@@ -40,6 +40,15 @@ _PARSERE_ADMISE_TEXT = set(listing_scanner._PARSERE_TEXT)
 def _fixture(domeniu: str) -> str:
     with open(os.path.join(FIXTURI, f"{domeniu}_cards.html"), encoding="utf-8") as f:
         return f.read()
+def _fixture_stare(domeniu: str) -> str:
+    """Fixture-ul de STARE al unui domeniu (`<domeniu>_state.html`).
+
+    Separat de `_fixture` fiindca cele doua familii au sufixe diferite: calea CSS
+    citeste `<domeniu>_cards.html`, calea de stare `<domeniu>_state.html`.
+    """
+    with open(os.path.join(FIXTURI, f"{domeniu}_state.html"),
+              encoding="utf-8") as f:
+        return f.read()
 
 
 class _Raspuns:
@@ -515,13 +524,31 @@ def test_404_pe_prima_pagina_ramane_eroare(scan):
     assert len(scan.cereri) == 1
 
 
-def test_alte_statusuri_raman_eroare_si_dupa_o_pagina_buna(scan):
-    """DOAR 404 e tolerat. Un 403/500 pe pagina 2 e un zid sau o defectiune, nu un
-    sfarsit de paginare, si nu are voie sa fie confundat cu el."""
+def test_alte_statusuri_incheie_intrarea_dupa_o_pagina_buna(scan):
+    """STATE-1 — regula de aici s-a SCHIMBAT, si merita spus de ce.
+
+    Pana la STATE-1 testul asta cerea invers: „DOAR 404 e tolerat; un 403/500 pe
+    pagina 2 e un zid sau o defectiune". Rationamentul era corect ca semantica —
+    un 500 chiar NU e un sfarsit de paginare — dar gresit ca pret platit:
+    `RuntimeError` cade INAINTE de `db.commit()`, deci un singur 500 la pagina 30
+    arunca si cele 29 de pagini deja citite. prm serveste chiar asa (HTTP 500 la
+    coada listarii, masurat la LST-D4), iar cu 44 de domenii pe axa un 5xx
+    tranzitoriu nu mai e o ipoteza.
+
+    Deci: pe pagina > 1, dupa cel putin o pagina reusita in ACEEASI intrare, orice
+    non-200 incheie INTRAREA si lasa comis ce s-a citit. Ce ramane neschimbat e
+    granita care conteaza — pe pagina 1 acelasi status ridica in continuare, si
+    exista un test separat pentru asta (`test_5xx_pe_pagina_1_ridica`).
+
+    Diferenta fata de 404 nu dispare, se muta in ZGOMOT: 404 se opreste tacut,
+    restul scriu un WARN, fiindca sunt anomalii, nu granite normale.
+    """
     for status in (403, 410, 500):
         rezumat = scan([_fixture("otter.ro"), (_CORP_404, status)],
                        descriptor=_descriptor_test())
-        assert rezumat["erori"] == 1, f"status {status} trebuie sa ramana eroare"
+        assert rezumat["erori"] == 0, (
+            f"status {status} pe pagina 2 nu mai pierde scanul")
+        assert rezumat["magazine"] == 1, f"status {status}: scanul s-a incheiat"
 
 
 # ── 5. Deal-uri, memorie si sursa ────────────────────────────────────────────
@@ -715,7 +742,13 @@ def test_listing_domains_exact_cele_din_registru():
                                  # taiate), alternate/flanco/hornbach/biciclop
                                  # (FARA_LISTARE), reichelt (JS_ONLY) si
                                  # computeruniverse (POARTA).
-                                 "action.com", "senetic.ro"}
+                                 "action.com", "senetic.ro",
+                                 # STATE-1 - doua listari care nu sunt in DOM:
+                                 # flip.ro (`__NEXT_DATA__`, cache react-query) si
+                                 # marionnaud.ro (blob `application/json`,
+                                 # SAP Commerce). Cu ele, familia
+                                 # `state_extractor` ajunge la SASE.
+                                 "flip.ro", "marionnaud.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -2602,3 +2635,180 @@ def test_senetic_brut_nu_net():
     # deci descriptorul n-are template si scanul citeste o singura pagina.
     assert d["max_pages"] == 1
     assert "page_url_template" not in d
+
+
+# ── STATE-1 ──────────────────────────────────────────────────────────────────
+def test_5xx_pe_pagina_2_e_sfarsit_de_intrare(monkeypatch, caplog):
+    """Un 500 la coada unei intrari nu mai arunca paginile deja citite.
+
+    Masurat pe prm (LST-D4): `/ro/s/final-sale?page=<coada>` da HTTP 500. Pana
+    acum orice non-200 ridica `RuntimeError`, iar `RuntimeError` cade INAINTE de
+    `db.commit()` — deci un singur 500 la pagina 30 pierdea tot ce citisera
+    primele 29. Aceeasi pierdere pe care VAL D o reparase pentru 404, doar pe alt
+    cod de stare.
+
+    Se verifica pe CONTOARE si pe log, nu doar pe absenta exceptiei: „n-a crapat"
+    ar fi adevarat si daca scanul ar fi iesit fara sa comita nimic.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING,
+                         logger="app.services.listing_scanner"):
+        rezultat, cereri = _scaneaza_direct(
+            monkeypatch,
+            [_fixture("otter.ro"), ("<html></html>", 500)],
+            _descriptor_test(max_pages=5))
+
+    assert len(cereri) == 2, "pagina 2 a fost ceruta, si acolo a venit 500-ul"
+    assert rezultat["pagini"] == 1, "pagina 1 ramane citita si numarata"
+    assert rezultat["produse"] > 0, "produsele din pagina 1 raman comise"
+
+    mesaje = [r.getMessage() for r in caplog.records
+              if r.levelno == logging.WARNING]
+    assert any("500" in m and "pagina 2" in m for m in mesaje), mesaje
+
+    # (b) Aceeasi pozitie, dar 404: sfarsit TACUT, ca inainte. Granita dintre cele
+    # doua ramuri e chiar zgomotul — un 500 e o anomalie a magazinului si merita o
+    # linie in log, un 404 e finalul normal al paginarii. Scenariul sta aici, nu
+    # intr-un test separat, ca sa se vada ca cele doua ramuri se ating.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING,
+                         logger="app.services.listing_scanner"):
+        rezultat_404, cereri_404 = _scaneaza_direct(
+            monkeypatch,
+            [_fixture("otter.ro"), ("<html></html>", 404)],
+            _descriptor_test(max_pages=5))
+
+    assert len(cereri_404) == 2
+    assert rezultat_404["pagini"] == 1
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == [],         "404 ramane sfarsit tacut: WARN-ul e doar pentru anomalii"
+
+
+def test_5xx_pe_pagina_1_ridica(monkeypatch):
+    """Pe pagina 1 orice non-200 ramane EROARE — granita nu s-a mutat.
+
+    Acolo un 500 nu inseamna „gata lista", ci intrare moarta (URL mutat, categorie
+    stearsa), si trebuie sa se auda. Daca s-ar inghiti si aici, un magazin cazut
+    ar raporta linistit „0 produse" la fiecare scan.
+    """
+    with pytest.raises(RuntimeError):
+        _scaneaza_direct(monkeypatch, [("<html></html>", 500)],
+                         _descriptor_test(max_pages=5))
+
+
+def test_flip_next_carduri():
+    """flip.ro - cardurile din `__NEXT_DATA__`, cu cele trei capcane ale lui.
+
+    1. `previousPrice` e EGAL cu `price` pe 32/32 in dump - capcana constantei de
+       la vivre. Citit ca referinta, ar da reduceri de 0% pe tot catalogul.
+    2. `retailPrice` e referinta REALA (pretul unitatii NOI a aceluiasi model),
+       dar exista si cu valoarea 0: acolo `compare_at` trebuie sa iasa None, nu o
+       reducere de la zero.
+    3. `?shape=` face parte din IDENTITATE (`url_identity: "exact"` in registru),
+       deci `external_id` si `handle` se calculeaza pe cale + query. Fara asta,
+       acelasi model in doua grade ar primi acelasi id, iar al doilea ar fi sarit
+       de garda SCAN-1 - jumatate de catalog disparut tacut.
+    """
+    from app.services.listing_state_extractors import flip_next
+
+    d = listing_descriptor("flip.ro")
+    carduri = flip_next(_fixture_stare("flip.ro"), d)
+
+    assert d["state_extractor"] == "flip_next"
+    assert len(carduri) == 2
+    iphone, ipad = carduri
+
+    assert iphone["price"] == 1429.99
+    assert iphone["compare_at"] == 2250.0
+    assert iphone["title"].endswith("Excelent")
+    assert "?shape=" in iphone["url"]
+    assert iphone["image_url"].startswith("https://cdn.flip.ro/")
+
+    # `retailPrice: 0` <= `price` -> fara referinta inventata.
+    assert ipad["price"] == 1099.99
+    assert ipad["compare_at"] is None
+
+    # Identitatea include query-ul: `handle` il poarta, iar cele doua carduri au
+    # `external_id` distincte chiar daca ar imparti calea.
+    assert "?shape=" in iphone["handle"]
+    assert iphone["external_id"] != ipad["external_id"]
+    din_cale = _external_id(iphone["url"])
+    assert iphone["external_id"] != din_cale, (
+        "id-ul pe CALEA goala ar pierde gradul si ar uni doua oferte diferite")
+
+
+def test_flip_next_alege_query_ul_cu_productsPage():
+    """Query-ul se alege dupa CONTINUT, nu dupa indice.
+
+    Fixture-ul are `queries[0]` fara `productsPage` (`state.data` None), exact
+    inversul dump-ului. Ordinea unui cache de react-query nu e un contract, iar
+    ziua in care se schimba n-ar da o eroare, ci zero produse - adica „magazinul
+    n-are reduceri azi", tacut si fals.
+    """
+    import json as _json
+
+    from app.services.listing_state_extractors import flip_next, next_data
+
+    html = _fixture_stare("flip.ro")
+    interogari = (next_data(html)["props"]["pageProps"]["dehydratedState"]
+                  ["queries"])
+    assert (interogari[0].get("state") or {}).get("data") is None, (
+        "fixture-ul trebuie sa aiba PRIMUL query fara produse")
+    assert _json.dumps(interogari[1])  # al doilea e cel cu `productsPage`
+
+    assert len(flip_next(html, listing_descriptor("flip.ro"))) == 2
+
+
+def test_marionnaud_json_carduri():
+    """marionnaud.ro - pret NUMERIC, URL RELATIV rezolvat, zero referinta.
+
+    `price.value` (374) se citeste, `price.formattedValue` („374,00 RON") nu:
+    parsarea unui sir cu virgula cand exista deja numarul ar fi o treapta in plus
+    care poate gresi, fara nimic de castigat. `url` e relativ la radacina si
+    trebuie rezolvat - nerezolvat, ar ajunge asa in `deals.url`.
+
+    Referinta lipseste, masurat pe 20/20 (`otherPrices`, `otherPricesMap` si
+    `priceRange` goale, `savePrice` sirul vid), deci raftul intra doar pe R2.
+    """
+    from app.services.listing_state_extractors import marionnaud_json
+
+    d = listing_descriptor("marionnaud.ro")
+    carduri = marionnaud_json(_fixture_stare("marionnaud.ro"), d)
+
+    assert d["state_extractor"] == "marionnaud_json"
+    assert len(carduri) == 2
+    lancome, idole = carduri
+
+    assert lancome["price"] == 374.0, "din `price.value`, nu din „374,00 RON\""
+    assert lancome["title"] == "La Vie est Belle Apa de Parfum"
+    assert lancome["url"] == (
+        "https://www.marionnaud.ro/lancome/la-vie-est-belle/"
+        "la-vie-est-belle-apa-de-parfum/p/BP_45540"), "URL-ul relativ, rezolvat"
+    assert lancome["image_url"].startswith("https://media.marionnaud.ro/")
+    assert idole["price"] == 334.0
+
+    assert all(c["compare_at"] is None for c in carduri)
+    assert d["reference_kind"] == "nemarcat"
+    # Paginarea e ignorata server-side (B3), deci o singura pagina si niciun sablon.
+    assert d["max_pages"] == 1
+    assert "page_url_template" not in d
+
+
+def test_state_extractors_inregistrati():
+    """Cei doi extractori noi sunt legati corect in toate cele trei locuri.
+
+    Un nume de `state_extractor` care nu exista in harta ridica `KeyError` in
+    scanner - deliberat, fiindca o listare goala ar arata ca „azi n-are reduceri"
+    si ar inchide tacit dealurile. Testul verifica legatura in ambele sensuri.
+    """
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
+    for domeniu, nume in (("flip.ro", "flip_next"),
+                          ("marionnaud.ro", "marionnaud_json")):
+        assert nume in LISTING_STATE_EXTRACTORS
+        assert domeniu in listing_domains()
+        d = listing_descriptor(domeniu)
+        assert d["state_extractor"] == nume
+        # Forma `state_extractor` e SAU-EXCLUSIV cu forma CSS.
+        assert "card" not in d and "price_parse" not in d
+        _verifica_descriptor(domeniu, d)

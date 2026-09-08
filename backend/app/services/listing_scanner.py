@@ -66,6 +66,7 @@ lookup, the R1/R2 evaluation and the state row are one implementation shared by
 both scanners, so the two sources cannot drift apart in what counts as a deal.
 """
 import hashlib
+import logging
 import random
 import re
 import threading
@@ -86,6 +87,12 @@ from app.services.deal_scanner import (
 )
 from app.services.shop_registry import listing_descriptor, listing_domains
 from app.utils.listing_dates import acum_local
+
+# STATE-1 — un logger de modul, doar pentru sfarsitul de intrare pe non-200. Restul
+# modulului scrie in continuare cu `print("[ListingScan] …")`; nu se converteste
+# nimic aici, fiindca ce trebuia sa se schimbe e o singura linie, iar un `print`
+# n-ar putea fi verificat de un test (`caplog` vede doar `logging`).
+logger = logging.getLogger(__name__)
 
 # HTML listing pages are an order of magnitude heavier than `/products.json`
 # (1-2.6 MB each in the probes), so the pause between pages is longer than the
@@ -686,9 +693,35 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                 break
 
             if raspuns is None or raspuns.status_code != 200:
+                # STATE-1 — pe o pagina > 1 a unei intrari care a citit deja cel
+                # putin o pagina, ORICE raspuns nereusit (5xx, 403, 429, sau un
+                # `None` din poarta) e SFARSIT DE INTRARE, nu esec de scan.
+                #
+                # Masurat pe prm (LST-D4): coada listarii `/ro/s/final-sale` da
+                # HTTP 500. Cum `RuntimeError` cade INAINTE de `db.commit()`, un
+                # singur 500 la pagina 30 arunca tot ce citisera primele 29 —
+                # aceeasi pierdere pe care VAL D o reparase deja pentru 404, doar
+                # pe alt cod de stare. Cu 42 de domenii pe axa, un 5xx tranzitoriu
+                # devine o certitudine statistica, nu o ipoteza.
+                #
+                # Doua granite raman NESCHIMBATE, si amandoua deliberat:
+                #   * pe pagina 1 (`pagini_intrare == 0`) orice non-200 ramane
+                #     EROARE — acolo inseamna intrare moarta (URL mutat, categorie
+                #     stearsa), care trebuie sa se auda, nu sa treaca drept „gata";
+                #   * 404 ramane sfarsit TACUT (ramura de mai sus), fiindca acolo
+                #     „pagina nu exista" chiar e raspunsul asteptat la coada.
+                # Diferenta fata de 404 e tocmai zgomotul: aici se scrie un WARN,
+                # fiindca un 500 e o anomalie a magazinului, nu o granita normala.
+                status = getattr(raspuns, "status_code", None)
+                if numar > 1 and pagini_intrare > 0:
+                    logger.warning(
+                        "[ListingScan] %s: intrarea %s s-a oprit la pagina %s "
+                        "(status: %s) — paginile citite raman comise",
+                        domain, intrare.get("url"), numar, status)
+                    break
                 raise RuntimeError(
                     f"listare esuata la pagina {numar} "
-                    f"(status: {getattr(raspuns, 'status_code', None)})")
+                    f"(status: {status})")
 
             carduri = extrage_carduri(raspuns.text, descriptor, domain)
             linkuri_pagina = {c["url"] for c in carduri}
