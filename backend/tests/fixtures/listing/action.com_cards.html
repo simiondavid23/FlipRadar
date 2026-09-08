@@ -1,0 +1,80 @@
+<!-- DEAL-D5 - doua carduri taiate VERBATIM din
+     backend/scripts/diagnostics/dumps_lstd5/action.com_p1.html (cardurile 1 si 5),
+     cu doar clasele Tailwind scurtate. Ce trebuie sa dovedeasca fixture-ul:
+
+     * pretul PLATIT e spart pe doua noduri (`…price-whole` = 12,
+       `…price-fractional` = 95/99), deci containerul lor da textul „12 95" ->
+       `eu_sup`. `eu_comma` pe acelasi text ar da 1295.0 / 1299.0;
+     * al doilea card are `product-card-price-description` = „16,04 lei/kg",
+       adica pretul pe UNITATE, DIFERIT de cel platit (12,99). Un descriptor care
+       citeste campul ala raporteaza kilogramul drept produs (capcana douglas).
+-->
+<div data-testid="grid">
+
+  <div class="bg-neutral-0 relative h-full w-full" data-testid="product-card">
+    <a class="group relative flex h-full w-full flex-col p-3"
+       data-testid="product-card-link"
+       href="/ro-ro/p/3223325/farfurie-pentru-micul-dejun-dahlia/">
+      <span class="relative aspect-square w-full">
+        <img alt="" class="object-contain" data-testid="product-card-image"
+             loading="lazy"
+             src="https://asset.action.com/image/upload/w_1920/3223325_5401110363453-111_01_e4e6ja.webp"
+             srcset="https://asset.action.com/image/upload/w_128/3223325_5401110363453-111_01_e4e6ja.webp 128w"/>
+      </span>
+      <span class="text-sm font-medium line-clamp-2" data-testid="product-card-title">Farfurie pentru micul dejun Dahlia</span>
+      <span class="flex flex-col">
+        <span class="text-xs" data-testid="product-card-price-description">12,95&nbsp;lei/buc</span>
+        <span class="flex items-start text-orange-500">
+          <span class="font-bold text-[40px]" data-testid="product-card-price-whole">12</span><span class="inline-flex items-baseline"><span class="font-bold text-[20px]" data-testid="product-card-price-fractional">95</span></span>
+        </span>
+      </span>
+      <span class="flex leading-none" data-testid="product-card-price-discount">
+        <span class="flex items-center" data-testid="product-card-price-original-amount"><span class="text-center text-[12px] font-normal line-through">14,95</span></span>
+        <span class="ml-1 rounded border px-[2px]" data-testid="product-card-price-discount-percentage">-13%</span>
+      </span>
+    </a>
+  </div>
+
+  <div class="bg-neutral-0 relative h-full w-full" data-testid="product-card">
+    <a class="group relative flex h-full w-full flex-col p-3"
+       data-testid="product-card-link"
+       href="/ro-ro/p/2562816/rola-de-hartie-dumil/">
+      <span class="relative aspect-square w-full">
+        <img alt="" class="object-contain" data-testid="product-card-image"
+             loading="lazy"
+             src="https://asset.action.com/image/upload/w_1920/2562816_8712879137610-111_01_kj3nqp.webp"/>
+      </span>
+      <span class="text-sm font-medium line-clamp-2" data-testid="product-card-title">Rolă de hârtie Dumil</span>
+      <span class="flex flex-col">
+        <!-- PRET PE UNITATE: 16,04 lei/kg, NU cei 12,99 lei platiti -->
+        <span class="text-xs" data-testid="product-card-price-description">16,04&nbsp;lei/kg</span>
+        <span class="flex items-start text-orange-500">
+          <span class="font-bold text-[40px]" data-testid="product-card-price-whole">12</span><span class="inline-flex items-baseline"><span class="font-bold text-[20px]" data-testid="product-card-price-fractional">99</span></span>
+        </span>
+      </span>
+      <span class="flex leading-none" data-testid="product-card-price-discount">
+        <span class="flex items-center" data-testid="product-card-price-original-amount"><span class="text-center text-[12px] font-normal line-through">14,95</span></span>
+        <span class="ml-1 rounded border px-[2px]" data-testid="product-card-price-discount-percentage">-13%</span>
+      </span>
+    </a>
+  </div>
+
+</div>
+
+<!-- Sloganul de marca, VERBATIM din antetul paginii reale: seamana cu o eticheta
+     Omnibus si nu e una. Sta in afara cardurilor, si tocmai de aceea detectorul
+     care lucreaza pe CARD nu-l numara (LST-D5 §3.1). -->
+<section data-testid="brand-statements">
+  <p class="text-caption truncate" data-testid="brand-statement-2">Întotdeauna cel mai mic preț</p>
+</section>
+
+<!-- Paginatorul real: 1..6 si pe pagina 1, si pe pagina 2 (NU e fereastra
+     glisanta), iar pagina 6 e partiala (18 carduri). 5 x 23 + 18 = 133, exact
+     totalul anuntat. De aici bisectia: 7 si 12 plafoneaza la pagina 1. -->
+<div data-testid="grid-pagination-items">
+  <div class="hidden justify-end gap-2" data-testid="grid-pagination-items-desktop">
+    <a aria-label="1" class="font-normal" data-testid="GridPaginationLink" href="?#product-grid">1</a>
+    <a aria-label="2" class="font-medium" data-testid="GridPaginationLink" href="?page=2#product-grid">2</a>
+    <a aria-label="6" class="font-normal" data-testid="GridPaginationLink" href="?page=6#product-grid">6</a>
+  </div>
+</div>

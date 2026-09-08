@@ -4185,3 +4185,107 @@ viitoare.
 Separat, o **corecție de monedă** la nota DEAL-D3 a lui endclothing: dump-ul aceleiași pagini,
 recitit cu un jeton de preț care cunoaște toate monedele, arată `RON972` / `RON294` — pagina
 servea RON, nu GBP. Verdictul JS_ONLY nu se schimbă (DOM-ul e gol), doar moneda din notă.
+
+---
+
+## DEAL-D5 — coada axei D (sonda LST-D5, 2026-09-08)
+
+Ultimul lot al axei D: 10 domenii triate cu 27 de cereri, plus 3 cereri de bisecție. Doar
+**două** au trecut — cel mai mic randament al axei, și motivele sunt informative în sine.
+
+### Verdictele
+
+| domeniu | verdict | de ce |
+|---|---|---|
+| **action.com** | **CSS_GRID → în registru** | 23 de carduri/pagină, referință tăiată pe 23/23 |
+| **senetic.ro** | **CSS_GRID → în registru** | grilă SSR de 24; verdictul DEAL-D2 fusese dat pe carusel |
+| trendyol.com | CERE_MECANISM | categoria poartă `ld+json ItemList` cu 36/36 prețuri RON |
+| foto-erhardt.com | NEPOTRIVIT | bucăți unice second-hand, 0/155 prețuri tăiate |
+| alternate.de | FĂRĂ_LISTARE | `/Angebote` hub editorial, `/Outlet` carusel de 15 |
+| reichelt.de | JS_ONLY | `landingpage/-2568`: 214 KB, 0 linkuri de produs |
+| flanco.ro | FĂRĂ_LISTARE | singura candidată = regulamente; zero „resigilat" pe home |
+| hornbach.ro | FĂRĂ_LISTARE | 171 de ancore, 0 candidate — nav client-side |
+| biciclop.eu | FĂRĂ_LISTARE | produse cu `-51%` pe home, dar niciun raft adresabil |
+| computeruniverse.net | **POARTĂ** | poarta noastră refuză; direct dă 200/1,1 MB |
+
+### Bisecția adâncimii pe action.com
+
+`?page=500` întoarce **pagina 1**, nu 404 — deci nu există semnătură de oprire, iar
+`max_pages` trebuie măsurat. Trei cereri, fiecare la 90 s impuși de
+`min_fetch_interval_s` (poarta doarme singură în `_asteapta_intervalul`; sonda a
+măsurat, n-a ocolit):
+
+| cerere | rezultat | pagina activă | carduri | interval real |
+|---|---|---|---|---|
+| `?page=6` | conținut NOU | 6 | 18 | — (prima) |
+| `?page=12` | **CLAMP** | 1 | 23, subset al p1 | 90,5 s în poartă |
+| `?page=7` | **CLAMP** | 1 | 23, subset al p1 | 90,8 s între plecări |
+
+Ultima pagină cu conținut nou = 6 → **`max_pages: 7`**, unde plusul e chiar pagina care
+confirmă clamp-ul, plătită o dată per scan de garda `linkuri_pagina <= linkuri_vazute` din
+`_scaneaza_domeniu`. Verificare independentă, gratuită: 5 pagini pline × 23 + 18 pe ultima =
+**133**, exact totalul anunțat pe pagina 1 („133 rezultate"). Paginatorul arată `1..6` și pe
+p1, și pe p2 — nu e fereastră glisantă, ceea ce a făcut din `?page=7` alegerea cu cea mai mare
+informație pentru a treia cerere.
+
+Plafonul e mic și din **cost**: la 90 s/pagină, un scan plătește `max_pages × 90 s`, adică
+~10 minute pe acest domeniu.
+
+### Forme noi, de reținut
+
+**Plafonare la pagina 1 vs la ultima pagină.** Amândouă întorc 200 cu carduri, deci niciuna nu
+seamănă cu o oprire. action duce `?page=500` la **pagina 1** (URL final fără query, aceleași 23
+de URL-uri, corp byte-identic) — periculoasă, fiindcă fără `max_pages` un scanner ar re-citi
+pagina 1 la nesfârșit dacă n-ar avea garda de clamp. foto-erhardt duce `/500` la **pagina 10**,
+ultima (paginator activ 10, `canonical` și `h1` neschimbate) — prietenoasă, fiindcă adâncimea
+se citește direct din paginator. A treia formă, deja cunoscută, e 404 la coadă.
+
+**Cardul care E ancora — punct orb al sondelor.** La foto-erhardt cardul e chiar
+`<a class="product product--used">`, iar atât sonda cât și analiza cer o ancoră **descendentă**
+(`find_all` nu se întoarce pe sine). Rezultatul a fost „0 carduri" pe o pagină cu 36 de produse,
+o cerere irosită și un verdict automat de oprire greșit. La action același tipar n-a costat
+nimic, doar fiindcă ancora are întâmplător un părinte cu `data-testid`. Mecanismul care ar
+închide golul e `link: "@self"` — simetricul lui `@parent_a`, câteva linii; simulat cu un shim
+peste `_link_of`, ar da 35/36/17/48 de carduri curate. **Nu e implementat**: foto-erhardt rămâne
+oricum NEPOTRIVIT, deci mecanismul trebuie plătit de un domeniu care chiar are nevoie de el.
+Două domenii din zece au forma asta — merită numărat câte din cele 42 cu `listing` o au, înainte
+ca al treilea să coste iar cereri.
+
+**Sloganul care seamănă cu Omnibus.** „Întotdeauna cel mai mic preț" apare de 6 ori pe pagina
+lui action, în antet și în teaserul de aplicație. Detectorul n-a numărat niciuna, fiindcă
+lucrează **pe card**, nu pe pagină — regula scrisă la LST-D4 și-a arătat valoarea aici. Pe
+listare referința există totuși, tăiată și neetichetată: `reference_kind: nemarcat`.
+
+**Preț pe unitate, a doua oară.** După `price-base-unit` la douglas (DEAL-D4), action pune
+„16,04 lei/kg" într-un câmp care arată exact ca un preț de card
+(`product-card-price-description`) și diferă de cel plătit pe **7 din 12** carduri verificate.
+Nu se citește; prețul plătit e spart pe două noduri și cere `eu_sup`.
+
+**Net vs brut.** senetic scrie amândouă prețurile pe card, etichetate: `.price-net` „921,49 RON
+fara TVA" și `.price-gross` „1 115,00 RON cu TVA", pe 24/24. Pe axa D se ia brutul — netul ar
+raporta cu ~19% mai puțin pe tot raftul. Numele claselor explică și divergența față de nota
+DEAL-D2: **caruselul** folosește `price_our_net`/`price_our_gross`, **grila** folosește
+`price-net`/`price-gross`; în cele 24 de `div.product-block` există 24 din fiecare și zero
+`price_our_*`. Cele două runde măsuraseră zone diferite ale aceleiași pagini.
+
+### Rămase în afară, cu ce ar cere fiecare
+
+* **trendyol.com** — verdictul JS_ONLY de la DEAL-D4 se **nuanțează, nu se răstoarnă**: el a
+  fost dat pe o *campanie* din banner, și acolo rămâne valabil. O *categorie* din nav
+  (`/ro/rochii-x-c56`, `/ro/bluze-x-c1019`) poartă `ld+json` `ItemList` cu 36 de produse
+  complete server-side, 36/36 cu `offers.price` și `priceCurrency: RON`, formă identică pe
+  amândouă. Mecanismul candidat: **listare din `ItemList`**, ruda `state_extractor`-ului.
+  Rezerve măsurate: `numberOfItems` anunță 156 754 dar lista poartă 36 (prima pagină), `offers`
+  n-are preț de referință (deci R2), iar categoriile sunt catalog întreg, nu listări de
+  reduceri — fațeta de reducere rămâne nemăsurată.
+* **computeruniverse.net** — **GATE-3**. Poarta întoarce `None`, cererea directă pe același hop
+  (`allow_redirects=False`, lecția GATE-1) dă 200 cu 1,1 MB și titlu real, iar `classify()` pe
+  corp dă `OK`. Corpul n-are niciunul dintre cei doi markeri WAF, domeniul n-are
+  `block_markers`, n-a existat redirect, profilul `impersonate` a fost identic. Cauza **nu e
+  stabilită** — cere o sondă hop-cu-hop, adică a treia rundă la rând în care poarta e subiectul
+  măsurătorii.
+* **senetic.ro**, ca material viitor: 6 sub-categorii de outlet cu numere anunțate
+  (`outlet-computer-equipment-9315` 39, `outlet-accesorii-9317` 34, `outlet-reelistic-9313` 24,
+  `outlet-electrocasnice-24919` 10, `outlet-servers-and-storage-9314` 3,
+  `outlet-power-solutions-9318` 2) — materia pentru o formă `entries` dacă paginarea rămâne
+  negăsibilă. Nemăsurate: niciuna n-a fost cerută.

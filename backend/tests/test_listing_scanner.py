@@ -702,7 +702,20 @@ def test_listing_domains_exact_cele_din_registru():
                                  "aboutyou.ro", "fashiondays.ro", "epantofi.ro",
                                  "spartoo.ro", "officeshoes.ro", "prm.com",
                                  "notino.ro", "douglas.ro", "parfumdreams.de",
-                                 "zalando.ro", "nichiduta.ro"}
+                                 "zalando.ro", "nichiduta.ro",
+                                 # DEAL-D5 - coada axei D, din sonda LST-D5. Doar
+                                 # doua din zece domenii sondate au trecut:
+                                 # action.com (cu `max_pages` MASURAT prin
+                                 # bisectie, fiindca plafoneaza la pagina 1 in loc
+                                 # sa dea 404) si senetic.ro (re-masurat pe GRILA;
+                                 # verdictul NEPOTRIVIT de la DEAL-D2 fusese dat pe
+                                 # carusel). Raman in afara: trendyol
+                                 # (CERE_MECANISM - `ld+json ItemList`),
+                                 # foto-erhardt (NEPOTRIVIT: bucati unice, 0/155
+                                 # taiate), alternate/flanco/hornbach/biciclop
+                                 # (FARA_LISTARE), reichelt (JS_ONLY) si
+                                 # computeruniverse (POARTA).
+                                 "action.com", "senetic.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -2490,3 +2503,102 @@ def test_douglas_max_pages_plafon():
     assert d["max_pages"] <= 20
     assert d["page_url_template"], "plafon > 1 fara template n-ar fi citit"
     assert "{n}" in d["page_url_template"]
+
+
+# ── DEAL-D5 ──────────────────────────────────────────────────────────────────
+def test_action_eu_sup_si_nu_pret_pe_unitate():
+    """Pretul PLATIT, spart pe doua noduri — si NU cel pe unitate de langa el.
+
+    Doua capcane pe acelasi card, amandoua masurate la LST-D5:
+
+    1. `…price-whole` = 12 si `…price-fractional` = 99 stau in noduri separate,
+       deci containerul lor da textul „12 99". `eu_sup` il citeste 12.99;
+       `eu_comma` l-ar citi 1299.0 — bugul LST-D1, cu doua ordine de marime peste
+       pretul real, si fara nicio eroare care sa-l tradeze.
+    2. `product-card-price-description` arata „16,04 lei/kg" pe al doilea card:
+       pretul pe UNITATE, care difera de cel platit pe 7 din 12 carduri
+       verificate. E capcana douglas (`price-base-unit`), a doua oara in lot — iar
+       un descriptor scris „la prima vedere" ar raporta kilogramul drept produs.
+    """
+    from app.services.listing_scanner import _intrari, _pagina_url
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    d = listing_descriptor("action.com")
+    carduri = extrage_carduri(_fixture("action.com"), d, "action.com")
+
+    assert d["price_parse"] == "eu_sup"
+    assert "price-description" not in d["price_text"]
+    assert "price-description" not in (d.get("compare_text") or "")
+
+    assert len(carduri) == 2
+    farfurie, rola = carduri
+
+    assert farfurie["price"] == 12.95
+    assert farfurie["compare_at"] == 14.95
+    assert farfurie["title"] == "Farfurie pentru micul dejun Dahlia"
+
+    # Al doilea card: se citeste pretul PLATIT (12,99), nu cei 16,04 lei/kg.
+    assert rola["price"] == 12.99
+    assert rola["price"] != 16.04, "16,04 e pretul pe KILOGRAM, nu al produsului"
+    assert rola["compare_at"] == 14.95
+
+    # `eu_comma` pe acelasi text ar da 1299.0: santinela care arata ca alegerea
+    # parserului nu e cosmetica.
+    assert all(c["price"] < 100 for c in carduri)
+
+    intrare = _intrari(d)[0]
+    assert _pagina_url(intrare, 1) == "https://www.action.com/ro-ro/oferta-saptamanala/"
+    assert (_pagina_url(intrare, 2)
+            == "https://www.action.com/ro-ro/oferta-saptamanala/?page=2")
+
+    # `max_pages` MASURAT prin bisectie (DEAL-D5, 3 cereri la 90 s fiecare):
+    # pagina 6 are continut nou (18 carduri), 7 si 12 plafoneaza la pagina 1.
+    # 6 + 1, unde plusul e pagina care confirma clamp-ul. Verificare independenta:
+    # 5 x 23 + 18 = 133, exact totalul anuntat pe pagina 1.
+    # Pinuit si din COST: la `min_fetch_interval_s: 90`, un scan plateste
+    # `max_pages` x 90 s, adica ~10 minute pe acest domeniu.
+    assert d["max_pages"] == 7
+    assert SHOP_REGISTRY["action.com"]["min_fetch_interval_s"] == 90
+
+    # Referinta e taiata dar NEETICHETATA: „Intotdeauna cel mai mic pret" din
+    # fixture e slogan de marca, nu Omnibus, si sta in afara cardurilor.
+    assert d["reference_kind"] == "nemarcat"
+
+
+def test_senetic_brut_nu_net():
+    """Se citeste BRUTUL („cu TVA"), adica pretul platit de client.
+
+    Cardul poarta amandoua preturile, etichetate explicit: `.price-net` „921,49
+    RON fara TVA" si `.price-gross` „1 115,00 RON cu TVA". Citirea netului ar
+    raporta preturi cu ~19% mai mici pe tot raftul si ar face magazinul sa para
+    plin de chilipiruri — capcana B2B, masurata pe 24/24 de carduri la LST-D5.
+    Separatorul de mii e SPATIU insecabil, pe care `eu_comma` il inghite.
+
+    Fara `compare_*`: zero preturi taiate pe 24/24, deci axa D ramane doar pe R2.
+    Verdictul NEPOTRIVIT de la DEAL-D2 fusese dat pe CARUSEL, nu pe grila asta.
+    """
+    d = listing_descriptor("senetic.ro")
+    carduri = extrage_carduri(_fixture("senetic.ro"), d, "senetic.ro")
+
+    assert d["price_text"] == "div.price-gross"
+    assert "compare_text" not in d and "compare_attr" not in d
+    assert d["reference_kind"] == "nemarcat"
+
+    assert len(carduri) == 2
+    ssd, switch = carduri
+
+    assert ssd["price"] == 1115.0, "brutul; 921.49 e netul, fara TVA"
+    assert ssd["price"] != 921.49
+    assert ssd["compare_at"] is None
+    assert ssd["title"] == "SSD 1TB Samsung M.2 PCI-E NVMe Gen4 990 PRO Basic retail"
+    # Poza produsului, nu indicatorul de incarcare al widgetului de comparatie
+    # (primul `<img>` din card e `ajax-loader-new.gif`).
+    assert "akeneo-catalog" in ssd["image_url"]
+
+    assert switch["price"] == 6468.82, "tot brutul; netul e 5 346,13"
+    assert switch["compare_at"] is None
+
+    # Fara paginare: `rel=next` de pe pagina trimite la HOME (artefact de sit),
+    # deci descriptorul n-are template si scanul citeste o singura pagina.
+    assert d["max_pages"] == 1
+    assert "page_url_template" not in d

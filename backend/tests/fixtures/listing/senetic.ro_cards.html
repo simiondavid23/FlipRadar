@@ -1,0 +1,96 @@
+<!-- DEAL-D5 - doua carduri taiate VERBATIM din
+     backend/scripts/diagnostics/dumps_lstd5/senetic.ro_p1.html (GRILA
+     `div.product-block`, nu caruselul masurat la DEAL-D2). Ce trebuie sa
+     dovedeasca fixture-ul:
+
+     * cardul poarta AMANDOUA preturile, etichetate: `.price-net` „fara TVA" si
+       `.price-gross` „cu TVA". Pe axa D se citeste BRUTUL, fiindca ala e pretul
+       platit; netul ar raporta cu ~19% mai putin;
+     * separatorul de mii e SPATIU insecabil („1 115,00");
+     * PRIMUL `<img>` din card e indicatorul de incarcare al widgetului de
+       comparatie, nu poza produsului - de aceea selectorul e scopat la
+       `a.obrazek img`;
+     * zero preturi taiate, deci fara `compare_*`.
+-->
+<div class="category-filters-products__container">
+
+  <div class="product-block" data-product-id="1100613">
+    <div class="product-block__image-and-details">
+      <div class="compare-actions hidden" data-akeneo-code="1793311">
+        <label class="compare-toggler js--compare-toggler">
+          <div class="compare-toggler__label"><span class="not-added">Compară</span></div>
+          <div class="compare-toggler__pending">
+            <!-- indicatorul de incarcare: primul <img> din card, NU produsul -->
+            <img alt="Please wait ..." src="https://gfx2.senetic.com/gfx/ajax-loader-new.gif"/>
+          </div>
+        </label>
+      </div>
+      <div class="product-image">
+        <a class="obrazek" data-action="image" href="https://www.senetic.ro/product/MZ-V9P1T0BW_NOB">
+          <img alt="Samsung SSD 1TB Samsung M.2 PCI-E NVMe Gen4 990 PRO Basic retail" loading="lazy"
+               src="https://gfx3.senetic.com/akeneo-catalog/9/1/7/d/917da4f9b48ded1405a570a0db7895d6d33ac32f_1682729__thumbnail_image.jpg"
+               title="SSD 1TB Samsung M.2 PCI-E NVMe Gen4 990 PRO Basic retail"/>
+        </a>
+      </div>
+      <div class="product-details">
+        <a data-action="title" href="https://www.senetic.ro/product/MZ-V9P1T0BW_NOB">
+          <h3 class="name">SSD 1TB Samsung M.2 PCI-E NVMe Gen4 990 PRO Basic retail</h3>
+        </a>
+        <div class="product-numbers">
+          <h3 class="number part-number">Part number: <span>MZ-V9P1T0BW_NOB</span></h3>
+        </div>
+      </div>
+    </div>
+    <div class="product-summary">
+      <div class="price-box">
+        <div class="price-net">
+          <span>921,49&nbsp;RON</span> fara TVA
+        </div>
+        <div class="price-gross">
+          1&nbsp;115,00&nbsp;RON
+          cu TVA
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="product-block" data-product-id="1088142">
+    <div class="product-block__image-and-details">
+      <div class="compare-actions hidden" data-akeneo-code="1701882">
+        <label class="compare-toggler js--compare-toggler">
+          <div class="compare-toggler__pending">
+            <img alt="Please wait ..." src="https://gfx2.senetic.com/gfx/ajax-loader-new.gif"/>
+          </div>
+        </label>
+      </div>
+      <div class="product-image">
+        <a class="obrazek" data-action="image" href="https://www.senetic.ro/product/USW-PRO-48-POE_UOB">
+          <img alt="Ubiquiti UniFi Switch 48, 600W" loading="lazy"
+               src="https://gfx3.senetic.com/akeneo-catalog/2/c/4/8/2c48f1b0e7a5c9d3f6027ba14e88d5c7419fa3be_1554210__thumbnail_image.jpg"
+               title="Ubiquiti UniFi Switch 48"/>
+        </a>
+      </div>
+      <div class="product-details">
+        <a data-action="title" href="https://www.senetic.ro/product/USW-PRO-48-POE_UOB">
+          <h3 class="name">Ubiquiti UniFi Switch 48, 600W, 48 Gigabit RJ45 Ports, 4 SFP+ Ports, PoE++</h3>
+        </a>
+      </div>
+    </div>
+    <div class="product-summary">
+      <div class="price-box">
+        <div class="price-net">
+          <span>5&nbsp;346,13&nbsp;RON</span> fara TVA
+        </div>
+        <div class="price-gross">
+          6&nbsp;468,82&nbsp;RON
+          cu TVA
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- `rel=next` exista pe pagina reala, dar trimite la HOME - artefact de sit, nu
+     paginare. De aceea descriptorul n-are `page_url_template` si `max_pages: 1`. -->
+<link href="https://www.senetic.ro/" rel="next"/>

@@ -946,7 +946,17 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "notes": ("FASHION-4"
-                 " DEAL-D4 - RAMAS IN AFARA axei D: JS_ONLY. Candidata din home a fost un BANNER (`a.banner-link`), nu o ancora de navigatie; pagina de campanie are 0 jetoane de pret, 0 carduri si 0 colectii de produse in blobul de stare. O CATEGORIE (nu o campanie) ramane nemasurata."),
+                 " DEAL-D4 - RAMAS IN AFARA axei D: JS_ONLY. Candidata din home a fost un BANNER (`a.banner-link`), nu o ancora de navigatie; pagina de campanie are 0 jetoane de pret, 0 carduri si 0 colectii de produse in blobul de stare. O CATEGORIE (nu o campanie) ramane nemasurata. "
+                 "LST-D5 — MASURATA, si verdictul se nuanteaza: campania din "
+                 "banner ramane JS_ONLY, dar o CATEGORIE din nav poarta `ld+json` "
+                 "`ItemList` cu 36 de produse complete server-side, 36/36 cu "
+                 "`offers.price` si `priceCurrency: RON` — forma identica pe doua "
+                 "categorii (`/ro/rochii-x-c56`, `/ro/bluze-x-c1019`), deci nu e "
+                 "accident. Deci CERE_MECANISM („listare din ItemList”), nu "
+                 "JS_ONLY: grila CSS da 0 carduri, iar `numberOfItems` anunta "
+                 "156 754 desi lista poarta 36 (prima pagina). `offers` n-are "
+                 "pret de referinta -> doar R2. Categoriile sunt catalog intreg, "
+                 "nu listari de reduceri; fateta de reducere ramane nemasurata."),
     },
 
     # ── ACCESS-2 ──────────────────────────────────────────────────────────────
@@ -1052,7 +1062,16 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`cf-mitigated: challenge`. Poarta normalizeaza acum URL-ul de hop "
                  "(RFC 3986), deci intrarea trece prin `https://www.flanco.ro/` si "
                  "raspunde 200. `classify` n-a gresit niciodata: cele doua sonde "
-                 "comparau doua CORPURI diferite.",
+                 "comparau doua CORPURI diferite. "
+                 "DEAL-D5 — FARA_LISTARE pe axa D, cu poarta GATE-2 "
+                 "functionand: home prin `www.` a dat 200 si 1074 de ancore, "
+                 "dar cele patru cuvinte au produs O SINGURA candidata, "
+                 "`/regulamente-promotii`, editoriala (regula hornbach: se "
+                 "penalizeaza, nu se ascunde — fiind singura, a fost ceruta). "
+                 "Rezerva `/multi-deals-extra-discount` a dat 200 cu 548 KB si "
+                 "ZERO jetoane de pret (client-side). Semnificativ pentru un "
+                 "magazin de electronice: ZERO aparitii de „resigilat” pe "
+                 "home, desi resigilatele sunt tocmai axa D aici.",
     },
     "evomag.ro": {
         "label": "evoMAG",
@@ -1491,6 +1510,39 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "overrides": {"vat_prices": True},
+        # ── DEAL-D5 — axa D. Sonda LST-D5 §3.2 a re-masurat GRILA, nu caruselul:
+        # 24 de carduri `div.product-block`, control 24/24 cu pret, titlu, imagine
+        # si URL-uri unice.
+        "listing": {
+            "url": "https://www.senetic.ro/category/outlet-8898/",
+            # FARA `page_url_template`: niciun sablon de paginare in HTML-ul brut
+            # care sa pastreze calea intrarii. `rel=next` exista pe pagina, dar
+            # trimite la HOME — artefact de sit, respins de garda de cale a sondei.
+            "max_pages": 1,
+            "currency": "RON",
+            "card": "div.product-block",
+            "link": "a[data-action='title']",
+            "title": "h3.name",
+            # Scopat la `a.obrazek`, nu `img` gol: PRIMUL `<img>` din card e
+            # indicatorul de incarcare al widgetului de comparatie
+            # (`ajax-loader-new.gif`). Azi el cade oricum, fiindca
+            # `normalizeaza_imagine` respinge `.gif` — dar asta e noroc, nu regula,
+            # si s-ar sparge tacut la primul spinner in `.png`. Regula casei e
+            # dezambiguizarea prin SELECTOR (v. docstringul lui
+            # `normalizeaza_imagine`, cazul otter/tezyo cu insignele).
+            "image": "a.obrazek img",
+            "image_attr": ["src"],
+            # BRUTUL, adica pretul PLATIT de client: „1 115,00 RON cu TVA".
+            # `div.price-net` de pe acelasi card arata „921,49 RON fara TVA" —
+            # citirea lui ar raporta preturi cu ~19% mai mici si ar face magazinul
+            # sa para plin de chilipiruri. Capcana B2B, masurata pe 24/24.
+            # Separatorul de mii e SPATIU („1 115,00"); `eu_comma` il inghite.
+            "price_text": "div.price-gross",
+            "price_parse": "eu_comma",
+            # FARA `compare_*`: zero preturi taiate pe 24/24, deci nu exista
+            # referinta din care sa iasa un deal -> axa D ramane doar pe R2.
+            "reference_kind": "nemarcat",
+        },
         "notes": "LOT1; ld+json = pret net (fara TVA), microdata = brut; "
                  "raport 1.21 masurat 3/3; DEAL-D2 — NEPOTRIVIT pe axa D: pagina de "
                  "outlet randeaza server-side DOAR un carusel `glide` de 25 de produse "
@@ -1503,7 +1555,21 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "24 de produse, sub `div.category-filters-products__container` — pe "
                  "care sonda LST-D2 a ratat-o fiindca ordona dupa numar si caruselul "
                  "avea un exemplar in plus (25). Referinta tot lipseste, deci axa D "
-                 "ramane doar pe R2; verdictul se RE-MASOARA, nu se rescrie de aici.",
+                 "ramane doar pe R2; verdictul se RE-MASOARA, nu se rescrie de aici. "
+                 "DEAL-D5 — RE-MASURAT: verdictul NEPOTRIVIT de la DEAL-D2 e "
+                 "INLOCUIT, fiindca fusese dat pe carusel. Grila SSR e reala si "
+                 "descriptorul e mai jos. Numele claselor difera intre cele doua "
+                 "zone si asta explica divergenta din notele vechi: caruselul "
+                 "foloseste `price_our_net`/`price_our_gross`, cardurile din grila "
+                 "`price-net`/`price-gross` — in cele 24 de `div.product-block` "
+                 "exista 24 din fiecare si ZERO `price_our_*`. Referinta lipseste si "
+                 "pe grila (0/24 taiate). Sonda a gasit si 6 SUB-categorii de outlet "
+                 "cu numere anuntate — `outlet-computer-equipment-9315` (39), "
+                 "`outlet-accesorii-9317` (34), `outlet-reelistic-9313` (24), "
+                 "`outlet-electrocasnice-24919` (10), "
+                 "`outlet-servers-and-storage-9314` (3), `outlet-power-solutions-9318` "
+                 "(2) — materia pentru o forma `entries` daca paginarea ramane "
+                 "negasibila; NEMASURATE, niciuna n-a fost ceruta.",
     },
     "pcgarage.ro": {
         "label": "PC Garage",
@@ -1605,7 +1671,16 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT2; aterizare pe storefront /de, EUR",
+        "notes": "LOT2; aterizare pe storefront /de, EUR. "
+                 "LST-D5 — POARTA, adica un defect la NOI, nu un blocaj al "
+                 "magazinului: `_fetch_shop_url_guarded` a intors None pe "
+                 "`/de`, iar cererea directa pe ACELASI hop "
+                 "(`allow_redirects=False`, lectia GATE-1) a dat 200 cu 1,1 MB si "
+                 "titlu real, iar `classify()` pe corp da OK. Corpul n-are "
+                 "niciunul dintre cei doi markeri WAF, domeniul n-are "
+                 "`block_markers`, n-a existat redirect, iar profilul "
+                 "`impersonate` a fost identic pe amandoua. Cauza NU e stabilita: "
+                 "cere o sonda hop-cu-hop pe poarta (GATE-3).",
     },
     "jb-spielwaren.de": {
         "label": "JB Spielwaren",
@@ -1709,7 +1784,12 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "LOT2b",
+        "notes": "LOT2b. LST-D5 — FARA_LISTARE pe axa D la ambele intrari din nav: "
+                 "`/Angebote` e hub EDITORIAL (0 jetoane de pret, h1 "
+                 "„Promotion-Aktionen”), iar `/Outlet` arata doar un CARUSEL de "
+                 "15 produse (`div.product-carousel-card`), nu o grila. Nicio "
+                 "paginare in HTML-ul brut. Grila outlet reala, daca exista, sta "
+                 "sub linkurile de categorie din `/Outlet` — NEMASURATA.",
     },
     # ── G2B — lotul EU de electronice (sonda 2026-08-18) ──────────────────────
     # Din cele 5 domenii sondate a intrat DOAR cyberport.at. Celelalte patru si
@@ -2121,7 +2201,13 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "complete: e sursa buna de URL-uri, spre deosebire de listari. "
                  "CAPCANA de navigare: linkul de reduceri din home e un ARTICOL "
                  "editorial (/noutati/campanie-promotionala-...), nu o listare — "
-                 "un tipar pe `promo` il alege gresit. Axa D nemasurata.",
+                 "un tipar pe `promo` il alege gresit. "
+                 "DEAL-D5 — axa D MASURATA acum: FARA_LISTARE. Home-ul are 171 "
+                 "de ancore si ZERO candidate pentru "
+                 "reduceri/promotii/oferte/procent — navigatia de reduceri e "
+                 "client-side. De data asta n-a existat nici macar linkul "
+                 "editorial care a dat numele regulii; o singura cerere "
+                 "cheltuita.",
     },
     "bonami.ro": {
         "label": "Bonami",
@@ -2187,6 +2273,47 @@ SHOP_REGISTRY: dict[str, dict] = {
         # RATE-1: 90s intre cereri, pe poarta HTTP. Vezi masuratoarea din notes —
         # 95s a fost pauza care a trecut, 90 e pragul ales sub ea, nu peste.
         "min_fetch_interval_s": 90,
+        # ── DEAL-D5 — axa D. Sonda LST-D5 §3.1, control pe p1+p2+plast, 23/23
+        # carduri cu pret, referinta, imagine, titlu si URL-uri unice pe fiecare.
+        "listing": {
+            "url": "https://www.action.com/ro-ro/oferta-saptamanala/",
+            "page_url_template": "https://www.action.com/ro-ro/oferta-saptamanala/?page={n}",
+            # MASURAT prin bisectie (DEAL-D5, 3 cereri la 90s): pagina 6 are
+            # continut nou (18 carduri, pagina activa 6), paginile 7 si 12
+            # PLAFONEAZA la pagina 1 (`url_final` cade pe URL-ul fara query,
+            # pagina activa 1, acelasi set de 23 de URL-uri, corp byte-identic).
+            # Ultima pagina cu continut nou = 6, deci 6 + 1: plusul e chiar
+            # pagina care confirma clamp-ul, platita o data per scan de garda
+            # `linkuri_pagina <= linkuri_vazute` din `_scaneaza_domeniu`.
+            # Verificare independenta: 5 pagini pline x 23 + 18 pe ultima = 133,
+            # exact totalul anuntat pe p1 („133 rezultate").
+            # Plafonul e MIC si din cost: la `min_fetch_interval_s: 90`, un scan
+            # plateste `max_pages` x 90 s, adica ~10 minute pe acest domeniu.
+            "max_pages": 7,
+            "currency": "RON",
+            "card": "[data-testid='product-card']",
+            "link": "a[data-testid='product-card-link']",
+            "title": "[data-testid='product-card-title']",
+            "image": "[data-testid='product-card-image']",
+            "image_attr": ["src", "srcset"],
+            # Pretul PLATIT e spart in doua noduri (`…price-whole` = 12,
+            # `…price-fractional` = 99), iar containerul lor da textul „12 99" —
+            # de aici `eu_sup`. `eu_comma` pe acelasi text da 1299.0, adica exact
+            # bugul LST-D1, cu doua ordine de marime peste pretul real.
+            "price_text": "span:has(> [data-testid='product-card-price-whole'])",
+            # NU se citeste `product-card-price-description`: acolo sta pretul pe
+            # UNITATE („16,04 lei/kg", „19,98 lei/l", „3,66 lei/m"), care difera
+            # de cel platit pe 7 din 12 carduri verificate. E capcana douglas
+            # (`price-base-unit`, DEAL-D4), a doua oara in lot.
+            "compare_text": "[data-testid='product-card-price-original-amount']",
+            "price_parse": "eu_sup",
+            # Referinta e taiata (`line-through`) pe 23/23, dar NEETICHETATA.
+            # Cele 6 aparitii de „cel mai mic pret" din pagina sunt SLOGAN de
+            # marca („Intotdeauna cel mai mic pret", in antet si in teaserul de
+            # aplicatie), toate in afara cardurilor — detectorul le-a tinut afara
+            # tocmai fiindca lucreaza pe CARD, nu pe pagina.
+            "reference_kind": "nemarcat",
+        },
         "notes": "G2F-5/G2F-6; Next.js + Cloudflare. Intrebarea de existenta (lista "
                  "master: „verifica daca expune preturi online\") e INCHISA AFIRMATIV: "
                  "are magazin online cu preturi reale — `Offer` cu `price` 3.98 si "
@@ -2202,7 +2329,12 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "vizibil e nesigura si ld+json e sursa; cifrele mici (0,07-8,98 lei) "
                  "sunt preturi PE BUCATA, nu ale produsului. PDP "
                  "/ro-ro/p/<ID_numeric>/<slug>/; /ro-ro/promocie-saptamanii/ da 404 "
-                 "MASURAT. Omnibus absent, niciun pret taiat.",
+                 "MASURAT. Omnibus absent, niciun pret taiat pe PDP. "
+                 "DEAL-D5 — pe LISTARE exista insa pret taiat pe 23/23 "
+                 "(`product-card-price-original-amount`), deci absenta de mai sus e "
+                 "a PDP-ului, nu a magazinului. Oferta e SAPTAMANALA: identitatea "
+                 "produselor se schimba in fiecare saptamana, deci R2 (minim istoric) "
+                 "are memorie scurta aici si R1 (referinta de pe card) e ruta utila.",
     },
     "ro.vivre.eu": {
         "label": "Vivre",
@@ -2278,7 +2410,15 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`/biciclete-mtb/` masurata are 1 card si zero produse. "
                  "Componente partajate de footer, de ignorat: `200.200,00 RON` "
                  "(capital social) si `400 lei` (pragul de livrare gratuita). "
-                 "PDP `/prod/<slug>/`.",
+                 "PDP `/prod/<slug>/`. "
+                 "DEAL-D5 — FARA_LISTARE pe axa D: 235 de ancore pe home si "
+                 "ZERO candidate pentru reduceri/promotii/oferte/lichidare. "
+                 "Nuanta care conteaza: home-ul POARTA produse reduse — 20 de "
+                 "ancore de produs cu badge `-51%`, `-55%`, `-50%` — dar niciun "
+                 "link de NAVIGATIE catre un raft de reduceri. Magazinul face "
+                 "reduceri; nu le aduna intr-un raft adresabil. WordPress DA "
+                 "(98 x `wp-content`), WooCommerce NU (0), deci formele "
+                 "`?on_sale` / `/product-category/` nu se pot presupune.",
     },
     "cellini.ro": {
         "label": "Cellini",
@@ -2363,7 +2503,18 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "jsonld",
         "status": "validated",
         "notes": "LOT2b; starea second-hand traieste doar in calea URL "
-                 "(itemCondition absent); bucati unice, comportament la vandut nemasurat",
+                 "(itemCondition absent); bucati unice, comportament la vandut nemasurat. "
+                 "LST-D5 — NEPOTRIVIT pe axa D, masurat: `/second-hand.html` are "
+                 "listare reala (36/pagina) dar ZERO preturi taiate pe 155 de "
+                 "carduri, pe 4 pagini — bucati unice, deci nicio referinta din "
+                 "care sa iasa un deal, iar un istoric pe o bucata unica nu spune "
+                 "nimic. Doua forme de retinut: cardul E ancora "
+                 "(`a.product.product--used`), punct orb al sondelor, care cer o "
+                 "ancora DESCENDENTA; si `/second-hand.html/500` plafoneaza la "
+                 "ULTIMA pagina (activa 10, canonical si h1 neschimbate), nu la "
+                 "prima ca action — deci `max_pages` = 10 se citeste direct din "
+                 "paginator. Unele carduri poarta un INTERVAL de pret "
+                 "(„999,00 - 1.199,00 €”), care nu e un pret de citit.",
     },
     "f64.ro": {
         "label": "F64",
@@ -3708,7 +3859,14 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`name` din microdata include sufixul de titlu al paginii („... | "
                  "LED-Panels günstig kaufen | reichelt elektronik\") — se curata la "
                  "afisare. LIVRARE IN RO nemasurata: `unconfirmed` (exista o locala "
-                 "`/ro/de/`, dar asta e tintire, nu confirmare de checkout).",
+                 "`/ro/de/`, dar asta e tintire, nu confirmare de checkout). "
+                 "DEAL-D5 — JS_ONLY pe axa D: intrarea „Sale” din nav "
+                 "(`/de/de/shop/landingpage/-2568`) raspunde 200 cu 214 KB si e "
+                 "GOALA de continut — 2 jetoane de pret, ZERO ancore catre "
+                 "`/de/de/…`, zero linkuri de produs, niciun h1, zero colectii "
+                 "de produse in starea serializata. `/magazin/` a fost exclus "
+                 "explicit din candidate (e REVISTA, nu catalog, G4-V4b) si nu "
+                 "s-a cerut.",
     },
 
     # ── SNK-2 — lotul de sneakers (sonda SNK-1) ───────────────────────────────
