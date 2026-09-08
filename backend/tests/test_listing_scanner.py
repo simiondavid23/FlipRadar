@@ -3010,3 +3010,116 @@ def test_pagina_url_state2():
     b = listing_descriptor("booztlet.com")
     assert b["max_pages"] == 1
     assert "page_url_template" not in b
+
+
+# ── GUARD-1 — un singur retry pe `None` tranzitoriu, la pagina 1 ─────────────
+#
+# Trei observatii independente, aceeasi forma: poarta a intors `None` o data si a
+# mers la cererea urmatoare, pe ACELASI URL, cu acelasi profil — GATE-1 (nike.com),
+# GATE-3 (computeruniverse.net `/de`: `None` la LST-D5, apoi 200 din primul hop cu
+# 1.101.369 de octeti, dupa ce runda a exclus cu cifre RATE, allow-list, normalizarea
+# si interstitiul) si LST-D5 (action.com, `prod1`).
+#
+# `None` inseamna „n-am ajuns la magazin", nu „magazinul a spus nu" — de aia
+# retry-ul e strict pe `None`, si de aia e UNUL singur.
+
+def _scaneaza_cu_none(monkeypatch, raspunsuri, descriptor, cereri=None,
+                      dormite=None):
+    """Ca `_scaneaza_direct`, dar o intrare `None` inseamna „poarta a dat None".
+
+    `_scaneaza_direct` nu poate exprima cazul: el impacheteaza orice intrare in
+    `_Raspuns`, iar `_Raspuns(None)` e un raspuns 200 cu corpul None — exact
+    altceva decat absenta raspunsului.
+
+    `cereri` si `dormite` se pot da de AFARA, ca sa ramana inspectabile si cand
+    scanul ridica: pe caile de eroare valoarea de retur nu mai ajunge la apelant.
+    """
+    cereri = [] if cereri is None else cereri
+    dormite = [] if dormite is None else dormite
+
+    def fals(url, *, headers=None, timeout=None, max_hops=3):
+        cereri.append(url)
+        indice = len(cereri) - 1
+        pagina = raspunsuri[indice] if indice < len(raspunsuri) else "<html></html>"
+        if pagina is None:
+            return None
+        if isinstance(pagina, tuple):
+            return _Raspuns(pagina[0], pagina[1])
+        return _Raspuns(pagina)
+
+    monkeypatch.setattr("app.services.scraper_service._fetch_shop_url_guarded", fals)
+    monkeypatch.setattr(listing_scanner, "_pauza", lambda: None)
+    monkeypatch.setattr(listing_scanner, "listing_descriptor", lambda _dom: descriptor)
+    # Asteptarea se INREGISTREAZA, nu doar se scurtcircuiteaza: testul dovedeste si
+    # ca retry-ul chiar asteapta, nu doar ca nu incetineste suita.
+    monkeypatch.setattr(listing_scanner.time, "sleep", lambda s: dormite.append(s))
+
+    db = SessionLocal()
+    try:
+        if db.query(RadarSettings).first() is None:
+            _seteaza(db)
+        rezultat = listing_scanner._scaneaza_domeniu(
+            db, DOM, db.query(RadarSettings).first(), 50.0)
+    finally:
+        db.close()
+    return rezultat, cereri, dormite
+
+
+def test_none_tranzitoriu_pe_pagina_1_reuseste_la_retry(monkeypatch, caplog):
+    """`None` o data, 200 la a doua — scanul merge mai departe, si se AUDE.
+
+    WARN-ul nu e decor: e masuratoarea care lipseste. Din frecventa lui se va vedea
+    daca `None`-urile tranzitorii se aduna pe domeniile din spatele Cloudflare
+    (ipoteza `__cf_bm` din GATE-3) sau sunt uniforme pe catalog.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING,
+                         logger="app.services.listing_scanner"):
+        rezultat, cereri, dormite = _scaneaza_cu_none(
+            monkeypatch, [None, _fixture("otter.ro")],
+            _descriptor_test(max_pages=1))
+
+    assert len(cereri) == 2, "exact doua cereri: originalul plus UN retry"
+    assert cereri[0] == cereri[1], "retry-ul cere ACELASI URL"
+    assert rezultat["pagini"] == 1
+    assert rezultat["produse"] > 0, "produsele paginii 1 intra in scan"
+    assert dormite == [listing_scanner._PAUZA_RETRY_S], "retry-ul asteapta o data"
+    assert listing_scanner._PAUZA_RETRY_S == 10
+
+    mesaje = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("tranzitoriu" in m and "pagina 1" in m for m in mesaje), mesaje
+
+
+def test_none_dublu_pe_pagina_1_ridica(monkeypatch):
+    """Doua `None`-uri la rand nu mai sunt un accident: e defectiune, si se aude.
+
+    Exact DOUA cereri, nu trei: retry-ul e unul singur, nu o bucla. Daca ar fi
+    bucla, un domeniu cazut ar fi batut la usa de N ori pe fiecare scan.
+    """
+    cereri = []
+    with pytest.raises(RuntimeError, match="dupa retry"):
+        _scaneaza_cu_none(monkeypatch, [None, None], _descriptor_test(max_pages=5),
+                          cereri=cereri)
+
+    assert len(cereri) == 2, f"un singur retry, nu o bucla — cereri: {len(cereri)}"
+
+
+def test_status_403_pe_pagina_1_nu_se_reincearca(monkeypatch):
+    """Un 403 e un raspuns REAL: se ridica din prima, fara a doua cerere.
+
+    Granita e chiar miza rundei. `None` inseamna „n-am ajuns la magazin"; un 403
+    inseamna „magazinul a spus nu", si repetarea lui n-ar face decat sa mai bata o
+    data la o usa tocmai inchisa — exact ce a produs Access Denied-ul de la G4b,
+    unde insistenta pe acelasi URL a inrautatit situatia.
+    """
+    cereri = []
+    dormite = []
+    with pytest.raises(RuntimeError) as exc:
+        _scaneaza_cu_none(monkeypatch, [("<html></html>", 403)],
+                          _descriptor_test(max_pages=5), cereri=cereri,
+                          dormite=dormite)
+
+    assert len(cereri) == 1, "un 403 nu se reincearca deloc"
+    assert dormite == [], "si nici nu asteapta degeaba"
+    assert "dupa retry" not in str(exc.value), "403 nu trece prin calea de retry"

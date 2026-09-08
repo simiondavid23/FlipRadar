@@ -73,9 +73,19 @@ _GOTO_TIMEOUT_MS = 45000
 # validata de sondele G4/G4b; cautarea in inner_text, nu in HTML, e deliberata —
 # in sursa, "challenge-platform" apare si pe pagini perfect normale servite prin
 # Cloudflare si a produs deja un fals pozitiv la sonda Grupului 1.
+#
+# GUARD-1 — ultimele trei sunt masurate VERBATIM, nu presupuse:
+#   * "performing security verification" si "verifies you are not a bot" —
+#     corpul paginii Turnstile de pe sivasdescalzo (JSON-0 §3.7). Pagina aia n-are
+#     NICIUNUL dintre cele sapte markere de dinainte in body; „Just a moment..."
+#     ii sta doar in <title>, de unde si a doua modificare a rundei.
+#   * "doar un moment" — varianta RO a interstitiului Cloudflare, gasita la G4-V2
+#     si consemnata acolo ca lipsa din lista.
 _MARKERE_BLOCARE = (
     "just a moment", "checking your browser", "attention required",
     "access denied", "zugriff verweigert", "captcha", "verifying you are human",
+    "performing security verification", "verifies you are not a bot",
+    "doar un moment",
 )
 
 # Shell de interstitiu: corp mic, zero ancore si titlu gol-sau-lipsa. Regula e
@@ -172,8 +182,43 @@ def _asteapta_continutul(page, valideaza, plafon_s: float):
             return None, ultim
 
 
-def _detecteaza_blocare(page, html: str):
-    """Motivul blocarii, sau None daca pagina pare continut real."""
+def _detecteaza_blocare(page, html: str, status=None):
+    """Motivul blocarii, sau None daca pagina pare continut real.
+
+    GUARD-1 — runda JSON-0 a trecut doua ziduri prin garda asta, si amandoua au
+    intors `None`, adica productia le-ar fi citit ca pe continut real:
+
+      * sivasdescalzo.com — 403 cu interstitiul Cloudflare Turnstile. Markerul
+        „Just a moment..." exista, dar EXCLUSIV in `<title>`; masurat pe HTML-ul
+        capturat, `'just a moment' in inner_text("body")` e False. Corpul spune
+        „Performing security verification" si „verifies you are not a bot",
+        niciunul in lista de atunci. De aici DOUA reparatii: markerele se cauta si
+        in titlu, si cele doua fraze intra in lista.
+      * bstn.com — 403 cu o pagina de asteptare de marca: 2.641 de octeti, ZERO
+        ancore, dar `<title>BSTN Store</title>`. Regula de shell cere toate trei
+        conditiile (corp mic, fara ancore, titlu gol), deci titlul nevid o
+        dezamorseaza si 403-ul trece.
+
+    De ce STATUSUL primeaza si se verifica PRIMUL: e singurul semnal care nu
+    depinde de cum arata pagina. Un magazin poate servi orice pe 403 — un shell,
+    o pagina de marca, chiar un catalog fals — iar euristicile pe corp vor fi
+    mereu cu un pas in urma fanteziei WAF-ului. Cele patru coduri sunt exact cele
+    care inseamna „nu primesti continutul": 401/403 (refuz), 429 (prea des),
+    503 (indisponibil, folosit si de Cloudflare pentru challenge).
+
+    De ce regula de shell NU s-a relaxat, desi bstn ar fi „cerut-o": relaxarea
+    evidenta ar fi sa se renunte la conditia de titlu gol. Dar atunci orice pagina
+    LEGITIMA mica fara ancore — o confirmare, un 200 de tip „nu s-a gasit nimic",
+    o pagina de categorie goala — ar deveni fals pozitiv, si un fals pozitiv aici
+    inseamna ca un magazin sanatos e declarat blocat si iese tacit din feed. bstn
+    e prins acum de status, care e semnalul corect pentru cazul lui.
+
+    `status` e optional si implicit `None` tocmai ca apelantii care n-au raspunsul
+    navigarii sa ramana neatinsi — fara status, comportamentul e exact cel dinainte.
+    """
+    if status in (401, 403, 429, 503):
+        return f"status {status}"
+
     try:
         text = (page.inner_text("body") or "")[:1500].lower()
     except Exception:
@@ -182,9 +227,16 @@ def _detecteaza_blocare(page, html: str):
         if marker in text:
             return f"marker in body: {marker!r}"
 
+    # Titlul se citeste din HTML, nu din `page`: `inner_text("body")` nu vede
+    # <head>, si exact acolo statea singurul marker al lui sivasdescalzo.
+    potrivire = _RE_TITLU.search(html or "")
+    titlu = (potrivire.group(1) if potrivire else "").lower()
+    for marker in _MARKERE_BLOCARE:
+        if marker in titlu:
+            return f"marker in title: {marker!r}"
+
     corp = html or ""
     if len(corp) < _PRAG_SHELL_OCTETI and "<a " not in corp.lower():
-        potrivire = _RE_TITLU.search(corp)
         if potrivire is None or not potrivire.group(1).strip():
             return f"shell fara ancore si fara titlu ({len(corp)} octeti)"
     return None
@@ -273,16 +325,28 @@ def _sesiune(url: str, domain: str, headed: bool, valideaza) -> str:
             page = context.new_page()
 
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=_GOTO_TIMEOUT_MS)
+                raspuns = page.goto(url, wait_until="domcontentloaded",
+                                    timeout=_GOTO_TIMEOUT_MS)
             except Exception as exc:
                 raise BrowserFetchUnavailable(
                     f"navigare esuata pe {domain}: {str(exc)[:120]}") from exc
+
+            # GUARD-1 — statusul navigarii, pastrat pentru detector. `goto` poate
+            # intoarce None (navigare catre acelasi URL, sau spre un document care
+            # nu produce raspuns), si atunci detectorul cade pe euristicile de corp,
+            # exact ca inainte.
+            status = None
+            if raspuns is not None:
+                try:
+                    status = raspuns.status
+                except Exception:                                    # noqa: BLE001
+                    status = None
 
             html, ultim = _asteapta_continutul(page, valideaza, _POLL_PLAFON_S)
             if html is not None:
                 return html
 
-            motiv = _detecteaza_blocare(page, ultim)
+            motiv = _detecteaza_blocare(page, ultim, status)
             if motiv:
                 log_manager.emit("catalog", "WARN", f"Browser: {domain} blocat — {motiv}")
                 raise BrowserFetchBlocked(f"{domain}: {motiv}")

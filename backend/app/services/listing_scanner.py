@@ -99,6 +99,12 @@ logger = logging.getLogger(__name__)
 # Shopify scanner's 1.5s — while staying under the probes' own politeness.
 _PAUZA = 2.5
 _JITTER = 1.5
+
+# GUARD-1 — asteptarea SUPLIMENTARA dinaintea singurului retry de pe pagina 1, peste
+# `_pauza()`. Zece secunde fiindca `None`-ul pe care-l tratam nu e o eroare de
+# sintaxa a cererii, ci una de moment (poarta, retea, poate un cookie de edge care
+# se aseaza) — o repetare imediata ar cadea pe aceeasi stare.
+_PAUZA_RETRY_S = 10
 _TIMEOUT = 25
 
 _HEADERS = {
@@ -666,6 +672,46 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
             url = _pagina_url(intrare, numar)
             raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS,
                                               timeout=_TIMEOUT)
+
+            # GUARD-1 — UN SINGUR retry, si numai pe `None`, si numai pe pagina 1.
+            #
+            # Trei observatii independente, toate cu aceeasi forma — poarta intoarce
+            # `None` o data si merge la cererea urmatoare, pe acelasi URL, cu acelasi
+            # profil:
+            #   * GATE-1  — nike.com;
+            #   * GATE-3  — computeruniverse.net: `/de` a intors `None` la LST-D5, iar
+            #               sonda a cerut EXACT acelasi URL prin ACEEASI poarta si a
+            #               primit 200 din primul hop (1.101.369 de octeti). Runda aia
+            #               a exclus cu cifre RATE, allow-list, normalizarea si
+            #               interstitiul; cauza a ramas nestabilita;
+            #   * LST-D5  — action.com, `prod1`.
+            #
+            # `None` inseamna „n-am ajuns la magazin" (exceptie de retea, poarta
+            # inchisa), NU „magazinul a spus nu". De aia retry-ul e strict pe `None`:
+            # un 403 sau un 500 e un raspuns REAL si repetarea lui n-ar face decat sa
+            # mai bata o data la o usa care tocmai s-a inchis — exact ce a produs
+            # Access Denied-ul de la G4b, unde insistenta pe acelasi URL a inrautatit
+            # situatia.
+            #
+            # Un singur retry, nu o bucla: daca a doua cerere e tot `None`, e o
+            # defectiune reala si trebuie sa se auda. Iar WARN-ul de pe calea
+            # reusita nu e decor — e MASURATOAREA care lipseste: din frecventa lui
+            # se vede daca `None`-urile tranzitorii se aduna pe domeniile Cloudflare
+            # (ipoteza `__cf_bm` din GATE-3) sau sunt uniforme.
+            if raspuns is None and numar == 1:
+                _pauza()
+                time.sleep(_PAUZA_RETRY_S)
+                raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS,
+                                                  timeout=_TIMEOUT)
+                if raspuns is not None and raspuns.status_code == 200:
+                    logger.warning(
+                        "[ListingScan] %s: `None` tranzitoriu pe pagina 1 (%s), "
+                        "reusit la a doua cerere", domain, url)
+                else:
+                    status = getattr(raspuns, "status_code", None)
+                    raise RuntimeError(
+                        f"listare esuata la pagina {numar} dupa retry "
+                        f"(status: {status})")
 
             # VAL D — 404 pe o pagina > 1, cu cel putin o pagina reusita in ACELASI
             # scan, e SFARSIT DE PAGINARE, nu esec. Masurat pe buzzsneakers (SNK-2):

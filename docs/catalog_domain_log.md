@@ -4560,3 +4560,96 @@ conteze**. Forma exactă e o rundă de cod (GUARD-1), nu una de sondă.
   aceeași poartă, a dat 200 din primul hop, iar apexul urcă `computeruniverse.net/` → 301 →
   `www.` → 307 → `/en` → 200. Deci storefront-ul de aterizare e `/en`, nu `/de`. Cauza eșecului
   inițial rămâne neexplicată.
+
+## GUARD-1 — detectorul de blocare din browser vede titlul și statusul; retry unic pe pagina 1
+
+Două reparații independente, amândouă din măsurători deja făcute, niciuna din speculație.
+
+### A. `_detecteaza_blocare` lăsa să treacă două ziduri
+
+Runda JSON-0 a deschis șase domenii într-un browser real. Două dintre ele au răspuns **403 cu o
+pagină de blocare**, și în ambele cazuri garda a întors **`None`** — adică producția le-ar fi
+citit ca pe conținut real, iar extractorul ar fi raportat „nicio dată de produs" în loc de
+„blocat". Diferența contează: primul verdict trimite domeniul într-o rundă de descriptori, al
+doilea într-una de acces.
+
+**sivasdescalzo.com — markerul e DOAR în `<title>`.** Verificat pe HTML-ul capturat:
+
+```
+'just a moment' in inner_text("body")  ->  False
+'just a moment' in <title>             ->  True
+```
+
+Corpul paginii Turnstile spune „Performing security verification" și „This page is displayed
+while the website verifies you are not a bot" — niciuna în lista de atunci. Garda căuta exclusiv
+în `page.inner_text("body")`, care nu vede `<head>`. Era bug-ul semnalat la G4-V3 și rămas
+neplombat.
+
+**bstn.com — shell cu titlu nevid.** 2 641 de octeți, **zero** ancore, dar
+`<title>BSTN Store</title>` (corpul spune doar „REQUEST NOT ALLOWED"). Regula de shell cere
+**toate trei** condițiile — corp sub 15 000 de octeți, zero `<a `, ȘI titlu gol-sau-lipsă — deci
+titlul nevid o dezamorsează.
+
+**Ce s-a schimbat**, în ordinea de evaluare:
+
+1. **Statusul HTTP, verificat primul.** 401/403/429/503 → `status <cod>`, indiferent de corp.
+   `_sesiune` păstrează acum răspunsul lui `page.goto` și îi transmite `.status`.
+2. **Markerele se caută și în `<title>`**, citit din HTML (nu din `page`, care nu vede `<head>`)
+   → `marker in title: '<marker>'`.
+3. **Trei markere noi, verbatim din măsurători:** `performing security verification` și
+   `verifies you are not a bot` (corpul Turnstile, JSON-0 §3.7), `doar un moment` (varianta RO a
+   interstițiului Cloudflare, G4-V2).
+
+**Regula de shell NU s-a relaxat**, deși bstn ar fi „cerut-o". Relaxarea evidentă — renunțarea
+la condiția de titlu gol — ar transforma orice pagină legitimă mică fără ancore (o confirmare,
+un 200 de tip „nu s-a găsit nimic", o categorie goală) în fals pozitiv; iar un fals pozitiv aici
+înseamnă că un magazin sănătos e declarat blocat și **iese tăcut din feed**. bstn e prins de
+status, care e semnalul corect pentru cazul lui. Un test pinuiește exact asta: același HTML, cu
+`status=200`, trebuie să întoarcă `None`.
+
+De ce statusul primează: e singurul semnal care nu depinde de cum arată pagina. Un magazin poate
+servi orice pe 403 — un shell, o pagină de marcă, chiar un catalog fals — iar euristicile pe corp
+vor fi mereu cu un pas în urma fanteziei WAF-ului.
+
+`status` e opțional (`None` implicit), deci apelanții care nu au răspunsul navigării — sondele
+din `scripts/diagnostics` — rămân neatinși și primesc exact comportamentul de dinainte.
+
+### B. Un singur retry pe `None` tranzitoriu, la pagina 1
+
+Trei observații independente, toate cu aceeași formă: poarta a întors `None` **o dată** și a mers
+la cererea următoare, pe același URL, cu același profil.
+
+| rundă | domeniu | ce s-a văzut |
+|---|---|---|
+| GATE-1 | nike.com | `None`, apoi 200 |
+| GATE-3 | computeruniverse.net | `/de` a dat `None` la LST-D5; sonda a cerut **exact același URL prin aceeași poartă** și a primit 200 din primul hop (1 101 369 B, 1,23 s) |
+| LST-D5 | action.com | `prod1`, `None` o dată |
+
+GATE-3 a exclus cu cifre RATE, allow-list, normalizarea de hop și interstițiul; cauza a rămas
+nestabilită.
+
+**Regula:** pe pagina 1 a unei intrări, dacă poarta întoarce `None`, scannerul așteaptă
+`_pauza()` + 10 s și mai cere **o singură dată**. A doua oară `None` sau non-200 → `RuntimeError`
+cu „după retry". Reușită → `logger.warning`.
+
+**Strict pe `None`, nu pe orice eșec.** `None` înseamnă „n-am ajuns la magazin" (excepție de
+rețea, poartă închisă); un 403 sau un 500 e un răspuns **real**, iar repetarea lui n-ar face
+decât să mai bată o dată la o ușă tocmai închisă — exact ce a produs Access Denied-ul de la G4b,
+unde insistența pe același URL a înrăutățit situația. Pagina > 1 rămâne cum a lăsat-o STATE-1:
+orice non-200 acolo e sfârșit de intrare, nu eșec.
+
+**Ce urmează să se măsoare din WARN-uri.** Linia de log nu e decor — e măsurătoarea care
+lipsește. Din frecvența ei se va vedea dacă `None`-urile tranzitorii se adună pe domeniile din
+spatele Cloudflare (ipoteza `__cf_bm` din GATE-3: un cookie de edge care se așază abia la a doua
+cerere) sau sunt uniforme pe catalog. Prima interpretare ar face din retry o soluție permanentă;
+a doua l-ar face un plasture peste o problemă de poartă, care atunci s-ar repara la sursă. Până
+la cifre, nu se poate alege între ele — de aceea runda asta măsoară în loc să presupună.
+
+### O notă de metodă: un sabotaj care nu schimbă comportamentul nu dovedește nimic
+
+Prima variantă a sabotajului „retry de două ori" înconjura blocul cu `for _ in range(2):`. A
+trecut suita — dar nu fiindcă testele ar fi fost slabe: la a doua trecere `raspuns` nu mai era
+`None` (fusese reatribuit), deci ramura nici nu se mai intra, iar codul se comporta **identic**.
+Sabotajul real e altul — încă o cerere în locul ridicării — și acela pică imediat
+(`test_none_dublu_pe_pagina_1_ridica`, care numără exact două cereri). Când un sabotaj nu
+declanșează, prima ipoteză e că mutația e inertă, nu că gardul lipsește.

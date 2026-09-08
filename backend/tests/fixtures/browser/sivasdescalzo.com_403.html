@@ -1,0 +1,15 @@
+<!-- GUARD-1 — REDUS din `dumps_json0/sivasdescalzo.com/home.html` (JSON-0 §3.7):
+     403 + interstitiu Cloudflare Turnstile.
+
+     Titlul e VERBATIM. Corpul e un SUBSET verbatim al corpului real — s-au
+     pastrat doar propozitiile care NU contin niciun marker, si nu s-a inventat
+     niciun text. Reducerea e deliberata: pagina reala e prinsa acum de DOUA ori
+     (corpul ei contine „Performing security verification", marker adaugat tot
+     de GUARD-1), iar un fixture care pastreaza corpul intreg n-ar mai dovedi
+     nimic despre cautarea in <title> — ar trece pe ramura de corp. Asa cum e,
+     fixture-ul izoleaza exact ce trebuie pinuit: cazul in care Cloudflare
+     reformuleaza corpul, iar singurul semnal ramas e titlul. -->
+<html><head><title>Just a moment...</title></head>
+<body>
+<p>Verification successful. Waiting for www.sivasdescalzo.com to respond Enable JavaScript and cookies to continue Ray ID: a37db4265f13e453 Performance and Security by Cloudflare Privacy</p>
+</body></html>
