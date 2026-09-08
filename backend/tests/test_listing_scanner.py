@@ -748,7 +748,15 @@ def test_listing_domains_exact_cele_din_registru():
                                  # marionnaud.ro (blob `application/json`,
                                  # SAP Commerce). Cu ele, familia
                                  # `state_extractor` ajunge la SASE.
-                                 "flip.ro", "marionnaud.ro"}
+                                 "flip.ro", "marionnaud.ro",
+                                 # STATE-2 - doua listari SSR pe care JSON-0 le
+                                 # cautase (gresit) ca API-uri. altex si
+                                 # mediagalaxy NU sunt aici: erau deja in lista de
+                                 # la DEAL-D2, si doar au trecut de pe calea CSS pe
+                                 # `altex_next`. Raman in afara, ca ziduri masurate
+                                 # in browser: sizeer (403 Akamai), bstn (403) si
+                                 # sivasdescalzo (Cloudflare Turnstile).
+                                 "sportvision.ro", "booztlet.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -1932,26 +1940,6 @@ def test_pret_of_eu_sup_prin_price_parse():
     assert _citeste("eu_comma") == 52999.0
 
 
-def test_altex_carduri():
-    carduri = extrage_carduri(_fixture("altex.ro"), listing_descriptor("altex.ro"),
-                              "altex.ro")
-
-    assert len(carduri) == 2
-    primul = carduri[0]
-    assert primul["price"] == 1919.92                  # „de la 1.919 , 92 lei"
-    assert primul["compare_at"] == 2399.9              # „Nou: 2.399 , 90 lei"
-    assert primul["title"].startswith("Laptop MSI Modern 15")
-    assert primul["url"].startswith("https://altex.ro/")
-    # Fragmentul e PASTRAT deliberat: duce la sectiunea de resigilate a PDP-ului,
-    # adica exact oferta din deal. `handle` se calculeaza pe cale, deci nu-l atinge.
-    assert primul["url"].endswith("#resigilate")
-    assert "#" not in primul["handle"]
-    assert primul["image_url"].startswith("https://lcdn.altex.ro/")
-    # Al doilea card are ALTE valori: citirea e per card, nu o scapare de scop.
-    assert carduri[1]["price"] == 1759.92
-    assert carduri[1]["compare_at"] == 2199.9
-
-
 def test_cel_fara_compare():
     """cel.ro intra pe axa D FARA referinta, si asta e o masuratoare, nu o scapare:
     pe 60/60 de carduri parintele pretului poarta chiar clasa `noDiscount`."""
@@ -2026,35 +2014,29 @@ def test_evomag_sup_prin_registru():
     assert carduri[1]["price"] == 1999.99
 
 
-def test_mediagalaxy_carduri():
-    """Din fixture-ul PROPRIU, nu din al lui altex: „acelasi markup" e o
-    afirmatie care trebuie sa se sprijine pe dump-ul fiecarui magazin."""
-    carduri = extrage_carduri(_fixture("mediagalaxy.ro"),
-                              listing_descriptor("mediagalaxy.ro"),
-                              "mediagalaxy.ro")
-
-    assert len(carduri) == 2
-    assert carduri[0]["price"] == 1919.92
-    assert carduri[0]["compare_at"] == 2399.9
-    assert carduri[0]["url"].startswith("https://mediagalaxy.ro/")
-    assert carduri[0]["image_url"].startswith("https://lcdn.mediagalaxy.ro/")
-    assert carduri[1]["price"] == 1759.92
-
-
 def test_altex_mediagalaxy_frati_de_platforma():
-    """Jaccard 1.000 pe clasele cardului (LST-D2 §3.2): cele doua vitrine stau
-    peste acelasi catalog, cu acelasi markup.
+    """Jaccard 1.000 pe clasele cardului (LST-D2 §3.2), si aceeasi cale de chei in
+    STARE (JSON-0): cele doua vitrine stau peste acelasi catalog.
 
-    Testul nu e decorativ — el impune ca o reparatie de selector facuta la unul sa
-    nu-l lase pe celalalt in urma, exact felul de divergenta tacuta pe care
-    registrul a fost creat s-o previna.
+    Testul nu e decorativ — el impune ca o reparatie facuta la unul sa nu-l lase pe
+    celalalt in urma, exact felul de divergenta tacuta pe care registrul a fost
+    creat s-o previna.
+
+    STATE-2 — acum difera DOUA chei, nu una: pe langa `url`, si
+    `page_url_template`, fiindca fiecare vitrina isi pagineaza propria gazda.
+    `max_pages` RAMANE egal (acelasi plafon de buget), si asta e verificat
+    explicit: daca s-ar desincroniza, unul dintre frati ar scana mai adanc decat
+    celalalt fara ca nimeni s-o observe.
     """
     a = listing_descriptor("altex.ro")
     m = listing_descriptor("mediagalaxy.ro")
 
     assert a["url"] != m["url"]
-    assert {k: v for k, v in a.items() if k != "url"} == \
-           {k: v for k, v in m.items() if k != "url"}
+    assert a["page_url_template"] != m["page_url_template"]
+    assert a["max_pages"] == m["max_pages"] == 30
+    difera = {"url", "page_url_template"}
+    assert {k: v for k, v in a.items() if k not in difera} == \
+           {k: v for k, v in m.items() if k not in difera}
 
 
 # ── DEAL-D3 — lotul „jucarii + sneakers" (sonda LST-D3, 2026-09-07) ──────────
@@ -2812,3 +2794,219 @@ def test_state_extractors_inregistrati():
         # Forma `state_extractor` e SAU-EXCLUSIV cu forma CSS.
         assert "card" not in d and "price_parse" not in d
         _verifica_descriptor(domeniu, d)
+
+
+# ── STATE-2 — altex/mediagalaxy la adancime prin stare; sportvision + booztlet CSS
+#
+# Runda JSON-0 cautase un API de listare pe sase domenii si NU l-a gasit pe niciunul
+# (640 de raspunsuri, zero apeluri de produse). Pe altex si mediagalaxy a gasit in
+# schimb produsele in `__NEXT_DATA__`, in acelasi raspuns pe care il descarcam deja,
+# impreuna cu URL-urile TUTUROR paginilor. STATE-2 le-a cablat, si a masurat live
+# (8 cereri) paginarea, oprirea, imaginea si cele doua listari SSR.
+
+def test_altex_next_pret_inversat_si_url_cu_sku():
+    """Cele DOUA capcane ale starii altex, amandoua pinuite aici.
+
+    1. Semantica preturilor e INVERSATA fata de nume: `lowest_price` (1919.92) e
+       pretul RESIGILAT, adica cel platit; `price` (2399.9) e al unitatii NOI,
+       „Nou:” in DOM. Un mapper care ar lua `price` drept pret platit ar raporta
+       pretul de nou pe tot catalogul — adica fix reducerea pentru care exista
+       scanul.
+    2. URL-ul se compune cu `sku`, NU cu `id`-ul numeric. Controlul din JSON-0 a
+       cazut exact aici: cu `id` raporta „48/48 carduri complete” si toate cele 48
+       de URL-uri erau gresite, fiindca un control de completitudine se uita doar
+       daca URL-ul e nevid. Proba tare a fost comparatia cu ancorele din DOM.
+
+    Al treilea card e SINTETIC (v. antetul fixture-ului): `price` coborat la
+    `lowest_price`, fiindca in cele 96 de produse capturate (p1 + p2) nu exista
+    niciun produs fara reducere, iar ramura `compare_at is None` are nevoie de unul.
+    """
+    carduri = extrage_carduri(_fixture_stare("altex.ro"),
+                              listing_descriptor("altex.ro"), "altex.ro")
+
+    assert len(carduri) == 3
+    primul = carduri[0]
+    assert primul["price"] == 1919.92                  # `lowest_price` = resigilat
+    assert primul["compare_at"] == 2399.9              # `price` = unitatea NOUA
+    assert primul["title"].startswith("Laptop MSI Modern 15")
+    assert primul["url"].endswith("/cpd/LAP9S715S121071/#resigilate"), (
+        "URL-ul se compune cu `sku`, nu cu `id`-ul numeric (844256)")
+    assert "844256" not in primul["url"]
+    # Fragmentul e PASTRAT (duce la sectiunea de resigilate a PDP-ului), dar
+    # `handle` se calculeaza pe CALE, deci dedup-ul nu-l vede.
+    assert "#" not in primul["handle"]
+    assert primul["image_url"] == (
+        "https://lcdn.altex.ro/media/catalog/product/m/o/"
+        "modern_15_f13mg_071xro_01_24e97af1.jpg"), (
+        "`{cdn}{image}` — masurat live: 200, image/jpeg, 95.192 octeti")
+
+    # Al doilea are ALTE valori: citirea e per produs, nu o scapare de scop.
+    assert carduri[1]["price"] == 1759.92
+    assert carduri[1]["compare_at"] == 2199.9
+    # Al treilea (sintetic): fara reducere -> fara referinta, niciodata 0%.
+    assert carduri[2]["compare_at"] is None
+
+
+def test_altex_next_baseurl_din_stare():
+    """UN extractor, DOI frati: gazda vine din `runtimeConfig.settings`, nu din cod.
+
+    Fixture-ul mediagalaxy trece prin ACELASI `altex_next` si trebuie sa iasa pe
+    gazda LUI — si la URL-ul produsului, si la CDN-ul imaginii. Daca `baseUrl` ar fi
+    hardcodat pe altex, produsele mediagalaxy ar primi linkuri catre magazinul
+    celalalt: carduri perfect valide la vedere, care duc in alta parte.
+
+    Frateria pe STARE, nu doar pe DOM: acelasi prim produs, cu acelasi SKU si
+    acelasi pret, in dump-urile ambelor vitrine (JSON-0 §2).
+    """
+    a = extrage_carduri(_fixture_stare("altex.ro"),
+                        listing_descriptor("altex.ro"), "altex.ro")
+    m = extrage_carduri(_fixture_stare("mediagalaxy.ro"),
+                        listing_descriptor("mediagalaxy.ro"), "mediagalaxy.ro")
+
+    assert len(m) == len(a) == 3
+    assert m[0]["url"].startswith("https://mediagalaxy.ro/")
+    assert m[0]["image_url"].startswith("https://lcdn.mediagalaxy.ro/")
+    assert all(c["url"].startswith("https://mediagalaxy.ro/") for c in m)
+    assert not any("altex" in c["url"] for c in m)
+    # Acelasi catalog: acelasi SKU, acelasi pret, aceeasi referinta.
+    assert m[0]["url"].split("/cpd/")[1] == a[0]["url"].split("/cpd/")[1]
+    assert (m[0]["price"], m[0]["compare_at"]) == (a[0]["price"], a[0]["compare_at"])
+
+
+def test_altex_next_fara_produse_e_final():
+    """Grila goala = final de paginare, nu eroare.
+
+    MASURAT live (STATE-2, cererea 2): `/resigilate/filtru/p/500/` raspunde 200 —
+    nu 404 — cu `products: []`, `toolbar.pagination: []` si acelasi
+    `<h1>Produse resigilate</h1>`. Deci semnalul de oprire e lista goala, si
+    extractorul trebuie s-o intoarca asa, nu sa ridice.
+    """
+    from app.services.listing_state_extractors import altex_next
+
+    descriptor = listing_descriptor("altex.ro")
+    gol = ('<html><head><script id="__NEXT_DATA__" type="application/json">'
+           '{"props": {"initialReduxState": {"resealed": {"currentCategory": '
+           '{"products": []}}}}}</script></head><body></body></html>')
+
+    assert altex_next(gol, descriptor) == []
+    # Si formele degenerate, care nu trebuie sa ridice: fara `__NEXT_DATA__` si
+    # fara calea de chei.
+    assert altex_next("<html><body>nimic</body></html>", descriptor) == []
+    assert altex_next('<html><script id="__NEXT_DATA__" type="application/json">'
+                      '{"props": {}}</script></html>', descriptor) == []
+
+
+def test_altex_mediagalaxy_pe_state_extractor():
+    """Ambii descriptori au trecut de pe calea CSS pe cea de STARE.
+
+    Cheile CSS (`card`, `price_text`, `compare_text`, `price_parse`, ...) trebuie sa
+    fi DISPARUT: garda contractului le interzice pe calea de stare tocmai ca sa nu
+    ramana configuratie moarta care pare vie.
+    """
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
+    assert "altex_next" in LISTING_STATE_EXTRACTORS
+    for domeniu, gazda in (("altex.ro", "altex.ro"),
+                           ("mediagalaxy.ro", "mediagalaxy.ro")):
+        d = listing_descriptor(domeniu)
+        assert d["state_extractor"] == "altex_next"
+        assert "card" not in d and "price_parse" not in d
+        assert d["max_pages"] == 30, "plafon de BUGET (real: 168 / 157)"
+        assert d["page_url_template"] == f"https://{gazda}/resigilate/filtru/p/{{n}}/"
+        assert d["currency"] == "RON"
+        assert d["reference_kind"] == "nemarcat"
+        _verifica_descriptor(domeniu, d)
+
+
+def test_sportvision_carduri():
+    """NBSHOP, masurat pe dump-ul HTTP — nu pe randarea de browser.
+
+    Distinctia e chiar miza cererii 4: JSON-0 vazuse pagina intr-un browser, dar
+    scannerul citeste HTTP. Cele 24 de carduri sunt aceleasi pe ambele cai.
+
+    FARA referinta, si e o MASURATOARE: `data-productprevprice` e EGAL cu
+    `data-productprice` pe 24/24, iar `data-productdiscount` e „0” pe 24/24 — exact
+    capcana constantei de la vivre si `previousPrice` de la flip. Citita ca
+    referinta, ar produce reduceri de 0% pe tot catalogul.
+
+    Pretul vine din TEXT, nu din atribut: `data-productprice="249,99"` are virgula
+    zecimala, iar calea `price_attr` merge prin parserul STRICT si ar da None.
+    """
+    carduri = extrage_carduri(_fixture("sportvision.ro"),
+                              listing_descriptor("sportvision.ro"),
+                              "sportvision.ro")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    assert primul["price"] == 249.99                   # „Pret 249,99 RON”
+    assert primul["compare_at"] is None
+    assert primul["title"] == "adidas Pantofi Sport RESPONSE RUNNER 2"
+    assert primul["url"].startswith("https://www.sportvision.ro/pantofi-sport/")
+    # Poza sta in `data-original-img` si e RELATIVA — `src` lipseste (lazy `lozad`),
+    # acelasi tipar ca buzzsneakers, tot NBSHOP.
+    assert primul["image_url"].startswith("https://sportvision.ro/files/thumbs/")
+    assert carduri[1]["price"] == 564.99
+    assert all(c["compare_at"] is None for c in carduri)
+
+
+def test_booztlet_carduri():
+    """Outlet EUR, cu pret in PUNCT zecimal si referinta taiata nemarcata.
+
+    Trei masuratori pinuite:
+
+    1. `us_dot`, nu `eu_comma`: preturile sunt „69.50 €”, deci punctul e ZECIMAL.
+       Cu `eu_comma` ar iesi 6950.0 — de 100 de ori mai mult. Sigur pe tot dump-ul:
+       valorile merg de la 9.0 la 433.3 si niciuna n-are separator de mii.
+    2. Pretul platit si referinta au ACEEASI clasa; ii deosebeste doar eticheta
+       (`span` vs `s`), de aceea selectorii o numesc.
+    3. Al doilea card e ales deliberat FARA `<s>` (7 din 86 n-au), ca ramura
+       `compare_at is None` sa fie pinuita pe un card REAL, nu pe unul sintetic.
+
+    Atributul `data-cnstrc-item-price="78.000"` ar fi mers prin parserul strict,
+    dar e prezent doar pe 80/86 — iar cele sase care-i lipsesc sunt produse reale.
+    """
+    carduri = extrage_carduri(_fixture("booztlet.com"),
+                              listing_descriptor("booztlet.com"), "booztlet.com")
+
+    assert len(carduri) == 2
+    primul = carduri[0]
+    # PUNCT zecimal, si de asta e ales cardul asta: pe „78 €" cele doua parsere ar
+    # da acelasi raspuns, deci fixture-ul n-ar deosebi `us_dot` de `eu_comma`.
+    # Prima varianta a fixture-ului avea exact defectul asta, si sabotajul l-a prins.
+    assert primul["price"] == 69.5                     # „69.50 €", nu 6950.0
+    assert primul["compare_at"] == 139.0               # <s>139 €</s>, nemarcat
+    assert primul["title"] == "NORVIG Jane Short Cardigan - Cardigans"
+    assert primul["url"].startswith("https://www.booztlet.com/eu/en/")
+    assert primul["image_url"].startswith("https://image-resizing.booztcdn.com/")
+    assert carduri[1]["price"] == 9.0
+    assert carduri[1]["compare_at"] is None, "cardul fara <s> n-are referinta"
+    assert listing_descriptor("booztlet.com")["currency"] == "EUR"
+
+
+def test_pagina_url_state2():
+    """Cele trei sabloane noi, toate confirmate LIVE (cererile 1, 3 si 5).
+
+    Pagina 1 foloseste URL-ul MASURAT al intrarii, nu template-ul cu n=1 — de aia
+    prima asertie e pe `url`.
+    """
+    from app.services.listing_scanner import _pagina_url
+
+    asteptat = {
+        "altex.ro": "https://altex.ro/resigilate/filtru/p/2/",
+        "mediagalaxy.ro": "https://mediagalaxy.ro/resigilate/filtru/p/2/",
+        "sportvision.ro": ("https://www.sportvision.ro/produse/"
+                           "noua-colectie/page-2"),
+    }
+    for domeniu, pagina2 in asteptat.items():
+        d = listing_descriptor(domeniu)
+        intrare = {"url": d["url"],
+                   "page_url_template": d.get("page_url_template")}
+        assert _pagina_url(intrare, 1) == d["url"]
+        assert _pagina_url(intrare, 2) == pagina2
+
+    # booztlet NU are sablon, si asta e o masuratoare: HTML-ul brut n-are `rel=next`
+    # si nicio ancora cu `page=`, iar scroll-ul pana la capatul grilei n-a cerut
+    # nimic. Garda contractului interzice un sablon la plafon 1.
+    b = listing_descriptor("booztlet.com")
+    assert b["max_pages"] == 1
+    assert "page_url_template" not in b

@@ -707,6 +707,127 @@ def marionnaud_json(html: str, descriptor: dict) -> list[dict]:
     return []
 
 
+# ── altex.ro + mediagalaxy.ro — `__NEXT_DATA__`, Redux ──────────────────────
+def altex_next(html: str, descriptor: dict) -> list[dict]:
+    """altex.ro si mediagalaxy.ro — `/resigilate/`, listare din starea Redux.
+
+    UN SINGUR extractor pentru AMBII frati. DEAL-D2 masurase frateria pe clasele
+    DOM (Jaccard 1.000, acelasi prim produs la acelasi pret); JSON-0 a masurat-o si
+    pe STARE: aceeasi cale de chei, acelasi `id: 844256` la aceleasi preturi in
+    ambele dump-uri. Singurul lucru care difera e gazda, si aia se CITESTE din
+    stare (v. mai jos), nu se scrie in cod.
+
+    Caile, verbatim din `dumps_lstd2/{altex,mediagalaxy}.ro_p1.html`:
+
+        props.initialReduxState.resealed.currentCategory.products      48 de obiecte
+        props.initialReduxState.resealed.currentCategory.toolbar.pagination
+        runtimeConfig.settings.baseUrl     "https://altex.ro" / "https://mediagalaxy.ro"
+
+    ATENTIE la a treia cale: `settings` NU e sub `initialReduxState`, cum ar sugera
+    vecinatatea din pagina, ci sub `runtimeConfig`, frate cu `props`. Cautarea a
+    confirmat-o pe ambele dump-uri; o cale gresita ar fi facut extractorul sa cada
+    tacit pe rezerva de mai jos si sa lege produsele mediagalaxy de gazda altex.
+
+    Cheile unui produs, verbatim:
+
+        id             844256          (numeric — NU se foloseste in URL, v. mai jos)
+        sku            "LAP9S715S121071"
+        name           "Laptop MSI Modern 15 F13MG-071XRO, ..."
+        url_key        "laptop-msi-modern-15-f13mg-071xro-..."
+        price          2399.9          (pretul unitatii NOI — „Nou:" in DOM)
+        lowest_price   1919.92         (pretul RESIGILAT — „de la ..." in DOM)
+        regular_price  2399.9
+        stock_status   1
+        image          "/media/catalog/product/m/o/modern_15_..._24e97af1.jpg"
+
+    TREI decizii, fiecare platita de o masuratoare din JSON-0 §3.1:
+
+    1. SEMANTICA PRETURILOR E INVERSATA FATA DE NUME. `price` NU e pretul platit:
+       e pretul unitatii NOI a aceluiasi SKU, adica exact ce DOM-ul eticheteaza
+       „Nou:" si ce descriptorul CSS din DEAL-D2 citea drept `compare_text`.
+       Pretul platit e `lowest_price`, cel pe care DOM-ul il arata in
+       `.text-red-brand` ca „de la 1.919,92 lei". Deci `price ← lowest_price` si
+       `compare_at ← price`. Un mapper care ar lua `price` drept pret platit ar
+       raporta pretul de NOU pe tot catalogul — adica ar rata fix reducerea pentru
+       care exista scanul. Referinta ramane `nemarcat` (ca „NOU" la eMAG), nu
+       Omnibus, si se pastreaza doar cand e STRICT mai mare, ca la `flip_next`.
+
+    2. URL-UL SE COMPUNE CU `sku`, NU CU `id`. Ancorele reale din DOM, verbatim:
+       `/laptop-msi-modern-15-.../cpd/LAP9S715S121071/#resigilate`. Prima varianta
+       a controlului JSON-0 a folosit `id`-ul numeric si a raportat linistita
+       „48/48 carduri complete" — cu toate cele 48 de URL-uri GRESITE, fiindca un
+       control de completitudine se uita doar daca URL-ul e nevid. Proba tare a
+       fost comparatia cu ancorele DOM: cu `sku`, 48/48 coincid exact. Fragmentul
+       `#resigilate` se pastreaza (duce la sectiunea de oferte resigilate a PDP-ului,
+       ca `#used-products` la eMAG) si nu atinge dedup-ul, fiindca `external_id` si
+       `handle` se calculeaza pe CALE.
+
+    3. `stock_status` SE CITESTE, DAR NU FILTREAZA. Pe cele 48 de produse are
+       valoarea 1 pe 48/48, deci un filtru pe el ar fi o regula fara contra-exemplu:
+       n-avem nicio dovada ca 0 inseamna „indisponibil" si nici macar ca apare. Se
+       lasa afara deliberat, si aici e locul unde se adauga la prima masuratoare.
+
+    IMAGINEA — o cerere care a schimbat raspunsul. Calea din stare
+    (`/media/catalog/product/m/o/modern_15_..._24e97af1.jpg`) NU e cea din DOM:
+    acolo sta `https://lcdn.altex.ro/resize/media/catalog/product/m/o/<hash>/<nume>`,
+    cu un segment de HASH in plus care nu apare nicaieri in obiectul produsului.
+    JSON-0 a concluzionat de aici ca imaginea „nu se poate compune". STATE-2 a
+    cheltuit o cerere ca sa verifice in loc sa deduca, pe forma FARA hash:
+
+        https://lcdn.altex.ro/media/catalog/product/m/o/modern_15_..._24e97af1.jpg
+        -> 200, content-type: image/jpeg, 95.192 octeti
+
+    Deci CDN-ul serveste calea din stare direct, iar segmentul cu hash e doar
+    varianta redimensionata pe care o cere DOM-ul. `{cdn}{image}`, cu `cdn` din
+    `runtimeConfig.settings.cdn`, ca sa ramana un singur extractor pentru ambii
+    frati (`lcdn.altex.ro` vs `lcdn.mediagalaxy.ro`). Fara `cdn` in stare,
+    `image_url` iese None si cardul trece fara poza — nu se ghiceste o gazda.
+    """
+    date = next_data(html)
+    if not date:
+        return []
+    try:
+        categorie = (date["props"]["initialReduxState"]["resealed"]["currentCategory"])
+        produse = categorie["products"]
+    except (KeyError, TypeError):
+        return []
+    if not isinstance(produse, list) or not produse:
+        # Fara produse la cale = final de paginare, nu eroare: acelasi verdict ca
+        # „grila goala pe 200" de pe calea CSS.
+        return []
+
+    # Gazda din STARE, cu URL-ul descriptorului ca rezerva. Ordinea conteaza: e
+    # singurul lucru care difera intre cei doi frati, deci e si singurul care poate
+    # lega tacit produsele unuia de gazda celuilalt daca se citeste gresit.
+    setari = (date.get("runtimeConfig") or {}).get("settings") or {}
+    baza = setari.get("baseUrl")
+    if not isinstance(baza, str) or not baza.startswith("http"):
+        baza = _baza(descriptor)
+    baza = baza.rstrip("/")
+    cdn = setari.get("cdn")
+    cdn = cdn.rstrip("/") if isinstance(cdn, str) and cdn.startswith("http") else None
+
+    iesire = []
+    for produs in produse:
+        if not isinstance(produs, dict):
+            continue
+        slug = (produs.get("url_key") or "").strip()
+        sku = str(produs.get("sku") or "").strip()
+        if not slug or not sku:
+            continue
+        pret = _pret_numeric(produs.get("lowest_price"))
+        if pret is None or pret <= 0:
+            continue
+        referinta = _pret_numeric(produs.get("price"))
+        if referinta is not None and referinta <= pret:
+            referinta = None
+        cale_poza = (produs.get("image") or "").strip()
+        poza = f"{cdn}{cale_poza}" if (cdn and cale_poza.startswith("/")) else None
+        iesire.append(_card(f"{baza}/{slug}/cpd/{sku}/#resigilate",
+                            produs.get("name"), pret, referinta, poza))
+    return iesire
+
+
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
@@ -718,4 +839,7 @@ LISTING_STATE_EXTRACTORS = {
     # STATE-1
     "flip_next": flip_next,
     "marionnaud_json": marionnaud_json,
+    # STATE-2 — UN extractor, DOI frati de platforma (altex.ro + mediagalaxy.ro):
+    # gazda si CDN-ul se citesc din `runtimeConfig.settings`, nu din cod.
+    "altex_next": altex_next,
 }

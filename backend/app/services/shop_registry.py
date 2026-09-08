@@ -256,68 +256,51 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        # ── DEAL-D2, din dump-urile LST-D2 (7 septembrie) ──────────────────
+        # ── STATE-2 — axa D pe STARE, nu pe selectori CSS ──────────────────
+        #
+        # DEAL-D2 citea cardul din DOM si vedea 48 de produse din ~8000, fiindca
+        # butonul de paginare vine gol (`<div class="Toolbar-next md:hidden">`),
+        # randat client-side. JSON-0 a cautat apelul XHR de listare cu captura de
+        # retea si NU l-a gasit — a gasit in schimb ca produsele erau de la
+        # inceput in acelasi raspuns, in `__NEXT_DATA__`, impreuna cu URL-urile
+        # TUTUROR paginilor. Deci nu era nevoie nici de API, nici de browser:
+        # doar de citit alta parte a paginii pe care o descarcam oricum.
         "listing": {
             "url": "https://altex.ro/resigilate/",
-            # `max_pages: 1` e o MASURATOARE, nu prudenta: pagina anunta „8052
-            # produse" si nu poarta niciun link de pagina in HTML-ul brut.
-            # Butonul e randat client-side si vine gol —
-            # `<div class="Toolbar-next md:hidden"></div>`. Deci descriptorul
-            # vede 48 din ~8000, si asta e tot ce se poate citi fara alt
-            # mecanism (v. `notes`). Fara `page_url_template`: garda
-            # descriptorilor il interzice cand plafonul e 1, tocmai ca sa nu
-            # inventam un URL nemasurat.
-            "max_pages": 1,
+            # MASURAT live (STATE-2): `/filtru/p/2/` -> 200 cu alte 48 de produse
+            # (46 din 48 noi fata de dump-ul de ieri), iar `/filtru/p/500/` -> tot
+            # 200, dar cu grila GOALA (`products: []`, `toolbar.pagination: []`,
+            # `<h1>Produse resigilate</h1>` neschimbat). Oprirea e deci „grila
+            # goala pe 200", forma pe care `altex_next` o intoarce ca `[]`.
+            "page_url_template": "https://altex.ro/resigilate/filtru/p/{n}/",
+            # Reala e 168 (`toolbar.pagination` are 168 de intrari, confirmate si
+            # pe p2 live). 30 e PLAFON DE BUGET, nu masuratoare: 30 x 48 = 1.440
+            # de produse per scan, restul catalogului intra prin rotatia zilelor
+            # urmatoare. De ridicat cand scanul isi permite.
+            "max_pages": 30,
             "currency": "RON",
-            "card": ".Products-item",
-            # Cardul are DOUA ancore catre acelasi produs (poza si titlul), iar
-            # prima ajunge. Linkul pastreaza fragmentul `#resigilate`, DELIBERAT:
-            # duce la sectiunea de oferte resigilate a PDP-ului, adica exact
-            # oferta din deal. `external_id` si `handle` se calculeaza pe CALE,
-            # deci fragmentul nu atinge dedup-ul (la fel ca `#used-products` la
-            # eMAG).
-            "link": "a[href]",
-            "title": ".Product-name",
-            "image_attr": ["src"],
-            # `de la 1.919 , 92 lei` -> 1919.92. Spatiile vin din <sup>, iar
-            # `_pret_eu_comma` le sterge odata cu „de la" si „lei" — niciunul
-            # n-are cifre. Aici zecimalele SUNT precedate de virgula, deci
-            # `eu_comma`, nu `eu_sup` (contrast cu evomag).
-            "price_text": ".text-red-brand",
-            # `Nou: 2.399 , 90 lei`, prezent pe 48/48.
-            #
-            # ATENTIE: `text-[#6D6E71]` e o clasa Tailwind arbitrara — culoarea
-            # gri a etichetei „Nou:", nu un nume semantic. E cea mai buna ancora
-            # existenta (linia n-are alta clasa proprie, iar `.Price-int` e pe
-            # AMBELE preturi), dar e fragila la un redesign. Daca da 0 pe un scan
-            # viitor, referinta DISPARE si atat: nu se inventeaza alta, iar
-            # deal-urile raman pe R2 pana la o masuratoare noua.
-            "compare_text": ".text-\\[\\#6D6E71\\]",
-            "price_parse": "eu_comma",
-            # `nemarcat`: „Nou:" e pretul curent al unitatii NOI a aceluiasi
-            # produs la acelasi magazin — ce marcheaza eMAG cu `label:"NOU"`.
-            # Zero „ultimele 30 de zile", zero „PRP" care sa ETICHETEZE campul;
-            # cele trei potriviri de „cel mai mic pret" ale sondei cad toate in
-            # `<meta name="description">` si in proza de campanie (lectia
-            # bergfreunde). Vocabularul registrului n-are un al patrulea termen.
+            "state_extractor": "altex_next",
+            # `nemarcat`: referinta e `price` din stare, adica pretul unitatii NOI
+            # a aceluiasi SKU („Nou:" in DOM) — ce marcheaza eMAG cu `label:"NOU"`.
+            # Nu e Omnibus si nu e PRP. Semantica inversata a celor doua campuri
+            # de pret e explicata pe larg in docstring-ul lui `altex_next`.
             "reference_kind": "nemarcat",
-            # FARA `stock_attr`: cardul n-are niciun atribut de disponibilitate.
-            #
-            # Starea NU e in titlu (titlul e numele curat al produsului); sta
-            # intr-un badge separat, `<span class="… text-[#39AB4A] …">resigilat
-            # </span>` pe 48/48. Registrul n-are cheie de prefix de titlu, deci
-            # feed-ul arata produsul fara cuvantul „resigilat" — onest, dar mai
-            # putin decat stie magazinul. Aceeasi limita ca la eMAG cu GRADUL.
+            # Starea produsului („resigilat") NU intra in titlu: `name` e numele
+            # curat, iar registrul n-are cheie de prefix. Aceeasi limita ca la
+            # eMAG cu GRADUL, si ca la descriptorul CSS pe care il inlocuieste.
         },
         "search": {"kind": "custom"},
-        "notes": "RETAIL-3a; DEAL-D2 — axa D pe `/resigilate/`, 48 de carduri din cele "
-                 "~8000 anuntate: paginarea e randata client-side (butonul "
-                 "`Toolbar-next` vine gol), deci plafonul de 1 e o masuratoare, nu "
-                 "prudenta. Pista de adancime e API-ul intern `fenrir.altex.ro`, deja "
-                 "folosit de scraperul de CAUTARE — runda separata, nu se improvizeaza "
-                 "aici. Referinta `Nou:` e pretul unitatii NOI a aceluiasi SKU la "
-                 "acelasi magazin (ca `label:NOU` la eMAG), nu Omnibus. Markup identic "
-                 "cu mediagalaxy.ro.",
+        "notes": "RETAIL-3a; DEAL-D2 (CSS, inlocuit); STATE-2 — axa D pe `/resigilate/` "
+                 "prin `altex_next`, din `__NEXT_DATA__`: 48 de produse pe pagina si "
+                 "168 de pagini anuntate in `toolbar.pagination`, plafonate la 30 pe "
+                 "scan (1.440 de produse) din buget. Paginarea `/filtru/p/{n}/` e "
+                 "MASURATA live, iar oprirea e grila goala pe 200. Pretul platit e "
+                 "`lowest_price` (resigilatul), referinta e `price` (unitatea NOUA, "
+                 "„Nou:”) — semantica inversata fata de nume. URL-ul se compune cu "
+                 "`sku`, nu cu `id`. Frate de platforma cu mediagalaxy.ro, pe ACELASI "
+                 "extractor: gazda se citeste din `runtimeConfig.settings.baseUrl`. "
+                 "JSON-0 a exclus pista de API (zero apeluri de listare in 640 de "
+                 "raspunsuri); `fenrir.altex.ro` ramane neexplorat.",
     },
     "emag.ro": {
         "label": "eMAG",
@@ -556,27 +539,32 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        # ── DEAL-D2 — FRATE DE PLATFORMA cu altex.ro ───────────────────────
-        # Cele doua vitrine stau peste acelasi catalog: Jaccard 1.000 pe clasele
-        # cardului (LST-D2 §3.2), acelasi prim produs la acelasi pret, acelasi
-        # markup pana la clasele de layout. Descriptorul e deci IDENTIC in afara
-        # lui `url` — si un test o impune (`test_altex_mediagalaxy_frati_de_
-        # platforma`), tocmai ca o reparatie de selector facuta la unul singur sa
-        # nu lase celalalt in urma. Motivarea fiecarui camp: v. altex.ro.
+        # ── STATE-2 — FRATE DE PLATFORMA cu altex.ro, acum si pe STARE ─────
+        # DEAL-D2 masurase frateria pe DOM: Jaccard 1.000 pe clasele cardului
+        # (LST-D2 §3.2), acelasi prim produs la acelasi pret. JSON-0 a masurat-o
+        # si pe STARE — aceeasi cale de chei, acelasi `id: 844256` la aceleasi
+        # preturi — iar STATE-2 a confirmat-o live pe pagina 2. Descriptorul
+        # ramane IDENTIC in afara lui `url` si `page_url_template`, si un test o
+        # impune (`test_altex_mediagalaxy_frati_de_platforma`), tocmai ca o
+        # reparatie facuta la unul singur sa nu-l lase pe celalalt in urma.
+        # Motivarea fiecarui camp: v. altex.ro.
         "listing": {
             "url": "https://mediagalaxy.ro/resigilate/",
-            "max_pages": 1,
+            "page_url_template": "https://mediagalaxy.ro/resigilate/filtru/p/{n}/",
+            # Reala e 157 (`toolbar.pagination`); 30 e acelasi plafon de buget ca
+            # la altex, si trebuie sa RAMANA egal — testul de fratie il compara.
+            "max_pages": 30,
             "currency": "RON",
-            "card": ".Products-item",
-            "link": "a[href]",
-            "title": ".Product-name",
-            "image_attr": ["src"],
-            "price_text": ".text-red-brand",
-            "compare_text": ".text-\\[\\#6D6E71\\]",
-            "price_parse": "eu_comma",
+            "state_extractor": "altex_next",
             "reference_kind": "nemarcat",
         },
-        "notes": "RETAIL-5c; DEAL-D2 — axa D pe `/resigilate/`, FRATE DE PLATFORMA cu altex.ro: Jaccard 1.000 pe clasele cardului, acelasi prim produs la acelasi pret, descriptor identic in afara lui `url`. Aceleasi limite: 48 din ~7500, paginare client-side, referinta `Nou:` = unitatea noua.",
+        "notes": "RETAIL-5c; DEAL-D2 (CSS, inlocuit); STATE-2 — axa D pe `/resigilate/` "
+                 "prin `altex_next`, ACELASI extractor ca altex.ro: gazda vine din "
+                 "`runtimeConfig.settings.baseUrl` (aici `https://mediagalaxy.ro`, "
+                 "gateway `cerberus` in loc de `fenrir`), deci un singur cod acopera "
+                 "ambii frati. 48 de produse pe pagina, 157 de pagini anuntate, "
+                 "plafonate la 30 pe scan. Pagina 2 MASURATA live: 48 de carduri, toate "
+                 "pe gazda mediagalaxy.ro.",
     },
 
     # ── FASHION-1b ────────────────────────────────────────────────────────────
@@ -777,7 +765,12 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
-        "notes": "FASHION-2",
+        "notes": "FASHION-2. JSON-0 — ZID: home-ul a raspuns 403 cu o pagina de "
+                 "asteptare de marca (2641 de octeti, `<title>BSTN Store</title>`, "
+                 "ZERO ancore, doar logoul SVG), deci n-a existat niciun link de "
+                 "listare de descoperit. De notat ca `_detecteaza_blocare` NU l-a "
+                 "prins: regula de shell cere si titlu gol, iar titlul e nevid "
+                 "(v. GUARD-1 in docs/catalog_domain_log.md).",
     },
     # Cheia e CU subdomeniu: _domain_of taie doar "www.", iar refresh-ul compara
     # pe egalitate exacta. Domeniul GOL (afew-store.com) nu se adauga: redirecteaza
@@ -1710,7 +1703,13 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "niciunul dintre cei doi markeri WAF, domeniul n-are "
                  "`block_markers`, n-a existat redirect, iar profilul "
                  "`impersonate` a fost identic pe amandoua. Cauza NU e stabilita: "
-                 "cere o sonda hop-cu-hop pe poarta (GATE-3).",
+                 "cere o sonda hop-cu-hop pe poarta (GATE-3). "
+                 "GATE-3 — NU REPRODUCE: exact acelasi `/de`, prin ACEEASI poarta, a "
+                 "dat 200 din primul hop (1.101.369 de octeti, 1,23 s), iar apexul "
+                 "urca in trei hopuri `computeruniverse.net/` -> 301 -> `www.` -> 307 "
+                 "-> `/en` -> 200. Deci storefront-ul de aterizare e `/en`, nu `/de`. "
+                 "Esecul de la LST-D5 ramane NEEXPLICAT si neremis; RATE si "
+                 "interstitiul au fost excluse cu cifre.",
     },
     "jb-spielwaren.de": {
         "label": "JB Spielwaren",
@@ -1870,6 +1869,50 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # ── STATE-2 — axa D, masurata pe dump-ul HTTP (nu pe randarea de browser)
+        #
+        # Distinctia conteaza: JSON-0 masurase pagina in browser, dar scannerul
+        # citeste HTTP. Cererile 4 si 5 ale rundei au aratat ca HTTP-ul da ACELEASI
+        # 24 de carduri (876 KB), deci nu era nevoie de browser.
+        "listing": {
+            "url": "https://www.sportvision.ro/produse/noua-colectie",
+            # `a[rel='next']` din pagina, VERBATIM:
+            #   <a rel="next" class="btn btn-default next-load-btn"
+            #      href="https://www.sportvision.ro/produse/noua-colectie/page-2">
+            #      Arata mai multe</a>
+            # Nota de registru de dinainte spunea „incarcare client-side,
+            # nemasurata" — adevarat despre CLICK (JSON-0: clickul avanseaza
+            # contorul si nu aduce nimic), dar URL-ul exista si e servit
+            # server-side. Cererea 5 l-a cerut: 200, alte 24 de carduri, ZERO
+            # comune cu pagina 1.
+            "page_url_template": ("https://www.sportvision.ro/produse/"
+                                  "noua-colectie/page-{n}"),
+            # Categoria anunta 2.312 produse (~97 de pagini a 24). 30 e plafon de
+            # buget, ca la altex: 720 de produse pe scan.
+            "max_pages": 30,
+            "currency": "RON",
+            "card": "div.product-item",
+            "link": "a[href]",
+            # `div.title` — nu `[class*='title']`: acela prinde si
+            # `span.current-price-title`, care contine textul „Pret".
+            "title": "div.title",
+            # Poza reala sta in `data-original-img`, RELATIVA la radacina, iar
+            # `src` lipseste (lazy-load `lozad`). Acelasi tipar ca buzzsneakers —
+            # tot NBSHOP — pe care `normalizeaza_imagine` il stie deja.
+            "image_attr": ["data-original-img"],
+            # `.current-price` da „Pret 249,99 RON"; „Pret" si „RON" n-au cifre,
+            # deci `eu_comma` le sterge. Atributul `data-productprice="249,99"`
+            # ar fi parut mai curat, dar calea `price_attr` merge prin parserul
+            # STRICT (punct zecimal) si intoarce None pe virgula — verificat.
+            "price_text": ".current-price",
+            "price_parse": "eu_comma",
+            # FARA referinta, si e o MASURATOARE, nu o omisiune:
+            # `data-productprevprice` e EGAL cu `data-productprice` pe 24/24, iar
+            # `data-productdiscount` e „0" pe 24/24 — exact capcana constantei de
+            # la vivre si `previousPrice` de la flip. Citita ca referinta, ar
+            # produce reduceri de 0% pe tot catalogul. Deci axa D doar pe R2.
+            "reference_kind": "nemarcat",
+        },
         "notes": "G2C-1/G2C-2; platforma NBSHOP (server 'Custom Server', cookies "
                  "NBIDSN/NBPHPSESSIONSECURE). IPOTEZA, nu fapt: aceeasi platforma cu "
                  "buzzsneakers.ro, care e tot jsonld — markerul NBSHOP si verdictul "
@@ -1910,7 +1953,12 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "paginii. Axa D e val ULTERIOR: /outlet n-are produse server-side "
                  "utile (din 92 de carduri candidate, 87 poarta cele doua componente "
                  "partajate) si n-are paginare server-side — "
-                 "vezi docs/catalog_domain_log.md",
+                 "vezi docs/catalog_domain_log.md. "
+                 "JSON-0 — ZID pe calea de BROWSER: `/outlet` a raspuns 403 (289 de "
+                 "octeti, `<title>Access Denied</title>`, `errors.edgesuite.net`), de "
+                 "doua ori. NU contrazice masuratoarea G2C-1b (1,8-2,1 MB pe HTTP cu "
+                 "`impersonate`): verdictul „nu e blocaj” era legat de CALEA pe care a "
+                 "fost dat. De RE-MASURAT pe HTTP inainte de orice concluzie.",
     },
     # ── G2F — sub-lotul sport/outdoor (sonde 2026-08-18) ──────────────────────
     # Din patru domenii sondate au intrat TREI. decathlon.ro e Grup 4 (Cloudflare
@@ -2677,7 +2725,13 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "Masurat INTERMITENT, nu determinist: pe profilul centralizat 2 din "
                  "4 cereri au iesit BLOCKED, pe cel anterior 0 din 4. Singurul "
                  "domeniu din 73 cu regresie, si singurul motiv pentru care exista "
-                 "override-ul de mai jos.",
+                 "override-ul de mai jos. "
+                 "JSON-0 — ZID pe browser: 307 apoi 403, cu lantul de challenge "
+                 "Cloudflare Turnstile (`/cdn-cgi/challenge-platform/…`, "
+                 "`challenges.cloudflare.com/turnstile/v0/…`). Nici aici "
+                 "`_detecteaza_blocare` n-a prins: markerul „Just a moment” e DOAR in "
+                 "`<title>`, iar corpul zice „Performing security verification” — "
+                 "v. GUARD-1 in docs/catalog_domain_log.md.",
         # IMP-2: vezi nota. Pinuit pe profilul anterior fiindca acolo masuratoarea e
         # curata (4/4 OK), nu fiindca profilul nou ar fi gresit in general — pe
         # celelalte 72 de domenii e egal sau mai bun (3 deblocari). De re-masurat
@@ -2917,8 +2971,62 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_confirmed",
         "method": "jsonld",
         "status": "validated",
+        # ── STATE-2 — axa D, masurata pe dump-ul HTTP (cererea 6) ──────────
+        #
+        # JSON-0 gasise pagina bogata in browser (86 de produse randate
+        # server-side, zero apeluri XHR de listare). Cererea 6 a verificat ca
+        # HTTP-ul da EXACT aceleasi 86 de carduri (2,0 MB) — deci booztlet nu
+        # cere browser si intra pe calea obisnuita.
+        "listing": {
+            # `/eu/en/women` e o ATERIZARE de departament (1,24 MB, ZERO carduri);
+            # frunza de listare e `view-all`, luata verbatim din nav-ul paginii.
+            "url": "https://www.booztlet.com/eu/en/women/view-all",
+            # `max_pages: 1` e MASURATOARE: HTML-ul brut n-are `rel=next`, n-are
+            # nicio ancora cu `page=`, iar in browser scroll-ul pana la capatul
+            # grilei (dovedit de 65 de imagini lenese incarcate) n-a declansat
+            # nicio cerere de produse. Fara `page_url_template`: garda il
+            # interzice la plafon 1, tocmai ca sa nu inventam un URL nemasurat.
+            "max_pages": 1,
+            "currency": "EUR",
+            "card": "[data-product-id]",
+            "link": "a[href]",
+            # Titlul complet („Part Two NadyaPW OTW - Light Jackets") sta intr-un
+            # singur nod; `data-product-name` ar da doar „NadyaPW OTW", fara marca.
+            "title": ".palette-product-card-description__content__brand-product-name",
+            "image_attr": ["src"],
+            # PRETUL: `span.palette-product-card-price__price-tag`, 86/86.
+            #
+            # Brief-ul cerea atributul numeric `data-cnstrc-item-price="78.000"`,
+            # care trece prin parserul strict — dar el e prezent doar pe 80/86.
+            # Cele SASE care-i lipsesc sunt produse REALE (Enkel Studio by PWT, cu
+            # href si pret), deci calea aia ar fi pierdut tacut sase carduri.
+            # `data-actual-price="78 €"` e pe 86/86, dar are „€", iar `price_attr`
+            # merge prin parserul strict si ar da None. Ramane textul.
+            #
+            # `<s>` are ACEEASI clasa ca pretul platit, deci selectorul trebuie sa
+            # numeasca si eticheta: `span...` = platit, `s...` = referinta.
+            "price_text": "span.palette-product-card-price__price-tag",
+            "compare_text": "s.palette-product-card-price__price-tag",
+            # `us_dot`, NU `eu_comma`: preturile sunt cu PUNCT zecimal
+            # („69.50 €" = 69,50 EUR). `eu_comma` ar citi 6950.0 — de 100 de ori
+            # mai mult. Sigur pe tot dump-ul: valorile merg de la 9.0 la 433.3 si
+            # niciuna n-are separator de mii, deci ambiguitatea „1.299" nu apare.
+            "price_parse": "us_dot",
+            # `nemarcat`: `<s>130 €</s>` e un pret taiat FARA nicio eticheta.
+            # Cele trei potriviri de „lowest price" din pagina sunt numele unei
+            # rubrici de meniu („Lowest prices", `/campaigns/women/lowest-prices`),
+            # nu o eticheta de camp — lectia bergfreunde. Prezent pe 79/86; cele
+            # 7 fara `<s>` sunt exact cele 7 fara reducere.
+            "reference_kind": "nemarcat",
+        },
         "notes": "LOT3b; outlet integral, sora boozt; aceleasi variante doar pe "
-                 "colorway; EUR",
+                 "colorway; EUR. STATE-2 — axa D pe `/eu/en/women/view-all`: 86 de "
+                 "carduri, identic pe HTTP si in browser, deci NU cere browser. "
+                 "`/eu/en/women` e aterizare, nu listare. Pret cu PUNCT zecimal "
+                 "(`us_dot`), referinta din `<s>` nemarcat (79/86). `max_pages: 1` e "
+                 "masuratoare: zero paginare in brut, iar scroll-ul pana la capat n-a "
+                 "cerut nimic (JSON-0). Adancimea cere API-ul Constructor.io, sugerat "
+                 "de atributele `data-cnstrc-*` — pista neexplorata.",
     },
     # ── LOT4 / LOT4b — beauty/parfumuri (sonde 2026-08-13) ────────────────────
     "marionnaud.ro": {

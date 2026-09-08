@@ -4391,3 +4391,172 @@ dar parametrul `?page=` e **ignorat server-side** — și `?page=1`, și `?page=
 client-side, după hidratare, prin API-ul Spartacus. De aceea `max_pages: 1` și **fără**
 template: un `?page={n}` ar cere 41 de pagini identice cu prima și le-ar tăia abia garda de
 clamp, după ce le-a descărcat pe toate.
+
+## JSON-0/STATE-2 — lotul „API" era SSR: altex/mediagalaxy la adâncime prin stare, sportvision și booztlet pe CSS
+
+Runda JSON-0 a pornit de la o ipoteză și a infirmat-o. Șase domenii validate pe axa L aveau
+listări pe care HTTP-ul nu le vedea — paginare client-side, grile goale, RSC fără produse — și
+explicația de lucru era că produsele vin dintr-un apel XHR. Sonda a deschis fiecare domeniu
+într-un browser real, cu captura de rețea pornită, și a înregistrat tot ce a cerut pagina
+singură.
+
+**Rezultatul: 640+ răspunsuri, 123 XHR/fetch, ZERO apeluri de listare.** Niciunul dintre cele
+șase nu-și aduce produsele prin API.
+
+| domeniu | încărcări | XHR | apel de listare | verdict JSON-0 |
+|---|---|---|---|---|
+| altex.ro | 3 încercări, **0 pagini** | 0 | — | NEMĂSURAT — `ERR_HTTP2_PROTOCOL_ERROR` de 3× |
+| sizeer.ro | 2 | 0 | — | BLOCAT — 403 Akamai |
+| sportvision.ro | 1 | 18 | **niciunul** | FĂRĂ API — 24 de produse SSR |
+| booztlet.com | 4 | 36 | **niciunul** | FĂRĂ API — 86 de produse SSR |
+| bstn.com | 1 | 0 | — | BLOCAT — 403 tăcut |
+| sivasdescalzo.com | 1 | 4 | — | BLOCAT — Cloudflare Turnstile |
+
+Ce a găsit în loc, pe altex și mediagalaxy: produsele erau **de la început în același răspuns**
+pe care îl descărcam oricum, în `__NEXT_DATA__`, împreună cu URL-urile **tuturor** paginilor.
+Nu era nevoie nici de API, nici de browser — doar de citit altă parte a paginii. STATE-2 le-a
+cablat, și a măsurat live restul.
+
+### Cele trei capcane ale stării altex
+
+**1. Semantica prețurilor e inversată față de nume.** `price` NU e prețul plătit: e prețul
+unității NOI a aceluiași SKU, exact ce DOM-ul etichetează „Nou:" și ce descriptorul CSS de la
+DEAL-D2 citea drept `compare_text`. Prețul plătit e `lowest_price`, cel afișat ca
+„de la 1.919,92 lei". Deci `price ← lowest_price`, `compare_at ← price`. Un mapper care ar lua
+`price` drept preț plătit ar raporta prețul de nou pe tot catalogul — adică ar rata fix
+reducerea pentru care există scanul.
+
+**2. URL-ul se compune cu `sku`, nu cu `id`.** Ancorele reale sunt
+`/laptop-msi-modern-15-…/cpd/LAP9S715S121071/#resigilate`. Prima variantă a controlului JSON-0 a
+folosit `id`-ul numeric (844256) și a raportat liniștit **„48/48 carduri complete"** — cu toate
+cele 48 de URL-uri greșite, fiindcă un control de completitudine se uită doar dacă URL-ul e
+nevid. Proba tare a fost comparația cu ancorele din DOM: cu `sku`, **48/48 coincid exact**.
+Lecția e mai generală decât cazul: *un control care numără câmpuri nevide nu validează
+conținutul lor* — are nevoie de o a doua sursă cu care să se confrunte.
+
+**3. Imaginea — o cerere care a schimbat răspunsul.** JSON-0 observase că starea dă
+`/media/catalog/product/m/o/<nume>.jpg`, iar DOM-ul servește
+`https://lcdn.altex.ro/resize/media/catalog/product/m/o/<hash>/<nume>` — un segment de hash în
+plus, absent din obiectul produsului — și a concluzionat că imaginea „nu se poate compune".
+STATE-2 a cheltuit o cerere ca să **verifice în loc să deducă**:
+
+```
+https://lcdn.altex.ro/media/catalog/product/m/o/modern_15_f13mg_071xro_01_24e97af1.jpg
+-> 200, content-type: image/jpeg, 95.192 octeți
+```
+
+CDN-ul servește calea din stare direct; segmentul cu hash e doar varianta redimensionată pe care
+o cere DOM-ul. `image_url` a trecut deci de la „None, documentat" la o valoare reală, pe 48/48.
+
+### Un extractor, doi frați
+
+DEAL-D2 măsurase frăția altex↔mediagalaxy pe DOM (Jaccard 1.000 pe clasele cardului). JSON-0 a
+măsurat-o și pe stare — aceeași cale de chei, același `id: 844256` la aceleași prețuri — iar
+STATE-2 a confirmat-o live pe pagina 2. Gazda și CDN-ul se citesc din
+**`runtimeConfig.settings`** (`baseUrl`, `cdn`), nu din cod, deci un singur `altex_next` acoperă
+ambele vitrine. Corecție de traseu, consemnată fiindcă e ușor de greșit: `settings` **nu** stă
+sub `initialReduxState`, cum sugerează vecinătatea din pagină, ci sub `runtimeConfig`, frate cu
+`props`. O cale greșită ar fi făcut extractorul să cadă tăcut pe rezervă și să lege produsele
+mediagalaxy de gazda altex — carduri perfect valide la vedere, care duc în alt magazin.
+Gateway-urile diferă și ele (`fenrir.altex.ro` vs `cerberus.mediagalaxy.ro`) — pistă
+neexplorată, dar orice mecanism care le-ar folosi trebuie să le citească din pagină.
+
+### Cele 8 cereri de verificare (7 consumate, 1 rezervă nefolosită)
+
+| # | cerere | status | rezultat |
+|---|---|---|---|
+| 1 | altex `/resigilate/filtru/p/2/` | 200 | **48 de carduri**, 46 noi față de p1 |
+| 2 | altex `/resigilate/filtru/p/500/` | **200** | **grilă goală** — `products: []`, `pagination: []`, `<h1>` neschimbat |
+| 3 | mediagalaxy `/resigilate/filtru/p/2/` | 200 | 48 de carduri, toate pe gazda `mediagalaxy.ro` |
+| 4 | sportvision `/produse/noua-colectie` (HTTP) | 200 | **24 `div.product-item`** — identic cu browserul |
+| 5 | sportvision `…/page-2` | 200 | 24 de carduri, **0 comune** cu p1 |
+| 6 | booztlet `/eu/en/women/view-all` (HTTP) | 200 | **86 `[data-product-id]`** — identic cu browserul, NU e cochilie |
+| 7 | altex `{cdn}{image}` | 200 | `image/jpeg`, 95.192 B — imaginea **se compune** |
+| 8 | rezervă: booztlet p2 | — | **neconsumată**: p1 nu expune nicio paginare în brut |
+
+Oprirea paginării pe altex e deci **grila goală pe 200** — a patra semnătură de final din
+codebase, după 404 (buzzsneakers), pagina repetată și 5xx (STATE-1).
+
+Cererile 4 și 6 au avut o miză proprie, ușor de trecut cu vederea: **JSON-0 măsurase randarea de
+browser, dar scannerul citește HTTP**. Un descriptor scris pe ce vede browserul ar fi putut
+descrie noduri pe care HTTP-ul nu le servește. Ambele au ieșit identice, deci niciunul dintre
+cele două domenii nu cere browser.
+
+### sportvision.ro — SSR, cu paginare care există dar nu se vedea
+
+Nota veche spunea „paginarea nu e clasică — `a[rel='next']` cu textul «Arată mai multe», deci
+încărcare client-side, nemăsurată". Adevărat despre **click** (JSON-0: clickul avansează
+contorul la `page-3` și nu aduce nimic, zero cereri de rețea), dar URL-ul din `href` există și e
+servit server-side. Cererea 5 l-a cerut: 200, alte 24 de carduri, zero comune. `page-{n}` intră
+în descriptor.
+
+**Fără referință, și e o măsurătoare:** `data-productprevprice` e EGAL cu `data-productprice` pe
+24/24, iar `data-productdiscount` e „0" pe 24/24 — exact capcana constantei de la vivre și
+`previousPrice` de la flip. Citită ca referință, ar produce reduceri de 0% pe tot catalogul.
+Deci axa D doar pe R2.
+
+Prețul vine din **text**, nu din atribut: `data-productprice="249,99"` are virgulă zecimală, iar
+calea `price_attr` merge prin parserul strict (punct zecimal) și ar întoarce None — verificat.
+
+### booztlet.com — SSR, EUR, cu punct zecimal
+
+86 de produse randate server-side, aceleași pe HTTP și în browser. `/eu/en/women` e o
+**aterizare** de departament (1,24 MB, ZERO carduri); frunza de listare e `view-all`.
+
+Trei decizii, fiecare plătită de o măsurătoare:
+
+* **`us_dot`, nu `eu_comma`.** Prețurile sunt „69.50 €" — punctul e ZECIMAL. Cu `eu_comma` ar
+  ieși 6950.0, de 100 de ori mai mult. Sigur pe tot dump-ul: valorile merg de la 9.0 la 433.3 și
+  niciuna n-are separator de mii, deci ambiguitatea „1.299" nu apare.
+* **Prețul din text, nu din atributul numeric.** `data-cnstrc-item-price="78.000"` ar fi mers
+  prin parserul strict, dar e prezent doar pe **80/86** — iar cele șase care-i lipsesc sunt
+  produse REALE (Enkel Studio by PWT, cu href și preț). Calea aia ar fi pierdut tăcut șase
+  carduri. `data-actual-price="78 €"` e pe 86/86 dar are „€", pe care parserul strict îl refuză.
+* **Selectorul trebuie să numească eticheta.** Prețul plătit și referința au ACEEAȘI clasă
+  (`palette-product-card-price__price-tag`); le deosebește doar `span` vs `s`.
+
+Referința e un `<s>` **nemarcat** (79/86; cele 7 fără sunt exact cele fără reducere). Cele trei
+potriviri de „lowest price" din pagină sunt numele unei rubrici de meniu
+(`/campaigns/women/lowest-prices`), nu o etichetă de câmp — lecția bergfreunde.
+
+`max_pages: 1` e măsurătoare: HTML-ul brut n-are `rel=next` și nicio ancoră cu `page=`, iar în
+browser scroll-ul până la capătul grilei — dovedit de 65 de imagini leneșe încărcate — n-a
+declanșat nicio cerere de produse. Adâncimea ar cere API-ul **Constructor.io**, sugerat de
+atributele `data-cnstrc-*`; pistă neexplorată.
+
+### GUARD-1 — două găuri în `_detecteaza_blocare`, de reparat într-o rundă proprie
+
+Ambele domenii de mai jos au primit **403 și o pagină de blocare**, și în ambele cazuri garda a
+întors **`None`** — adică producția ar fi tratat răspunsul ca pe conținut real.
+
+**(a) sivasdescalzo — markerul e DOAR în `<title>`.** Verificat pe HTML-ul capturat:
+`'just a moment' in BODY text: False`, `in <title>: True`. Garda caută markerele în
+`page.inner_text("body")`; pagina Cloudflare pune „Just a moment..." în titlu, iar în body scrie
+„Performing security verification" / „verifies you are not a bot" — niciunul în
+`_MARKERE_BLOCARE`. E bug-ul semnalat la G4-V3, încă neplombat, acum reprodus cu fragment
+verbatim.
+
+**(b) bstn — shell cu titlu nevid.** Regula de shell cere **trei** condiții simultan: corp sub
+15 000 de octeți, zero `<a `, ȘI titlu gol-sau-lipsă. Pagina bstn are 2641 de octeți și zero
+ancore, dar are `<title>BSTN Store</title>` — deci conjuncția pică și 403-ul trece drept pagină
+bună.
+
+Amândouă se repară în același loc: **markerele să se caute și în `<title>`, iar statusul HTTP să
+conteze**. Forma exactă e o rundă de cod (GUARD-1), nu una de sondă.
+
+### Ce rămâne deschis
+
+* **sizeer.ro** — 403 Akamai în browser, dar G2C-1b îl măsurase deschis pe HTTP cu `impersonate`
+  (1,8–2,1 MB, ld+json complet). Verdictul „nu e blocaj" era legat de CALEA pe care a fost dat.
+  **De re-măsurat pe HTTP** înainte de orice concluzie.
+* **altex prin browser** — `ERR_HTTP2_PROTOCOL_ERROR` de trei ori, zero octeți transferați. Nu e
+  zid, e o incompatibilitate de transport; calea `curl_cffi` a producției merge fără probleme.
+  Orice sondă pe `fenrir.altex.ro` se face **prin poartă**, nu prin browser.
+* **Adâncimea plafonată.** `max_pages: 30` pe altex și mediagalaxy e plafon de **buget**, nu
+  măsurătoare: realele sunt 168 și 157. 30 × 48 = 1.440 de produse per scan; restul intră prin
+  rotația zilelor următoare. La fel pe sportvision (30 din ~97). De ridicat când scanul își
+  permite.
+* **computeruniverse.net** — GATE-3 **nu reproduce** eșecul de la LST-D5: același `/de`, prin
+  aceeași poartă, a dat 200 din primul hop, iar apexul urcă `computeruniverse.net/` → 301 →
+  `www.` → 307 → `/en` → 200. Deci storefront-ul de aterizare e `/en`, nu `/de`. Cauza eșecului
+  inițial rămâne neexplicată.
