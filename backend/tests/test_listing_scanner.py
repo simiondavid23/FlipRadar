@@ -756,7 +756,23 @@ def test_listing_domains_exact_cele_din_registru():
                                  # `altex_next`. Raman in afara, ca ziduri masurate
                                  # in browser: sizeer (403 Akamai), bstn (403) si
                                  # sivasdescalzo (Cloudflare Turnstile).
-                                 "sportvision.ro", "booztlet.com"}
+                                 "sportvision.ro", "booztlet.com",
+                                 # DEAL-D6 - doua domenii pe care sondele
+                                 # anterioare le respinsesera pe masuratori
+                                 # gresite. lego.com intra pe STARE (cache Apollo,
+                                 # al OPTULEA `state_extractor`) si e primul
+                                 # magazin cu `entries` din DOUA sectiuni ale
+                                 # aceleiasi vitrine - categoria de reduceri,
+                                 # gasita in cache la DEAL-D6 dupa ce DEAL-D3 o
+                                 # declarase inexistenta, plus campania.
+                                 # 43einhalb.com intra pe CSS, fara nicio linie de
+                                 # cod: „duplicatele responsive" erau carduri de
+                                 # megameniu, deci a fost de ajuns un selector
+                                 # scopat la `#prodList`. sizeer.ro RAMANE afara,
+                                 # dar acum cu dovada: pe HTTP poarta e deschisa
+                                 # (200, 1,71 MB) si totusi grila nu e servita -
+                                 # zero bloburi de stare, deci JS_ONLY.
+                                 "lego.com", "43einhalb.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -3123,3 +3139,250 @@ def test_status_403_pe_pagina_1_nu_se_reincearca(monkeypatch):
     assert len(cereri) == 1, "un 403 nu se reincearca deloc"
     assert dormite == [], "si nici nu asteapta degeaba"
     assert "dupa retry" not in str(exc.value), "403 nu trece prin calea de retry"
+
+
+# ── DEAL-D6 — lego.com pe cache Apollo, 43einhalb.com pe CSS scopat la grila ──
+#
+# Sonda LST-D6 a masurat trei domenii, si in doua din trei cazuri PREMISA era
+# gresita: sizeer nu era „grila inecata in zgomot" ci grila neservita deloc
+# (JS_ONLY, iesit din axa D), iar duplicatele de pe 43einhalb nu erau variante
+# responsive, ci previzualizari de MEGAMENIU — adica un selector nescopat, nu o
+# pagina ciudata.
+
+def _stare_lego(nume: str):
+    """`(html, cache)` dintr-un fixture lego — pentru testele care au nevoie sa
+    MUTE forma cache-ului inainte de a o da extractorului.
+
+    Citeste fisierul pe nume intreg, nu prin `_fixture_stare`: lego are DOUA
+    fixture-uri de stare pe acelasi domeniu (categorie si campanie), fiindca cele
+    doua intrari ale descriptorului emit seturi diferite de campuri — iar
+    conventia `<domeniu>_state.html` nu poate exprima decat unul.
+    """
+    from app.services.listing_state_extractors import next_data
+
+    with open(os.path.join(FIXTURI, f"{nume}.html"), encoding="utf-8") as f:
+        html = f.read()
+    return html, next_data(html)["props"]["pageProps"]["__APOLLO_STATE__"]
+
+
+def _html_lego(stare) -> str:
+    """Forma inversa: un `__NEXT_DATA__` care poarta cache-ul dat."""
+    import json
+
+    date = {"props": {"pageProps": {"__APOLLO_STATE__": stare}}}
+    return ('<script id="__NEXT_DATA__" type="application/json">'
+            + json.dumps(date, ensure_ascii=False) + "</script>")
+
+
+def test_lego_apollo_categorie():
+    """Categoria de reduceri — forma cu `centAmount` si FARA `formattedValue`.
+
+    Pe `/ro-ro/categories/sales-and-deals` obiectul `listPrice` are doar
+    `formattedAmount` si `centAmount` (8499): zero `formattedValue` pe 22/22, in
+    timp ce pe campanie il are pe 20/20. Un resolver care s-ar opri la
+    `formattedValue` ar da deci ZERO referinte aici — un catalog fara nicio
+    reducere, tacut. De aia a doua asertie a testului e chiar `compare_at`.
+    """
+    from app.services.listing_state_extractors import lego_apollo
+
+    d = listing_descriptor("lego.com")
+    html, stare = _stare_lego("lego.com_state_categorie")
+    carduri = lego_apollo(html, d)
+
+    assert d["state_extractor"] == "lego_apollo"
+    assert len(carduri) == 2
+    calendar, caine = carduri
+
+    assert calendar["price"] == 50.99, "din `formattedValue`, nu din text"
+    assert calendar["compare_at"] == 84.99, (
+        "din `centAmount` 8499, fiindca aici `formattedValue` LIPSESTE")
+    assert calendar["title"] == "Calendar de perete 2026"
+    assert calendar["url"] == ("https://www.lego.com/ro-ro/product/"
+                               "2026-wall-calendar-5009303")
+    assert calendar["image_url"].startswith("https://www.lego.com/cdn/"), (
+        "imaginea e chiar motivul pentru care nu s-a mers pe CSS: acolo e 0/22")
+
+    assert caine["price"] == 113.99
+    assert caine["compare_at"] == 189.99
+    assert caine["url"].endswith("/pickle-dog-plush-5009235")
+
+    # A doua cale catre obiectul `Price`, si singura care ramane cand varianta NU
+    # poarta campul: cheia CONSTRUITA `$<varianta>.<camp>`. Pe lego cele doua cai
+    # duc in acelasi loc (referinta e `generated: true`, iar `id`-ul ei ESTE cheia
+    # construita — masurat 42/42), deci forma de mai jos NU exista in dump. De aia
+    # sta aici, ca mutatie explicita, si nu in fixture: fixture-ul ramane reducere
+    # verbatim, iar rezerva are totusi ce sa dovedeasca.
+    fara_camp = {k: (dict(v) if k.startswith("ProductVariant:") else v)
+                 for k, v in stare.items()}
+    for cheie, obiect in fara_camp.items():
+        if cheie.startswith("ProductVariant:"):
+            obiect.pop("listPrice", None)
+    mutate = lego_apollo(_html_lego(fara_camp), d)
+    assert [c["compare_at"] for c in mutate] == [84.99, 189.99], (
+        "fara referinta pe varianta, `listPrice` se ia prin cheia construita")
+
+
+def test_lego_apollo_campanie_forma_cu_referinta():
+    """Campania — ACELASI extractor, alt set de campuri emis de query.
+
+    `/ro-ro/page/lego-offers-promotions` e a doua intrare din `entries`. Aici
+    `listPrice` are si `formattedValue`, si `currencyCode`, deci se citeste pe
+    drumul „bogat". Doua intrari, un singur extractor: exact ce justifica alegerea
+    starii in locul CSS-ului.
+    """
+    from app.services.listing_state_extractors import lego_apollo
+
+    d = listing_descriptor("lego.com")
+    html, stare = _stare_lego("lego.com_state_campanie")
+    carduri = lego_apollo(html, d)
+
+    assert len(carduri) == 2
+    calendar, caine = carduri
+    assert (calendar["price"], calendar["compare_at"]) == (50.99, 84.99)
+    assert (caine["price"], caine["compare_at"]) == (113.99, 189.99)
+    assert calendar["url"] == ("https://www.lego.com/ro-ro/product/"
+                               "2026-wall-calendar-5009303")
+    assert calendar["image_url"].startswith("https://www.lego.com/cdn/")
+
+    # Ramura „bogata" nu e cod mort: pe campanie referinta CHIAR are campul.
+    assert (stare["$ProductVariant:6576805.listPrice"]["formattedValue"]
+            == 84.99), "fixture-ul campaniei trebuie sa poarte `formattedValue`"
+    assert (stare["$ProductVariant:6576805.listPrice"]["currencyCode"]
+            == "RON"), "moneda se citeste din cache, nu din locala vitrinei"
+
+    # A doua serializare Apollo: `{"__ref": ...}` in loc de `{"type": "id", ...}`.
+    # NEMASURATA pe lego (dump-urile au numai forma a doua, 42/42), acceptata
+    # fiindca cele doua nu coexista intr-un build.
+    def in_dunder(o):
+        if isinstance(o, dict):
+            if o.get("type") == "id" and isinstance(o.get("id"), str):
+                return {"__ref": o["id"]}
+            return {k: in_dunder(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [in_dunder(x) for x in o]
+        return o
+
+    mutate = lego_apollo(_html_lego(in_dunder(stare)), d)
+    assert [(c["price"], c["compare_at"]) for c in mutate] == [
+        (50.99, 84.99), (113.99, 189.99)], "forma `__ref` se rezolva la fel"
+
+
+def test_lego_apollo_fara_produse_e_final():
+    """`?page=500` -> 200 cu grila goala: cache fara nicio cheie
+    `SingleVariantProduct:*`, deci `[]`.
+
+    E semnatura de oprire pe care conditia compozita din scanner o asteapta —
+    aceeasi ca la altex si flip. Un extractor care ar ridica acolo ar transforma
+    finalul normal al paginarii in eroare; unul care ar intoarce ultimele carduri
+    ar tine bucla pornita pana la plafon.
+    """
+    from app.services.listing_state_extractors import lego_apollo
+
+    d = listing_descriptor("lego.com")
+    # Cache real ca FORMA (chei de alte tipuri), dar fara niciun produs.
+    gol = {"ROOT_QUERY": {"__typename": "Query"},
+           "SKUCarousel:blt393e31916f7d0934": {"products": []}}
+    assert lego_apollo(_html_lego(gol), d) == []
+    # Si pagina care n-are deloc `__NEXT_DATA__`, nu doar cache-ul gol.
+    assert lego_apollo("<html><body>nimic</body></html>", d) == []
+
+
+def test_43einhalb_scopat_la_grila():
+    """Cardul e `#prodList div.item-wrapper`, SCOPAT — si scoparea se masoara.
+
+    LST-D3 raportase „69 de `div.item-wrapper` pentru 16 URL-uri distincte" si
+    banuise variante responsive. LST-D6 a aratat altceva: niciun stramos n-are
+    clasa de breakpoint, iar cele 66 de `.pInfo` se impart 36 in `div#prodList`
+    (grila) si 30 in `header#header` (previzualizari de megameniu). Fixture-ul
+    poarta ambele familii, deci selectorul nescopat CHIAR scoate un card in plus.
+
+    Miza nu e doar curatenia: pe pagina de coada grila e goala, iar cardurile de
+    megameniu ar face-o sa para plina, adica ar sterge chiar semnalul de oprire.
+    """
+    d = listing_descriptor("43einhalb.com")
+    html = _fixture("43einhalb.com")
+    carduri = extrage_carduri(html, d, "43einhalb.com")
+
+    assert d["card"] == "#prodList div.item-wrapper"
+    assert len(carduri) == 2, "megameniul nu intra in grila"
+    assert len({c["url"] for c in carduri}) == 2
+    samba, nb = carduri
+
+    assert samba["price"] == 80.0
+    assert samba["compare_at"] == 119.95, (
+        "referinta e '119,95 UVP' cu exponentul notei de subsol dupa ea: "
+        "U+00B2 nu e cifra, deci `eu_comma` citeste 119.95")
+    assert samba["url"].endswith(
+        "/p/adidas-samba-og-w-wonder-white-dark-brown-gold-metallic-1454553")
+
+    # Al doilea card e LENES — forma majoritara (32/36): `src` e placeholderul
+    # `/images/noimage.png`, iar poza reala sta in `data-srcset`. Cu `image_attr`
+    # doar pe `src`, controlul dadea 4/36.
+    assert nb["price"] == 101.0
+    assert "noimage" not in (nb["image_url"] or "")
+    assert nb["image_url"].startswith("https://www.43einhalb.com/media/")
+
+    # Aceeasi pagina cu selectorul NESCOPAT: cardul de megameniu apare, si e chiar
+    # un duplicat al primului produs din grila.
+    nescopat = extrage_carduri(html, dict(d, card="div.item-wrapper"),
+                               "43einhalb.com")
+    assert len(nescopat) == 3
+    assert len({c["url"] for c in nescopat}) == 2, "al treilea e duplicat"
+
+
+def test_pagina_url_deal_d6():
+    """Paginarea celor doua domenii, prin `_intrari` + `_pagina_url`.
+
+    Pe lego intrarile sunt DOUA si numai prima pagineaza: campania e o pagina CMS
+    cu carusel, fara `?page=`, deci `max_pages: 1` si niciun template — garda de
+    paginare respinge un template care n-ar fi citit oricum niciodata.
+    """
+    from app.services.listing_scanner import _intrari, _pagina_url
+
+    lego = _intrari(listing_descriptor("lego.com"))
+    assert len(lego) == 2
+    categorie, campanie = lego
+
+    assert categorie["max_pages"] == 5
+    assert (_pagina_url(categorie, 1)
+            == "https://www.lego.com/ro-ro/categories/sales-and-deals")
+    assert (_pagina_url(categorie, 2)
+            == "https://www.lego.com/ro-ro/categories/sales-and-deals?page=2")
+
+    assert campanie["max_pages"] == 1
+    assert campanie["page_url_template"] is None, "campania nu pagineaza"
+    assert (_pagina_url(campanie, 1)
+            == "https://www.lego.com/ro-ro/page/lego-offers-promotions")
+
+    e43 = _intrari(listing_descriptor("43einhalb.com"))[0]
+    assert _pagina_url(e43, 1) == "https://www.43einhalb.com/sale"
+    assert _pagina_url(e43, 2) == "https://www.43einhalb.com/sale/page/2"
+
+
+def test_deal_d6_in_registru():
+    """Cele doua descriptoare, cu plafoanele explicate.
+
+    `max_pages: 30` pe 43einhalb NU e masuratoare: adancimea reala e ~47 (1.663 de
+    produse la 36/pagina, DERIVAT), iar coada e ZID — `page/500` da 403, deci nici
+    nu se poate bisecta. 30 e plafonul de buget, conventia altex/mediagalaxy.
+    Oprirea REALA e grila goala de la `page/48`; `rel=next` nu e semnal de final
+    acolo, fiindca pagina goala inca il anunta.
+    """
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
+    assert "lego_apollo" in LISTING_STATE_EXTRACTORS
+
+    lego = listing_descriptor("lego.com")
+    assert lego["state_extractor"] == "lego_apollo"
+    assert lego["currency"] == "RON"
+    assert lego["reference_kind"] == "nemarcat"
+    assert [i["max_pages"] for i in lego["entries"]] == [5, 1]
+    assert "card" not in lego, "pe calea de stare selectorii CSS n-au ce cauta"
+
+    e43 = listing_descriptor("43einhalb.com")
+    assert e43["max_pages"] == 30
+    assert e43["image_attr"] == ["data-srcset", "src"]
+    assert e43["price_parse"] == "eu_comma"
+    assert e43["reference_kind"] == "prp"
+
+    assert {"lego.com", "43einhalb.com"} <= listing_domains()

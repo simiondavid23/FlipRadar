@@ -1031,7 +1031,53 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "distincte, iar 36 din 69 n-au niciun `<a href>`. Un descriptor pe "
                  "ele scotea 6 carduri cu 3 URL-uri - masuratoare falsa care arata a "
                  "succes. In plus `page/500` a dat 403 si `classify` -> BLOCKED. Nu "
-                 "intra pana la o sonda care separa duplicatele.",
+                 "intra pana la o sonda care separa duplicatele. LST-D6 - "
+                 "duplicatele NU erau responsive: niciun stramos n-are clasa de "
+                 "breakpoint. Cele 66 de `.pInfo` se impart in 36 in `div#prodList` "
+                 "(grila) si 30 in `header#header` (previzualizari de MEGAMENIU); "
+                 "scopat la `#prodList`, ies 36 de carduri cu 36 de URL-uri "
+                 "distincte, ZERO duplicate. Deci INTRA, pe CSS. Duplicatele de "
+                 "megameniu aveau oricum pret identic cu al grilei (0 URL-uri "
+                 "divergente), deci si fara scopare dedup-ul SCAN-1 le-ar fi "
+                 "absorbit - dar cu ele grila goala de la coada n-ar mai fi fost "
+                 "goala, si oprirea paginarii s-ar fi pierdut.",
+        # ── DEAL-D6, din dump-urile LST-D6 (p1, p2, page/48) ────────────────
+        "listing": {
+            "url": "https://www.43einhalb.com/sale",
+            "page_url_template": "https://www.43einhalb.com/sale/page/{n}",
+            # Adancimea reala e ~47 (1.663 de produse la 36/pagina, DERIVATA, nu
+            # numarata - totalul drifteaza: 1.664 pe 7 septembrie, 1.663 pe 8).
+            # 30 e PLAFON DE BUGET, conventia altex/mediagalaxy.
+            #
+            # Oprirea masurata: `/sale/page/48` -> 200 cu GRILA GOALA (`url_final`,
+            # `canonical` si `<title>` spun toate „Seite 48", deci nu e clamp).
+            # DOUA capcane in jurul ei:
+            #   * pagina goala INCA anunta `<link rel="next" href="/sale/page/49">`,
+            #     deci `rel=next` nu e semnal de final aici - grila goala e;
+            #   * `page/500` da 403 (`classify` -> BLOCKED). Coada e ZID, deci
+            #     plafonul nu se ridica prin bisectie pe pagini mari.
+            "max_pages": 30,
+            "currency": "EUR",
+            # SCOPAT la grila. Fara `#prodList`, selectorul mai prinde 30 de
+            # carduri de megameniu (6 dintre ele cu forma completa de pret, deci
+            # 6 carduri in plus la extractie) - iar pe pagina de coada, unde grila
+            # e goala, ele ar face pagina sa para plina si ar rupe oprirea.
+            "card": "#prodList div.item-wrapper",
+            "link": "a.product-title",
+            "title": "a.product-title",
+            # 32 din 36 de carduri sunt LENESE: `src="/images/noimage.png"` (un
+            # placeholder, respins corect de `normalizeaza_imagine`) si poza reala
+            # in `data-srcset`. Cu `["src"]` singur, controlul da 4/36; cu
+            # rezerva, 36/36. Acelasi tipar ca intersport la IMG-1a.
+            "image_attr": ["data-srcset", "src"],
+            "price_text": ".product-price--new",
+            "compare_text": ".product-price--old",
+            "price_parse": "eu_comma",
+            # `prp`, si nu din deductie: nota de subsol a paginii eticheteaza
+            # CAMPUL - „UVP = unverbindliche Preisempfehlung des Herstellers".
+            # `„€ 119,95 UVP ²"` -> 119.95, fiindca `²` (U+00B2) nu e cifra.
+            "reference_kind": "prp",
+        },
     },
 
     # ── CONTENT-2 ─────────────────────────────────────────────────────────────
@@ -1958,7 +2004,20 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "octeti, `<title>Access Denied</title>`, `errors.edgesuite.net`), de "
                  "doua ori. NU contrazice masuratoarea G2C-1b (1,8-2,1 MB pe HTTP cu "
                  "`impersonate`): verdictul „nu e blocaj” era legat de CALEA pe care a "
-                 "fost dat. De RE-MASURAT pe HTTP inainte de orice concluzie.",
+                 "fost dat. De RE-MASURAT pe HTTP inainte de orice concluzie. "
+                 "LST-D6 - RE-MASURAT, si axa D se INCHIDE: pe HTTP poarta e "
+                 "deschisa (`/outlet` a raspuns 200 cu 1,71 MB, deci verdictul "
+                 "G2C-1b ramane valid pentru calea HTTP), dar GRILA NU E SERVITA "
+                 "DELOC - 4 carduri cu pret propriu (un raft de recomandari), 0 "
+                 "carduri pe `/promotii-actuale`, si ZERO bloburi de stare: nici "
+                 "`__NUXT__`, nici `__NEXT_DATA__`, nici `<script "
+                 "type=application/json>`, nici `window.__*`. Deci JS_ONLY, nu "
+                 "zgomot: nota veche („87 din 92 de carduri poarta componentele "
+                 "partajate\") era corecta dar din motivul gresit. Verificarea "
+                 "blobului e pasul care lipsea, si el schimba „n-am gasit produse\" "
+                 "in „nu exista produse de gasit\". Reintrarea cere captura "
+                 "API-ului din spatele grilei - pe HTTP, unde poarta e deschisa, "
+                 "nu in browser, unde e 403 Akamai.",
     },
     # ── G2F — sub-lotul sport/outdoor (sonde 2026-08-18) ──────────────────────
     # Din patru domenii sondate au intrat TREI. decathlon.ro e Grup 4 (Cloudflare
@@ -3844,7 +3903,53 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "20 (20/20 sub `ol.Carousel_items__...`) peste un "
                  "`__NEXT_DATA__` cu cache Apollo NORMALIZAT, in care valorile "
                  "stau in intrari separate legate prin referinte. Deci STATE, dar "
-                 "cere un resolver de referinte.",
+                 "cere un resolver de referinte. DEAL-D6 - INTRA, cu resolverul "
+                 "scris: `lego_apollo`. Sonda a gasit si listarea reala, "
+                 "`/ro-ro/categories/sales-and-deals` (18 produse pe p1, 4 pe p2, "
+                 "0 comune), care la DEAL-D3 fusese declarata inexistenta - URL-ul "
+                 "n-a fost ghicit, ci citit din cache: `SKUCarousel:<id>.cta.link` "
+                 "e SINGURUL sir `/ro-ro/` din tot cache-ul campaniei.",
+        # ── DEAL-D6, din dump-urile LST-D6 (categoria) + LST-D3 (campania) ──
+        #
+        # A DOUA forma `entries` pe un singur MAGAZIN (dupa eMAG si nichiduta,
+        # care listau categorii): aici cele doua intrari sunt sectiuni diferite
+        # ale aceleiasi vitrine, iar suprapunerea lor e reala (calendarul din
+        # campanie e si in categorie). Nu deranjeaza: `vazute` dedupliceaza pe
+        # `external_id`, si ambele au fost MASURATE, deci niciuna nu e ghicita.
+        "listing": {
+            "entries": [
+                # 22 de produse azi (18 + 4). `?page=500` -> 200 cu grila goala
+                # si cache fara nicio cheie `SingleVariantProduct:*`: oprire
+                # curata, aceeasi semnatura ca altex/flip, deci plafonul e plasa.
+                {"url": "https://www.lego.com/ro-ro/categories/sales-and-deals",
+                 "page_url_template":
+                     "https://www.lego.com/ro-ro/categories/sales-and-deals?page={n}",
+                 "max_pages": 5},
+                # Campania: pagina CMS masurata inca de la LST-D3, 20 de produse
+                # intr-un carusel, fara paginare - de aici `max_pages: 1` si
+                # niciun template (garda de paginare l-ar respinge oricum, si pe
+                # buna dreptate: n-ar fi citit niciodata).
+                {"url": "https://www.lego.com/ro-ro/page/lego-offers-promotions",
+                 "max_pages": 1},
+            ],
+            # Plafonul descriptorului e doar rezerva ceruta de contract: ambele
+            # intrari si-l declara pe al lor. 5 x 18 = 90, cu marja peste cele 22
+            # de azi - numarul e al unei campanii si poate creste.
+            "max_pages": 5,
+            "currency": "RON",
+            "state_extractor": "lego_apollo",
+            # Varianta CSS exista si a fost masurata (18/18, 4/4, referinta
+            # 22/22), dar NU se foloseste: da imagine pe 0/22 (`img[data-test=
+            # 'product-leaf-image-1']` n-are nici `src`, nici `srcset` in brut),
+            # si mai ales fiindca atributele de test sunt INVERSATE - `data-test=
+            # "product-leaf-price"` e pretul TAIAT, iar cel platit sta in
+            # `product-leaf-discounted-price`. Aceeasi capcana ca la altex.
+            # Detaliile, in docstring-ul lui `lego_apollo`.
+            #
+            # `nemarcat`: `listPrice` e pretul de lista LEGO (PRP-ul lor), fara
+            # nicio eticheta legala pe pagina - nici Omnibus, nici „UVP".
+            "reference_kind": "nemarcat",
+        },
     },
     "cardmarket.com": {
         "label": "Cardmarket",

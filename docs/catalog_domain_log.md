@@ -4653,3 +4653,167 @@ trecut suita — dar nu fiindcă testele ar fi fost slabe: la a doua trecere `ra
 Sabotajul real e altul — încă o cerere în locul ridicării — și acela pică imediat
 (`test_none_dublu_pe_pagina_1_ridica`, care numără exact două cereri). Când un sabotaj nu
 declanșează, prima ipoteză e că mutația e inertă, nu că gardul lipsește.
+
+## DEAL-D6 — lego.com (`lego_apollo`, `entries`) și 43einhalb.com; sizeer închis (sonda LST-D6)
+
+Trei domenii, trei verdicte — și în **două din trei** cazuri verdictul vechi fusese dat pe o
+măsurătoare greșită, nu pe o realitate a magazinului. Asta e rezultatul rundei, nu o notă de
+subsol.
+
+| domeniu | verdict vechi | verdict DEAL-D6 |
+|---|---|---|
+| lego.com | „navigația n-are categorie de sale, doar campania" (DEAL-D3) | **INTRĂ** — categoria există; două intrări, un extractor de stare |
+| 43einhalb.com | „grila randează duplicate responsive" (DEAL-D3) | **INTRĂ** — duplicatele erau megameniu; selector scopat, zero cod nou |
+| sizeer.ro | „zgomotul îneacă produsele" (G2C-1b) | **NU INTRĂ**, dar acum cu dovadă: JS_ONLY |
+
+### 1. lego.com — cache Apollo, două forme ale aceluiași cache
+
+Listarea reală, `/ro-ro/categories/sales-and-deals`, **nu s-a ghicit**: URL-ul e în cache-ul
+paginii de campanie, în CTA-ul chiar al caruselului de reduceri
+(`SKUCarousel:<id>.cta.link`), și e **singurul șir `/ro-ro/` din tot cache-ul**. 18 produse pe
+p1, 4 pe p2, `p1 ∩ p2 = 0`; `?page=500` → 200 cu grilă goală, adică oprirea curată deja
+cunoscută de la altex și flip.
+
+Cache-ul stă la `props.pageProps.__APOLLO_STATE__` și e **normalizat** — o hartă plată de la
+chei `<Tip>:<id>` la obiecte, legate prin referințe:
+
+```
+SingleVariantProduct:<cod>   -> slug, name, primaryImage, variant
+ProductVariant:<sku>         -> price, listPrice
+$ProductVariant:<sku>.price  -> {formattedAmount, centAmount, currencyCode, formattedValue}
+```
+
+**Subtilitatea care contează: setul de câmpuri depinde de QUERY-ul din spatele paginii, nu de
+produs.** Pe campanie obiectul `listPrice` are `formattedValue` și `currencyCode` (20/20); pe
+categorie n-are niciunul — doar `formattedAmount` („84,99 lei", text localizat, inutilizabil) și
+`centAmount` (8499), pe 22/22. Un resolver oprit la `formattedValue` dă deci **zero referințe pe
+categorie**: un catalog fără nicio reducere, tăcut. De aceea valoarea se citește
+`formattedValue` dacă e numeric, **altfel `centAmount / 100`**.
+
+Aceeași dependență de query explică și alegerea imaginii: `primaryImage` simplu e pe 42/42,
+în timp ce forma cu argumente `primaryImage({"size":"THUMBNAIL"})` e emisă **doar** de query-ul
+de categorie (18/18 acolo, 0/20 pe campanie). Un extractor legat de ea ar fi mers pe o intrare
+și ar fi dat rame goale pe cealaltă.
+
+**O corecție la raportul sondei (§3.2).** Raportul spunea că „pe categorie varianta nu leagă
+`listPrice`, el există doar sub cheia construită". Măsurat pe dump-uri: varianta **leagă**
+câmpul pe 18/18, 4/4 și 20/20 — dar referința e `generated: true`, iar `id`-ul ei **este** cheia
+construită `$ProductVariant:<sku>.listPrice`. Cele două căi ale resolverului converg deci pe
+lego; rezerva pe cheia construită rămâne în cod pentru o serializare care ar lăsa câmpul afară
+din obiectul variantei, și e păzită printr-o **mutație explicită în test**, nu prin fixture —
+fixture-ul rămâne reducere verbatim a dump-ului. Ce era real din observația raportului e
+cealaltă jumătate: `formattedValue` chiar lipsește pe categorie.
+
+Tot așa, forma de referință `{"__ref": ...}` (Apollo 3) **nu apare deloc** în dump-uri: toate
+cele 42 de produse folosesc forma veche `{"type": "id", "generated": <bool>, "id": ...}`. E
+acceptată totuși, fiindcă cele două serializări nu coexistă într-un build.
+
+**Moneda se citește din cache, nu din locală.** `currencyCode` e `RON` pe `price` 42/42; o
+nepotrivire cu `currency` din descriptor sare cardul, cu WARN. Absența codului **nu** e
+nepotrivire — pe `listPrice` de categorie el lipsește pe 22/22, și acolo referința se citește ca
+atare (aceeași variantă, același coș). O referință în altă monedă pierde referința, nu cardul:
+prețul plătit rămâne valid, doar reducerea ar fi calculată din două unități diferite.
+
+**Ordinea cardurilor e ordinea cheilor** — și asta s-a măsurat, nu s-a presupus: pagina poartă
+și o listă ordonată (`ProductQueryResult:<uuid>.results` pe categorie,
+`SKUCarousel:<id>.products` pe campanie) și ea iese **identică** cu ordinea cheilor pe toate
+cele trei pagini cu produse (18, 4, 20). Deci nu se plimbă nimeni prin referințele listei ca să
+afle ce se știe deja.
+
+#### De ce NU CSS
+
+Selectorii există și funcționează (18/18, 4/4, referință 22/22) — dar dau **imagine 0/22**
+(`img[data-test='product-leaf-image-1']` n-are nici `src`, nici `srcset` în brut) și, mai grav,
+atributele de test sunt **inversate** față de intuiție, exact ca la altex:
+
+```html
+<span data-test="product-leaf-price">84,99 lei</span>              <!-- TĂIAT -->
+<span data-test="product-leaf-discounted-price">50,99 lei</span>   <!-- PLĂTIT -->
+```
+
+Verificat 22/22: `discounted` e mereu strict mai mic. Un descriptor care ar lua
+`product-leaf-price` drept preț plătit ar raporta prețul vechi pe tot catalogul. Din cache
+ambiguitatea dispare — `price` și `listPrice` sunt câmpuri **numite**, nu poziții într-un șablon
+— și tot din cache se ocolesc pragurile de livrare pe care pagina le poartă ca text alături de
+prețuri (`100` / `300` / `500` / `1000 lei`), capcană consemnată încă de la G4-V2b.
+
+`listPrice` e prețul de listă LEGO, adică un PRP fără nicio etichetă legală pe pagină →
+`reference_kind: "nemarcat"`.
+
+#### `entries` cu două secțiuni ale aceleiași vitrine
+
+A treia folosire a mecanismului `entries` (după eMAG și nichiduta), dar prima în care intrările
+nu sunt categorii-surori, ci **secțiuni diferite ale aceluiași magazin**: categoria de reduceri
+(`max_pages: 5`, plafon cu marjă peste cele 22 de produse de azi) și pagina de campanie
+(`max_pages: 1`, fără template — e un carusel CMS, iar garda de paginare respinge pe bună
+dreptate un template care n-ar fi citit niciodată). Suprapunerea dintre ele e reală (calendarul
+din campanie e și în categorie) și inofensivă: `vazute` deduplică pe `external_id`, iar ambele
+intrări au fost **măsurate**.
+
+### 2. 43einhalb.com — o lecție despre selectoare, nu despre pagină
+
+DEAL-D3 raportase „69 de `div.item-wrapper` pentru 16 URL-uri distincte" și bănuise variante de
+layout responsive. **Niciun strămoș n-are vreo clasă de breakpoint.** Urmărirea containerelor a
+dat răspunsul adevărat:
+
+| container | `.pInfo` | ce e |
+|---|---|---|
+| `div#prodList` | **36** | grila de produse |
+| `header#header` | 30 | previzualizări de MEGA-MENIU (5 dropdown-uri + 5 offcanvas × 3) |
+
+36 + 30 = 66. Scopat la `#prodList`: **36 de carduri, 36 de URL-uri distincte, zero duplicate**.
+Domeniul a intrat fără nicio linie de cod — a fost de ajuns un selector scopat.
+
+**Lecția, și ea e pentru sonde, nu pentru magazin:** clasamentul de selectoare al sondelor n-are
+noțiunea de *container de grilă*. El numără noduri care poartă preț și link și le ordonează după
+scor, deci un card de megameniu arată exact ca un card de produs. De aici verdictul „duplicate
+responsive" — o explicație plauzibilă lipită peste o măsurătoare care nu privise unde stau
+nodurile. Sondele viitoare trebuie să raporteze, pentru selectorul câștigător, **și distribuția
+pe strămoși** (`#prodList` vs `header`), nu doar numărul de potriviri.
+
+Miza scopării nu e doar curățenia. Cele 30 de carduri de meniu apar pe **fiecare** pagină,
+inclusiv pe cea de după capăt, unde grila e goală: nescopat, pagina de coadă ar fi părut plină
+și **semnalul de oprire s-ar fi pierdut**. (Pentru completitudine: duplicatele meniu-vs-grilă au
+preț identic, 0 URL-uri divergente, deci dedup-ul SCAN-1 le-ar fi absorbit fără pierdere de
+date — dar oprirea, nu.)
+
+Restul descriptorului, tot măsurat:
+
+* **Referința e etichetată pe câmp**, verbatim în nota de subsol: „² UVP = unverbindliche
+  Preisempfehlung des Herstellers" → `prp`, nu Omnibus. `eu_comma` citește corect
+  „€ 119,95 UVP ²" → 119.95, fiindcă `²` (U+00B2) nu e cifră zecimală.
+* **Imaginea a cerut `image_attr: ["data-srcset", "src"]`**: 32 din 36 de carduri sunt leneșe,
+  cu `src="/images/noimage.png"` (placeholder respins corect de `normalizeaza_imagine`) și poza
+  reală în `data-srcset`. Cu `["src"]` singur: 4/36. Cu rezerva: 36/36. Același tipar ca
+  intersport la IMG-1a.
+* **Oprirea și zidul.** `/sale/page/48` → 200 cu grilă goală (`url_final`, `canonical` și
+  `<title>` spun toate „Seite 48", deci nu e clamp). Două capcane în jurul ei: pagina goală
+  **încă anunță** `<link rel="next" href="/sale/page/49">` — deci `rel=next` nu e semnal de
+  final aici, grila goală e — iar `page/500` dă **403** (`classify` → BLOCKED), deci coada e zid
+  și plafonul nu se poate ridica prin bisecție pe pagini mari. `max_pages: 30` rămâne plafon de
+  buget peste o adâncime reală de ~47, ea însăși **derivată** (1 663 de produse ÷ 36), nu
+  numărată; totalul driftează (1 664 pe 7 septembrie → 1 663 pe 8).
+
+### 3. sizeer.ro — JS_ONLY, cu dovada care lipsea
+
+Prima jumătate a ipotezei se confirmă: **HTTP-ul nu e zid.** `/outlet` a răspuns 200 cu 1,71 MB,
+acolo unde browserul primise 403 Akamai (JSON-0). Verdictul G2C-1b „nu e blocaj" rămâne valid
+pentru calea HTTP.
+
+A doua jumătate nu. Pe cele 1,71 MB: **4** carduri cu preț propriu (un raft de recomandări, nu
+grila), **0** carduri pe `/promotii-actuale`, și **zero bloburi de stare** — nici `__NUXT__`,
+nici `__NEXT_DATA__`, nici `<script type=application/json>`, nici `window.__*`. Nota din august
+(„din 92 de carduri candidate, 87 poartă cele două componente partajate") era **corectă, dar din
+motivul greșit**: nu zgomotul îneacă produsele, ci **grila nu e servită deloc**. Verificarea
+blobului era pasul care lipsea, și e cel care schimbă „n-am găsit produse" în „nu există produse
+de găsit".
+
+Nu intră, și nu se propune descriptor. Reintrarea cere captura API-ului din spatele grilei — pe
+HTTP, unde poarta e deschisă, nu în browser, unde e 403.
+
+### 4. Ce s-a scris
+
+`lego_apollo` e al **optulea** extractor de stare (`listing_state_extractors.py`); 43einhalb n-a
+cerut niciunul. Domeniile de listare: 46 → **48**. Cele patru sabotaje ale rundei — `listPrice`
+doar prin referință, `formattedValue` fără rezervă, card nescopat, `image_attr` doar pe `src` —
+au fost verificate întâi că schimbă textul fișierului și apoi că fiecare pică exact garda ei.

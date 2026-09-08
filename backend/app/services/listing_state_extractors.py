@@ -29,8 +29,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import urllib.parse
+
+logger = logging.getLogger(__name__)
 
 _BLOC_LDJSON = re.compile(
     r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -828,6 +831,171 @@ def altex_next(html: str, descriptor: dict) -> list[dict]:
     return iesire
 
 
+# ── lego.com — `__NEXT_DATA__` cu cache Apollo NORMALIZAT ───────────────────
+#
+# Prefixul PDP-ului. Literal, si masurat: cele 42 de URL-uri compuse pe cele trei
+# pagini cu produse (18 + 4 categorie, 20 campanie) se regasesc TOATE in ancorele
+# DOM ale paginii lor, iar pe categorie cache-ul poarta si campul `pdpPath`,
+# identic cu ce compunem noi pe 18/18. Nu se poate deriva din descriptor:
+# intrarile sunt `/ro-ro/categories/...` si `/ro-ro/page/...`, alte sectiuni.
+_LEGO_PDP = "https://www.lego.com/ro-ro/product/"
+
+
+def _apollo_referinta(valoare) -> str | None:
+    """Cheia catre care arata o referinta de cache Apollo, sau None.
+
+    Doua forme, fiindca Apollo si-a schimbat serializarea intre versiuni majore:
+    `{"__ref": "<cheie>"}` (Apollo 3) si `{"type": "id", "generated": <bool>,
+    "id": "<cheie>"}` (forma mai veche). Pe lego s-a masurat NUMAI a doua, pe
+    42/42 de produse si pe ambele pagini — `__ref` nu apare deloc. E acceptata si
+    prima fiindca cele doua nu coexista: o singura serializare per build, deci
+    ramura in plus n-are cum sa citeasca altfel ceva ce forma masurata citea deja.
+    """
+    if not isinstance(valoare, dict):
+        return None
+    cheie = valoare.get("__ref") or valoare.get("id")
+    return cheie if isinstance(cheie, str) and cheie else None
+
+
+def _apollo_pret(stare: dict, cheie_variantei: str, camp: str):
+    """`(valoare, moneda)` pentru `price` / `listPrice` al unei variante.
+
+    DOUA subtilitati, amandoua din acelasi motiv: setul de campuri al cache-ului
+    depinde de QUERY-ul din spatele paginii, nu de produs.
+
+    1. Obiectul `Price` se ia prin referinta daca varianta o poarta, altfel prin
+       cheia CONSTRUITA `$<cheia variantei>.<camp>`. Pe lego cele doua cai duc in
+       acelasi loc — referinta e `generated: true` si `id`-ul ei ESTE cheia
+       construita (masurat 42/42, pe ambele pagini) — deci rezerva nu poate
+       diverge de masuratoare; e acolo pentru o serializare care ar lasa campul
+       afara din obiectul variantei.
+    2. Valoarea e `formattedValue` cand e numerica, ALTFEL `centAmount / 100`.
+       Nu e preferinta de stil: pe pagina de CATEGORIE obiectul `listPrice` are
+       doar `formattedAmount` („84,99 lei") si `centAmount` (8499) — zero
+       `formattedValue` pe 22/22 — in timp ce pe campanie il are pe 20/20. Un
+       resolver doar-pe-`formattedValue` da deci ZERO referinte pe categorie,
+       adica un catalog fara nicio reducere, tacut. `formattedAmount` NU se
+       parseaza: e text localizat, exact felul de sursa pe care `centAmount` o
+       face inutila.
+
+    Moneda iese separat fiindca nu e pe toate obiectele: `currencyCode` e prezent
+    pe `price` 42/42, dar pe `listPrice` doar pe campanie (20/20 acolo, 0/22 pe
+    categorie). Cine cheama decide ce face cu absenta ei.
+    """
+    referinta = _apollo_referinta((stare.get(cheie_variantei) or {}).get(camp))
+    obiect = stare.get(referinta) if referinta else None
+    if not isinstance(obiect, dict):
+        obiect = stare.get(f"${cheie_variantei}.{camp}")
+    if not isinstance(obiect, dict):
+        return None, None
+
+    moneda = obiect.get("currencyCode")
+    moneda = moneda if isinstance(moneda, str) and moneda else None
+    valoare = _pret_numeric(obiect.get("formattedValue"))
+    if valoare is None:
+        centi = obiect.get("centAmount")
+        if isinstance(centi, (int, float)) and not isinstance(centi, bool):
+            valoare = round(float(centi) / 100, 2)
+    return valoare, moneda
+
+
+def lego_apollo(html: str, descriptor: dict) -> list[dict]:
+    """lego.com — categoria de reduceri SI pagina de campanie, din cache Apollo.
+
+    UN extractor, DOUA intrari (`entries`): `/ro-ro/categories/sales-and-deals`
+    (18 produse pe p1, 4 pe p2, 0 comune) si `/ro-ro/page/lego-offers-promotions`
+    (20). Cache-ul sta la `props.pageProps.__APOLLO_STATE__` si e NORMALIZAT — o
+    harta plata de la chei `<Tip>:<id>` la obiecte, legate prin referinte:
+
+        SingleVariantProduct:<cod>   -> slug, name, primaryImage, variant
+        ProductVariant:<sku>         -> price, listPrice
+        $ProductVariant:<sku>.price  -> {formattedAmount, centAmount,
+                                         currencyCode, formattedValue}
+
+    DE CE STARE SI NU CSS. Selectorii exista si merg (`article[data-test=
+    'product-leaf']` da 18/18 si 4/4), dar dau imagine pe 0/22: `img[data-test=
+    'product-leaf-image-1']` n-are nici `src`, nici `srcset` in HTML-ul brut.
+    Si mai important, atributele de test sunt INVERSATE fata de intuitie, exact
+    ca la altex:
+
+        <span data-test="product-leaf-price">84,99 lei</span>            TAIAT
+        <span data-test="product-leaf-discounted-price">50,99 lei</span> PLATIT
+
+    Un descriptor care ar lua `product-leaf-price` drept pret platit ar raporta
+    pretul vechi pe tot catalogul (verificat 22/22: `discounted` e mereu strict
+    mai mic). Din cache ambiguitatea dispare: `price` si `listPrice` sunt campuri
+    NUMITE, nu pozitii intr-un sablon. Tot din cache se ocolesc si pragurile de
+    livrare pe care pagina le poarta ca text alaturi de preturi (`100` / `300` /
+    `500` / `1000 lei`) — capcana consemnata inca de la G4-V2b, pe PDP.
+
+    ORDINEA cardurilor e cea a cheilor, adica ordinea din documentul JSON. Nu e o
+    aproximare: pagina poarta si o lista ordonata — `ProductQueryResult:<uuid>.
+    results` pe categorie, `SKUCarousel:<id>.products` pe campanie — si ea iese
+    IDENTICA cu ordinea cheilor pe toate cele trei pagini cu produse (18, 4, 20).
+    Deci nu se plimba nimeni prin referintele listei ca sa afle ce se stie deja.
+
+    MONEDA se citeste din cache si se confrunta cu `currency` din descriptor; nu
+    se presupune din `/ro-ro/`. O nepotrivire SARE cardul, cu WARN — un pret in
+    alta moneda ar intra in scorare ca si cum ar fi in RON. Absenta codului NU e
+    nepotrivire: pe `listPrice` de categorie el lipseste pe 22/22, si acolo
+    referinta se citeste ca atare (aceeasi varianta, acelasi cos).
+
+    `compare_at` = `listPrice`, doar cand e STRICT mai mare decat pretul platit.
+    E pretul de lista LEGO, adica un PRP — nemarcat legal, de unde
+    `reference_kind: "nemarcat"` in registru.
+
+    Fara produse -> `[]`: pe `?page=500` pagina raspunde 200 cu grila goala si un
+    cache fara nicio cheie `SingleVariantProduct:*`, adica oprirea curata pe care
+    conditia compozita din scanner o asteapta (aceeasi semnatura ca altex/flip).
+    """
+    date = next_data(html)
+    stare = (((date or {}).get("props") or {}).get("pageProps") or {}).get(
+        "__APOLLO_STATE__")
+    if not isinstance(stare, dict):
+        return []
+
+    asteptata = descriptor.get("currency")
+    iesire = []
+    for cheie, produs in stare.items():
+        if (not cheie.startswith("SingleVariantProduct:")
+                or not isinstance(produs, dict)):
+            continue
+        # `overrideUrl` inaintea lui `slug`: e campul prin care LEGO poate muta un
+        # produs pe alta cale. Masurat null pe 42/42, deci azi lucreaza `slug` —
+        # dar precedenta e a magazinului, nu a noastra.
+        slug = (produs.get("overrideUrl") or produs.get("slug") or "").strip()
+        cheie_variantei = _apollo_referinta(produs.get("variant"))
+        if not slug or not cheie_variantei:
+            continue
+
+        pret, moneda = _apollo_pret(stare, cheie_variantei, "price")
+        if pret is None or pret <= 0:
+            continue
+        if moneda and asteptata and moneda != asteptata:
+            logger.warning(
+                "[lego_apollo] %s: moneda %s in cache, descriptorul cere %s — "
+                "cardul se sare", slug, moneda, asteptata)
+            continue
+
+        referinta, moneda_referintei = _apollo_pret(stare, cheie_variantei,
+                                                    "listPrice")
+        # O referinta in ALTA moneda nu sare cardul: pretul platit ramane valid,
+        # doar reducerea ar fi calculata din doua unitati diferite. Se pierde
+        # referinta, nu produsul.
+        if moneda_referintei and asteptata and moneda_referintei != asteptata:
+            referinta = None
+        if referinta is not None and referinta <= pret:
+            referinta = None
+
+        # `primaryImage`, nu `primaryImage({"size":"THUMBNAIL"})`: campul cu
+        # argumente e emis doar de query-ul de categorie (18/18 acolo, 0/20 pe
+        # campanie), iar cel simplu e pe 42/42. Un extractor legat de forma cu
+        # argumente ar merge pe o intrare si ar da rame goale pe cealalta.
+        iesire.append(_card(_LEGO_PDP + slug, produs.get("name"), pret,
+                            referinta, produs.get("primaryImage")))
+    return iesire
+
+
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
@@ -842,4 +1010,8 @@ LISTING_STATE_EXTRACTORS = {
     # STATE-2 — UN extractor, DOI frati de platforma (altex.ro + mediagalaxy.ro):
     # gazda si CDN-ul se citesc din `runtimeConfig.settings`, nu din cod.
     "altex_next": altex_next,
+    # DEAL-D6 — tot UN extractor pentru DOUA intrari ale aceluiasi magazin
+    # (categoria de reduceri + pagina de campanie), care difera prin ce
+    # campuri emite query-ul din spate, nu prin structura.
+    "lego_apollo": lego_apollo,
 }
