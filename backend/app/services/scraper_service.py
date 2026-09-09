@@ -146,6 +146,19 @@ _MARKERI_WAF: tuple[str, ...] = ("awswafcookiedomainlist", "token.awswaf.com")
 _COOKIE_JAR_DOMENIU: dict[str, str] = option_map("cookie_jar")
 _BOOTSTRAP_URL_DOMENIU: dict[str, str] = option_map("bootstrap_url")
 
+# ── DEAL-D8: antete de PREFERINTA per domeniu ────────────────────────────────
+#
+# Masuratoarea-sursa (LST-D8, asos.com): comutatorul de vitrina NU e in query.
+# `?store=ROE&currency=EUR&country=RO` intoarce 200 si pagina intreaga, dar in
+# GBP pe 72 din 72 de produse — ignorat TACIT, adica cel mai prost fel de esec.
+# Comuta antetul `Cookie: browseCountry=RO`, si acela singur: DEAL-D8 PASUL 3 a
+# masurat 72/72 in EUR, cu starea pe ROE/EUR/RO, doar cu el.
+#
+# Harta se deriva o SINGURA data, la import, ca `_IMPERSONATE_OVERRIDES` si
+# `_MIN_FETCH_INTERVALE`. Domeniile fara cheie nu platesc nimic: cand harta e
+# goala, `_antete_pentru` iese la prima linie si intoarce dict-ul primit.
+_EXTRA_HEADERS: dict[str, dict] = option_map("extra_headers")
+
 # Racire: cel mult UN bootstrap per jar la 10 minute, la nivel de PROCES. Fara ea,
 # un tick cu 20 de produse urmarite pe acelasi magazin ar declansa 20 de bootstrap-uri
 # — adica exact tiparul de trafic pe care incercam sa-l evitam.
@@ -289,6 +302,30 @@ def bootstrap_pentru(url: str):
     """URL-ul care emite cookie-urile de sesiune pentru domeniu, sau None."""
     cheie = _cheie_pe_domeniu(_domeniu_din_url(url), _BOOTSTRAP_URL_DOMENIU)
     return _BOOTSTRAP_URL_DOMENIU.get(cheie) if cheie else None
+
+
+def _antete_pentru(url: str, headers: dict) -> dict:
+    """DEAL-D8. `headers` + antetele de preferinta ale domeniului lui `url`.
+
+    Se rezolva PER HOP, si asta e regula, nu o optimizare: un redirect catre alt
+    magazin e legitim si allow-list-ul il permite, dar preferintele noastre de
+    vitrina n-au ce cauta acolo — acelasi rationament ca la jar (`jar_hop ==
+    nume_jar`) si la `_impersonate_for`, si aceeasi granita pe punct, ca un sufix
+    inselator sa nu-si aleaga singur antetele.
+
+    La coliziune de nume, antetele DOMENIULUI castiga. Un `Cookie` pus de apelant
+    (sau un `Accept-Language` mostenit dintr-un alt flux) nu are voie sa dezactiveze
+    tacit comutatorul de vitrina: consecinta ar fi preturi in alta moneda, publicate
+    fara niciun semnal. Cine vrea altceva schimba registrul, nu apelantul.
+
+    Intoarce dict-ul PRIMIT cand domeniul n-are cheia — fara alocare pe cele 92 de
+    magazine care nu folosesc mecanismul — si un dict NOU altfel, ca nici `headers`
+    al apelantului, nici harta derivata sa nu fie mutate.
+    """
+    cheie = _cheie_pe_domeniu(_domeniu_din_url(url), _EXTRA_HEADERS)
+    if cheie is None:
+        return headers
+    return {**(headers or {}), **_EXTRA_HEADERS[cheie]}
 
 
 # Pagination safety caps (per-site) so a runaway query can't hammer a shop.
@@ -1375,7 +1412,9 @@ def _parcurge_hopuri(url: str, headers: dict, timeout: int, max_hops: int,
         try:
             response = curl_requests.get(
                 current_url,
-                headers=headers,
+                # DEAL-D8 — antetele de domeniu se contopesc AICI, pe hop, nu la
+                # apelant: doar aici se stie catre CE gazda pleaca de fapt cererea.
+                headers=_antete_pentru(current_url, headers),
                 impersonate=_impersonate_for(current_url),
                 timeout=timeout,
                 allow_redirects=False,

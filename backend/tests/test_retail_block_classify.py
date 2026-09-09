@@ -364,3 +364,47 @@ def test_16_404_cu_marker_ramane_not_found(mediu, monkeypatch):
     mediu["seteaza"](_Resp(404, "<html>api-services-support@amazon.com</html>"))
     raspuns = _poarta()
     assert raspuns is not None and raspuns.status_code == 404
+
+
+# ── DEAL-D8: provocarea JS proprie a lui hhv.de ────────────────────────────────
+def test_23_hhv_provocarea_js_e_blocaj_doar_cu_markerul_din_registru():
+    """Gaura gasita la LST-D8 §5, si reparatia ei, pinuite in acelasi test.
+
+    Listarea de sale a lui hhv.de intoarce, pe HTTP, 200 si 1 934 de octeti de
+    JavaScript ofuscat care pune un cookie si reincarca pagina — zero produse.
+    Corpul e sub pragul generic de interstitiu (40 000), dar nu poarta NICIUN
+    marker generic, deci pana la runda asta iesea `OK`: ajungea la extractor ca
+    HTML valid si se raporta `no_product_data` -> 422 („n-am putut extrage
+    datele", care acuza parserul nostru) in loc de 502 („magazinul a blocat
+    cererea").
+
+    Cele doua jumatati sunt inseparabile: fara `markeri_blocaj("hhv.de")` acelasi
+    corp trebuie sa iasa `OK`. Altfel testul ar trece si daca markerul ar fi
+    sters din registru, iar gaura s-ar redeschide tacut.
+    """
+    import os
+
+    from app.services.radar.base_scraper import Outcome, classify
+    from app.services.scraper_service import markeri_blocaj, prag_interstitiu
+
+    cale = os.path.join(os.path.dirname(__file__), "fixtures", "browser",
+                        "hhv.de_challenge.html")
+    with open(cale, encoding="utf-8") as f:
+        corp = f.read()
+
+    # Santinela pe fixture: daca dump-ul e inlocuit cu altceva, testul trebuie sa
+    # cada aici, nu sa treaca dintr-un motiv gresit.
+    assert "HHV-JS-CH" in corp
+    assert len(corp) < prag_interstitiu("hhv.de")
+
+    assert markeri_blocaj("hhv.de") == ("hhv-js-ch",)
+    assert classify(status=200, body=corp, exc=None, parsed=None,
+                    extra_markers=markeri_blocaj("hhv.de"),
+                    interstitial_max_bytes=prag_interstitiu("hhv.de")
+                    ) is Outcome.BLOCKED
+
+    # ACEEASI pagina, fara markerii domeniului: `OK` — adica exact gaura.
+    assert classify(status=200, body=corp, exc=None, parsed=None,
+                    interstitial_max_bytes=prag_interstitiu("hhv.de")
+                    ) is Outcome.OK
+

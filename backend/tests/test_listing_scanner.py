@@ -684,7 +684,11 @@ def test_listing_domains_exact_cele_din_registru():
     intersport.ro (LST-2) + regatuljocurilor.ro (LST-3a) + modivo.ro (LST-3c) —
     toate trei intrate fara nicio linie de scanner — plus cele PATRU pe calea de
     stare: toolnation.nl (4a, care a cerut punctul de plug) si ro.vivre.eu /
-    cellini.ro / bonami.ro (4b, intrate pe arhitectura deja existenta)."""
+    cellini.ro / bonami.ro (4b, intrate pe arhitectura deja existenta).
+
+    Setul e SCRIS PE LARG, nu numarat: o intrare noua trebuie sa fie o decizie,
+    nu un efect secundar al unei alte runde. De aceea fiecare val si-a lasat aici
+    si motivul, si domeniile pe care NU le-a luat."""
     assert listing_domains() == {"otter.ro", "caseking.de", "noriel.ro",
                                  "bergfreunde.eu", "tezyo.ro", "powerup.ro",
                                  "buzzsneakers.ro", "intersport.ro",
@@ -786,7 +790,20 @@ def test_listing_domains_exact_cele_din_registru():
                                  # pagini) si trendyol.com (fara fateta de
                                  # reducere declarata de pagina).
                                  "alternate.de", "sivasdescalzo.com", "nike.com",
-                                 "answear.ro", "endclothing.com"}
+                                 "answear.ro", "endclothing.com",
+                                 # DEAL-D8 - asos.com, singurul care intra din
+                                 # sonda LST-D8. Nota veche de mai sus („asos:
+                                 # grila curata dar pe vitrina GBP") e acum
+                                 # REZOLVATA, nu contrazisa: comutatorul lipsa nu
+                                 # era in query, ci in antetul `Cookie`
+                                 # (`browseCountry=RO`), de unde mecanismul
+                                 # `extra_headers`. Intra pe STARE, nu pe grila:
+                                 # DOM-ul n-are referinta (doar in `aria-label`) si
+                                 # n-are imagini pe 68 din 72 de placi. Raman
+                                 # afara, cu dovada: elefant.ro (JS_ONLY - 61 de
+                                 # cereri pe pagina), hhv.de (provocare JS pe
+                                 # listare) si sephora.ro (403 Akamai pe home).
+                                 "asos.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -3684,8 +3701,8 @@ def test_deal_d7_in_registru():
 
     assert "answear_state" in LISTING_STATE_EXTRACTORS
     assert "endclothing_state" in LISTING_STATE_EXTRACTORS
-    assert len(LISTING_STATE_EXTRACTORS) == 10, (
-        "familia `state_extractor` a ajuns la zece")
+    assert len(LISTING_STATE_EXTRACTORS) == 11, (
+        "familia `state_extractor`: zece la DEAL-D7 + `asos_plp` la DEAL-D8")
 
     for domeniu in ("alternate.de", "sivasdescalzo.com", "nike.com"):
         d = listing_descriptor(domeniu)
@@ -3696,7 +3713,7 @@ def test_deal_d7_in_registru():
 
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
-    assert len(listing_domains()) == 53
+    assert len(listing_domains()) == 54, "53 la DEAL-D7 + asos.com la DEAL-D8"
 
 
 # ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
@@ -3775,3 +3792,88 @@ def test_endclothing_state_are_imagine():
         assert c["image_url"].startswith("https://media.endclothing.com/media/")
         assert "f_auto,q_auto" in c["image_url"], "virgulele din cale, pastrate"
     assert carduri[0]["image_url"].endswith("/B/R/BR_SS26-100-OAT_1_1.jpg")
+
+
+# ── DEAL-D8: asos.com pe STARE, cu garda de moneda ─────────────────────────────
+#
+# Fixture-ul `asos.com_state.html` e taiat PROGRAMATIC din dump-ul real
+# `dumps_lstd8/asos.com_p1_cookie.html` la doua produse — unul redus
+# (74.99 -> 39.99) si unul NEREDUS (39.99 == 39.99) — pastrand ambalajul
+# original: JSON intr-un literal JS, `JSON.parse('…')`.
+def test_asos_plp_carduri():
+    """Pretul platit, referinta, URL-ul cu varianta de culoare, poza si titlul.
+
+    Produsul NEREDUS e jumatatea care conteaza: acolo `price == reducedPrice`,
+    iar o referinta copiata neconditionat ar raporta o reducere de zero la suta pe
+    fiecare card al magazinului.
+    """
+    from app.services.listing_state_extractors import asos_plp
+
+    d = listing_descriptor("asos.com")
+    carduri = asos_plp(_fixture_stare("asos.com"), d)
+
+    assert d["state_extractor"] == "asos_plp"
+    assert len(carduri) == 2
+
+    redus, neredus = carduri
+    assert redus["price"] == 39.99
+    assert redus["compare_at"] == 74.99, "referinta = `price`, pretul intreg"
+    assert redus["url"] == (
+        "https://www.asos.com/topshop/"
+        "topshop-knitted-ribbed-tassel-maxi-dress-in-green/prd/209993830"
+        "#colourWayId-209993838")
+    assert redus["title"] == "Topshop knitted ribbed tassel maxi dress in green"
+    assert redus["image_url"] == (
+        "https://images.asos-media.com/products/"
+        "topshop-knitted-ribbed-tassel-maxi-dress-in-green/209993830-1-green")
+    # Identitatea se calculeaza pe CALE, deci fragmentul de culoare nu o atinge.
+    assert redus["handle"] == (
+        "/topshop/topshop-knitted-ribbed-tassel-maxi-dress-in-green/prd/209993830")
+    assert "#" not in redus["handle"]
+
+    assert neredus["price"] == 39.99
+    assert neredus["compare_at"] is None, "pret intreg egal cu cel platit != reducere"
+
+
+def test_asos_plp_garda_de_moneda():
+    """Vitrina GBP RIDICA, nu se converteste si nu se publica.
+
+    Controlul negativ e masurat, nu presupus (LST-D8 §4.1): `p1_query`, adica
+    aceeasi listare ceruta cu `?store=ROE&currency=EUR&country=RO` in query in loc
+    de antet, intoarce 200 si parseaza la fel de curat — 72 de produse, toate cu
+    referinta — dar in GBP. Fara garda, un antet cazut ar publica preturi
+    britanice etichetate EUR, iar singurul semn ar fi ca reducerile par mai mici.
+    """
+    from app.services.listing_state_extractors import asos_plp
+
+    html = _fixture_stare("asos.com")
+    d = listing_descriptor("asos.com")
+    assert asos_plp(html, d), "santinela: pe EUR fixture-ul CHIAR da carduri"
+
+    gbp = html.replace('"defaultCurrency":"EUR"', '"defaultCurrency":"GBP"')
+    assert gbp != html, "santinela: substitutia de moneda a atins fixture-ul"
+    with pytest.raises(RuntimeError, match="antetul Cookie nu a fost aplicat"):
+        asos_plp(gbp, d)
+
+
+def test_asos_in_registru():
+    """Intrarea de registru: antetul de vitrina, extractorul, moneda, paginarea."""
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    intrare = SHOP_REGISTRY["asos.com"]
+    antete = intrare["extra_headers"]
+    assert "browseCountry=RO" in antete["Cookie"], (
+        "DEAL-D8 PASUL 3: `browseCountry=RO` e si necesar, si suficient singur")
+
+    d = listing_descriptor("asos.com")
+    assert d["state_extractor"] == "asos_plp"
+    assert d["currency"] == "EUR"
+    assert d["reference_kind"] == "nemarcat"
+    assert "asos.com" in listing_domains()
+    assert len(listing_domains()) == 54
+
+    assert (listing_scanner._pagina_url(d, 2)
+            == "https://www.asos.com/women/sale/cat/?page=2&cid=7046")
+    assert (listing_scanner._pagina_url(d, 1)
+            == "https://www.asos.com/women/sale/cat/?cid=7046")
+

@@ -1183,6 +1183,134 @@ def endclothing_state(html: str, descriptor: dict) -> list[dict]:
     return iesire
 
 
+# ── asos.com — starea PLP dintr-un literal JS ───────────────────────────────
+_ASOS_ANCORA = "window.asos.plp._data=JSON.parse('"
+
+
+def asos_plp_state(html: str) -> dict | None:
+    r"""Blobul PLP al lui asos, sau None.
+
+    Forma e a treia din fisierul asta si prima de felul ei: nu un
+    `<script type=application/json>` (marionnaud), nu o atribuire JS de OBIECT
+    (answear), ci JSON impachetat intr-un LITERAL JS cu ghilimele simple —
+    `JSON.parse('{"router":…}')`. Consecinta practica: ghilimelele duble dinauntru
+    NU sunt escapate (27 946 in dump-ul masurat), deci `raw_decode` de la pozitia
+    lui `(` ar citi un sir, nu un obiect.
+
+    Singura escapare pe care o poarta literalul e `\'` (cinci aparitii masurate);
+    `\uXXXX` ramane si trebuie sa ajunga NEATINS la `json.loads`, care il stie el.
+    De aceea dez-escaparea e explicita — `\'` -> `'`, orice alta pereche trece
+    verbatim — si nu `codecs.decode(..., "unicode_escape")`, care ar mai si strica
+    cele 17 caractere non-ASCII din literal (le-ar citi ca latin-1).
+
+    Terminatorul se cauta cu acelasi mers, nu cu `find("'")`: un `\'` inauntru nu
+    inchide sirul.
+    """
+    i = (html or "").find(_ASOS_ANCORA)
+    if i < 0:
+        return None
+    bucati: list[str] = []
+    k, n = i + len(_ASOS_ANCORA), len(html)
+    inchis = False
+    while k < n:
+        c = html[k]
+        if c == "\\" and k + 1 < n:
+            urm = html[k + 1]
+            bucati.append("'" if urm == "'" else c + urm)
+            k += 2
+            continue
+        if c == "'":
+            inchis = True
+            break
+        bucati.append(c)
+        k += 1
+    if not inchis:
+        return None                  # literal netermina — pagina taiata
+    try:
+        obiect = json.loads("".join(bucati))
+    except Exception:                                            # noqa: BLE001
+        return None
+    return obiect if isinstance(obiect, dict) else None
+
+
+def asos_plp(html: str, descriptor: dict) -> list[dict]:
+    """asos.com — `/women/sale/cat/`, listarea din starea PLP.
+
+    DE CE STARE SI NU CSS, cu cifre (masurate la LST-D8 §4.1). Grila e curata —
+    `li[class*=productTile_]`, 72 de placi, paginare `?page={n}` reala, p1 si p2
+    disjuncte — si un descriptor CSS chiar scoate 72 de preturi. Ii lipsesc insa
+    exact doua lucruri, amandoua tacut:
+
+      * REFERINTA nu e in DOM. Pretul intreg apare numai in `aria-label`-ul
+        ancorei („… Original price €74.99 current price €39.99"): 72/72 in
+        aria-label, 0/72 in textul vreunui nod. `compare_attr` ar trece sirul prin
+        `_pret_strict`, care intoarce None — corect, dar inseamna `compare_at`
+        gol pe tot, deci R1 mort.
+      * IMAGINILE lipsesc pe 68 din 72 de placi: doar primele patru
+        (`loading="eager"`) sunt randate server-side, restul se hidrateaza.
+
+    Starea are tot, 72/72 pe toate cele trei dump-uri ale sondei: `price` (pretul
+    INTREG), `reducedPrice` (cel platit), `image`, `url`, `description`.
+
+    GARDA DE MONEDA — motivul pentru care extractorul poate RIDICA. Vitrina asos
+    se comuta din antetul `Cookie` (vezi `extra_headers` in registru), iar esecul
+    acelui comutator NU arata ca un esec: `?store=ROE&currency=EUR&country=RO`
+    intoarce 200 si o pagina care parseaza la fel de curat — 72 de produse, toate
+    cu referinta — dar in GBP. Fara garda, un antet cazut ar publica preturi
+    britanice etichetate EUR, iar singurul semn ar fi ca reducerile par mai mici.
+    Deci: `config.country.defaultCurrency` din STARE trebuie sa fie moneda
+    declarata in descriptor, altfel `RuntimeError` si scanul domeniului se
+    opreste. NU se converteste nimic aici — cursul e treaba BNR-ului, iar o
+    conversie tacuta ar ascunde exact defectul pe care garda il cauta.
+
+    `url` din stare e RELATIV si fara slash initial
+    (`topshop/…/prd/209993830#colourWayId-209993838`). Fragmentul `#colourWayId`
+    se PASTREAZA: e varianta de culoare, adica produsul pe care l-a vazut
+    cititorul. Nu strica identitatea — `_external_id` si `handle` se calculeaza pe
+    CALE, iar fragmentul nu e in cale.
+
+    Gazda vine din `descriptor["url"]` prin `_baza`, nu dintr-o constanta: aceeasi
+    disciplina ca la celelalte trei extractoare care compun linkuri.
+    """
+    date = asos_plp_state(html)
+    if not date:
+        return []
+    produse = ((date.get("search") or {}).get("products"))
+    if not isinstance(produse, list) or not produse:
+        return []                    # listare goala / sfarsit de paginare
+
+    asteptat = (descriptor.get("currency") or "").strip().upper()
+    tara = ((date.get("config") or {}).get("country")) or {}
+    moneda = (tara.get("defaultCurrency") or "").strip().upper()
+    if asteptat and moneda != asteptat:
+        raise RuntimeError(
+            f"asos.com: vitrina {moneda or '???'} — antetul Cookie nu a fost "
+            f"aplicat (asteptat {asteptat}, storeCode={tara.get('storeCode')!r}, "
+            f"countryCode={tara.get('countryCode')!r}); scanul se opreste in loc "
+            f"sa publice preturi in alta moneda")
+
+    baza = _baza(descriptor)
+    iesire = []
+    for p in produse:
+        if not isinstance(p, dict):
+            continue
+        cale = (p.get("url") or "").strip()
+        pret = _pret_numeric(p.get("reducedPrice"))
+        if not cale or pret is None or pret <= 0:
+            continue
+        # Referinta DOAR daca e strict mai mare: pe produsele nereduse `price` si
+        # `reducedPrice` sunt egale, iar o referinta egala ar raporta o reducere
+        # de zero la suta pe fiecare card.
+        referinta = _pret_numeric(p.get("price"))
+        if referinta is not None and referinta <= pret:
+            referinta = None
+        gazda_poza = (p.get("image") or "").strip()
+        poza = f"https://{gazda_poza}" if gazda_poza else None
+        iesire.append(_card(f"{baza}/{cale.lstrip('/')}", p.get("description"),
+                            pret, referinta, poza))
+    return iesire
+
+
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
@@ -1206,4 +1334,8 @@ LISTING_STATE_EXTRACTORS = {
     # inlinat, cu grila randata client-side). Familia ajunge la ZECE.
     "answear_state": answear_state,
     "endclothing_state": endclothing_state,
+    # DEAL-D8 — primul extractor cu GARDA: vitrina asos se comuta din antet, iar
+    # esecul comutarii da o pagina perfect parsabila in ALTA moneda. Familia
+    # ajunge la UNSPREZECE.
+    "asos_plp": asos_plp,
 }

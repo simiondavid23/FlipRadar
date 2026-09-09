@@ -108,6 +108,28 @@ Campurile unei intrari:
                 profil trece dupa 95s (G2F-5). Absent = fara limitare, si niciun
                 cost — harta se deriva o data la import, iar domeniile care nu-s in
                 ea nu ating nici macar lacatul.
+  extra_headers
+              — OPTIONAL (DEAL-D8), dict nume->valoare: antete pe care poarta HTTP
+                le adauga la FIECARE cerere catre domeniu. Sunt antete de
+                PREFERINTA — vitrina, moneda, tara, limba — si NICIODATA de
+                sesiune sau autentificare: valorile stau intr-un literal Python
+                versionat, deci orice ar fi secret aici ar fi secret in git.
+                Aparut pentru asos.com, unde comutatorul de vitrina NU e in query
+                (`?store=ROE&currency=EUR&country=RO` e ignorat TACIT, pagina vine
+                intreaga dar in GBP) ci in `Cookie: browseCountry=RO`, masurat la
+                LST-D8/DEAL-D8: cu el, 72/72 de produse in EUR si starea pe
+                ROE/EUR/RO; fara el, 72/72 in GBP.
+                Se aplica PER HOP si doar pe hop-urile care apartin domeniului,
+                cu aceeasi granita pe punct ca jar-ul: un redirect catre alt
+                magazin nu are voie sa duca preferintele noastre acolo.
+                La coliziune de nume, antetele domeniului SUPRASCRIU antetele
+                apelantului — un `Cookie` accidental al apelantului nu are voie sa
+                dezactiveze tacit comutatorul de vitrina si sa publice preturi in
+                alta moneda.
+                GARDA (`_valideaza_extra_headers`): `cookie_jar` + un `Cookie` in
+                `extra_headers` pe acelasi domeniu e RESPINS la import, fiindca
+                poarta trimite jar-ul prin `cookies=` iar antetul prin `headers=`,
+                iar cele doua s-ar ciocni fara ca nimeni sa vada care castiga.
   search      — OPTIONAL, descriptorul de CAUTARE DUPA TERMEN (SEARCH-1). Prezenta
                 cheii = domeniul apare in pagina „Scanare Magazine". Absenta = doar
                 prin link. `kind` alege mecanismul:
@@ -1312,7 +1334,39 @@ SHOP_REGISTRY: dict[str, dict] = {
         "method": "custom",
         "status": "validated",
         "notes": ("DISCOVERY-2"
-                 " DEAL-D4 - RAMAS IN AFARA axei D, desi grila e curata: `li.productTile_U0clN`, 72 de placi, paginare `?page={n}` reala (p1 si p2 disjuncte). Listarea serveste insa GBP pe 72 din 72, iar locala validata pe axa L e `store=ROE&currency=EUR&country=RO` prin API-ul public `stockprice`. Lipseste doar comutatorul de magazin; pana atunci ar fi alt magazin."),
+                 " DEAL-D4 - RAMAS IN AFARA axei D, desi grila e curata: `li.productTile_U0clN`, 72 de placi, paginare `?page={n}` reala (p1 si p2 disjuncte). Listarea serveste insa GBP pe 72 din 72, iar locala validata pe axa L e `store=ROE&currency=EUR&country=RO` prin API-ul public `stockprice`. Lipseste doar comutatorul de magazin; pana atunci ar fi alt magazin."
+                 " LST-D8/DEAL-D8 - comutatorul GASIT, si NU e in query: `?store=ROE&currency=EUR&country=RO` intoarce 200 si pagina intreaga, dar in GBP pe 72/72 (ignorat TACIT). Comuta antetul `Cookie`, iar `browseCountry=RO` e si necesar, si SUFICIENT singur: cu el, starea da ROE/EUR/RO si 72/72 in EUR; cu tripleta din DISCOVERY-2 dar FARA el, inapoi pe GBP. De aici `extra_headers` si intrarea pe axa D."),
+        # DEAL-D8 — antetele de PREFERINTA ale domeniului, aplicate de poarta HTTP
+        # pe fiecare hop care apartine lui asos.com (vezi `_antete_pentru`).
+        # Un singur cookie, fiindca al doilea n-ar schimba nimic: PASUL 3 al rundei
+        # a masurat ca `browseCountry=RO` SINGUR da 72/72 in EUR si starea pe
+        # ROE/EUR/RO. Nu e cookie de sesiune si nu vine de la un login — e o
+        # preferinta de vitrina, exact ce are voie sa stea intr-un literal versionat.
+        "extra_headers": {"Cookie": "browseCountry=RO"},
+        # DEAL-D8 — listare pe STARE, nu pe CSS. Grila EXISTA si e curata, dar ii
+        # lipsesc doua lucruri pe care doar starea le are (masurat la LST-D8 §4.1):
+        # referinta e numai in `aria-label` (72/72 acolo, 0/72 in DOM, iar
+        # `_pret_strict` refuza corect sirul) si imaginile lipsesc pe 68 din 72 de
+        # placi. Vezi `asos_plp`.
+        "listing": {
+            "url": "https://www.asos.com/women/sale/cat/?cid=7046",
+            "page_url_template": "https://www.asos.com/women/sale/cat/?page={n}&cid=7046",
+            # 20 pe conventia otter: paginarea e reala (p1 ∩ p2 = 0, masurat), iar
+            # 20 x 72 = 1 440 de produse e un plafon prudent pentru o categorie de
+            # sale care se schimba zilnic.
+            "max_pages": 20,
+            # EUR, si asta e o AFIRMATIE VERIFICATA la fiecare pagina, nu o
+            # declaratie: `asos_plp` compara `config.country.defaultCurrency` din
+            # stare cu valoarea de aici si RIDICA daca difera. Fara garda, un antet
+            # cazut ar publica preturi GBP etichetate EUR — pagina parseaza la fel
+            # de curat in ambele cazuri.
+            "currency": "EUR",
+            "state_extractor": "asos_plp",
+            # `price` e pretul INTREG al aceluiasi produs, fara nicio eticheta
+            # legala pe pagina (nici Omnibus, nici PRP) — deci NEMARCAT, ca la
+            # endclothing.
+            "reference_kind": "nemarcat",
+        },
     },
 
     # ── SHOP-1a ───────────────────────────────────────────────────────────────
@@ -3459,7 +3513,23 @@ SHOP_REGISTRY: dict[str, dict] = {
         "headed": True,
         "notes": "G4/G4b: reset de conexiune pe headless; jsonld curat headed; "
                  "marimile absente din date — se urmareste produsul; pquid taiat "
-                 "de canonical",
+                 "de canonical. LST-D8: pe HTTP, nav-ul VINE (fragmentele "
+                 "`turbo-frame` de la /header/level raspund 200 cu antetul "
+                 "`Turbo-Frame`), dar listarea de sale intoarce o provocare JS "
+                 "proprie de 1 934 de octeti — vezi `block_markers`. Ramane pe "
+                 "browser; axa D nu e posibila pe HTTP.",
+        # LST-D8 §5 — provocarea de mai sus trecea de `classify` ca `OK`: corpul
+        # e de 1 934 de octeti (sub pragul generic de 40 000) dar nu poarta NICIUN
+        # marker generic, deci ajungea la extractor ca HTML valid si iesea
+        # `no_product_data` -> 422 („n-am putut extrage datele", care acuza
+        # parserul nostru) in loc de 502 („magazinul a blocat cererea").
+        #
+        # `hhv-js-ch` e verbatim din tabloul de siruri al provocarii, alaturi de
+        # `cookie`, `location`, `reload` si `; path=/;` — numele propriu al
+        # mecanismului, deci nu se poate ciocni cu proza unei pagini bune, spre
+        # deosebire de contraexemplul „entschuldigung" de la AMZ-0. Lowercase
+        # DELIBERAT: `classify` compara markerii cu `body.lower()`.
+        "overrides": {"block_markers": ("hhv-js-ch",)},
     },
     "noriel.ro": {
         "label": "Noriel",
@@ -4472,6 +4542,44 @@ def impersonate_overrides() -> dict[str, str]:
     """Domeniu -> treapta impersonate, doar intrarile care au cheia."""
     return {domain: meta["impersonate"]
             for domain, meta in SHOP_REGISTRY.items() if "impersonate" in meta}
+
+
+def _valideaza_extra_headers(registru: dict) -> None:
+    """DEAL-D8. `cookie_jar` + un `Cookie` in `extra_headers` = RESPINS la import.
+
+    Poarta trimite jar-ul ca argument separat (`cookies=jar` catre curl_cffi) si
+    `extra_headers` prin `headers=`. Cele doua ar ajunge amandoua la acelasi antet
+    `Cookie` al cererii, iar cine castiga e o proprietate a clientului HTTP, nu o
+    decizie a noastra — adica exact felul de ambiguitate care se descopera abia
+    cand un magazin incepe sa serveasca alta moneda.
+
+    Ridica la IMPORT, nu la prima cerere: registrul e un literal Python, deci o
+    combinatie gresita e o greseala de scriere care trebuie sa cada imediat, nu
+    dupa ce a rulat un scan intreg. Ia registrul ca ARGUMENT ca sa poata fi
+    verificata si pe un registru sintetic, in teste.
+
+    Numele de antet se compara case-insensitive: HTTP-ul nu deosebeste `Cookie`
+    de `cookie`, deci nici garda n-are voie s-o faca.
+    """
+    for domain, meta in (registru or {}).items():
+        antete = meta.get("extra_headers")
+        if not antete:
+            continue
+        if not isinstance(antete, dict):
+            raise ValueError(
+                f"{domain}: `extra_headers` trebuie sa fie dict, nu "
+                f"{type(antete).__name__}")
+        if not meta.get("cookie_jar"):
+            continue
+        for nume in antete:
+            if str(nume).strip().lower() == "cookie":
+                raise ValueError(
+                    f"{domain}: `cookie_jar` si `extra_headers[\"{nume}\"]` nu pot "
+                    f"coexista — jar-ul pleaca prin `cookies=`, antetul prin "
+                    f"`headers=`, iar cine castiga nu e decizia noastra")
+
+
+_valideaza_extra_headers(SHOP_REGISTRY)
 
 
 def option_map(key: str) -> dict:

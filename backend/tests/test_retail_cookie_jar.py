@@ -69,7 +69,11 @@ def mediu(monkeypatch, tmp_path):
     monkeypatch.setattr(ss.time, "sleep", lambda s: None)
 
     def fake_get(url, **kw):
-        stare["cereri"].append({"url": url, "cookies": kw.get("cookies")})
+        # DEAL-D8 — `headers` se retine pe langa `cookies`: antetele per domeniu
+        # sunt un al doilea canal catre aceeasi cerere, iar testele lor citesc de
+        # aici. Cheia e ADAUGATA, deci cele 20 de teste dinainte nu se schimba.
+        stare["cereri"].append({"url": url, "cookies": kw.get("cookies"),
+                                "headers": dict(kw.get("headers") or {})})
         i = len(stare["cereri"]) - 1
         lst = stare["raspunsuri"]
         return lst[i] if i < len(lst) else (lst[-1] if lst else _Resp())
@@ -425,3 +429,93 @@ def test_19_normalizarea_nu_schimba_gazda_pentru_allowlist():
     assert ss._is_allowed_shop_url("https://altex.ro:443/p/1")
     assert not ss._is_allowed_shop_url("https://evil-altex.ro.attacker.com/")
     assert not ss._is_allowed_shop_url("https://altex.ro@evil.com/")
+
+
+# ── DEAL-D8: antete de PREFERINTA per domeniu ──────────────────────────────────
+#
+# Mecanismul e opt-in prin `extra_headers` din registru si se aplica PER HOP.
+# Masuratoarea-sursa (LST-D8/DEAL-D8, asos.com): vitrina se comuta din
+# `Cookie: browseCountry=RO`, iar query-ul cu aceleasi coduri e ignorat TACIT.
+DOM_CU_ANTETE = "cuantete.example"
+URL_ANTETE = f"https://{DOM_CU_ANTETE}/lista"
+DOM_STRAIN = "strain.example"
+URL_STRAIN = f"https://{DOM_STRAIN}/lista"
+
+
+@pytest.fixture
+def mediu_antete(mediu, monkeypatch):
+    """`mediu`, plus doua domenii: unul cu `extra_headers`, unul strain."""
+    monkeypatch.setattr(ss, "VALIDATED_DOMAINS",
+                        set(ss.VALIDATED_DOMAINS) | {DOM_CU_ANTETE, DOM_STRAIN})
+    monkeypatch.setitem(ss._EXTRA_HEADERS, DOM_CU_ANTETE,
+                        {"Cookie": "browseCountry=RO"})
+    return mediu
+
+
+def test_20_extra_headers_pleaca_pe_hopul_domeniului(mediu_antete):
+    """Antetul domeniului ajunge pe cerere — si CASTIGA la coliziune de nume.
+
+    Prioritatea nu e o preferinta de stil: un `Cookie` venit din alt flux ar
+    dezactiva tacit comutatorul de vitrina, iar consecinta ar fi preturi in alta
+    moneda publicate fara niciun semnal — exact defectul pe care `asos_plp` il
+    pazeste la parsare. Restul antetelor apelantului trec neatinse.
+    """
+    mediu_antete["seteaza"](_Resp())
+    raspuns = ss._fetch_shop_url_guarded(
+        URL_ANTETE,
+        headers={"Accept": "text/html", "Cookie": "browseCountry=GB"},
+        timeout=5)
+
+    assert raspuns is not None and raspuns.status_code == 200
+    antete = mediu_antete["cereri"][0]["headers"]
+    assert antete["Cookie"] == "browseCountry=RO", "domeniul bate apelantul"
+    assert antete["Accept"] == "text/html", "antetele apelantului raman"
+
+
+def test_21_extra_headers_nu_pleaca_pe_redirect_extern(mediu_antete):
+    """Un redirect catre alt magazin NU duce preferintele noastre acolo.
+
+    Aceeasi regula ca la jar (`jar_hop == nume_jar`), si din acelasi motiv: un
+    open-redirect pe un magazin permis nu are voie sa fie un canal de scurgere.
+    """
+    mediu_antete["seteaza"](
+        _Resp(status=302, headers={"location": URL_STRAIN}),
+        _Resp(status=200),
+    )
+    raspuns = ss._fetch_shop_url_guarded(URL_ANTETE, headers={}, timeout=5)
+
+    assert raspuns is not None and raspuns.status_code == 200
+    cereri = mediu_antete["cereri"]
+    assert [c["url"] for c in cereri] == [URL_ANTETE, URL_STRAIN]
+    assert cereri[0]["headers"].get("Cookie") == "browseCountry=RO"
+    assert "Cookie" not in cereri[1]["headers"], "hopul strain nu primeste antetul"
+
+
+def test_22_extra_headers_si_jar_cu_cookie_se_resping():
+    """Garda de import: `cookie_jar` + un `Cookie` in `extra_headers` = ValueError.
+
+    Poarta trimite jar-ul prin `cookies=` si antetele prin `headers=`; cine
+    castiga la acelasi antet `Cookie` e o proprietate a clientului HTTP, nu o
+    decizie a noastra. Se respinge la incarcarea registrului, nu la prima cerere.
+    """
+    from app.services.shop_registry import _valideaza_extra_headers
+
+    with pytest.raises(ValueError, match="cookie_jar"):
+        _valideaza_extra_headers({
+            "amandoua.example": {"cookie_jar": "j",
+                                 "extra_headers": {"Cookie": "a=b"}},
+        })
+    # Numele de antet e case-insensitive, ca in HTTP.
+    with pytest.raises(ValueError):
+        _valideaza_extra_headers({
+            "amandoua.example": {"cookie_jar": "j",
+                                 "extra_headers": {"cookie": "a=b"}},
+        })
+    # Contraprobe: fiecare cheie SINGURA e legitima, si asa raman cele 92 de
+    # magazine de azi. Fara ele, testul ar putea trece dintr-un motiv trivial.
+    _valideaza_extra_headers({"doar_jar.example": {"cookie_jar": "j"}})
+    _valideaza_extra_headers({
+        "doar_antete.example": {"extra_headers": {"Cookie": "a=b"}}})
+    _valideaza_extra_headers({
+        "antete_fara_cookie.example": {"cookie_jar": "j",
+                                       "extra_headers": {"Accept-Language": "ro"}}})

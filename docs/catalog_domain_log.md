@@ -4995,3 +4995,123 @@ nu *forma*, confirmă tocmai ce n-ar trebui.
 măsurătoarea de azi iese 120/120; cu normalizatorul vechi ar fi ieșit 120 nenule și **0** valide,
 adică bug-ul s-ar fi văzut în chiar runda care l-a produs. Regula rămâne pentru sondele viitoare:
 **imaginile se compară cu forma din DOM/stare, nu cu `is not None`.**
+
+---
+
+## DEAL-D8 — asos.com prin `extra_headers` + `asos_plp`; hhv.de `block_markers`; elefant/hhv/sephora închise pe HTTP (sonda LST-D8)
+
+Sonda LST-D8 a măsurat patru domenii pe HTTP, cu 13 cereri. Runda asta implementează
+singurul care intră și consemnează celelalte trei ca închise, ca să nu fie remăsurate.
+
+### Cele patru verdicte
+
+| domeniu | verdict | cifra care decide |
+|---|---|---|
+| **asos.com** | **INTRĂ** pe axa D | comutatorul de vitrină e `Cookie: browseCountry=RO`; sub el 72/72 în EUR |
+| **elefant.ro** | JS_ONLY, închis | hidratarea e **un GET per placă**: 61 de cereri/pagină × 138 pagini = 8 418 pe scan |
+| **hhv.de** | închis pe HTTP | listarea întoarce o provocare JS proprie de **1 934 de octeți** care trecea de `classify` |
+| **sephora.ro** | închis pe HTTP | **403 AkamaiGHost pe HOME**, înainte de orice listare |
+
+**elefant.ro** — identificatorul plăcii nu e pe `div.product-tile` (coajă goală), ci pe
+fratele ei, `div.lazy.inventory-item[data-sku]`, 60/60. JS-ul paginii, verbatim, face un
+`$.ajax({type:'GET', url: $(element).data('action')})` per placă, iar `data-action` e
+per-produs. Forma batch promisă de comentariul din pagină
+(`// additional params: SKU, cid, [cid, cid, ...]`) **nu există**: cerută cu SKU + 60 de
+cid-uri, întoarce **500** („Pagina inexistenta"), cu 0 SKU-uri regăsite. Descriptorul CSS
+peste pagina *asamblată* e corect — controlul scoate cardul cu ambele prețuri — deci
+respingerea e pe **cost**, nu pe parsabilitate; asta se consemnează explicit ca să nu fie
+remăsurat descriptorul.
+
+**sephora.ro** — poarta a întors `None`, iar clasificarea pe **același hop** (lecția
+GATE-1) a dat 403 / 519 octeți / `<TITLE>Access Denied</TITLE>` / `errors.edgesuite.net`,
+adică `Outcome.BLOCKED`. Aceeași semnătură ca zidul măsurat de BRW-0b prin browser, dar pe
+home. Intervalul de 180 s din registru nici n-a apucat să conteze — a existat o singură
+cerere prin poartă.
+
+### `extra_headers` — antete de preferință per domeniu, aplicate PER HOP
+
+Măsurătoarea care cere mecanismul: la asos, comutatorul de vitrină **nu e în query**.
+`?store=ROE&currency=EUR&country=RO` întoarce 200 și pagina întreagă, dar în GBP pe 72 din
+72 — **ignorat tăcut**, adică cel mai prost fel de eșec. Comută antetul `Cookie`.
+
+**PASUL 3 al rundei, o singură cerere:** `Cookie: browseCountry=RO` **singur** dă starea pe
+`ROE/EUR/RO`, 72 de produse toate cu referință, 440 `€` și 0 `£`. Deci cookie-ul rămâne
+minimal — un singur nume, nu cele patru încercate la LST-D8. (Necesitatea lui fusese deja
+dovedită acolo prin control negativ: tripleta `store/currency/country` **fără** el cade
+înapoi pe GBP.)
+
+Mecanismul, pe tiparul lui `_IMPERSONATE_OVERRIDES` / `_MIN_FETCH_INTERVALE`: cheia de
+registru `extra_headers`, o hartă derivată o singură dată la import (`_EXTRA_HEADERS`) și
+contopirea în `_parcurge_hopuri`. Trei reguli, fiecare cu motivul ei:
+
+* **Per hop, nu la apelant.** Antetele pleacă doar pe hop-urile care aparțin domeniului, cu
+  aceeași graniță pe punct ca jar-ul (`jar_hop == nume_jar`) și ca `_impersonate_for`. Un
+  redirect către alt magazin e legitim și allow-list-ul îl permite, dar preferințele noastre
+  n-au ce căuta acolo — un open-redirect pe un magazin permis nu are voie să fie un canal de
+  scurgere. Doar în buclă se știe către *ce* gazdă pleacă de fapt cererea.
+* **Domeniul bate apelantul** la coliziune de nume. Un `Cookie` moștenit din alt flux ar
+  dezactiva tăcut comutatorul, iar consecința ar fi prețuri în altă monedă publicate fără
+  niciun semnal.
+* **Garda de coliziune cu jar-ul** (`_valideaza_extra_headers`, ridică la import):
+  `cookie_jar` + un `Cookie` în `extra_headers` pe același domeniu = `ValueError`. Poarta
+  trimite jar-ul prin `cookies=` și antetele prin `headers=`; cine câștigă la același antet
+  `Cookie` e o proprietate a clientului HTTP, nu o decizie a noastră. Numele se compară
+  case-insensitive, ca în HTTP.
+
+Antetele sunt de **preferință** — vitrină, monedă, țară — și niciodată de sesiune sau
+autentificare: valorile stau într-un literal Python versionat, deci orice ar fi secret aici
+ar fi secret în git.
+
+### `asos_plp` — listare din stare, cu gardă de monedă
+
+Grila CSS *există* și e curată (`li[class*=productTile_]`, 72 de plăci, `?page={n}` reală,
+p1 ∩ p2 = 0), dar îi lipsesc două lucruri, amândouă tăcut:
+
+* **referința** e numai în `aria-label` („… Original price €74.99 current price €39.99"):
+  72/72 acolo, **0/72** în textul vreunui nod. `compare_attr` ar trece șirul prin
+  `_pret_strict`, care întoarce `None` — corect, dar înseamnă R1 mort;
+* **imaginile** lipsesc pe **68 din 72** de plăci: doar primele patru (`loading="eager"`)
+  sunt randate server-side.
+
+Starea `window.asos.plp._data` are tot, 72/72 pe toate cele trei dump-uri:
+`price` (prețul întreg), `reducedPrice` (cel plătit), `image`, `url`, `description`.
+
+Ambalajul e o formă nouă în familie: JSON într-un **literal JS cu ghilimele simple**
+(`JSON.parse('{"router":…}')`). Ghilimelele duble dinăuntru nu sunt escapate (27 946 în
+dump), deci `raw_decode` ar citi un șir, nu un obiect. Singura escapare din literal e `\'`
+(cinci apariții); `\uXXXX` trebuie să ajungă **neatins** la `json.loads`. De aceea
+dez-escaparea e explicită — `\'` → `'`, orice altă pereche trece verbatim — și nu
+`unicode_escape`, care ar mai și strica cele 17 caractere non-ASCII din literal.
+
+**Garda de monedă, și de ce e obligatorie.** Eșecul comutatorului nu arată ca un eșec:
+`p1_query` întoarce 200 și parsează la fel de curat — 72 de produse, toate cu referință —
+dar în GBP. Fără gardă, un antet căzut ar publica prețuri britanice etichetate EUR, iar
+singurul semn ar fi că reducerile par mai mici. Deci `config.country.defaultCurrency` din
+**stare** se compară cu moneda declarată în descriptor, iar la nepotrivire extractorul
+ridică `RuntimeError` și scanul domeniului se oprește la pagina 1. **Nu se convertește
+nimic** — cursul e treaba BNR-ului, iar o conversie tăcută ar ascunde exact defectul pe care
+garda îl caută. E primul extractor de stare cu gardă; familia ajunge la **unsprezece**, iar
+domeniile de listare la **54**.
+
+Fragmentul `#colourWayId-…` se păstrează în URL: e varianta de culoare, adică produsul pe
+care l-a văzut cititorul. Nu strică identitatea — `_external_id` și `handle` se calculează
+pe **cale**, iar fragmentul nu e în cale.
+
+### `block_markers` pentru hhv.de — o gaură care trecea de `classify`
+
+Provocarea de pe listare are 1 934 de octeți, deci e sub pragul generic de interstițiu
+(40 000), dar nu poartă **niciun** marker generic. Rezultatul: `classify` întorcea `OK`,
+corpul ajungea la extractor ca HTML valid și ieșea `no_product_data` → **422** („n-am putut
+extrage datele", care acuză parserul nostru) în loc de **502** („magazinul a blocat
+cererea"). Exact unghiul mort pe care AMZ-1a a fost construit să-l închidă, rămas deschis pe
+un domeniu nou — al treilea caz din serie, după markerul RO lipsă (G4-V2) și `inner_text`
+care rata titlul (G4-V3).
+
+Markerul e `hhv-js-ch`, verbatim din tabloul de șiruri al provocării (alături de `cookie`,
+`location`, `reload`, `; path=/;`) — numele propriu al mecanismului, deci nu se poate ciocni
+cu proza unei pagini bune, spre deosebire de contraexemplul „entschuldigung" de la AMZ-0.
+Lowercase deliberat: `classify` compară markerii cu `body.lower()`.
+
+Testul pinuiește **ambele** jumătăți — cu markerii domeniului `BLOCKED`, fără ei `OK` —
+altfel ar trece și dacă markerul ar fi șters din registru, iar gaura s-ar redeschide tăcut.
+
