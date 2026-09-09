@@ -3887,7 +3887,79 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "vizibile) dar are ZERO ld+json — materie pentru axa D, val ULTERIOR. "
                  "PDP `/en/p/<slug>-<id>.html`. LIVRAREA IN RO nu s-a masurat: "
                  "`unconfirmed` pana la verdictul de checkout al lui David (ar fi prima "
-                 "intrare care nu e ro_confirmed/ro_storefront). headless NEMASURAT.",
+                 "intrare care nu e ro_confirmed/ro_storefront). headless NEMASURAT. "
+                 "BRW-0c/DEAL-D9 - listarea de sale (`/en/promotions/sale.html`) e "
+                 "intr-adevar numai caruseluri (12 blocuri `productplacement`, 1.648 "
+                 "aparitii `cmsReco`), deci verdictul FARA_LISTARE de la BRW-0 era "
+                 "corect PENTRU PAGINA ACEEA si gresit pentru domeniu: CTA-urile "
+                 "caruselurilor („More X offers\") duc la pagini cu filtru de reducere, "
+                 "si exista EXACT UN flag in tot documentul - "
+                 "`tfo_flags=priceReducedProduct`, 38 de aparitii. Pe forma "
+                 "`search.html?categoryId=<t>&tfo_flags=priceReducedProduct` ies 90 de "
+                 "carduri, IDENTIC pe browser si pe HTTP (3,3 MB randat vs 2,6 MB HTTP, "
+                 "90 = 90) - regula G4-V4b inca o data: viabil prin browser NU inseamna "
+                 "are nevoie de browser. De aici asimetria de mai jos.",
+        # ── DEAL-D9 — PRIMUL domeniu cu axele DEZLIPITE ────────────────────────
+        # Axa L ramane pe BROWSER (`method: "browser"`, `headed: True`): PDP-ul da
+        # 403 `cf-mitigated: challenge` pe poarta HTTP, masurat la G2B-1b.
+        # Axa D merge pe HTTP, fiindca scannerul de listari foloseste DOAR
+        # `_fetch_shop_url_guarded` — n-are nicio ramura care sa aleaga browserul
+        # dupa `method` (verificat: zero aparitii ale lui "browser" in
+        # listing_scanner.py). Cele doua axe nu se ating, si listarea a raspuns 200
+        # pe HTTP acolo unde PDP-ul raspunde 403.
+        "listing": {
+            # Forma `search.html` cu filtrul de reducere. NU `/en/o/<categorie>` cu
+            # acelasi `tfo_flags`: sonda a cerut-o ca a doua intrare
+            # (`/en/o/multimeters-1101010.html?tfo_flags=...`) si a primit o pagina
+            # reala (200, titlu real, 1,28 MB) cu UN SINGUR card. Filtrul tine pe
+            # cautare, nu pe categorie.
+            "url": ("https://www.conrad.com/en/search.html?categoryId=t07"
+                    "&tfo_flags=priceReducedProduct"),
+            # Gazda e cea PUBLICA, si asta e o corectie, nu o transcriere:
+            # href-urile de paginare din pagina scurg un host intern
+            # (`com-storefront-intern-https.prod.tds-p.com`, 111 aparitii), pe care
+            # allow-list-ul de destinatie il respinge pe drept. Sablonul se
+            # re-ancoreaza pe `www.conrad.com` (masuratoarea 24 din BRW-0c).
+            "page_url_template": ("https://www.conrad.com/en/search.html?categoryId=t07"
+                                  "&tfo_flags=priceReducedProduct&page={n}"),
+            # 23 de pagini reale, plafonate la 15: 15 x 90 = 1.350 de produse pe scan,
+            # destul pentru o categorie de reduceri si mai ieftin decat 2.070.
+            # Paginarea e DOVEDITA, nu declarata: pagina 2 ceruta prin HTTP a dat 90
+            # de carduri cu intersectie ZERO fata de pagina 1 (Jaccard 0,000 pe
+            # URL-urile de produs).
+            "max_pages": 15,
+            "currency": "EUR",
+            # Escape-ul e cel cu care controlul a dat 90/90 pe TREI corpuri (randat
+            # p1, HTTP p1, HTTP p2): `group/productcard` e un nume de grup Tailwind,
+            # deci slash-ul trebuie escapat in CSS.
+            "card": r".group\/productcard",
+            "link": r"a.after\:absolute.after\:inset-0",
+            # Ancora poarta numele si in `title`, si in text. `link_title` il ia din
+            # atribut; `title` de mai jos e plasa, ca un deploy care scoate atributul
+            # sa nu piarda produsul (aceeasi logica ca la officeshoes, DEAL-D4).
+            "title_from": "link_title",
+            "title": r"a.after\:absolute.after\:inset-0",
+            "image": "img[srcset]",
+            # IMG-2: primul candidat din `srcset`. MASURAT: primul e `?x=100`, iar
+            # `src` poarta `?x=600`. Daca miniaturile de 100 px se dovedesc prea mici
+            # in interfata, inversarea listei e o singura linie.
+            "image_attr": ["srcset", "src"],
+            # Se citesc CELE DOUA span-uri, nu div-ul-invelis: trei div-uri parinte
+            # contin AMBELE preturi ("€ 165.00 € 91.99"), iar un parser pus pe ele ar
+            # lipi sumele.
+            "price_text": "span.discounted-price",
+            # 90/90 pe toate cele trei corpuri masurate.
+            "compare_text": "span.line-through",
+            # OBLIGATORIU `us_dot`: conrad scrie EUR in format US. Rulat pe parserele
+            # de productie, `_pret_eu_comma("€ 91.99")` da 9199.0 si
+            # `_pret_eu_comma("€ 1,079.00")` da 1.079; `_pret_us_dot` da 91.99 si
+            # 1079.0. Parserul gresit ar strica preturile cu doua ordine de marime,
+            # in AMBELE directii.
+            "price_parse": "us_dot",
+            # Pret taiat FARA eticheta legala: zero Omnibus, zero PRP, zero „de la
+            # lansare" pe card.
+            "reference_kind": "nemarcat",
+        },
     },
     "forit.ro": {
         "label": "Forit",

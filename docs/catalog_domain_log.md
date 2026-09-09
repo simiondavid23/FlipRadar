@@ -5114,4 +5114,110 @@ Lowercase deliberat: `classify` compară markerii cu `body.lower()`.
 
 Testul pinuiește **ambele** jumătăți — cu markerii domeniului `BLOCKED`, fără ei `OK` —
 altfel ar trece și dacă markerul ar fi șters din registru, iar gaura s-ar redeschide tăcut.
+## DEAL-D9 — conrad.com pe axa D prin HTTP (sonda BRW-0c); browserul rămâne pentru PDP-uri
 
+### Verdictul regulii BRW: 1 din 3 — ramura de browser pentru listări nu se scrie
+
+Trei runde de sondă (BRW-0, BRW-0b, BRW-0c) au căutat domenii care să aibă nevoie de browser
+**pentru listare**. Regula fixată înainte de BRW-0c: cel puțin **3** domenii `BROWSER_CSS` *cu
+referință* → se scrie ramura; altfel browserul rămâne pentru PDP-uri. Rezultatul cumulat e
+**unu** — solebox.com (`min30`, Omnibus). notebooksbilliger.de e `BROWSER_CSS` dar **fără**
+referință, deci doar R2. BRW-0c n-a adăugat niciunul.
+
+Costul măsurat spune același lucru: o pagină care se validează costă **10 s**, una care lovește
+un zid costă **22,5 s** — invariabil (22,44 / 22,52 / 22,58 / 22,66 / 22,82, adică plafonul de
+poll plus lansarea browserului). Pentru un singur domeniu, o excepție punctuală e mai ieftină
+decât infrastructura.
+
+### Cele două familii de ziduri
+
+Cinci din cele șase domenii ale lotului BRW-0c au fost oprite de Cloudflare, dar **nu în același
+fel**, iar diferența se citește în corpul salvat, nu se presupune:
+
+* **Blocare finală** — computeruniverse.net (5 435 o) și cyberport.at (5 427 o):
+  `Attention Required! | Cloudflare`, „Sorry, you have been blocked", **zero** creștere de corp
+  pe 15 poll-uri. Nu e nicio provocare de rezolvat; o așteptare mai lungă n-ar schimba nimic.
+* **Turnstile trecut, redirect neîncăput** — flanco.ro (28 994 o), pcgarage.ro (29 017 o),
+  vexio.ro (28 806 o): `Doar un moment...`, `cType: managed`, iar corpul spune verbatim
+  **„Verificarea a reușit. Se așteaptă un răspuns din partea site-ului web"**. Corpul a crescut
+  cu ~22,7 KB în timpul poll-ului. Ce n-a încăput în `_POLL_PLAFON_S = 20` e redirectul înapoi,
+  nu un refuz. Dacă axa se redeschide, prima probă e un plafon mai mare — **o singură dată per
+  domeniu**, fiindcă un challenge picat de două ori strică reputația IP-ului.
+
+### Răsturnarea: browserul poate fi **mai slab** decât HTTP
+
+computeruniverse.net și flanco.ro dăduseră **200 cu corp mare** pe poarta HTTP (LST-D7: 792 576
+octeți; LST-D5: 580 444) — erau în lot doar fiindcă grila era client-side. În Chrome real, ambele
+au primit **403**. Ipoteza tăcută „browserul e strict mai puternic decât HTTP" e infirmată de
+două cazuri din șase, și e motivul pentru care regula G4-V4b („viabil prin browser ≠ are nevoie
+de browser") trebuie citită și invers.
+
+### Falsul negativ cu `valideaza=None` — callback-ul de conținut face zidul detectabil
+
+vexio.ro a întors interstițiul Cloudflare **ca și conținut**: 6 105 octeți, **zero ancore**,
+`<title>Just a moment...</title>`, `cf_chl_opt` de șapte ori — în 1,29 s, fără nicio excepție.
+Cauza e mecanică: `fetch_browser_html` cu `valideaza=None` acceptă **primul corp nevid**, deci
+`_detecteaza_blocare` nu e apelat niciodată.
+
+Nu e o gaură de producție — dispecerul pasează mereu `parse_product_html` ca validator — dar e
+lecția care contează pentru orice cale de browser: **callback-ul de conținut e chiar ce face
+zidul detectabil.** Fără el, harness-ul n-are cum să distingă un interstițiu de o pagină. Cerut a
+doua oară cu callback de grilă, vexio a dat `Blocked` la 22,8 s, ca frații lui.
+
+### Bug-ul `&amp;page=` din sondă, și raza lui
+
+`citeste_paginarea` căuta parametrul de pagină în HTML-ul **brut**, fără să dezescapeze
+entitățile. Un href scris `…&amp;page=2` — forma corectă în HTML — nu se potrivește cu
+`[?&](page|…)=(\d+)`, fiindcă înaintea lui `page` stă `;`, nu `&`. Conrad a ieșit
+`sablon: None` deși pagina are `<nav class="pagination">` cu 23 de pagini.
+
+**Raza s-a măsurat, nu s-a presupus:** cititorul corectat a fost rulat pe toate dump-urile de
+listare din BRW-0 și BRW-0b — **zero** parametri escapați ratați acolo. `BROWSER_FARA_PAGINARE`
+al lui makeup.ro rămâne corect, `?page={n}` al lui solebox și notebooksbilliger se confirmă.
+**Niciun verdict vechi nu se schimbă**; bug-ul a costat exact două pagini nemăsurate (p2, plast)
+pe conrad, recuperate ulterior prin HTTP.
+
+### Descriptorul conrad — primul domeniu cu axele dezlipite
+
+Nota veche din registru („listarea se randează … materie pentru axa D, val ULTERIOR") se închide
+aici, iar verdictul `FĂRĂ_LISTARE` de la BRW-0 se dovedește corect *pentru pagina măsurată
+atunci* și greșit pentru domeniu: `/en/promotions/sale.html` chiar e numai caruseluri (12 blocuri
+`productplacement`, 1 648 apariții `cmsReco`), dar CTA-urile lor duc la pagini cu filtru de
+reducere, și există **exact un flag** în tot documentul — `tfo_flags=priceReducedProduct`, 38 de
+apariții.
+
+**Asimetria e nouă în registru.** Axa L rămâne pe browser headed, fiindcă PDP-ul dă 403
+`cf-mitigated: challenge` pe poarta HTTP (G2B-1b). Axa D merge pe HTTP, fiindcă scannerul de
+listări folosește **doar** `_fetch_shop_url_guarded` — nu există nicio ramură care să aleagă
+browserul după `method` (verificat: zero apariții ale lui „browser" în `listing_scanner.py`).
+Listarea răspunde 200 acolo unde PDP-ul răspunde 403, iar cele două axe nu se ating.
+
+| câmp | valoare | de ce |
+|---|---|---|
+| `url` | `…/en/search.html?categoryId=t07&tfo_flags=priceReducedProduct` | filtrul ține pe **căutare**, nu pe categorie: `/en/o/multimeters-…?tfo_flags=…` e o pagină reală (200, 1,28 MB) cu **un singur** card |
+| `page_url_template` | aceeași cale + `&page={n}`, pe `www.conrad.com` | href-urile paginii scurg `com-storefront-intern-https.prod.tds-p.com` (111 apariții) |
+| `max_pages` | 15 (din 23 reale) | 15 × 90 = 1 350 produse/scan |
+| `card` | `.group\/productcard` | 90/90 pe **trei** corpuri: randat p1, HTTP p1, HTTP p2 |
+| `price_text` / `compare_text` | `span.discounted-price` / `span.line-through` | trei div-uri părinte conțin **ambele** prețuri („€ 165.00 € 91.99") |
+| `price_parse` | **`us_dot`** | conrad scrie EUR în format US |
+| `reference_kind` | `nemarcat` | zero Omnibus, zero PRP, zero „de la lansare" pe card |
+
+**Paginarea e dovedită, nu declarată:** pagina 2 cerută prin HTTP a dat 90 de carduri cu
+**intersecție zero** față de pagina 1 (Jaccard 0,000 pe URL-urile de produs).
+
+**Parserul e partea care poate strica totul în tăcere.** Rulat pe parserele de producție:
+`_pret_eu_comma("€ 91.99")` → **9199.0** și `_pret_eu_comma("€ 1,079.00")` → **1.079**. Greșeli
+în două direcții opuse, deci fixture-ul ține ambele carduri — unul sub 100, unul peste 1 000.
+
+**O corecție la raportul BRW-0c:** referința e pe **90/90** de carduri, nu 89/90. Cifra 89 venea
+din `omnibus_pe_card`, care numără altceva; `span.line-through` iese 90/90 pe toate cele trei
+corpuri. Cardul „fără referință" din planul rundei nu există.
+
+### Garda de gazdă pe intrările de listare
+
+Descoperirea host-ului intern a arătat o gaură în contractul comun: nimic nu verifica până acum
+că `url` / `page_url_template` arată chiar spre domeniul lor. O transcriere verbatim a href-urilor
+lui conrad ar fi produs un șablon pe care allow-list-ul de destinație îl respinge — **după** ce
+scannerul ar fi cerut deja pagina. `_verifica_descriptor` cere acum potrivirea suffix-safe a
+producției, pe toate cele **55** de descriptoare (`www.conrad.com` trece,
+`conrad.com.attacker.net` nu). Domeniile de listare ajung la **55**.

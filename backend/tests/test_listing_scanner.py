@@ -803,7 +803,22 @@ def test_listing_domains_exact_cele_din_registru():
                                  # afara, cu dovada: elefant.ro (JS_ONLY - 61 de
                                  # cereri pe pagina), hhv.de (provocare JS pe
                                  # listare) si sephora.ro (403 Akamai pe home).
-                                 "asos.com"}
+                                 "asos.com",
+                                 # DEAL-D9 - conrad.com, din sonda BRW-0c, si
+                                 # PRIMUL domeniu cu axele dezlipite: axa L ramane
+                                 # pe browser headed (PDP-ul da 403), axa D intra
+                                 # pe HTTP (listarea da 200 si aceleasi 90 de
+                                 # carduri ca browserul). Nota veche „materie
+                                 # pentru axa D, val ULTERIOR" se inchide aici.
+                                 # Raman afara, cu dovada, celelalte cinci din
+                                 # lotul BRW-0c: computeruniverse.net si
+                                 # cyberport.at cu `Attention Required` (blocare
+                                 # finala Cloudflare, zero crestere pe 15 poll-uri),
+                                 # iar flanco.ro, pcgarage.ro si vexio.ro cu
+                                 # Turnstile TRECUT dar cu redirectul neincaput in
+                                 # plafonul de 20 s - de re-masurat cu plafon mai
+                                 # mare, o SINGURA data (reputatie de IP).
+                                 "conrad.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -855,6 +870,26 @@ def _verifica_descriptor(domeniu, d):
     are_entries = "entries" in d
     assert are_url != are_entries, (
         f"{domeniu}: exact una din `url` / `entries`, nu ambele si nu niciuna")
+
+    # DEAL-D9 — intrarile trebuie sa arate chiar spre DOMENIU. Garda nu e
+    # teoretica: pagina de listare a lui conrad isi scrie href-urile de paginare
+    # catre un host de infrastructura (`com-storefront-intern-https.prod.tds-p.com`,
+    # 111 aparitii, masurat la BRW-0c), iar o transcriere verbatim a lor ar fi
+    # produs un `page_url_template` pe care allow-list-ul de destinatie il respinge
+    # — dupa ce scannerul ar fi cerut deja pagina. Regula de potrivire e cea a
+    # productiei (suffix-safe), deci `www.conrad.com` trece si
+    # `conrad.com.attacker.net` nu.
+    import urllib.parse as _up
+    from app.services.product_page_extractor import match_shop_domain
+
+    de_verificat = ([d["url"]] if are_url
+                    else [intrare["url"] for intrare in d.get("entries", [])])
+    if d.get("page_url_template"):
+        de_verificat.append(d["page_url_template"].replace("{n}", "2"))
+    for u in de_verificat:
+        gazda = (_up.urlsplit(u).hostname or "").lower()
+        assert match_shop_domain(gazda, {domeniu}) is not None, (
+            f"{domeniu}: intrarea arata spre {gazda!r}, care nu-i apartine")
 
     if are_entries:
         assert d["entries"], f"{domeniu}: `entries` gol"
@@ -1919,18 +1954,18 @@ def test_emag_descriptor_pe_entries():
     # Sanatatea cazurilor negative: forma cu lista, altfel VALIDA, chiar trece.
     # Fara asta, fiecare `raises` de mai jos ar putea sa se aprinda din alt motiv
     # decat cel testat — si exact asa a scapat prima versiune a acestui test.
-    _verifica_descriptor("sintetic", {**baza, "entries": [intrare_buna]})
+    _verifica_descriptor("x.ro", {**baza, "entries": [intrare_buna]})
 
     with pytest.raises(AssertionError):                  # ambele forme deodata
-        _verifica_descriptor("sintetic", {**baza, "url": "https://x.ro/a",
+        _verifica_descriptor("x.ro", {**baza, "url": "https://x.ro/a",
                                           "page_url_template": "https://x.ro/a/p{n}",
                                           "entries": [intrare_buna]})
     with pytest.raises(AssertionError):                  # niciuna din forme
-        _verifica_descriptor("sintetic", dict(baza))
+        _verifica_descriptor("x.ro", dict(baza))
     with pytest.raises(AssertionError):                  # `entries` gol
-        _verifica_descriptor("sintetic", {**baza, "entries": []})
+        _verifica_descriptor("x.ro", {**baza, "entries": []})
     with pytest.raises(AssertionError):                  # intrare fara template
-        _verifica_descriptor("sintetic", {**baza, "entries": [{"url": "https://x.ro/b"}]})
+        _verifica_descriptor("x.ro", {**baza, "entries": [{"url": "https://x.ro/b"}]})
 
 
 # ── DEAL-D2 — lotul „electronice RO" (sonda LST-D2, 2026-09-07) ──────────────
@@ -3713,7 +3748,8 @@ def test_deal_d7_in_registru():
 
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
-    assert len(listing_domains()) == 54, "53 la DEAL-D7 + asos.com la DEAL-D8"
+    assert len(listing_domains()) == 55, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
+                                          "+ conrad.com la DEAL-D9")
 
 
 # ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
@@ -3870,10 +3906,99 @@ def test_asos_in_registru():
     assert d["currency"] == "EUR"
     assert d["reference_kind"] == "nemarcat"
     assert "asos.com" in listing_domains()
-    assert len(listing_domains()) == 54
+    assert len(listing_domains()) == 55
 
     assert (listing_scanner._pagina_url(d, 2)
             == "https://www.asos.com/women/sale/cat/?page=2&cid=7046")
     assert (listing_scanner._pagina_url(d, 1)
             == "https://www.asos.com/women/sale/cat/?cid=7046")
 
+
+# ── DEAL-D9 — conrad.com: axa D pe HTTP, cu parserul US pe preturi in EUR ────
+#
+# Sonda BRW-0c a masurat ca listarea lui conrad da ACELEASI 90 de carduri prin
+# HTTP ca prin browser, desi PDP-ul ramane in spatele unui 403. De aici primul
+# domeniu cu axele dezlipite: `method: "browser"` pentru axa L, descriptor CSS pe
+# poarta HTTP pentru axa D. Testele de mai jos apara cele trei lucruri care pot
+# strica descriptorul in tacere: parserul, nodul din care se citeste pretul, si
+# gazda pe care se construieste pagina 2.
+def test_conrad_us_dot_si_referinta():
+    """Preturi EUR scrise in format US, si referinta taiata de pe acelasi card.
+
+    Cardul al doilea e in fixture EXCLUSIV pentru virgula de mii: `eu_comma` ar
+    citi „EUR 91.99" ca 9199.0 si „EUR 1,079.00" ca 1.079 — greseli in DOUA
+    directii opuse, deci un singur card n-ar fi prins-o pe amandoua.
+    """
+    carduri = extrage_carduri(_fixture("conrad.com"),
+                              listing_descriptor("conrad.com"), "conrad.com")
+    assert len(carduri) == 2
+
+    intai, apoi = carduri
+    assert (intai["price"], intai["compare_at"]) == (91.99, 165.0)
+    assert (apoi["price"], apoi["compare_at"]) == (1079.0, 1698.13)
+
+    # Titlul vine din atributul `title` al ancorei (`title_from: "link_title"`).
+    assert intai["title"].startswith("Brüder Mannesmann M29075")
+    assert apoi["title"].startswith("Wera 2go E 1 05134025001")
+
+    # href-urile paginii sunt RELATIVE (`/en/p/...`), deci URL-ul se absolutizeaza
+    # pe cheia de registru. Iese fara `www` — asa lucreaza `_link_of` pentru toate
+    # cele 55 de domenii, si e gazda pe care se face si potrivirea de domeniu.
+    for card in carduri:
+        assert card["url"].startswith("https://conrad.com/en/p/")
+
+    # Imaginea: PRIMUL candidat din `srcset` (IMG-2), fara descriptorul de latime.
+    assert intai["image_url"] == (
+        "https://asset.conrad.com/media10/isa/160267/c1/-/en/616665_BB_01_FB/"
+        "bruder-mannesmann-m29075-m29075-diyers-tool-box-tools-108-piece.jpg?x=100")
+    for card in carduri:
+        assert card["image_url"].startswith("https://asset.conrad.com/")
+        assert " " not in card["image_url"] and "w" != card["image_url"][-1]
+
+
+def test_conrad_pagina_url_pe_gazda_publica():
+    """Pagina 2 se cere de pe `www.conrad.com`, nu de pe hostul intern scurs.
+
+    href-urile de paginare din pagina arata catre
+    `com-storefront-intern-https.prod.tds-p.com` (111 aparitii, masurat) — un host
+    de infrastructura, pe care allow-list-ul de destinatie l-ar respinge pe drept.
+    Sablonul din registru il re-ancoreaza; testul asta e ce impiedica o
+    transcriere viitoare sa-l puna inapoi.
+    """
+    d = listing_descriptor("conrad.com")
+    pagina2 = listing_scanner._pagina_url(d, 2)
+
+    assert pagina2.startswith("https://www.conrad.com/en/search.html")
+    assert "&page=2" in pagina2
+    assert "tds-p.com" not in pagina2
+    assert "tfo_flags=priceReducedProduct" in pagina2
+    # Pagina 1 e intrarea insasi, fara `page=`.
+    assert listing_scanner._pagina_url(d, 1) == d["url"]
+    assert "page=" not in d["url"]
+
+
+def test_conrad_in_registru():
+    """Intrarea de registru, si asimetria dintre axe.
+
+    `method` NU se atinge: axa L are nevoie de browser headed fiindca PDP-ul da
+    403 `cf-mitigated: challenge` pe poarta HTTP (G2B-1b). Axa D merge pe HTTP
+    fiindca scannerul de listari foloseste doar `_fetch_shop_url_guarded`. Testul
+    apara ambele capete deodata: daca cineva „uniformizeaza" `method`-ul, cade.
+    """
+    from app.services.shop_registry import SHOP_REGISTRY, browser_domains
+
+    assert SHOP_REGISTRY["conrad.com"]["method"] == "browser"
+    assert SHOP_REGISTRY["conrad.com"]["headed"] is True
+    assert "conrad.com" in browser_domains()
+
+    assert "conrad.com" in listing_domains()
+    assert len(listing_domains()) == 55
+
+    d = listing_descriptor("conrad.com")
+    assert d["price_parse"] == "us_dot"
+    assert d["currency"] == "EUR"
+    assert d["max_pages"] == 15
+    assert d["reference_kind"] == "nemarcat"
+    # Calea CSS, nu cea de stare — conrad are grila in DOM-ul servit pe HTTP.
+    assert d["card"] == r".group\/productcard"
+    assert not d.get("state_extractor")
