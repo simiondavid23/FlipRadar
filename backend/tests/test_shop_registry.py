@@ -333,6 +333,11 @@ def test_harta_de_impersonate_e_pinuita():
         # domeniul e `jsonld` pe axa L, iar D10a a verificat live ca PDP-ul
         # chiar trece asa (239,99 RON, in stoc) inainte de a-l scrie.
         "vexio.ro": "firefox135",        # DEAL-D10a
+        # DEAL-D10b — la JSON-0 domeniul daduse 403 si in BROWSER REAL
+        # (pagina de asteptare de marca, 2.641 de octeti, ZERO ancore),
+        # deci calea de browser nu era o alternativa. HTTP-ul cu alta
+        # amprenta trece din prima. PDP-ul a fost verificat live la D10b.
+        "bstn.com": "chrome131",         # DEAL-D10b
         "elefant.ro": "chrome",          # ELF-2 — 403 Cloudflare pe implicit, 200 pe chrome
         "cyberport.at": "chrome",        # G2B-2 — challenge Cloudflare pe implicit, 200 pe chrome
         # IMP-2 — 0/4 blocat pe chrome131 vs 2/4 pe chrome146: INTERMITENT, nu

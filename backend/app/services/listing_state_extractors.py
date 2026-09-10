@@ -28,6 +28,7 @@ SARE, niciodata nu se ghiceste). Restul scannerului — memoria R2, `_evalueaza`
 from __future__ import annotations
 
 import hashlib
+import html as html_lib
 import json
 import logging
 import re
@@ -1314,6 +1315,270 @@ def asos_plp(html: str, descriptor: dict) -> list[dict]:
 # Numele sunt CHEI de descriptor (`state_extractor`), deci se schimba doar odata
 # cu registrul. Un nume necunoscut ridica `KeyError` in scanner, deliberat: o
 # listare goala ar arata ca „azi n-are reduceri" si ar inchide tacit dealurile.
+# ── DEAL-D10b — trei familii de stare, din sonda LST-D9 ─────────────────────
+
+def _pret_din_text_eu(valoare) -> float | None:
+    """„199,99 €" -> 199.99, prin parserul de TEXT al caii CSS.
+
+    Se refoloseste `_pret_eu_comma` din scanner, nu se rescrie: e acelasi format
+    european, iar o a doua copie ar putea diverge tacit de prima. Importul e
+    amanat din acelasi motiv ca la `_card` (ciclu de import la nivel de modul).
+    """
+    from app.services.listing_scanner import _pret_eu_comma
+
+    if isinstance(valoare, (int, float)) and not isinstance(valoare, bool):
+        return float(valoare)
+    if isinstance(valoare, str):
+        return _pret_eu_comma(valoare)
+    return None
+
+
+def bstn_next(html: str, descriptor: dict) -> list[dict]:
+    """bstn.com — categoriile de sale, din raspunsul Algolia inlinat in Next.
+
+    Masurat la LST-D9 §4.4 pe `/eu_en/men/sale`: DOM-ul n-are nicio grila si
+    niciun `<a>` catre un produs (cele cinci ancore care contin `eu_en/p` sunt
+    `/eu_en/payment`, `/eu_en/product-safety` si `/eu_en/privacy-policy`), dar
+    `__NEXT_DATA__` poarta raspunsul intreg la
+    `props.pageProps.serverState.initialResults.magento2_eu_products.results[0]`
+    — 96 de hituri, `nbHits` 8.463, `nbPages` 89.
+
+    MONEDA nu e capcana lui endclothing: `storeConfig.storeConfig.
+    base_currency_code` e chiar `EUR`, deci `price.EUR.default` e pretul afisat,
+    nu unul de convertit prin cursul comercial al magazinului. Cheia de moneda se
+    ia din DESCRIPTOR, nu dintr-o constanta: asa, moneda declarata (si raportata
+    in aval) si campul citit nu pot sa se desincronizeze tacit — daca magazinul
+    isi schimba baza, cheia lipseste, pretul iese None si cardurile se SAR, in loc
+    sa intre cu valori in alta moneda.
+
+    REFERINTA e `default_original_formated` („199,99 €"), un SIR formatat, nu un
+    numar — de aici parserul de text. Se pastreaza doar daca e STRICT mai mare
+    decat pretul platit: pe 96/96 exista campul, dar el poate fi egal cu pretul pe
+    produsele nereduse, iar o referinta egala ar publica un deal de 0%. Nu poarta
+    nicio eticheta legala (nici Omnibus, nici PRP), de unde `nemarcat` in registru.
+
+    URL-ul: hitul da `url` RELATIV si fara slash (`p/jordan-…`), iar prefixul de
+    locala NU se scrie in cod. Se DEDUCE din pagina: `pageProps.serverUrl` e calea
+    fara locala (`/men/sale`) iar `descriptor["url"]` e cea cu ea
+    (`/eu_en/men/sale`), deci prefixul e ce ramane dupa taierea sufixului. Rezerva,
+    daca `serverUrl` lipseste: primul segment al caii descriptorului. Forma
+    compusa a fost verificata LIVE la D10b (PASUL 4), fiindca aici — spre deosebire
+    de computeruniverse — nu exista nicio ancora de produs cu care s-o incrucisam.
+    """
+    date = next_data(html)
+    pp = ((date or {}).get("props") or {}).get("pageProps") or {}
+    rezultate = (((pp.get("serverState") or {}).get("initialResults") or {})
+                 .get("magento2_eu_products") or {}).get("results")
+    if not isinstance(rezultate, list) or not rezultate:
+        return []
+    primul = rezultate[0] or {}
+    hituri = primul.get("hits")
+    if not isinstance(hituri, list) or not hituri:
+        return []                    # fara hituri = categorie goala / final
+
+    moneda = (descriptor.get("currency") or "EUR").upper()
+    baza = _baza(descriptor)
+    cale_cu_locala = urllib.parse.urlsplit(descriptor["url"]).path
+    cale_fara = (pp.get("serverUrl") or "").strip()
+    if cale_fara and cale_cu_locala.endswith(cale_fara):
+        prefix = cale_cu_locala[: -len(cale_fara)]
+    else:
+        segmente = [s for s in cale_cu_locala.split("/") if s]
+        prefix = f"/{segmente[0]}" if segmente else ""
+
+    iesire = []
+    for h in hituri:
+        if not isinstance(h, dict):
+            continue
+        cale = (h.get("url") or "").strip().lstrip("/")
+        preturi = (h.get("price") or {}).get(moneda) or {}
+        pret = _pret_numeric(preturi.get("default"))
+        if not cale or pret is None or pret <= 0:
+            continue
+        referinta = _pret_din_text_eu(preturi.get("default_original_formated"))
+        if referinta is not None and referinta <= pret:
+            referinta = None
+        iesire.append(_card(f"{baza}{prefix}/{cale}", h.get("name"), pret,
+                            referinta, h.get("image_url")))
+    return iesire
+
+
+# Sablonul de imagine al lui computeruniverse, citit VERBATIM din pagina: hitul da
+# doar un ID (`PI_421398260`), nu un URL, iar `normalizeaza_imagine` respinge pe
+# drept un ID gol. Pagina randeaza trei dimensiuni (`210x210`, `240`, `260x260`);
+# `210x210` e cea de pe cardurile de grila.
+#
+# ATENTIE la gazda, si nu e o greseala de tastare: e `computerunivers.net`, FARA
+# „e" inainte de `.net` — alt domeniu decat magazinul. Se pastreaza verbatim.
+_CU_IMAGINE = "https://img.computerunivers.net/cp/images/210x210/{id}"
+
+
+def cu_algolia(html: str, descriptor: dict) -> list[dict]:
+    """computeruniverse.net — frunzele de outlet, din `algoliaServerState`.
+
+    Capcana pe care runda a inchis-o (LST-D9 §4.1): verdictul „grila e
+    client-side" al lui LST-D7 fusese masurat pe HUB (`/de/o/outlet`), care
+    intr-adevar n-are `algoliaServerState` — cele 40 de „produse" ale lui sunt
+    RECOMANDARI Dynamic Yield („Outlet Reco 01", `type: RECS_DECISION`), a sasea
+    capcana de carusel a proiectului. FRUNZELE, in schimb, poarta raspunsul
+    intreg: `hardware-komponenten-outlet` are `nbHits` 2.211 pe 50 de pagini, cu
+    20 de hituri server-side.
+
+    PRETUL E BRUT, si asta e o alegere, nu o intamplare: hitul poarta si
+    `salesPricesGross` (89,89) si `salesPricesNet` (75,5378), iar noi citim NUMAI
+    primul. E capcana conrad exact pe dos — acolo ld+json-ul dadea doar pretul NET
+    (`valueAddedTaxIncluded: false`) si o comparatie cu preturi romanesti brute
+    subestima sistematic. Aici alegerea e a noastra, deci trebuie scrisa.
+
+    Amandoua sunt dicturi cheiate pe CANAL DE VANZARE (`SC_CU` pe vitrina
+    masurata, 20/20). Se accepta doar cand exista EXACT un canal: cu doua, un
+    „primul dintre ele" ar fi o alegere nemasurata, iar tacerea ar publica preturi
+    de pe alt canal decat cel pe care cumpara utilizatorul.
+
+    FARA REFERINTA: hitul n-are niciun camp de pret anterior — nici `oldprice`,
+    nici UVP, nici Omnibus. Domeniul califica deci doar pe R2 (minim istoric), ca
+    notebooksbilliger si toolnation, iar `compare_at` e mereu None.
+
+    GARDA DE PAGINA. Algolia numara paginile de la 0, iar URL-ul de la 1. Pagina
+    ceruta se citeste din `__NEXT_DATA__.query.page` (masurat: `"2"` pe
+    `?page=2`), iar cea servita din `results[0].page` (masurat: `1`). Nepotrivirea
+    inseamna ca magazinul a servit ALTA pagina decat cea ceruta — tiparul de CLAMP
+    pe care conditia compozita a scannerului il prinde abia dupa ce a re-ingerat
+    produsele. Aici se opreste mai devreme si mai tare: WARN plus grila goala, adica
+    sfarsit de intrare curat.
+    """
+    date = next_data(html)
+    sp = ((((date or {}).get("props") or {}).get("pageProps") or {})
+          .get("fullPageProps") or {}).get("staticProps") or {}
+    initiale = (sp.get("algoliaServerState") or {}).get("initialResults") or {}
+    if not initiale:
+        return []                    # hub sau pagina fara raft
+    primul_index = next(iter(initiale.values())) or {}
+    rezultate = primul_index.get("results")
+    if not isinstance(rezultate, list) or not rezultate:
+        return []
+    r = rezultate[0] or {}
+    hituri = r.get("hits")
+    if not isinstance(hituri, list) or not hituri:
+        return []
+
+    ceruta = (date.get("query") or {}).get("page")
+    try:
+        asteptata = int(ceruta) - 1 if ceruta not in (None, "") else 0
+    except (TypeError, ValueError):
+        asteptata = 0
+    servita = r.get("page")
+    if isinstance(servita, int) and servita != asteptata:
+        logger.warning(
+            "[ListingScan] computeruniverse: pagina servita %s != ceruta %s "
+            "(clamp) — se trateaza ca grila goala", servita, asteptata)
+        return []
+
+    if asteptata == 0:
+        # Masuratoare gratuita, o data per intrare si scan: cat de adanc e raftul.
+        logger.info("[ListingScan] computeruniverse: nbHits=%s nbPages=%s "
+                    "hitsPerPage=%s", r.get("nbHits"), r.get("nbPages"),
+                    r.get("hitsPerPage"))
+
+    baza = _baza(descriptor)
+    iesire = []
+    for h in hituri:
+        if not isinstance(h, dict):
+            continue
+        cale = (h.get("url") or "").strip().lstrip("/")
+        brut = h.get("salesPricesGross")
+        if not isinstance(brut, dict) or len(brut) != 1:
+            continue                 # zero sau mai multe canale: nu se alege unul
+        pret = _pret_numeric(next(iter(brut.values())))
+        if not cale or pret is None or pret <= 0:
+            continue
+        id_poza = (h.get("image_url") or "").strip()
+        poza = _CU_IMAGINE.format(id=id_poza) if id_poza else None
+        iesire.append(_card(f"{baza}/{cale}", h.get("name"), pret, None, poza))
+    return iesire
+
+
+def jb_plenty(html: str, descriptor: dict) -> list[dict]:
+    """jb-spielwaren.de — plentyShop, cate un JSON per card, intr-un `<template>`.
+
+    Forma, masurata la LST-D9 §3.2: grila e in DOM, dar cardul e un ELEMENT
+    CUSTOM (`<category-item>`, 200 pe pagina sub `ul.product-list.grid`) si nu
+    poarta nici pret, nici titlu ca text — le tine intr-un
+    `<template #item-data>` cu un JSON de produs. Deci nici CSS pur nu merge, nici
+    un `__NEXT_DATA__` global nu exista: sursa e per card.
+
+    CE NU E SURSA: pagina mai are si un `products.push({...})` de dataLayer, tot
+    cu 200 de intrari si tot cu preturi. N-are insa nici URL, nici pret de
+    referinta — cine l-ar alege ar obtine o listare care pare completa si din care
+    nu iese niciun deal. Diferenta se vede doar daca ceri ambele si le compari.
+
+    REFERINTA e `prices.rrp` — UVP, pretul recomandat, deci `reference_kind:
+    "prp"` in registru. Masurat: 170/200 pe pagina 1 si 186/200 pe pagina 2 au
+    `rrp > price`; restul sunt produse la pret intreg, unde referinta se arunca.
+    Campul Omnibus al platformei EXISTA (`graduatedPrices[].lowestPrice`) dar e
+    `null` pe 200/200, deci nu se citeste — daca vreodata magazinul incepe sa-l
+    populeze, e candidatul natural pentru `min30`.
+
+    `isNet` TREBUIE sa fie `false`. E o garda, nu o verificare de forma: acelasi
+    magazin poate servi preturi NETE unui client B2B, iar atunci pretul citit ar fi
+    cu 19% sub cel platit de un cumparator obisnuit — o eroare sistematica,
+    invizibila in feed. Produsul se SARE, cu WARN.
+
+    URL-ul se compune, si compunerea e VERIFICATA, nu presupusa: pe 200/200 de
+    carduri `"/" + texts.urlPath + "/a-" + item.id + "/"` e identic cu `href`-ul
+    real al ancorei din card. (Capcana altex — URL compus cu `id` in loc de `sku` —
+    a fost cautata explicit si nu exista aici.)
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html or "", "html.parser")
+    carduri = soup.select("ul.product-list.grid category-item")
+    if not carduri:
+        return []                    # grila goala = final de paginare
+
+    baza = _baza(descriptor)
+    iesire = []
+    for el in carduri:
+        date = None
+        for sablon in el.find_all("template"):
+            brut = html_lib.unescape(sablon.decode_contents()).strip()
+            if brut.startswith("{"):
+                try:
+                    date = json.loads(brut, strict=False)
+                    break
+                except Exception:                                # noqa: BLE001
+                    continue
+        if not isinstance(date, dict):
+            continue
+
+        preturi = date.get("prices") or {}
+        gradat = (preturi.get("graduatedPrices") or [{}])[0] or {}
+        if gradat.get("isNet") is not False:
+            logger.warning(
+                "[ListingScan] jb-spielwaren: `isNet` nu e False (%r) — produs "
+                "sarit, pretul ar fi fara TVA", gradat.get("isNet"))
+            continue
+
+        pret = _pret_numeric(((preturi.get("default") or {}).get("price") or {})
+                             .get("value"))
+        texte = date.get("texts") or {}
+        slug = (texte.get("urlPath") or "").strip().strip("/")
+        id_articol = (date.get("item") or {}).get("id")
+        if pret is None or pret <= 0 or not slug or id_articol in (None, ""):
+            continue
+
+        referinta = _pret_numeric(((preturi.get("rrp") or {}).get("price") or {})
+                                  .get("value"))
+        if referinta is not None and referinta <= pret:
+            referinta = None
+
+        poza = (((date.get("images") or {}).get("all") or [{}])[0] or {}).get("urlMiddle")
+        titlu = texte.get("name2") or texte.get("name1") or texte.get("name3")
+        iesire.append(_card(f"{baza}/{slug}/a-{id_articol}/", titlu, pret,
+                            referinta, poza))
+    return iesire
+
+
 LISTING_STATE_EXTRACTORS = {
     "toolnation_ldjson": toolnation_ldjson,
     "vivre_rsc": vivre_rsc,
@@ -1338,4 +1603,12 @@ LISTING_STATE_EXTRACTORS = {
     # esecul comutarii da o pagina perfect parsabila in ALTA moneda. Familia
     # ajunge la UNSPREZECE.
     "asos_plp": asos_plp,
+    # DEAL-D10b — trei forme de stare care nu semanau cu nimic din familie:
+    # un raspuns Algolia sub `serverState` (bstn), altul sub
+    # `algoliaServerState` cu garda de pagina (computeruniverse), si un JSON
+    # PER CARD intr-un `<template>` de element custom (jb-spielwaren).
+    # Familia ajunge la PAISPREZECE.
+    "bstn_next": bstn_next,
+    "cu_algolia": cu_algolia,
+    "jb_plenty": jb_plenty,
 }

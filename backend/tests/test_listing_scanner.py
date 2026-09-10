@@ -814,10 +814,18 @@ def test_listing_domains_exact_cele_din_registru():
                                  # lotul BRW-0c: computeruniverse.net si
                                  # cyberport.at cu `Attention Required` (blocare
                                  # finala Cloudflare, zero crestere pe 15 poll-uri),
-                                 # iar flanco.ro, pcgarage.ro si vexio.ro cu
-                                 # Turnstile TRECUT dar cu redirectul neincaput in
-                                 # plafonul de 20 s - de re-masurat cu plafon mai
-                                 # mare, o SINGURA data (reputatie de IP).
+                                 # iar flanco.ro si pcgarage.ro cu Turnstile.
+                                 # CORECTIE (BRW-0d): „Turnstile TRECUT, doar
+                                 # redirectul n-a incaput in plafon" era o citire
+                                 # gresita, si merita spus de ce — fraza
+                                 # „Verificarea a reusit" CHIAR e in pagina, dar
+                                 # sub `display: none`. Masurat: interstitiul
+                                 # ingheata la 2,6-2,9 s cu `cf-turnstile-response`
+                                 # GOL, iar 41 din 41 de poll-uri pana la 60 s dau
+                                 # corpuri identice la octet. Deci zidul e TERMINAL
+                                 # si nu se redeschide pe alt plafon.
+                                 # vexio.ro a iesit din lista: la LST-D9 s-a
+                                 # deschis pe alta AMPRENTA, nu pe alt timeout.
                                  "conrad.com",
                                  # BRW-1 — primele trei intrari care NU se aduc pe
                                  # HTTP: `via: "browser"`. Sunt tot ce a
@@ -842,7 +850,14 @@ def test_listing_domains_exact_cele_din_registru():
                                  # bstn.com, computeruniverse.net si
                                  # jb-spielwaren.de, care cer extractoare de
                                  # STARE si intra la D10b.
-                                 "vexio.ro", "reichelt.de", "foto-erhardt.com"}
+                                 "vexio.ro", "reichelt.de", "foto-erhardt.com",
+                                 # DEAL-D10b — restul lotului LST-D9, toate trei
+                                 # pe STARE. Din lot ramane afara doar sizeer.ro:
+                                 # API-ul lui e pe `adafir.eu`, gazda pe care
+                                 # allow-list-ul portii o refuza, si cere si
+                                 # credentiale de client.
+                                 "bstn.com", "computeruniverse.net",
+                                 "jb-spielwaren.de"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -3789,8 +3804,9 @@ def test_deal_d7_in_registru():
 
     assert "answear_state" in LISTING_STATE_EXTRACTORS
     assert "endclothing_state" in LISTING_STATE_EXTRACTORS
-    assert len(LISTING_STATE_EXTRACTORS) == 11, (
-        "familia `state_extractor`: zece la DEAL-D7 + `asos_plp` la DEAL-D8")
+    assert len(LISTING_STATE_EXTRACTORS) == 14, (
+        "familia `state_extractor`: zece la DEAL-D7 + `asos_plp` la DEAL-D8 "
+        "+ bstn_next / cu_algolia / jb_plenty la DEAL-D10b")
 
     for domeniu in ("alternate.de", "sivasdescalzo.com", "nike.com"):
         d = listing_descriptor(domeniu)
@@ -3801,10 +3817,12 @@ def test_deal_d7_in_registru():
 
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
-    assert len(listing_domains()) == 61, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
+    assert len(listing_domains()) == 64, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
                                           "+ conrad.com la DEAL-D9 + cele trei "
                                           "de browser de la BRW-1 + vexio / "
-                                          "reichelt / foto-erhardt la DEAL-D10a")
+                                          "reichelt / foto-erhardt la DEAL-D10a "
+                                          "+ bstn / computeruniverse / "
+                                          "jb-spielwaren la DEAL-D10b")
 
 
 # ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
@@ -3961,7 +3979,7 @@ def test_asos_in_registru():
     assert d["currency"] == "EUR"
     assert d["reference_kind"] == "nemarcat"
     assert "asos.com" in listing_domains()
-    assert len(listing_domains()) == 61
+    assert len(listing_domains()) == 64
 
     assert (listing_scanner._pagina_url(d, 2)
             == "https://www.asos.com/women/sale/cat/?page=2&cid=7046")
@@ -4053,7 +4071,7 @@ def test_conrad_in_registru():
     assert "conrad.com" in browser_domains()
 
     assert "conrad.com" in listing_domains()
-    assert len(listing_domains()) == 61
+    assert len(listing_domains()) == 64
 
     d = listing_descriptor("conrad.com")
     assert d["price_parse"] == "us_dot"
@@ -4404,7 +4422,7 @@ def test_brw1_in_registru(scan_browser):
         _verifica_descriptor(domeniu, d)
 
     assert pe_browser <= listing_domains()
-    assert len(listing_domains()) == 61
+    assert len(listing_domains()) == 64
 
     # Restul axei ramane pe HTTP, implicit sau explicit.
     for domeniu in listing_domains() - pe_browser:
@@ -4693,3 +4711,222 @@ def test_garda_accepta_self_si_saving():
     # Si cele trei domenii reale trec prin aceeasi garda.
     for domeniu in ("vexio.ro", "reichelt.de", "foto-erhardt.com"):
         _verifica_descriptor(domeniu, listing_descriptor(domeniu))
+
+
+# ── DEAL-D10b — bstn / computeruniverse / jb-spielwaren, prin STARE ──────────
+#
+# Restul lotului LST-D9. Toate trei au grila in pagina si niciuna in DOM, dar
+# forma difera de fiecare data: un raspuns Algolia sub `serverState` (bstn), altul
+# sub `algoliaServerState` cu doua niveluri de categorie (computeruniverse), si un
+# JSON PER CARD, intr-un `<template>` de element custom (jb-spielwaren).
+#
+# Din lotul de sapte al sondei ramane afara doar sizeer.ro: API-ul lui e pe
+# `adafir.eu`, gazda pe care allow-list-ul portii o refuza.
+
+
+def _descriptor_frunza(domeniu: str, indice: int) -> dict:
+    """Descriptorul unei intrari din forma `entries`, ca sa aiba `url` propriu.
+
+    `_baza` citeste `descriptor["url"]`, iar pe forma `entries` cheia aia nu
+    exista la nivelul de sus — scannerul o rezolva per intrare. Testele fac la fel.
+    """
+    d = listing_descriptor(domeniu)
+    return dict(d, url=d["entries"][indice]["url"])
+
+
+def test_bstn_next_carduri():
+    """Raspunsul Algolia inlinat sub `serverState`, si cele doua reguli de pret.
+
+    Al doilea hit are `default_original_formated` EGAL cu pretul platit —
+    modificat deliberat in fixture, fiindca in pagina reala campul exista pe
+    96/96. Fara el n-ar avea ce dovedi ca o referinta <= pret se ARUNCA: o
+    referinta egala ar publica un deal de 0%.
+    """
+    d = listing_descriptor("bstn.com")
+    carduri = extrage_carduri(_fixture_stare("bstn.com"), d, "bstn.com")
+
+    assert len(carduri) == 2
+    assert carduri[0]["price"] == 169.99
+    assert carduri[0]["compare_at"] == 199.99, (
+        "referinta e un SIR formatat, nu un numar, deci trece prin "
+        "parserul de text")
+    assert carduri[1]["compare_at"] is None, "referinta egala cu pretul se arunca"
+    assert carduri[0]["title"] == "AIR JORDAN 4 RETRO 'COMIC'"
+
+    # URL-ul: hitul da `p/…` fara slash, iar prefixul de locala se DEDUCE din
+    # pagina (`serverUrl` = „/men/sale" fata de calea descriptorului
+    # „/eu_en/men/sale"), nu se scrie in cod.
+    assert carduri[0]["url"] == ("https://www.bstn.com/eu_en/p/"
+                                 "jordan-air-jordan-4-retro-comic-ja1135-100-0353992")
+    assert all(c["image_url"] for c in carduri)
+    assert d["state_extractor"] == "bstn_next"
+    assert d["currency"] == "EUR" and d["reference_kind"] == "nemarcat"
+
+    # Cheia de moneda vine din DESCRIPTOR, nu dintr-o constanta: pe o moneda pe
+    # care starea n-o poarta, preturile lipsesc si cardurile se SAR — fail-safe,
+    # niciodata cu valori din alta moneda.
+    assert extrage_carduri(_fixture_stare("bstn.com"), dict(d, currency="RON"),
+                           "bstn.com") == []
+
+
+def test_bstn_impersonate_si_entries():
+    """Amprenta, si de ce intrarea e una singura.
+
+    La JSON-0 bstn daduse 403 si in BROWSER REAL, deci calea de browser nu era o
+    alternativa; HTTP-ul cu alta amprenta trece din prima incercare.
+    """
+    from app.services.scraper_service import _impersonate_for
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    assert SHOP_REGISTRY["bstn.com"]["impersonate"] == "chrome131"
+    assert _impersonate_for("https://www.bstn.com/eu_en/men/sale") == "chrome131"
+    assert _impersonate_for("https://bstn.com/x") == "chrome131"
+    # Efectul colateral, pinuit: profilul se aplica si pe axa L. D10b a verificat
+    # live ca PDP-ul chiar trece asa (169,99 EUR, acelasi pret ca pe card).
+    assert SHOP_REGISTRY["bstn.com"]["method"] == "jsonld"
+
+    d = listing_descriptor("bstn.com")
+    assert d["url"].endswith("/eu_en/men/sale")
+    # PAGINA UNICA, si nu din prudenta: pagina nu-si declara paginarea in niciun
+    # fel. Un `?page={n}` ar fi un URL inventat.
+    assert d["max_pages"] == 1
+    assert "page_url_template" not in d
+    assert "entries" not in d, (
+        "`women/sale` si `kids/sale` exista in nav dar n-au fost CERUTE niciodata")
+
+
+def test_cu_algolia_brut_nu_net():
+    """Pretul BRUT, si de ce alegerea trebuie scrisa.
+
+    Hitul poarta AMBELE: `salesPricesGross` 89,89 si `salesPricesNet` 75,5378.
+    E capcana conrad exact pe dos — acolo ld+json-ul dadea doar netul si o
+    comparatie cu preturi romanesti brute subestima sistematic.
+    """
+    d = _descriptor_frunza("computeruniverse.net", 6)
+    carduri = extrage_carduri(_fixture_stare("computeruniverse.net"), d,
+                              "computeruniverse.net")
+
+    assert len(carduri) == 2
+    assert carduri[0]["price"] == 89.89, "BRUT"
+    assert carduri[0]["price"] != 75.5378, "NU net"
+    # Fara niciun camp de pret anterior: domeniul califica doar pe R2.
+    assert all(c["compare_at"] is None for c in carduri)
+    assert listing_descriptor("computeruniverse.net")["reference_kind"] == "nemarcat"
+
+    assert carduri[0]["url"] == "https://www.computeruniverse.net/de/p/2B05-0CL"
+    # `image_url` e un ID, nu un URL — sablonul CDN-ului se compune in extractor.
+    assert carduri[0]["image_url"] == (
+        "https://img.computerunivers.net/cp/images/210x210/PI_421398260")
+
+    # Doua canale de vanzare = alegere nemasurata -> cardul se sare, nu se ghiceste.
+    import json as _json
+    html = _fixture_stare("computeruniverse.net")
+    doua = html.replace('"salesPricesGross":{"SC_CU":89.89}',
+                        '"salesPricesGross":{"SC_CU":89.89,"SC_ALT":79.0}')
+    assert doua != html, "santinela: substitutia a atins fixture-ul"
+    assert len(extrage_carduri(doua, d, "computeruniverse.net")) == 1, (
+        "hitul cu doua canale se sare, celalalt ramane")
+
+
+def test_cu_algolia_pagina_nepotrivita_e_grila_goala(caplog):
+    """Garda de CLAMP: pagina servita != pagina ceruta.
+
+    Algolia numara de la 0, URL-ul de la 1. Cand magazinul serveste pagina 1 la o
+    cerere de pagina 2, conditia compozita a scannerului ar prinde-o abia dupa ce
+    a re-citit produsele; aici se opreste mai devreme si mai tare.
+    """
+    d = _descriptor_frunza("computeruniverse.net", 6)
+    html = _fixture_stare("computeruniverse.net")
+    assert len(extrage_carduri(html, d, "computeruniverse.net")) == 2
+
+    # Acelasi corp (page: 0), dar cerut ca pagina 2.
+    ca_pagina2 = html.replace(
+        '"query":{"subCategory":"hardware-komponenten-outlet"}',
+        '"query":{"page":"2","subCategory":"hardware-komponenten-outlet"}')
+    assert ca_pagina2 != html, "santinela: substitutia a atins fixture-ul"
+    with caplog.at_level("WARNING"):
+        assert extrage_carduri(ca_pagina2, d, "computeruniverse.net") == []
+    assert any("clamp" in m.lower() for m in caplog.messages)
+
+
+def test_cu_entries_10():
+    """Cele zece FRUNZE, si hub-ul care NU e printre ele.
+
+    Hub-ul `/de/o/outlet` n-are `algoliaServerState` — cele 40 de „produse" ale
+    lui sunt recomandari Dynamic Yield. Ca intrare, ar da grila goala la fiecare
+    scan; santinela de mai jos o dovedeste pe dump-ul real.
+    """
+    d = listing_descriptor("computeruniverse.net")
+    intrari = d["entries"]
+    assert len(intrari) == 10
+    for intrare in intrari:
+        assert "/de/o/outlet/" in intrare["url"]
+        assert intrare["url"].rstrip("/") != "https://www.computeruniverse.net/de/o/outlet"
+        assert "{n}" in intrare["page_url_template"]
+    assert d["max_pages"] == 3
+    assert len({i["url"] for i in intrari}) == 10
+    assert (listing_scanner._pagina_url(listing_scanner._intrari(d)[6], 2)
+            == "https://www.computeruniverse.net/de/o/outlet/"
+               "hardware-komponenten-outlet?page=2")
+
+
+def test_jb_plenty_rrp_si_url():
+    """JSON per card, referinta PRP, si garda de `isNet`."""
+    d = listing_descriptor("jb-spielwaren.de")
+    carduri = extrage_carduri(_fixture_stare("jb-spielwaren.de"), d,
+                              "jb-spielwaren.de")
+
+    assert len(carduri) == 2
+    assert carduri[0]["price"] == 110.49
+    assert carduri[0]["compare_at"] == 129.99, "`prices.rrp` = UVP"
+    assert carduri[1]["compare_at"] is None, "`rrp` <= pret se arunca"
+    assert d["reference_kind"] == "prp", "UVP e o eticheta reala, spre deosebire "\
+                                         "de celelalte doua domenii ale rundei"
+
+    # URL-ul se COMPUNE, si compunerea e verificata: pe 200/200 de carduri ea e
+    # identica cu `href`-ul real al ancorei (capcana altex, cautata si absenta).
+    assert carduri[0]["url"] == ("https://www.jb-spielwaren.de/"
+                                 "lego-11379-bookstore-book-nook/a-11379/")
+    assert "/a-11379/" in carduri[0]["url"], "id-ul de articol, nu doar slug-ul"
+    assert all(c["image_url"] for c in carduri)
+
+    # `isNet: true` = preturi FARA TVA: produsul se sare, cu WARN. Un pret net
+    # citit ca brut ar fi cu 19% sub cel platit, sistematic si invizibil in feed.
+    html = _fixture_stare("jb-spielwaren.de")
+    net = html.replace("&quot;isNet&quot;:false", "&quot;isNet&quot;:true")
+    assert net != html, "santinela: substitutia a atins fixture-ul"
+    assert extrage_carduri(net, d, "jb-spielwaren.de") == []
+
+    # Fara `category-item` = grila goala = final de paginare (masurat pe
+    # `?page=500`), nu eroare.
+    assert extrage_carduri('<ul class="product-list grid"></ul>', d,
+                           "jb-spielwaren.de") == []
+
+
+def test_deal_d10b_in_registru():
+    """Cele trei extractoare noi, cele trei domenii, si granitele lotului."""
+    from app.services.listing_state_extractors import LISTING_STATE_EXTRACTORS
+
+    for domeniu, nume in (("bstn.com", "bstn_next"),
+                          ("computeruniverse.net", "cu_algolia"),
+                          ("jb-spielwaren.de", "jb_plenty")):
+        assert nume in LISTING_STATE_EXTRACTORS
+        d = listing_descriptor(domeniu)
+        assert d["state_extractor"] == nume
+        # Forma de STARE e SAU-EXCLUSIV cu cea CSS.
+        assert "card" not in d and "price_parse" not in d
+        _verifica_descriptor(domeniu, d)
+        assert d["currency"] == "EUR"
+
+    assert len(LISTING_STATE_EXTRACTORS) == 14
+    assert len(listing_domains()) == 64
+    assert {"bstn.com", "computeruniverse.net",
+            "jb-spielwaren.de"} <= listing_domains()
+
+    # jb e SINGURUL din lot cu eticheta legala pe referinta.
+    assert listing_descriptor("jb-spielwaren.de")["reference_kind"] == "prp"
+    for domeniu in ("bstn.com", "computeruniverse.net"):
+        assert listing_descriptor(domeniu)["reference_kind"] == "nemarcat"
+
+    # sizeer.ro NU intra: API pe gazda nevalidata.
+    assert "sizeer.ro" not in listing_domains()

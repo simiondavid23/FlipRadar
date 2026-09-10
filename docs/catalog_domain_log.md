@@ -5508,3 +5508,132 @@ o citire greșită; ea **elimină dependența** de felul în care magazinul împ
 bstn.com (8.463 de produse, `impersonate: chrome131`), computeruniverse.net (`entries` × 10 frunze) și
 jb-spielwaren.de (200/pagină, referință `rrp`) — toate trei pe extractoare de stare, pe arhitectura
 R4a care există deja.
+
+---
+
+## DEAL-D10b — bstn, computeruniverse, jb-spielwaren prin extractoare de stare; note corectate
+
+Restul lotului LST-D9. Toate trei au grila **în pagină** și **niciuna în DOM**, dar forma diferă de
+fiecare dată — de aceea sunt trei extractoare, nu unul. Axa D urcă de la **61** la **64** de domenii;
+familia `state_extractor` de la **11** la **14**.
+
+Din lotul de șapte al sondei rămâne afară un singur domeniu: **sizeer.ro**, al cărui API e pe o gazdă
+pe care allow-list-ul o refuză.
+
+### Cele trei forme de stare
+
+| domeniu | unde stă grila | pe pagină | referință |
+|---|---|---|---|
+| **bstn.com** | `props.pageProps.serverState.initialResults.magento2_eu_products.results[0].hits` | 96 (din 8.463) | `price.EUR.default_original_formated`, 96/96 |
+| **computeruniverse.net** | `…fullPageProps.staticProps.algoliaServerState.initialResults.<index>.results[0].hits` | 20 (2.211/frunză) | **niciuna** → R2 only |
+| **jb-spielwaren.de** | `<template #item-data>` în fiecare `<category-item>` | 200 | `prices.rrp` (UVP), 170–186/200 |
+
+**bstn** — moneda *nu* e capcana lui endclothing: `storeConfig.storeConfig.base_currency_code` e chiar
+`EUR`, deci `price.EUR.default` e prețul afișat, nu unul de convertit prin cursul comercial al
+magazinului. Cheia de monedă se ia din **descriptor**, ca moneda declarată și câmpul citit să nu poată
+diverge tăcut. Referința e un **șir formatat** („199,99 €"), nu un număr — de aici parserul de text — și
+se păstrează doar dacă e strict peste prețul plătit.
+
+**computeruniverse** — prețul e **BRUT** (`salesPricesGross`), și alegerea trebuie scrisă fiindcă
+hitul poartă *ambele*: 89,89 brut și 75,5378 net. E capcana conrad exact pe dos — acolo ld+json-ul
+dădea doar netul (`valueAddedTaxIncluded: false`) și o comparație cu prețuri românești brute
+subestima sistematic. Amândouă sunt dicturi cheiate pe **canal de vânzare** (`SC_CU`, 20/20); se
+acceptă doar când există exact un canal, fiindcă „primul dintre ele" ar fi o alegere nemăsurată.
+
+**jb-spielwaren** — `isNet` **trebuie** să fie `false`, și e o gardă, nu o verificare de formă:
+același magazin poate servi prețuri nete unui client B2B, iar atunci prețul citit ar fi cu 19% sub cel
+plătit — o eroare sistematică, invizibilă în feed. Produsul se sare, cu WARN. Ce **nu** e sursă:
+pagina mai are un `products.push({...})` de dataLayer, tot cu 200 de intrări și tot cu prețuri, dar
+**fără URL și fără referință** — cine l-ar alege ar obține o listare care pare completă și din care nu
+iese niciun deal.
+
+### Capcana hub/frunze, și a șasea capcană de carusel
+
+Verdictul LST-D7 pentru computeruniverse — „grila e client-side, reintrarea cere captura API-ului" —
+era măsurat pe **hub** (`/de/o/outlet`) și e corect *pentru hub*: acolo chiar nu există
+`algoliaServerState`, iar cele 40 de „produse" din `__NEXT_DATA__` sunt recomandări Dynamic Yield,
+numite literal **„Outlet Reco 01"** / `type: RECS_DECISION`. A șasea capcană de carusel a proiectului,
+după senetic, noriel, powerup, LOT5 și conrad.
+
+Un nivel mai jos, **frunzele** poartă răspunsul întreg: `hardware-komponenten-outlet` are
+`nbHits` 2.211 pe 50 de pagini, cu 20 de hituri server-side. Deci nu era nevoie de nicio captură de
+API — răspunsul era deja în pagină, în dump-uri pe care le aveam de la LST-D7.
+
+Hub-ul **nu** e intrare, și testul o dovedește pe dump-ul real: ca intrare ar da grilă goală la
+fiecare scan. Cele zece frunze sunt citite verbatim din `catalog.SubCategories` al hub-ului.
+
+### Garda de clamp, fără atingerea scannerului
+
+Algolia numără paginile de la 0, URL-ul de la 1. `cu_algolia` citește pagina **cerută** din
+`__NEXT_DATA__.query.page` (măsurat: `"2"` pe `?page=2`) și pe cea **servită** din `results[0].page`
+(măsurat: `1`), iar nepotrivirea înseamnă că magazinul a servit altceva decât s-a cerut — tiparul de
+clamp. Rezultatul: WARN plus grilă goală, adică sfârșit de intrare curat, **înainte** ca produsele să
+fie re-ingerate.
+
+Detaliul care contează pentru cine reia: verificarea trăiește **întreagă în extractor**. Contractul
+`(html, descriptor)` nu primește numărul paginii, iar `listing_scanner.py` nu e în whitelist-ul rundei
+— dar nici n-a fost nevoie, fiindcă pagina cerută e chiar în corpul răspunsului.
+
+### Amprenta bstn
+
+| profil | rezultat |
+|---|---|
+| `chrome` (JSON-0) | 403, pagină de așteptare de marcă, 2.641 octeți, **0 ancore** — și **403 și în BROWSER REAL** |
+| **`chrome131`** | **200, 386.844 octeți, 573 ancore** |
+
+Ce merită reținut: calea de browser **nu** era o alternativă (la JSON-0 domeniul dăduse 403 și acolo),
+iar HTTP-ul cu altă amprentă trece pe unde browserul nu trecuse. Home-ul deblocat își declară singur
+12 ancore de sale.
+
+`impersonate` e per **domeniu**, deci se aplică și pe axa L. PASUL 4 a verificat live: PDP-ul `jsonld`
+răspunde cu **169,99 EUR, în stoc, 15 variante** — exact prețul de pe cardul de listare.
+
+**Și aceeași cerere a fost și proba URL-ului.** Pagina de listare a lui bstn n-are **nicio** ancoră
+către un produs (cele cinci care conțin `eu_en/p` sunt `/eu_en/payment`, `/eu_en/product-safety` și
+`/eu_en/privacy-policy`), deci forma compusă nu s-a putut încrucișa cu DOM-ul, cum s-a putut la
+computeruniverse (40 de ancore `/de/p/…`). Prefixul de locală se **deduce** din pagină — `serverUrl`
+(`/men/sale`) față de calea descriptorului (`/eu_en/men/sale`) — nu se scrie în cod.
+
+### O intrare, nu trei — și de ce
+
+bstn declară 12 ancore de sale, dar doar `/eu_en/men/sale` a fost **cerută** și măsurată. Regula
+nichiduta permite fațetelor nemăsurate să intre cu `max_pages: 1` când markup-ul e dovedit identic —
+aici nu e dovedit pe nimic, fiindcă `women/sale` și `kids/sale` n-au fost atinse deloc. Intră la prima
+rundă care le cere.
+
+**Și bstn rămâne pagină unică**, deși are 89 de pagini de conținut: pagina **nu-și declară paginarea
+în niciun fel** — zero `?page=`, zero `rel="next"`, ruta Next e `/[gender]/[level2]` fără parametru de
+pagină. `nbPages` e o cifră a *răspunsului*, nu un URL. Un `?page={n}` scris în registru ar fi fost un
+URL inventat, deci 96 de produse pe scan și restul de 8.367 rămân pentru o rundă care chiar măsoară
+forma de paginare. (Cererea de rezervă a rundei a rămas necheltuită din exact acest motiv.)
+
+### Notele corectate
+
+* **conrad.com** — afirmația „scannerul de listări folosește DOAR `_fetch_shop_url_guarded`, n-are
+  nicio ramură de browser" a fost adevărată până la BRW-1, care i-a adăugat a doua cale. Ce rămâne
+  valabil, și e partea care contează: ramura **nu** se alege după `method`, ci după cheia `via` a
+  descriptorului — iar conrad e chiar contraexemplul care ține granița (`method: "browser"` pentru
+  PDP, HTTP pentru listare).
+* **pcgarage.ro, flanco.ro** — „Turnstile TRECUT, doar redirectul n-a încăput în plafon, de re-măsurat
+  cu plafon mai mare" era o citire greșită, și merită spus de ce: fraza **„Verificarea a reușit" chiar
+  este în pagină, dar sub `display: none`**. Măsurat la BRW-0d: interstițiul îngheață la 2,6–2,9 s cu
+  `cf-turnstile-response` **gol**, iar 41 din 41 de poll-uri până la 60 s întorc corpuri identice la
+  octet. Zidul e **terminal** și nu se redeschide pe alt plafon. (vexio.ro a ieșit din acea listă
+  altfel: la LST-D9 s-a deschis pe altă **amprentă**, nu pe alt timeout.)
+* **sizeer.ro** — captura API-ului nu mai e „pasul următor", fiindcă s-a făcut: blobul inline își
+  declară configurația, iar API-ul e pe `api-sizeer.adafir.eu`, adică domeniul **`adafir.eu`**, care nu
+  e subdomeniu al lui `sizeer.ro`. Allow-list-ul îl refuză pe drept — un STOP, nu un obstacol de
+  ocolit. Cere în plus `clientId` și `clientCode` (valorile nu se transcriu nicăieri). Notă de
+  măsurătoare, ca să nu se propage: o căutare automată de căi `/api/` dă patru potriviri **false** —
+  `/barbati/pantofi/slapi` conține literele „api" în „sl**api**"; numărul real e **zero**.
+
+### Bilanț
+
+| ce | înainte | după |
+|---|---|---|
+| domenii de listare | 61 | **64** |
+| extractoare de stare | 11 | **14** |
+| override-uri de amprentă | 6 | **7** |
+
+Produse pe scan, adăugate de rundă: 96 (bstn) + 600 (computeruniverse, 10 frunze × 3 pagini × 20) +
+1.000 (jb-spielwaren, 5 × 200) ≈ **1.700**.

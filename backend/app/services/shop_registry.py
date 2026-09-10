@@ -868,7 +868,44 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "ZERO ancore, doar logoul SVG), deci n-a existat niciun link de "
                  "listare de descoperit. De notat ca `_detecteaza_blocare` NU l-a "
                  "prins: regula de shell cere si titlu gol, iar titlul e nevid "
-                 "(v. GUARD-1 in docs/catalog_domain_log.md).",
+                 "(v. GUARD-1 in docs/catalog_domain_log.md). "
+                 "LST-D9/DEAL-D10b — zidul a cazut la SCHIMBAREA AMPRENTEI, din "
+                 "prima incercare alternativa. Ce merita retinut: la JSON-0 "
+                 "domeniul daduse 403 si in BROWSER REAL, deci calea de browser nu "
+                 "era o alternativa — iar HTTP-ul cu alta amprenta trece pe unde "
+                 "browserul nu trecuse. Home-ul deblocat (386.844 octeti, 573 de "
+                 "ancore) isi declara singur 12 ancore de sale, pe trei genuri x "
+                 "patru rafturi.",
+        # DEAL-D10b — profilul se aplica per DOMENIU, deci si pe axa L (`jsonld`).
+        # Verificat LIVE la D10b (PASUL 4) inainte de a fi scris aici.
+        "impersonate": "chrome131",
+        # ── DEAL-D10b — din sonda LST-D9 §4.4 ─────────────────────────────────
+        "listing": {
+            # O SINGURA intrare, si asta e o alegere, nu o omisiune. Home-ul
+            # declara 12 ancore de sale, dar doar `/eu_en/men/sale` a fost CERUTA
+            # si masurata (96 de hituri, nbHits 8.463). Regula nichiduta spune ca
+            # fatetele nemasurate pot intra cu `max_pages: 1` cand markup-ul e
+            # dovedit identic — aici insa nu e dovedit pe nimic: `women/sale` si
+            # `kids/sale` n-au fost atinse deloc. Intra la prima runda care le cere.
+            "url": "https://www.bstn.com/eu_en/men/sale",
+            # PAGINA UNICA, si nu din prudenta: pagina NU-si declara paginarea in
+            # niciun fel. Zero `?page=`, zero `rel="next"`, zero `/page/N`; ruta
+            # Next e `/[gender]/[level2]` cu `query: {gender, level2}`, fara
+            # parametru de pagina. Starea Algolia stie ca sunt 89 de pagini
+            # (`nbPages`, din 8.463 de hituri la 96 pe pagina), dar asta e o cifra
+            # a RASPUNSULUI, nu un URL: raftul urmator se cere din browser prin
+            # API, nu printr-o adresa pe care s-o putem construi.
+            #
+            # Un `?page={n}` scris aici ar fi un URL INVENTAT — exact ce runda
+            # asta n-are voie sa faca. Deci 96 de produse pe scan, iar restul de
+            # 8.367 raman pentru o runda care chiar masoara forma de paginare.
+            "max_pages": 1,
+            "currency": "EUR",
+            "state_extractor": "bstn_next",
+            # `default_original_formated` e pretul dinainte al ACELUIASI produs, nu
+            # o eticheta legala: nici Omnibus, nici PRP.
+            "reference_kind": "nemarcat",
+        },
     },
     # Cheia e CU subdomeniu: _domain_of taie doar "www.", iar refresh-ul compara
     # pe egalitate exacta. Domeniul GOL (afew-store.com) nu se adauga: redirecteaza
@@ -1264,7 +1301,15 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "Rezerva `/multi-deals-extra-discount` a dat 200 cu 548 KB si "
                  "ZERO jetoane de pret (client-side). Semnificativ pentru un "
                  "magazin de electronice: ZERO aparitii de „resigilat” pe "
-                 "home, desi resigilatele sunt tocmai axa D aici.",
+                 "home, desi resigilatele sunt tocmai axa D aici."
+                 "BRW-0d — zidul e TERMINAL, nu o chestiune de rabdare: "
+                 "interstitiul Turnstile INGHEATA la 2,6–2,9 s cu "
+                 "`cf-turnstile-response` GOL, iar 41 din 41 de poll-uri pana la "
+                 "60 s au intors corpuri identice la octet. Fraza „Verificarea a "
+                 "reusit” exista in pagina, dar sub `display: none` — de aceea "
+                 "rundele dinainte au crezut ca provocarea trecuse si ca lipseste "
+                 "doar plafonul. NU se redeschide pe reglaj de parametru; ar cere "
+                 "alta cale de acces, nu alt timeout.",
     },
     "evomag.ro": {
         "label": "evoMAG",
@@ -1840,7 +1885,15 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`cf-mitigated: challenge`, titlu „Just a moment...”). Daca se "
                  "deblocheaza, e candidat pentru forma `entries`: PDP-ul listeaza TREI "
                  "sectiuni de desigilate si CINCI de extra-reduceri, fara niciun URL "
-                 "agregat.",
+                 "agregat."
+                 "BRW-0d — zidul e TERMINAL, nu o chestiune de rabdare: "
+                 "interstitiul Turnstile INGHEATA la 2,6–2,9 s cu "
+                 "`cf-turnstile-response` GOL, iar 41 din 41 de poll-uri pana la "
+                 "60 s au intors corpuri identice la octet. Fraza „Verificarea a "
+                 "reusit” exista in pagina, dar sub `display: none` — de aceea "
+                 "rundele dinainte au crezut ca provocarea trecuse si ca lipseste "
+                 "doar plafonul. NU se redeschide pe reglaj de parametru; ar cere "
+                 "alta cale de acces, nu alt timeout.",
     },
     "orange.ro": {
         "label": "Orange",
@@ -1952,7 +2005,66 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "preturi din `__NEXT_DATA__` e un slider de recomandari Dynamic "
                  "Yield (`template: DYReco`), nu grila. A treia pagina e cea care "
                  "inchide discutia: nu e „am nimerit paginile gresite”. Reintrarea "
-                 "cere captura API-ului de listare, pe HTTP.",
+                 "cere captura API-ului de listare, pe HTTP. "
+                 "LST-D9/DEAL-D10b — verdictul de mai sus era masurat pe HUB si e "
+                 "corect PENTRU HUB: `/de/o/outlet` chiar n-are raft, iar sliderul "
+                 "cu preturi din `__NEXT_DATA__` chiar e Dynamic Yield. Ce lipsea "
+                 "era un nivel mai jos: FRUNZELE lui (cele zece din "
+                 "`catalog.SubCategories`) poarta `algoliaServerState` cu raspunsul "
+                 "intreg — `hardware-komponenten-outlet` are nbHits 2.211 pe 50 de "
+                 "pagini, cu 20 de hituri server-side. Deci NU cere captura de API: "
+                 "raspunsul e deja in pagina. A sasea capcana de carusel a "
+                 "proiectului (dupa senetic, noriel, powerup, LOT5, conrad), si a "
+                 "doua oara cand un verdict „client-side\" era de fapt „am masurat "
+                 "hub-ul\".",
+        # ── DEAL-D10b — din sonda LST-D9 §4.1 ─────────────────────────────────
+        "listing": {
+            # Cele ZECE frunze, verbatim din `catalog.SubCategories` al hub-ului
+            # `/de/o/outlet` (dump-ul LST-D7). Hub-ul insusi NU e intrare: n-are
+            # `algoliaServerState`, deci ar da grila goala la fiecare scan.
+            "entries": [
+                # Games & Spielzeug Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/games-filme-spielzeug-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/games-filme-spielzeug-outlet?page={n}"},
+                # TV / HiFi / Video Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/tv-hifi-video-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/tv-hifi-video-outlet?page={n}"},
+                # Foto / Video Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/foto-video-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/foto-video-outlet?page={n}"},
+                # Haushalt Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/haushalt-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/haushalt-outlet?page={n}"},
+                # Notebooks, Tablets & PCs Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/notebooks-tablets-pcs-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/notebooks-tablets-pcs-outlet?page={n}"},
+                # Baumarkt & Garten Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/baumarkt-garten-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/baumarkt-garten-outlet?page={n}"},
+                # Hardware & Komponenten Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/hardware-komponenten-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/hardware-komponenten-outlet?page={n}"},
+                # Software Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/software-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/software-outlet?page={n}"},
+                # Handy & Smart Devices Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/smartphones-funk-gps-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/smartphones-funk-gps-outlet?page={n}"},
+                # Computer- & Buerobedarf Outlet
+                {"url": "https://www.computeruniverse.net/de/o/outlet/computer-burobedarf-outlet",
+                 "page_url_template": "https://www.computeruniverse.net/de/o/outlet/computer-burobedarf-outlet?page={n}"},
+            ],
+            # 20 de hituri pe pagina; `hardware-komponenten` singura are 50 de
+            # pagini. Plafonul de 3 e de COST: 10 frunze x 3 pagini x 20 = 600 de
+            # produse pe scan. Paginarea e prin query si e MASURATA (`?page=2` ->
+            # `results[0].page == 1`), nu presupusa.
+            "max_pages": 3,
+            "currency": "EUR",
+            "state_extractor": "cu_algolia",
+            # FARA REFERINTA: hitul n-are niciun camp de pret anterior. Domeniul
+            # califica deci doar pe R2 (minim istoric), ca notebooksbilliger.
+            "reference_kind": "nemarcat",
+        },
     },
     "jb-spielwaren.de": {
         "label": "JB Spielwaren",
@@ -1967,7 +2079,25 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`<h1>Alle Unsere Aktuellen LEGO ® Aktionen, Angebote & GWPs</h1>`, "
                  "dar 2 jetoane de pret pe 236 KB, zero carduri si zero produse in "
                  "blobul de stare. Re-sonda cu alta intrare."
-                 " DEAL-D4 - FARA_LISTARE confirmat a doua oara, cu cuvinte EXTINSE (`restposten|auslaufartikel|%|sale|angebote`) pe un home proaspat de 428 de ancore: o singura candidata, chiar cea editoriala de mai sus. plentyShop marcheaza produsele cu `storeSpecial: Sonderangebot` in DATE, dar magazinul nu expune o categorie de oferte in navigatia server-side."),
+                 " DEAL-D4 - FARA_LISTARE confirmat a doua oara, cu cuvinte EXTINSE (`restposten|auslaufartikel|%|sale|angebote`) pe un home proaspat de 428 de ancore: o singura candidata, chiar cea editoriala de mai sus. plentyShop marcheaza produsele cu `storeSpecial: Sonderangebot` in DATE, dar magazinul nu expune o categorie de oferte in navigatia server-side. LST-D9/DEAL-D10b - verdictul de mai sus e despre NAVIGATIE si ramane adevarat: magazinul chiar n-are o categorie de oferte in nav. Intrarea a venit de la David, nu din pagina (`/en/all-lego-sets/` NU apare in home). Si acolo nu e nevoie de o categorie de reduceri, fiindca REFERINTA e pe PRODUS: fiecare card poarta `prices.rrp` (UVP), iar 170/200 pe pagina 1 si 186/200 pe pagina 2 il au STRICT peste pretul platit. Catalogul integral e deci si listarea de reduceri. `storeSpecial: Sonderangebot` din nota de mai sus e in aceleasi date, dar nu se citeste: `rrp` e o cifra, nu o eticheta de campanie."),
+        # ── DEAL-D10b — din sonda LST-D9 §3.2 ─────────────────────────────────
+        "listing": {
+            # URL dat de David, nu citit din nav. Vitrina engleza si cea germana
+            # (`/alle-lego-sets/`) dau ACELASI catalog, masurat: 200 de produse
+            # fiecare, cu aceleasi 170 de referinte.
+            "url": "https://www.jb-spielwaren.de/en/all-lego-sets/",
+            "page_url_template": "https://www.jb-spielwaren.de/en/all-lego-sets/?page={n}",
+            # 200 de produse pe pagina, dar pagina cantareste 4,5 MB — plafonul e
+            # de BANDA, nu de adancime: 5 x 200 = 1.000 de produse pentru ~22 MB.
+            # Oprirea reala o da grila goala: `?page=500` intoarce 0 `category-item`
+            # (masurat), adica exact conditia de final a scannerului.
+            "max_pages": 5,
+            "currency": "EUR",
+            "state_extractor": "jb_plenty",
+            # `rrp` E pretul recomandat de producator (UVP), deci PRP — spre
+            # deosebire de celelalte doua domenii ale rundei, care n-au eticheta.
+            "reference_kind": "prp",
+        },
     },
     "caseking.de": {
         "label": "Caseking",
@@ -2256,7 +2386,18 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "blobului e pasul care lipsea, si el schimba „n-am gasit produse\" "
                  "in „nu exista produse de gasit\". Reintrarea cere captura "
                  "API-ului din spatele grilei - pe HTTP, unde poarta e deschisa, "
-                 "nu in browser, unde e 403 Akamai.",
+                 "nu in browser, unde e 403 Akamai."
+                 "LST-D9 — captura NU mai e pasul urmator, fiindca s-a facut si "
+                 "raspunsul inchide domeniul: blobul inline al paginii isi declara "
+                 "singur configuratia, iar API-ul e pe `api-sizeer.adafir.eu` — "
+                 "domeniul `adafir.eu`, care NU e subdomeniu al lui `sizeer.ro`. "
+                 "Allow-list-ul portii il refuza pe drept, si asta e un STOP, nu un "
+                 "obstacol de ocolit. In plus cere `clientId` si `clientCode` "
+                 "(valorile NU se transcriu nicaieri), iar 3 din cele 4 `<script "
+                 "src>` ale paginii sunt Akamai. NOTA de masuratoare: o cautare "
+                 "automata de cai `/api/` da patru potriviri FALSE — "
+                 "`/barbati/pantofi/slapi` contine literele „api” in „slapi”; "
+                 "numarul real de cai `/api/…` e ZERO.",
     },
     # ── G2F — sub-lotul sport/outdoor (sonde 2026-08-18) ──────────────────────
     # Din patru domenii sondate au intrat TREI. decathlon.ro e Grup 4 (Cloudflare
@@ -4035,11 +4176,15 @@ SHOP_REGISTRY: dict[str, dict] = {
         # ── DEAL-D9 — PRIMUL domeniu cu axele DEZLIPITE ────────────────────────
         # Axa L ramane pe BROWSER (`method: "browser"`, `headed: True`): PDP-ul da
         # 403 `cf-mitigated: challenge` pe poarta HTTP, masurat la G2B-1b.
-        # Axa D merge pe HTTP, fiindca scannerul de listari foloseste DOAR
-        # `_fetch_shop_url_guarded` — n-are nicio ramura care sa aleaga browserul
-        # dupa `method` (verificat: zero aparitii ale lui "browser" in
-        # listing_scanner.py). Cele doua axe nu se ating, si listarea a raspuns 200
-        # pe HTTP acolo unde PDP-ul raspunde 403.
+        # Axa D merge pe HTTP fiindca DESCRIPTORUL n-o cere altfel — si asta e o
+        # alegere, nu o consecinta structurala. Formularea de dinainte („scannerul
+        # foloseste DOAR `_fetch_shop_url_guarded`") a fost adevarata pana la
+        # BRW-1, care i-a adaugat o a doua cale de fetch; ce ramane valabil, si e
+        # partea care conteaza, e ca ramura NU se alege dupa `method`, ci dupa
+        # cheia `via` a descriptorului de listare. conrad e chiar contraexemplul
+        # care tine granita: `method: "browser"` pentru PDP, HTTP pentru listare,
+        # fiindca listarea lui a raspuns 200 pe HTTP acolo unde PDP-ul da 403.
+        # Vezi `test_brw1_in_registru`, care apara granita prin comportament.
         "listing": {
             # Forma `search.html` cu filtrul de reducere. NU `/en/o/<categorie>` cu
             # acelasi `tfo_flags`: sonda a cerut-o ca a doua intrare
