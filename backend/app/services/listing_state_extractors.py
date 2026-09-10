@@ -160,8 +160,31 @@ def _baza(descriptor: dict) -> str:
     in cod si nici din cheia de registru: cheia poate fi fara `www` acolo unde
     magazinul serveste CU `www` (cellini), iar o constanta ar fi a doua sursa de
     adevar, care se poate desincroniza tacit de descriptor.
+
+    DEAL-D11 — REZERVA pe `entries[0]`, si e reparatia unui bug LATENT, nu o
+    comoditate. Scannerul paseaza DESCRIPTORUL, nu intrarea, catre
+    `extrage_carduri` (deci si catre extractoarele de stare), iar un descriptor
+    pe `entries` n-are `url` la nivelul lui — cele doua chei sunt SAU-EXCLUSIV
+    prin contract. Combinatia „entries + extractor care cheama `_baza`" ridica
+    deci `KeyError: 'url'` la primul card. Nu era teoretic: `computeruniverse.net`
+    a intrat asa la DEAL-D10b si CADE pe descriptorul lui real; testele lui
+    treceau fiindca ii dadeau un descriptor sintetic, cu `url`. `lego.com` si
+    `endclothing.com` au si ele `entries`, dar extractoarele lor nu cheama
+    `_baza`, deci n-au aratat nimic.
+
+    Rezerva e corecta semantic, nu doar convenabila: toate intrarile unui domeniu
+    stau pe ACEEASI gazda — allow-list-ul portii nici n-ar lasa altfel — deci
+    prima intrare da aceeasi baza ca oricare alta.
     """
-    p = urllib.parse.urlsplit(descriptor["url"])
+    baza = descriptor.get("url")
+    if not baza:
+        intrari = descriptor.get("entries") or []
+        baza = intrari[0]["url"] if intrari else None
+    if not baza:
+        raise KeyError(
+            "descriptorul de listare n-are nici `url`, nici `entries` cu `url` "
+            "— `_baza` nu poate deriva gazda")
+    p = urllib.parse.urlsplit(baza)
     return f"{p.scheme}://{p.netloc}"
 
 

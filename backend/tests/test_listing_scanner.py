@@ -857,7 +857,22 @@ def test_listing_domains_exact_cele_din_registru():
                                  # allow-list-ul portii o refuza, si cere si
                                  # credentiale de client.
                                  "bstn.com", "computeruniverse.net",
-                                 "jb-spielwaren.de"}
+                                 "jb-spielwaren.de",
+                                 # DEAL-D11 — sonda LST-D10. Doua din trei au
+                                 # intrat fiindca un verdict vechi de „zid" era
+                                 # verdict despre ALTCEVA: la pcgarage BRW-0d
+                                 # masurase rabdarea (41/41 poll-uri identice la
+                                 # octet), nu amprenta; la decathlon „toate
+                                 # profilurile" insemna toate cele INCERCATE,
+                                 # niciunul Safari. Al treilea, sizeer, a intrat
+                                 # fara API-ul de pe gazda refuzata: grila e in
+                                 # DOM pe o CATEGORIE, nu pe `/outlet`.
+                                 # NU sunt aici, fiecare pe alt motiv masurat:
+                                 # flanco.ro (preturi client-side pe toate cele
+                                 # trei forme), cyberport.at (outlet client-side,
+                                 # `?page=` ignorat) si sephora.ro (Akamai si pe
+                                 # HTTP, nu doar in browser).
+                                 "pcgarage.ro", "decathlon.ro", "sizeer.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -3817,12 +3832,14 @@ def test_deal_d7_in_registru():
 
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
-    assert len(listing_domains()) == 64, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
+    assert len(listing_domains()) == 67, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
                                           "+ conrad.com la DEAL-D9 + cele trei "
                                           "de browser de la BRW-1 + vexio / "
                                           "reichelt / foto-erhardt la DEAL-D10a "
                                           "+ bstn / computeruniverse / "
-                                          "jb-spielwaren la DEAL-D10b")
+                                          "jb-spielwaren la DEAL-D10b "
+                                          "+ pcgarage / decathlon / sizeer la "
+                                          "DEAL-D11")
 
 
 # ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
@@ -3979,7 +3996,7 @@ def test_asos_in_registru():
     assert d["currency"] == "EUR"
     assert d["reference_kind"] == "nemarcat"
     assert "asos.com" in listing_domains()
-    assert len(listing_domains()) == 64
+    assert len(listing_domains()) == 67       # DEAL-D11: +3
 
     assert (listing_scanner._pagina_url(d, 2)
             == "https://www.asos.com/women/sale/cat/?page=2&cid=7046")
@@ -4071,7 +4088,7 @@ def test_conrad_in_registru():
     assert "conrad.com" in browser_domains()
 
     assert "conrad.com" in listing_domains()
-    assert len(listing_domains()) == 64
+    assert len(listing_domains()) == 67       # DEAL-D11: +3
 
     d = listing_descriptor("conrad.com")
     assert d["price_parse"] == "us_dot"
@@ -4422,7 +4439,7 @@ def test_brw1_in_registru(scan_browser):
         _verifica_descriptor(domeniu, d)
 
     assert pe_browser <= listing_domains()
-    assert len(listing_domains()) == 64
+    assert len(listing_domains()) == 67       # DEAL-D11: +3
 
     # Restul axei ramane pe HTTP, implicit sau explicit.
     for domeniu in listing_domains() - pe_browser:
@@ -4919,7 +4936,8 @@ def test_deal_d10b_in_registru():
         assert d["currency"] == "EUR"
 
     assert len(LISTING_STATE_EXTRACTORS) == 14
-    assert len(listing_domains()) == 64
+    # DEAL-D11 a urcat axa D de la 64 la 67 (pcgarage, decathlon, sizeer).
+    assert len(listing_domains()) == 67
     assert {"bstn.com", "computeruniverse.net",
             "jb-spielwaren.de"} <= listing_domains()
 
@@ -4928,5 +4946,247 @@ def test_deal_d10b_in_registru():
     for domeniu in ("bstn.com", "computeruniverse.net"):
         assert listing_descriptor(domeniu)["reference_kind"] == "nemarcat"
 
-    # sizeer.ro NU intra: API pe gazda nevalidata.
-    assert "sizeer.ro" not in listing_domains()
+    # sizeer.ro nu intrase la DEAL-D10b fiindca ruta cautata era API-ul de pe o
+    # gazda nevalidata. DEAL-D11 l-a adus pe axa D fara acel API: grila e in DOM
+    # pe o CATEGORIE (`/barbati`), nu pe `/outlet`, care are o singura oferta.
+    # STOP-ul de allow-list ramane neatins — nu s-a ridicat, s-a dovedit inutil.
+    assert "sizeer.ro" in listing_domains()
+    assert "state_extractor" not in listing_descriptor("sizeer.ro")
+
+
+# ── DEAL-D11 — pcgarage / decathlon / sizeer pe axa D, answear extins ────────
+#
+# Cele trei domenii noi vin din sonda LST-D10, care a masurat ca doua verdicte
+# vechi de „zid” erau verdicte despre ALTCEVA: la pcgarage BRW-0d masurase
+# rabdarea (41/41 poll-uri identice la octet), nu amprenta, iar la decathlon
+# „toate profilurile” insemna toate cele INCERCATE — niciunul Safari.
+
+
+def test_pcgarage_carduri_si_colapsare():
+    """Preturi, referinta din `bfp_old`, si UNITATILE care se colapseaza corect.
+
+    Fixture-ul are TREI carduri din care doua sunt acelasi ventilator: acelasi
+    produs, acelasi pret, fragmente `#u38359589` / `#u38359593` diferite.
+    Magazinul listeaza unitati FIZICE de desigilat, iar `_external_id` ignora
+    fragmentul — deci trei carduri trebuie sa dea DOUA identitati. Pe listarea
+    reala raportul e 35 -> 29.
+    """
+    from app.services.shop_registry import impersonate_overrides
+
+    d = listing_descriptor("pcgarage.ro")
+    intrari = d["entries"]
+    carduri = extrage_carduri(_fixture("pcgarage.ro"),
+                              dict(d, url=intrari[0]["url"]), "pcgarage.ro")
+
+    assert len(carduri) == 3
+    assert [c["price"] for c in carduri] == [23.01, 23.01, 2349.98]
+    assert [c["compare_at"] for c in carduri] == [38.35, 38.35, 2399.99]
+    assert all(c["title"] for c in carduri)
+    assert all(c["image_url"] for c in carduri)
+
+    # Colapsarea: trei carduri, DOUA identitati.
+    assert len({c["external_id"] for c in carduri}) == 2
+    assert carduri[0]["external_id"] == carduri[1]["external_id"]
+    assert carduri[0]["external_id"] != carduri[2]["external_id"]
+    # ...si nu fiindca URL-urile ar fi identice — fragmentele chiar difera.
+    assert carduri[0]["url"] != carduri[1]["url"]
+
+    # Amprenta fara de care listarea nici nu s-ar putea cere: pe `chrome`
+    # (implicitul) domeniul intoarce challenge Cloudflare.
+    assert impersonate_overrides()["pcgarage.ro"] == "firefox135"
+
+    # Referinta NU e numita: pagina n-o eticheteaza deloc.
+    assert d["reference_kind"] == "nemarcat"
+
+    # Parserul e ALES, nu nimerit: `<sup>` aici NU e forma evomag.
+    # `2.399<sup>,99 RON</sup>` -> `_text_of` da „2.399 ,99 RON", CU virgula,
+    # deci `eu_comma` il citeste direct, iar `eu_sup` ar da acelasi lucru fiindca
+    # delegheaza cand vede o virgula. Acordul se pinuieste pe chiar textul
+    # paginii: daca magazinul trece la separatorul-spatiu („2.399 99"), se rupe
+    # aici, nu tacut in productie.
+    from bs4 import BeautifulSoup
+
+    from app.services.listing_scanner import (_pret_eu_comma, _pret_eu_sup,
+                                              _text_of)
+
+    assert d["price_parse"] == "eu_comma"
+    supa = BeautifulSoup(_fixture("pcgarage.ro"), "html.parser")
+    brut = _text_of(supa.select_one("div.product_box").select_one("p.bfp_old"))
+    assert "," in brut, f"forma s-a schimbat: {brut!r}"
+    assert _pret_eu_comma(brut) == _pret_eu_sup(brut) == 38.35
+
+
+def test_decathlon_carduri():
+    """Pretul se ia din nodul CURAT, nu din spanul cu eticheta `sr-only`.
+
+    Ambele spanuri de pret poarta inauntru un `<span class="sr-only">Pretul
+    actual</span>` / „Pretul anterior” — tiparul answear (LST-D7), unde exact
+    asta a facut un descriptor sa para impecabil si sa fie gresit. Aici
+    `eu_comma` sterge non-cifrele, deci cele doua cai ies EGALE; testul o spune
+    explicit, ca acordul sa nu fie citit drept „eticheta nu exista”.
+    """
+    from app.services.shop_registry import impersonate_overrides
+
+    d = listing_descriptor("decathlon.ro")
+    carduri = extrage_carduri(_fixture("decathlon.ro"), d, "decathlon.ro")
+
+    assert len(carduri) == 2
+    assert [c["price"] for c in carduri] == [2561.0, 206.99]
+    assert [c["compare_at"] for c in carduri] == [2661.0, 229.99]
+    assert all(c["title"] for c in carduri)
+    assert all(c["image_url"] for c in carduri)          # 40/40 pe listarea reala
+    assert len({c["external_id"] for c in carduri}) == 2
+
+    # Eticheta chiar E acolo, in amandoua nodurile de pret.
+    assert _fixture("decathlon.ro").count("sr-only") >= 2
+
+    # Calea „murdara” da acelasi numar — deci sabotajul e inert, nu absent.
+    murdar = extrage_carduri(_fixture("decathlon.ro"),
+                             dict(d, price_text="span.vp-price-amount--sale"),
+                             "decathlon.ro")
+    assert [c["price"] for c in murdar] == [c["price"] for c in carduri]
+
+    assert impersonate_overrides()["decathlon.ro"] == "safari2601"
+
+
+def test_sizeer_omnibus_nu_taiat():
+    """Referinta e linia ETICHETATA „- cel mai mic pret”, nu pretul de lista.
+
+    Cardul are DOUA linii taiate, si ele diverg pe 13 din 26 de produse ale
+    paginii reale. Pe Reebok: platit 289,99, min30 309,99, lista 449,99 — adica
+    6,5% reducere legala fata de 35,6% raportata gresit. A treia oara in proiect
+    dupa modivo (LST-3b) si answear (LST-D7).
+    """
+    d = listing_descriptor("sizeer.ro")
+    carduri = extrage_carduri(_fixture("sizeer.ro"), d, "sizeer.ro")
+
+    assert len(carduri) == 2
+    reebok, fara = carduri
+    assert reebok["price"] == 289.99
+    assert reebok["compare_at"] == 309.99          # min30
+    assert reebok["compare_at"] != 449.99          # NU pretul de lista
+
+    # Pretul de lista chiar exista in fixture — deci egalitatea de mai sus e o
+    # ALEGERE intre doua linii prezente, nu norocul unei singure linii.
+    assert "449,99" in _fixture("sizeer.ro")
+    gresit = extrage_carduri(_fixture("sizeer.ro"),
+                             dict(d, compare_text="div.prices > span.old-price"),
+                             "sizeer.ro")
+    assert gresit[0]["compare_at"] == 449.99
+
+    # Al doilea card n-are Omnibus deloc: referinta trebuie sa fie None, nu 0.
+    assert fara["price"] == 249.99
+    assert fara["compare_at"] is None
+
+    # Fara imagine: `src` e placeholder base64, iar `data-original` e GOL.
+    assert all(c["image_url"] is None for c in carduri)
+
+    assert d["reference_kind"] == "min30"
+
+
+def test_sizeer_pret_din_text_nu_din_atribut():
+    """Calea aleasa e TEXTUL, si motivul e de cod, nu de gust.
+
+    Cardul poarta `data-price="289.99"`, care ar fi fost mai curat. Dar
+    `price_attr` face `card.select_one(<selector>)`, care cauta printre
+    DESCENDENTI, iar atributul e chiar pe cardul insusi — deci selectorul
+    intoarce None si extractorul sare TOATE cardurile. Masurat, si pinuit aici ca
+    sa nu fie „imbunatatit” inapoi.
+    """
+    from app.services.listing_scanner import _pagina_url
+
+    d = listing_descriptor("sizeer.ro")
+    assert d["price_text"] == "span.main-price"
+    assert d["price_parse"] == "eu_comma"
+    assert "price_attr" not in d
+
+    # Atributul chiar exista pe card...
+    assert 'data-price="289.99"' in _fixture("sizeer.ro")
+    # ...si totusi calea prin atribut nu vede nimic.
+    prin_atribut = dict(d, price_attr=["[data-price]", "data-price"],
+                        price_parse="attr_float")
+    prin_atribut.pop("price_text")
+    assert extrage_carduri(_fixture("sizeer.ro"), prin_atribut, "sizeer.ro") == []
+
+    # Paginarea: sablonul e citit verbatim din `<link rel="next">` al paginii.
+    assert _pagina_url(d, 2) == "https://sizeer.ro/barbati?page=2"
+    assert _pagina_url(d, 1) == "https://sizeer.ro/barbati"
+
+
+def test_answear_entries():
+    """Campania ramane, si i se adauga DOUA fatete de sale masurate.
+
+    Forma `/sale/<departament>` e dovedita pe doua departamente, nu extrapolata
+    de pe unul: starea fiecarei pagini isi declara singura `category` si
+    `specialPage: {"sale": 1}`. `barbati`/`copii` NU intra — in meniu sunt
+    `urlType` simbolic, fara URL literal.
+    """
+    from app.services.listing_scanner import _pagina_url
+
+    d = listing_descriptor("answear.ro")
+    intrari = d["entries"]
+    assert [i["url"] for i in intrari] == [
+        "https://answear.ro/s/back-to-school",
+        "https://answear.ro/sale/home",
+        "https://answear.ro/sale/femei",
+    ]
+    for intrare in intrari:
+        assert "{n}" in intrare["page_url_template"]
+    assert _pagina_url(intrari[2], 2) == "https://answear.ro/sale/femei?page=2"
+
+    # Plafon de COST, nu margine masurata: pagina declara `?page=125`.
+    assert d["max_pages"] == 20
+    # Extractorul comun ramane neatins, ca si referinta.
+    assert d["state_extractor"] == "answear_state"
+    assert d["reference_kind"] == "min30"
+    assert "card" not in d                       # stare, nu CSS
+
+    # Departamentele necerute nu s-au strecurat.
+    scris = " ".join(i["url"] for i in intrari)
+    assert "/sale/barbati" not in scris and "/sale/copii" not in scris
+
+
+def test_decathlon_migrare_axa_L():
+    """decathlon iese de pe browser pe AMANDOUA axele.
+
+    Migrarea `browser` -> `jsonld` a fost conditionata de trei PDP-uri reale
+    (`/p/_/R-p-359538`, `R-p-365172`, `R-p-370708`, toate citite din ancorele
+    home-ului, nu construite) verificate LIVE prin `extract_product` — calea pe
+    care o cheama `routers/products.py`. Toate trei au dat pret, moneda, stoc si
+    imagine, deci `headed` a fost sters odata cu metoda.
+    """
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    meta = SHOP_REGISTRY["decathlon.ro"]
+    assert meta["method"] == "jsonld"
+    assert "headed" not in meta
+    assert meta["impersonate"] == "safari2601"
+
+
+def test_deal_d11_in_registru():
+    """Cele trei domenii noi, si granitele lotului."""
+    from app.services.shop_registry import impersonate_overrides
+
+    assert len(listing_domains()) == 67
+    assert {"pcgarage.ro", "decathlon.ro", "sizeer.ro"} <= listing_domains()
+
+    for domeniu in ("pcgarage.ro", "decathlon.ro", "sizeer.ro"):
+        d = listing_descriptor(domeniu)
+        _verifica_descriptor(domeniu, d)
+        assert d["currency"] == "RON"
+        # Forma CSS e SAU-EXCLUSIV cu cea de stare.
+        assert "card" in d and "state_extractor" not in d
+
+    trepte = impersonate_overrides()
+    assert trepte["pcgarage.ro"] == "firefox135"
+    assert trepte["decathlon.ro"] == "safari2601"
+
+    # Cele trei domenii INCHISE de sonda raman in afara axei D, fiecare pe alt
+    # motiv: flanco n-are preturi server-side, outlet-ul cyberport e client-side
+    # (si `?page=` e ignorat), sephora e zid Akamai si pe HTTP.
+    assert not ({"flanco.ro", "cyberport.at", "sephora.ro"} & listing_domains())
+
+    # pcgarage e SINGURUL din lot pe `entries`; sizeer si decathlon au `url`.
+    assert len(listing_descriptor("pcgarage.ro")["entries"]) == 2
+    for domeniu in ("decathlon.ro", "sizeer.ro"):
+        assert "entries" not in listing_descriptor(domeniu)

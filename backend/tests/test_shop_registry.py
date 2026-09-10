@@ -345,6 +345,22 @@ def test_harta_de_impersonate_e_pinuita():
         # poartei pe profilul centralizat. De RE-MASURAT la urmatorul profil:
         # daca intre timp devine stabil, override-ul iese.
         "sivasdescalzo.com": "chrome131",
+        # DEAL-D11 — doua ziduri clasate „terminale"/„Grup 4" au cazut pe alta
+        # amprenta, si merita citit impreuna cu verdictele pe care le inlocuiesc.
+        #
+        # pcgarage: BRW-0d masurase interstitiul Turnstile INGHETAND (41 din 41
+        # de poll-uri pana la 60 s, corpuri identice la octet) si concluzionase
+        # „zid TERMINAL". Masurase insa RABDAREA, nu amprenta — iar propria lui
+        # fraza spunea „ar cere alta cale de acces, nu alt timeout". Pe HTTP cu
+        # Firefox listarea da 200 din PRIMA incercare.
+        "pcgarage.ro": "firefox135",     # DEAL-D11
+        # decathlon: trei runde il clasasera Grup 4 — G2F-1 „Cloudflare pe toate
+        # profilurile", G4-V4b „403 pe toate cele trei profiluri ale lantului",
+        # BRW-0b „403 si in Chrome real". Toate adevarate despre profilurile
+        # INCERCATE; niciuna n-atinsese un Safari. Profilul deschide AMBELE axe:
+        # domeniul a fost mutat de pe `method: browser` pe `jsonld` dupa ce trei
+        # PDP-uri reale au trecut live prin `extract_product`.
+        "decathlon.ro": "safari2601",    # DEAL-D11
     }
 
     # Si harta chiar ajunge la fetch: rezolvarea per-URL a productiei o onoreaza,

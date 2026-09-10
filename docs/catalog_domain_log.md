@@ -5637,3 +5637,190 @@ forma de paginare. (Cererea de rezervă a rundei a rămas necheltuită din exact
 
 Produse pe scan, adăugate de rundă: 96 (bstn) + 600 (computeruniverse, 10 frunze × 3 pagini × 20) +
 1.000 (jb-spielwaren, 5 × 200) ≈ **1.700**.
+
+---
+
+## DEAL-D11 — pcgarage, decathlon, sizeer, answear extins (sonda LST-D10)
+
+Runda care pune în cod ce a măsurat LST-D10. Axa D urcă de la **64** la **67** de domenii, iar
+decathlon iese de pe browser și pe axa L. Rezultatul care contează dincolo de cele patru domenii:
+**două verdicte vechi de „zid" erau verdicte despre altceva**, și amândouă s-au deschis din prima
+încercare pe altă amprentă.
+
+### Cele șapte verdicte
+
+| domeniu | înainte | după | mecanism |
+|---|---|---|---|
+| **pcgarage.ro** | Grup 4, zid „terminal" | **INTRĂ** pe axa D — `firefox135`, `entries` × 2, 35 + 19 carduri | existent |
+| **decathlon.ro** | `method: browser`, Grup 4 | **INTRĂ** pe axa D (40 carduri) **și MIGREAZĂ** pe `jsonld` pe axa L | existent |
+| **sizeer.ro** | `API_CU_TOKEN` + ALLOWLIST | **INTRĂ** pe axa D — 60/pagină, `?page={n}` dovedit, `min30` | existent |
+| **answear.ro** | o campanie | **se extinde** la `/sale/<departament>`, 3 intrări | existent (`entries`) |
+| flanco.ro | „NEMĂSURAT, și NU blocat" | **AFARĂ definitiv** — prețuri client-side | — |
+| cyberport.at | outlet „NEMĂSURAT" | **FĂRĂ_LISTARE pe HTTP** — catalog client-side | — |
+| sephora.ro | BLOCAT_BROWSER (Akamai) | **neschimbat** — poarta întoarce `None` și pe HTTP | — |
+
+**Niciun mecanism nou.** Tot ce a intrat se scrie cu chei care existau deja: `impersonate`,
+`entries`, `card`/`link`/`title`/`title_from`/`price_text`/`compare_text`/`price_parse`/
+`compare_parse`/`reference_kind`, `page_url_template`, `state_extractor`.
+
+### Amprentele — și de ce cele două verdicte vechi erau greșite
+
+| domeniu | profil | ce spusese runda dinainte |
+|---|---|---|
+| pcgarage.ro | **`firefox135`** | BRW-0d: „zidul e TERMINAL, nu o chestiune de răbdare" |
+| decathlon.ro | **`safari2601`** | G2F-1 / G4-V4b / BRW-0b: „Cloudflare pe toate profilurile" |
+
+La **pcgarage**, BRW-0d măsurase interstițiul Turnstile îngheţând la 2,6–2,9 s cu
+`cf-turnstile-response` gol, și 41 din 41 de poll-uri până la 60 s cu corpuri identice la octet.
+Măsurătoarea era bună; concluzia, prea largă. Ce se măsurase era **răbdarea**, nu amprenta — iar
+propria frază a notei spunea de ce: „ar cere **altă cale de acces**, nu alt timeout". O altă
+amprentă TLS chiar *este* altă cale de acces. Pe HTTP cu `firefox135` listarea dă 200 din prima
+treaptă a baleiajului. Al doilea caz după vexio, tot pe acest profil.
+
+La **decathlon**, trei runde independente spuseseră același lucru — și toate trei erau adevărate
+**despre profilurile încercate**, care nu sunt numite nicăieri și dintre care niciunul nu era un
+Safari. Regula care rămâne: **„blocat pe toate profilurile" e valabil doar pentru profilurile
+NUMITE.**
+
+**Corecție de inventar, din LST-D10 §0.** Cele două constante de amprentă s-au unificat:
+`scraper_service` face acum `from app.utils.http_profile import DEFAULT_IMPERSONATE as
+_IMPERSONATE`, iar valoarea e `chrome`. Deci sondele și producția merg pe **aceeași** amprentă, și
+orice notă mai veche care spune că producția retail ar merge pe alt profil implicit e stalăt. În
+plus: `curl_cffi` 0.15.0 expune **53** de ținte în `BrowserTypeLiteral` (aliasuri și forme
+depreciate incluse), nu 90 — cifra 90 circula dintr-un comentariu al sondei. Iar „cel mai nou"
+pentru Edge și Chrome-Android e vechi: `DEFAULT_EDGE = edge101`,
+`DEFAULT_CHROME_ANDROID = chrome131_android`.
+
+### decathlon — migrarea axei L, și ce a costat
+
+`method: "browser"` → `"jsonld"`, iar `headed: True` a fost șters odată cu ea. Condiția a fost
+declarată înainte: **trei** PDP-uri reale, prin `extract_product` — funcția pe care o cheamă
+`routers/products.py` — nu prin sondă. URL-urile sunt citite verbatim din ancorele home-ului
+deblocat, nu construite:
+
+| PDP | preț | stoc | imagine |
+|---|---|---|---|
+| `/p/_/R-p-359538` | 129,99 RON | da | da |
+| `/p/_/R-p-365172` | 109,99 RON | da | da |
+| `/p/_/R-p-370708` | 84,99 RON | da | da |
+
+3/3. Costul recurent pe care BRW-0b îl asumase explicit — „~1 minut de Chromium pe noapte" —
+dispare pentru acest domeniu. `browser_domains()` scade de la 10 la 9.
+
+Efectul colateral asupra suitei merită scris, fiindcă e o capcană simetrică:
+`test_decathlon_devine_extractibil_dupa_aplatizare` mocheaza `fetch_browser_html` tocmai fiindcă
+domeniul era pe browser, iar un mock pe poartă ar fi lăsat testul să plece într-un fetch live.
+După migrare, **mock-ul pe browser devine cel care lasă rețeaua deschisă**, așa că s-a mutat pe
+poartă. Intenția testului (aplatizarea celor 18 oferte din două liste imbricate) e neatinsă.
+
+### sizeer — fără API, și cu Omnibus-ul citit de pe linia corectă
+
+Verdictul DEAL-D10b („reintrarea cere captura API-ului de pe `adafir.eu`") era corect **despre
+paginile măsurate** și greșit ca verdict despre domeniu. `/outlet` are **o singură** ofertă reală,
+iar `/promotii-actuale` **zero** — dar amândouă sunt pagini nepotrivite. Pe o **categorie**
+(`/barbati`) grila e întreagă în DOM: 60 de carduri `[data-product-id]`, adică exact
+`defaultItemPerPage` din configurația paginii.
+
+Deci **STOP-ul de allow-list rămâne neatins: nu s-a ridicat, s-a dovedit inutil.** Cheile publice
+de vitrină (`clientId`, `clientCode`) n-au fost transcrise nicăieri și n-a plecat nicio cerere
+către `adafir.eu`.
+
+**Referința e `min30`, și nu e o preferință.** Cardul are două linii tăiate — prețul de listă și
+una în `.omnibus-price`, etichetată „- cel mai mic preț". Ele **diverg pe 13 din 26**:
+
+| produs | plătit | min30 | tăiat | reducere reală | reducere raportată greșit |
+|---|---|---|---|---|---|
+| Reebok Club C 85 Vintage | 289,99 | 309,99 | 449,99 | **6,5%** | 35,6% |
+| Vans rucsac Old Skool Classic | 159,99 | 169,99 | 229,99 | **5,9%** | 30,4% |
+| Nike rucsac Y NK JDI Mini | 109,99 | 129,99 | 139,99 | **15,4%** | 21,4% |
+
+A treia oară în proiect după modivo (LST-3b) și answear (LST-D7), unde tot două linii **etichetate**
+divergeau. Fixture-ul păstrează ambele linii, ca testul să dovedească o **alegere**, nu norocul unei
+singure linii prezente.
+
+Două capcane măsurate, scrise ca să nu fie „reparate" înapoi:
+
+* **`data-price` nu e folosit**, deși cardul îl poartă și ar fi fost mai curat decât textul.
+  `price_attr` face `card.select_one(<selector>)`, care caută printre **descendenți**, iar
+  atributul e chiar pe card — deci selectorul întoarce `None` și extractorul sare **toate**
+  cardurile. Măsurat: prin atribut 0 carduri, prin text 60/60.
+* **Fără imagine**, 0/60: `<img>` poartă un placeholder base64 în `src` și un `data-original`
+  **gol**; URL-ul real vine din JS. Blobul de stare are `gallery`, dar un descriptor CSS nu-l
+  atinge, și nu se amestecă două căi pentru un câmp opțional.
+
+Capcană de numărat, dacă cineva se întoarce la bloburi: acolo blocurile sunt
+`variant_product_offer` — **variante de mărime** — și doar prima variantă poartă `name`/`id`/`price`
+reale, restul au `id: 0` și `price_gross: 0`. Pe `/outlet` ies 40 de variante din 4 părinți pentru
+o singură ofertă.
+
+### pcgarage — unitățile fizice, și referința care NU se numește
+
+`entries` × 2, ambele secțiuni **cerute și numărate** (35 și 19 carduri). Celelalte trei secțiuni
+de desigilate și cinci de extra-reduceri pe care nota DEAL-D2 le pomenea intră la runda care le
+cere. **Pagină unică**: `/p2/` dă 404, iar pagina nu-și declară paginarea în niciun fel — zero
+`rel="next"`, zero ancore de pagină. Un șablon scris aici ar fi un URL inventat (regula bstn).
+
+**35 de carduri dau 29 de `external_id`, și e corect.** Magazinul listează **unități fizice**
+separate: șase ventilatoare identice la 24,45 RON, diferite doar prin fragmentul `#u38379989`,
+`#u38380009`, … `_external_id` ignoră fragmentul și le colapsează, fiindcă șase unități la același
+preț sunt aceeași ofertă. Randamentul real e **29**.
+
+**Parserul e ales, nu nimerit.** `2.399<sup>,99 RON</sup>` pare forma evomag, dar nu e: virgula e
+**înăuntrul** lui `<sup>`, deci `_text_of` dă „2.399 ,99 RON" și `eu_comma` îl citește direct.
+`eu_sup` ar da același rezultat, fiindcă deleagă când vede o virgulă — testul pinuiește acordul, ca
+trecerea la separatorul-spațiu să rupă suita, nu producția.
+
+**`reference_kind: "nemarcat"`, și asta e o măsurătoare.** `bfp_old` nu e etichetată nicicum în
+pagină: zero „Preț vechi", zero „NOU" lângă preț, zero „economisești". Reducerea mediană e 18,8%
+(2,1–40,0), deci linia e reală, dar ce anume reprezintă pagina nu spune.
+
+Un indiciu în plus, cu limita lui: la PASUL 3, PDP-ul lui `procesoare/amd/ryzen-5-5600-35ghz-box` a
+întors **674,99 RON**, exact cât are `bfp_old` pe cardul aceluiași produs (unde `bfp_new` e 627,49).
+Coincidența e sugestivă, dar e **un singur card** verificat încrucișat — nu ajunge ca să numim
+referința. O rundă care vrea s-o numească are de măsurat PDP-ul pentru un eșantion.
+
+### answear — de la o campanie la fațetele de sale
+
+Verdictul DEAL-D4 („home-ul are 219 ancore și niciuna nu poartă `reduceri|sale|outlet`") era corect
+despre **ancorele randate** și greșit ca verdict despre magazin: taxonomia de sale trăiește în
+**stare**. Meniul are 4 noduri `label == "Sale"` și **220** de noduri cu
+`options.isSaleLink == true`.
+
+Forma `/sale/<departament>` e **dovedită pe două departamente**, nu extrapolată de pe unul: starea
+fiecărei pagini își declară singură parametrii — `{"category": "home"|"femei", "page": n,
+"specialPage": {"sale": 1}, "productsPerPage": 80}`. Cele două listări sunt **disjuncte** (zero
+produse comune), deci sunt liste diferite, nu aceeași pagină cu alt titlu. Paginarea e dovedită la
+fel: p1 ∩ p2 = 0.
+
+`max_pages` urcă de la 10 la **20**, și diferența față de campanie contează: aici adâncimea e
+**declarată de pagină** — `/sale/femei` poartă ancora `?page=125`, adică ~10.000 de produse. 20
+rămâne o alegere de cost (20 × 80 = 1.600 per intrare și scan), nu o margine măsurată.
+
+`barbati` și `copii` **nu intră**: în meniu sunt `urlType` simbolic (`saleMale`/`saleChild`),
+rezolvat client-side, iar niciun URL literal nu există în stare. Intră după ce sunt cerute.
+
+### Cele trei ieșiri, fiecare pe alt motiv
+
+* **flanco.ro** — nu accesul era problema, ci **randarea**. Măsurat pe trei forme: home-ul are 61 de
+  cutii `price-box`/`data-product` dar **un singur** jeton de preț; `/multi-deals-extra-discount`
+  n-are grilă deloc (617 ancore, zero de produs) — e o pagină de campanie, nu o grilă client-side;
+  iar o categorie reală (`/telefoane-tablete.html`, 200 cu 560.579 de octeți) n-are nici măcar
+  containerul. Ramura de browser nu e o ieșire: acolo e chiar Turnstile-ul.
+* **cyberport.at** — outlet-ul era „identificat dar NEMĂSURAT"; acum e măsurat și **negativ**. Două
+  cereri pe `chrome` (profilul care merge deja) au dat 200 cu 1,66 și 1,69 MB, dar în 1,66 MB există
+  **două** valori `"price"`. În plus `?page=2` e **ignorat**: mulțimea ancorelor lui p1 și p2 e
+  identică. PDP-ul rămâne valid.
+* **sephora.ro** — poarta întoarce `None` pe HTTP, ceea ce nu contrazice BRW-0b („Access Denied",
+  Akamai, în Chrome **real**): HTTP nu arată altfel decât browserul.
+
+### Cifrele controlului
+
+| domeniu | pagină | carduri | preț | referință | titlu | imagine | id distincte |
+|---|---|---|---|---|---|---|---|
+| pcgarage.ro | desigilate | 35 | 35 | 35 | 35 | 35 | **29** |
+| pcgarage.ro | laptop desigilate | 19 | 19 | 19 | 19 | 19 | 19 |
+| decathlon.ro | `/deals/…marketplace` | 40 | 40 | 40 | 40 | 40 | 40 |
+| sizeer.ro | `/barbati` | 60 | 60 | 26 | 60 | **0** | 60 |
+| sizeer.ro | `?page=2` | 60 | 60 | 24 | 60 | **0** | 60 |
+| answear.ro | `/sale/home` | 80 | 80 | 79 | 80 | 80 | 80 |
+| answear.ro | `/sale/femei` | 80 | 80 | 79 | 80 | 80 | 80 |

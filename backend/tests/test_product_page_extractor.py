@@ -2971,22 +2971,30 @@ def test_decathlon_devine_extractibil_dupa_aplatizare(monkeypatch):
     Cele 18 oferte au toate acelasi pret, deci minimul (G2F-4) e chiar el; testul
     pinuieste valoarea din dump, nu una construita.
 
-    Mock-ul sta pe `fetch_browser_html`, NU pe poarta curl: de la G4-V4b decathlon
-    e pe ruta de browser (BR-1), unde `_fetch_shop_url_guarded` nu mai e atinsa —
-    un mock pe ea ar lasa testul sa plece intr-un fetch LIVE cu Chrome real (trece
-    local, cade in CI cu `BrowserFetchUnavailable`). Intentia capat-la-capat se
-    pastreaza: fixture-ul trece prin acelasi `parse_product_html` din
-    `_extract_via_browser`.
+    DEAL-D11 — mock-ul S-A MUTAT de pe `fetch_browser_html` pe poarta curl, si
+    motivul e chiar cel pe care il explica versiunea veche a acestei note, doar
+    ca in oglinda. Pana aici decathlon era pe ruta de browser (BR-1), deci un
+    mock pe poarta ar fi lasat testul sa plece intr-un fetch LIVE. De la DEAL-D11
+    domeniul e `method: "jsonld"` — trei PDP-uri reale au trecut live prin
+    `extract_product` cu `safari2601` — deci `browser_domains()` nu-l mai
+    contine, `_extract_via_browser` nu mai e atinsa, si acum mock-ul pe BROWSER
+    ar fi cel care lasa reteaua deschisa.
+
+    Patch-ul sta in namespace-ul `app.services.scraper_service`, nu in `ppe`:
+    `extract_product` importa poarta LENES, in corpul functiei.
+
+    Intentia capat-la-capat se pastreaza intacta: acelasi fixture, acelasi
+    `parse_product_html`, aceleasi 18 oferte in doua liste imbricate.
     """
-    from app.services import browser_fetch as bf
+    from app.services import scraper_service
 
     apeluri = []
 
-    def _fake_browser(url, domain, valideaza=None):
-        apeluri.append(domain)
-        return _decathlon_fixture()
+    def _fake_fetch(url, **_kw):
+        apeluri.append(ppe._domain_of(url))
+        return _FakeResponse(_decathlon_fixture())
 
-    monkeypatch.setattr(bf, "fetch_browser_html", _fake_browser)
+    monkeypatch.setattr(scraper_service, "_fetch_shop_url_guarded", _fake_fetch)
 
     data = ppe.extract_product(DECATHLON_URL)
 

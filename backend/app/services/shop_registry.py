@@ -661,14 +661,48 @@ SHOP_REGISTRY: dict[str, dict] = {
             # CAMPANIE CU TERMEN, si e singura candidata pe care home-ul o declara
             # (a doua ancora cu procent duce la `/newsletter`, un formular). Daca
             # expira, descriptorul moare TACUT — de urmarit la prima listare goala.
-            "url": "https://answear.ro/s/back-to-school",
-            "page_url_template": "https://answear.ro/s/back-to-school?page={n}",
+            # ── DEAL-D11 — de la o campanie la fatetele de sale (LST-D10 §5) ──
+            # Verdictul DEAL-D4 de mai sus („home-ul are 219 de ancore si NICIUNA
+            # nu poarta `reduceri|sale|outlet`”) era corect despre ancorele
+            # RANDATE, si gresit ca verdict despre magazin: taxonomia de sale
+            # traieste in STARE. Meniul are 4 noduri `label == "Sale"`
+            # (Femei/Barbati/Copii cu `urlType` simbolic, si Home ca
+            # `rawUrlItem`) plus 220 de noduri cu `options.isSaleLink == true`.
+            #
+            # Forma `/sale/<departament>` e DOVEDITA pe DOUA departamente, nu
+            # extrapolata de pe unul: starea fiecarei pagini isi declara singura
+            # parametrii — `{"category": "home"|"femei", "page": n,
+            # "specialPage": {"sale": 1}, "productsPerPage": 80}`. Cele doua
+            # listari sunt DISJUNCTE (zero produse comune), deci sunt liste
+            # diferite, nu aceeasi pagina cu alt titlu.
+            #
+            # `barbati` si `copii` NU intra acum: in meniu sunt `urlType`
+            # simbolic (`saleMale`/`saleChild`), rezolvat client-side, si niciun
+            # URL literal nu exista in stare. Intra dupa ce sunt CERUTE.
+            "entries": [
+                # Campania originala (DEAL-D7), neschimbata.
+                {"url": "https://answear.ro/s/back-to-school",
+                 "page_url_template": "https://answear.ro/s/back-to-school?page={n}"},
+                # „home” e departamentul de CASA, nu radacina sitului: nav-ul are
+                # `/k/home/living-si-dormitor/…` alaturi de `/k/femei/…`. E
+                # singurul URL de sale LITERAL din stare (`rawUrlItem`).
+                {"url": "https://answear.ro/sale/home",
+                 "page_url_template": "https://answear.ro/sale/home?page={n}"},
+                {"url": "https://answear.ro/sale/femei",
+                 "page_url_template": "https://answear.ro/sale/femei?page={n}"},
+            ],
             # Paginarea E masurata: `?page=2` a dat 80 de produse noi, zero comune.
             # Adancimea NU: `data.count` din stare e 162.614, adica tot catalogul,
             # nu campania. 10 e plafon de buget; coada se inchide oricum singura —
             # `?page=500` raspunde 500, iar un 5xx pe o pagina > 1 e sfarsit de
             # intrare in scanner (STATE-1), cu paginile citite pastrate.
-            "max_pages": 10, "currency": "RON",
+            #
+            # DEAL-D11 — plafonul urca de la 10 la 20, si diferenta fata de nota
+            # de mai sus conteaza: pe fatetele de sale adancimea E declarata de
+            # pagina, nu ghicita. `/sale/femei` poarta ancora `?page=125`, adica
+            # ~10.000 de produse. 20 ramane tot o ALEGERE de cost (20 x 80 =
+            # 1.600 per intrare si scan), nu o margine masurata.
+            "max_pages": 20, "currency": "RON",
             "state_extractor": "answear_state",
             # `min30`: referinta e `priceMinimal`, campul etichetat pe card „cel mai
             # mic pret din ultimele 30 de zile inainte de reducere". NU `priceRegular`
@@ -1302,14 +1336,23 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "ZERO jetoane de pret (client-side). Semnificativ pentru un "
                  "magazin de electronice: ZERO aparitii de „resigilat” pe "
                  "home, desi resigilatele sunt tocmai axa D aici."
-                 "BRW-0d — zidul e TERMINAL, nu o chestiune de rabdare: "
-                 "interstitiul Turnstile INGHEATA la 2,6–2,9 s cu "
-                 "`cf-turnstile-response` GOL, iar 41 din 41 de poll-uri pana la "
-                 "60 s au intors corpuri identice la octet. Fraza „Verificarea a "
-                 "reusit” exista in pagina, dar sub `display: none` — de aceea "
-                 "rundele dinainte au crezut ca provocarea trecuse si ca lipseste "
-                 "doar plafonul. NU se redeschide pe reglaj de parametru; ar cere "
-                 "alta cale de acces, nu alt timeout.",
+                 "BRW-0d — in BROWSER interstitiul Turnstile INGHEATA la 2,6–2,9 s "
+                 "cu `cf-turnstile-response` GOL, iar 41 din 41 de poll-uri pana "
+                 "la 60 s au intors corpuri identice la octet. Fraza „Verificarea "
+                 "a reusit” exista in pagina, dar sub `display: none` — de aceea "
+                 "rundele dinainte au crezut ca provocarea trecuse. "
+                 "DEAL-D11 — verdictul „NEMASURAT, si NU blocat” se INCHIDE, dar "
+                 "pe alt motiv decat accesul: flanco iese definitiv de pe axa D "
+                 "fiindca n-are PRETURI server-side. Masurat pe trei forme: "
+                 "home-ul are 61 de cutii `price-box` si `data-product` dar UN "
+                 "SINGUR jeton de pret; `/multi-deals-extra-discount` n-are grila "
+                 "deloc (617 ancore, ZERO de produs, zero `price-box`) — e o "
+                 "pagina de campanie, nu o grila client-side; iar o CATEGORIE "
+                 "reala (`/telefoane-tablete.html`, 200 cu 560.579 de octeti) n-are "
+                 "nici macar containerul: zero jetoane de pret, zero `price-box`, "
+                 "zero ld+json, zero `itemprop`. Ramura de browser (BRW-1) nu e o "
+                 "iesire: acolo e chiar Turnstile-ul de mai sus. Deci prostul "
+                 "candidat nu era accesul, era randarea.",
     },
     "evomag.ro": {
         "label": "evoMAG",
@@ -1886,14 +1929,77 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "deblocheaza, e candidat pentru forma `entries`: PDP-ul listeaza TREI "
                  "sectiuni de desigilate si CINCI de extra-reduceri, fara niciun URL "
                  "agregat."
-                 "BRW-0d — zidul e TERMINAL, nu o chestiune de rabdare: "
-                 "interstitiul Turnstile INGHEATA la 2,6–2,9 s cu "
-                 "`cf-turnstile-response` GOL, iar 41 din 41 de poll-uri pana la "
-                 "60 s au intors corpuri identice la octet. Fraza „Verificarea a "
-                 "reusit” exista in pagina, dar sub `display: none` — de aceea "
-                 "rundele dinainte au crezut ca provocarea trecuse si ca lipseste "
-                 "doar plafonul. NU se redeschide pe reglaj de parametru; ar cere "
-                 "alta cale de acces, nu alt timeout.",
+                 "BRW-0d masurase in BROWSER: interstitiul Turnstile INGHEATA la "
+                 "2,6–2,9 s cu `cf-turnstile-response` GOL, iar 41 din 41 de "
+                 "poll-uri pana la 60 s au intors corpuri identice la octet. "
+                 "Fraza „Verificarea a reusit” exista in pagina, dar sub "
+                 "`display: none`. Concluzia de atunci — „zidul e TERMINAL” — e "
+                 "INFIRMATA de DEAL-D11, si merita spus exact de ce: BRW-0d "
+                 "masurase RABDAREA, nu amprenta, iar propria lui fraza spunea "
+                 "„ar cere alta cale de acces, nu alt timeout”. O alta amprenta "
+                 "TLS chiar ESTE alta cale de acces. Pe HTTP cu `firefox135` "
+                 "listarea raspunde 200 din PRIMA incercare (LST-D10 §3.1), deci "
+                 "terminal era timeout-ul din browser, nu domeniul.",
+        # ── DEAL-D11 — amprenta care deschide domeniul (sonda LST-D10 §3.1) ───
+        # `chrome` (implicitul, comun sondelor si productiei) primeste challenge;
+        # `firefox135` a dat 200 cu 268.387 de octeti si 582 de ancore pe PRIMA
+        # treapta a baleiajului. Al doilea caz dupa vexio, tot pe acest profil.
+        "impersonate": "firefox135",
+        "listing": {
+            # Cele DOUA intrari sunt exact sectiunile masurate, nu deduse: nota
+            # DEAL-D2 de mai sus spunea ca magazinul are TREI sectiuni de
+            # desigilate si CINCI de extra-reduceri „fara niciun URL agregat”.
+            # Aici intra doar cele doua care au fost CERUTE si numarate (35 si
+            # 19 carduri). Celelalte intra la runda care le cere.
+            "entries": [
+                {"url": "https://www.pcgarage.ro/promotie-componente-desigilate/"},
+                {"url": "https://www.pcgarage.ro/promotie-reduceri-laptop-desigilate/"},
+            ],
+            # PAGINA UNICA, si nu din lipsa de curiozitate: `/p2/` (forma
+            # incercata) a dat 404, iar pagina nu-si declara paginarea in NICIUN
+            # fel — zero `rel="next"`, zero ancore de pagina, zero `?pag=`. Un
+            # sablon scris aici ar fi un URL inventat (regula bstn, BRW-0d).
+            "max_pages": 1,
+            "currency": "RON",
+            "card": "div.product_box",
+            # Ancora de imagine e singura care poarta si URL-ul, si numele curat.
+            # `title_from` e OBLIGATORIU: ancora n-are text (doar `<img>`), deci
+            # fara ea titlul iese gol pe 35/35 — masurat, nu presupus.
+            "link": "a.bf_pimage_link",
+            "title": "a.bf_pimage_link",
+            "title_from": "link_title",
+            # Zecimalele stau in `<sup>`, dar VIRGULA e inauntrul lui:
+            # `2.399<sup>,99 RON</sup>` -> `_text_of` da „2.399 ,99 RON”.
+            # Masurat prin parserele reale: `eu_comma` da 2399.99, iar `eu_sup`
+            # da ACELASI lucru fiindca delegheaza cand vede o virgula. Deci forma
+            # NU e cea evomag (unde separatorul e chiar spatiul), si `eu_comma` e
+            # alegerea corecta — nu doar una care merge.
+            "price_text": "p.bfp_new",
+            "compare_text": "p.bfp_old",
+            "price_parse": "eu_comma",
+            # `nemarcat`, si asta e o masuratoare, nu o prudenta: `bfp_old` nu e
+            # etichetata NICICUM in pagina — zero „Pret vechi”, zero „NOU” langa
+            # pret, zero „economisesti”. Reducerea mediana e 18,8% (2,1–40,0),
+            # deci linia e reala, dar CE anume reprezinta pagina nu spune.
+            #
+            # DATE IN PLUS, cu limita lor: la PASUL 3 al rundei, PDP-ul produsului
+            # `procesoare/amd/ryzen-5-5600-35ghz-box` a intors LIVE 674,99 RON,
+            # exact cat are `bfp_old` pe cardul aceluiasi produs (unde `bfp_new` e
+            # 627,49). Coincidenta e sugestiva, dar e UN SINGUR card verificat
+            # incrucisat — nu ajunge ca sa numim referinta, si `reference_kind`
+            # ramane `nemarcat`. O runda care vrea s-o numeasca are de masurat
+            # PDP-ul pentru un esantion, nu pentru unul.
+            "reference_kind": "nemarcat",
+            # Starea sta in `div.bf_descr` („Ambalaj original deschis, produsul
+            # prezinta usoare urme de utilizare”), NU in titlu: titlul e numele
+            # curat al produsului, fara prefix de stare, ca la altex.
+            #
+            # 35 de carduri dau 29 de `external_id`, si asta e CORECT: magazinul
+            # listeaza UNITATI FIZICE separate — sase ventilatoare identice la
+            # 24,45 RON, diferite doar prin fragmentul `#u38379989`, `#u38380009`…
+            # `_external_id` ignora fragmentul si le colapseaza, fiindca sase
+            # unitati la acelasi pret sunt aceeasi oferta. Randamentul real e 29.
+        },
     },
     "orange.ro": {
         "label": "Orange",
@@ -2264,8 +2370,15 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "ATENTIE: aceeasi pagina poate purta si un pret de B-Ware "
                  "(1.151,10 € pe PDP-ul masurat) — e ALTA oferta, a nu se confunda cu "
                  "pretul platit. Outlet-ul /apple-und-zubehoer/outlet-a-b-ware-.html "
-                 "e identificat dar NEMASURAT (plafonul sondei s-a dus pe escaladari "
-                 "de amprenta) — axa D il ia in valul D, dupa o micro-sonda. "
+                 "era identificat dar NEMASURAT (plafonul sondei se dusese pe "
+                 "escaladari de amprenta). DEAL-D11 l-a MASURAT, si verdictul e "
+                 "NEGATIV: axa D se INCHIDE pe HTTP. Doua cereri pe `chrome` "
+                 "(profilul care merge deja) au dat 200 cu 1,66 si 1,69 MB, dar "
+                 "catalogul e CLIENT-SIDE — in 1,66 MB exista DOUA valori `\"price\"` "
+                 "si 13 aparitii de €, pentru o pagina cu 279 de aparitii ale "
+                 "cuvantului „B-Ware”. In plus `?page=2` e IGNORAT: multimea "
+                 "ancorelor lui p1 si p2 e IDENTICA, deci nici forma de paginare nu e "
+                 "cea presupusa. PDP-ul ramane neatins si valid. "
                  "AMPRENTA: profilul implicit al productiei primeste challenge "
                  "Cloudflare, de aici campul impersonate; profilele concrete sunt in "
                  "tabelul din docs/catalog_domain_log.md (nu aici: garda "
@@ -2397,7 +2510,64 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "src>` ale paginii sunt Akamai. NOTA de masuratoare: o cautare "
                  "automata de cai `/api/` da patru potriviri FALSE — "
                  "`/barbati/pantofi/slapi` contine literele „api” in „slapi”; "
-                 "numarul real de cai `/api/…` e ZERO.",
+                 "numarul real de cai `/api/…` e ZERO. "
+                 "DEAL-D11 — API-ul NU e necesar, si de aceea STOP-ul de allow-list "
+                 "RAMANE NEATINS: nu s-a ridicat, s-a dovedit inutil. Verdictele "
+                 "vechi („grila nu e servita deloc”, „reintrarea cere captura "
+                 "API-ului”) erau corecte DESPRE PAGINILE MASURATE — `/outlet` are o "
+                 "singura oferta reala, iar `/promotii-actuale` zero — dar amandoua "
+                 "sunt pagini gresite: `/outlet` e aproape gol, iar "
+                 "`/promotii-actuale` e o pagina de aterizare cu linkuri de campanie. "
+                 "Pe o CATEGORIE (`/barbati`) grila e INTREAGA in DOM: 60 de carduri "
+                 "`[data-product-id]`, adica exact `defaultItemPerPage` din "
+                 "configuratie. Capcana de numarat, daca cineva se intoarce la "
+                 "bloburi: acolo blocurile sunt `variant_product_offer` — VARIANTE de "
+                 "marime — si doar PRIMA varianta poarta `name`/`id`/`price` reale, "
+                 "restul au `id: 0` si `price_gross: 0`; pe `/outlet` ies 40 de "
+                 "variante din 4 parinti pentru O SINGURA oferta.",
+        # ── DEAL-D11 — axa D pe CSS, din DOM (sonda LST-D10 §4) ───────────────
+        "listing": {
+            # Intrarea e o CATEGORIE, nu pagina de outlet: `/outlet` are 1 oferta,
+            # `/promotii-actuale` are 0. `/femei` si `/copii` intra dupa ce sunt
+            # CERUTE — exista in nav, dar n-au fost masurate.
+            "url": "https://sizeer.ro/barbati",
+            # Sablonul e citit VERBATIM din pagina: `<link rel="next"
+            # href="/barbati?page=2">`. Si e DOVEDIT, nu doar declarat: p2 da alte
+            # 60 de produse, cu ZERO in comun cu p1.
+            "page_url_template": "https://sizeer.ro/barbati?page={n}",
+            "max_pages": 10,
+            "currency": "RON",
+            # Cardul poarta si `data-price="249.99"`, care ar fi fost mai curat
+            # decat textul. NU e folosit, si motivul e de cod, nu de gust:
+            # `price_attr` face `card.select_one(<selector>)`, care cauta printre
+            # DESCENDENTI, iar `data-price` e chiar pe cardul insusi — deci
+            # selectorul intoarce None si extractorul sare TOATE cardurile.
+            # Masurat: `price_attr` da 0 carduri, `price_text` da 60/60.
+            "card": "div[data-product-id]",
+            "link": "a.title",
+            "title": "a.title",
+            "price_text": "span.main-price",
+            # REFERINTA E `min30`, SI NU E O PREFERINTA. Cardul are DOUA linii
+            # taiate: una directa (pretul de lista) si una in `.omnibus-price`,
+            # etichetata „- cel mai mic pret”. Ele DIVERG pe 13 din 26:
+            #
+            #   produs                    platit   min30   taiat
+            #   Reebok Club C 85 Vintage  289,99  309,99  449,99   6,5% vs 35,6%
+            #   Vans rucsac Old Skool     159,99  169,99  229,99   5,9% vs 30,4%
+            #   Nike rucsac Y NK JDI Mini 109,99  129,99  139,99  15,4% vs 21,4%
+            #
+            # Un descriptor pe linia taiata ar raporta reduceri mai mari decat
+            # cele legale. A treia oara in proiect dupa modivo (LST-3b) si
+            # answear (LST-D7), unde doua linii ETICHETATE divergeau la fel.
+            "compare_text": "span.omnibus-price span.old-price",
+            "price_parse": "eu_comma",
+            "compare_parse": "eu_comma",
+            "reference_kind": "min30",
+            # FARA IMAGINE, si e masurat: `<img>` poarta un placeholder base64 in
+            # `src` si un `data-original` GOL — URL-ul real vine din JS. 0/60.
+            # (Bloburile de stare au `gallery`, dar un descriptor CSS nu le poate
+            # atinge, si nu se amesteca cele doua cai pentru un camp optional.)
+        },
     },
     # ── G2F — sub-lotul sport/outdoor (sonde 2026-08-18) ──────────────────────
     # Din patru domenii sondate au intrat TREI. decathlon.ro e Grup 4 (Cloudflare
@@ -4759,9 +4929,13 @@ SHOP_REGISTRY: dict[str, dict] = {
         "category": "outdoor",
         "country": "RO",
         "delivery": "ro_storefront",
-        "method": "browser",
+        # ── DEAL-D11 — MIGRAT de pe browser pe HTTP (sonda LST-D10 §3.2) ──────
+        # `method` era `browser` si `headed: True`; amandoua au fost sterse dupa
+        # ce trei PDP-uri REALE au trecut prin `extract_product` de productie cu
+        # `safari2601` (v. PASUL 3 al rundei). Costul recurent pe care BRW-0b il
+        # asumase explicit — „~1 minut de Chromium pe noapte" — dispare aici.
+        "method": "jsonld",
         "status": "validated",
-        "headed": True,
         "notes": "G4-V4b; deblocat de aplatizarea listelor imbricate din `offers` "
                  "(`_aplatizeaza_oferte`). Forma masurata: ld+json `Product` cu "
                  "`offers` = lista de DOUA liste a cate 9 `Offer` — 18 in total, toate "
@@ -4769,10 +4943,50 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "orice element nedict si le pierdeau pe toate 18, deci pagina cadea cu "
                  "`no_product_data` desi publica preturi perfect valide: nu era pagina "
                  "fara date, era forma nerecunoscuta. Preturile fiind egale, minimul "
-                 "G2F-4 e chiar el. BROWSERUL E OBLIGATORIU, re-verificat pe HTTP "
-                 "inainte de intrare: 403 cu „just a moment\" pe TOATE cele trei "
-                 "profiluri ale lantului. CAPCANA la citirea pe text: pagina poarta si "
-                 "`0 00 RON` (cosul gol) langa pretul real — ld+json il ocoleste.",
+                 "G2F-4 e chiar el. CAPCANA la citirea pe text: pagina poarta si "
+                 "`0 00 RON` (cosul gol) langa pretul real — ld+json il ocoleste. "
+                 "AFIRMATIA VECHE „BROWSERUL E OBLIGATORIU… 403 pe TOATE cele trei "
+                 "profiluri ale lantului” e INFIRMATA de DEAL-D11, si nuanta conteaza: "
+                 "era adevarata despre profilurile INCERCATE, nu despre toate. G2F-1 "
+                 "spunea „Cloudflare pe toate profilurile”, G4-V4b „403 pe toate cele "
+                 "trei profiluri ale lantului”, BRW-0b „403 si in Chrome real” — dar "
+                 "cele trei nu sunt numite nicaieri, si niciuna dintre runde n-a atins "
+                 "un Safari. Pe `safari2601` home-ul da 200 cu 574.356 de octeti, "
+                 "listarea de reduceri da 40 de carduri, iar PDP-ul da ld+json "
+                 "complet. Lectia generala: „blocat pe toate profilurile” e valabil "
+                 "doar pentru profilurile NUMITE.",
+        # ── DEAL-D11 — amprenta care deschide AMANDOUA axele (LST-D10 §3.2) ───
+        "impersonate": "safari2601",
+        "listing": {
+            # Singura cale de reduceri din home-ul deblocat, citita verbatim din
+            # ancorele lui — nu construita. Cardurile sunt de MARKETPLACE
+            # (`/p/mp/<marca>/…`), ceea ce se vede si in nume.
+            "url": "https://www.decathlon.ro/deals/reduceri-parteneri-marketplace",
+            # PAGINA UNICA: zero `rel="next"`, zero ancore de pagina. Ca la
+            # pcgarage, un sablon aici ar fi inventat.
+            "max_pages": 1,
+            "currency": "RON",
+            "card": "article.product-card",
+            "link": "h2 a",
+            "title": "h2 a",
+            # CAPCANA, si e chiar tiparul answear (LST-D7): AMBELE spanuri de
+            # pret poarta o eticheta `sr-only` INAUNTRU — „Pretul actual” si
+            # „Pretul anterior” — deci textul lor incepe cu cuvinte, nu cu cifre.
+            # `p.price-size-container` e nodul CURAT, fara eticheta. Masurat:
+            # `span.vp-price-amount--sale` (cu eticheta) da acelasi numar pe
+            # 40/40, fiindca `eu_comma` sterge non-cifrele — deci sabotajul „ia
+            # spanul cu eticheta” e INERT aici. Descriptorul ia oricum nodul
+            # curat: a te baza pe toleranta parserului nu e acelasi lucru cu a
+            # citi nodul potrivit.
+            "price_text": "p.price-size-container",
+            "compare_text": "span.vp-price-barred-amount",
+            "price_parse": "eu_comma",
+            "compare_parse": "eu_comma",
+            # Eticheta e „Pretul anterior”, adica pretul de dinainte — nu un
+            # minim de 30 de zile si nici un PRP. Reducerea mediana e 16,7%
+            # (3,1–67,7). 40/40 au pret, referinta, titlu SI imagine.
+            "reference_kind": "nemarcat",
+        },
     },
     "reichelt.de": {
         "label": "reichelt elektronik",
