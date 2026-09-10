@@ -3501,7 +3501,42 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "variante de culoare au N itemprop=price — selectorul tinteste "
                  "containerul principal (clasele au sufixe generate, ancorare pe "
                  "partea stabila); meta content; BR-1b: selector copil-direct — "
-                 "unic pe pagina (masurat 3/3 la BR-1), imun la reordonari",
+                 "unic pe pagina (masurat 3/3 la BR-1), imun la reordonari. "
+                 "BRW-0b/BRW-1 - intra pe axa D prin BROWSER (`via: \"browser\"`), "
+                 "dar PAGINA-UNICA: home-ul randat declara EXACT o candidata de "
+                 "reduceri (`/categorys/723566/`), iar ea n-are NICIO forma de "
+                 "paginare - zero `rel=next`, zero `?page=`, zero `/page/`, zero "
+                 "`?p=`; singurul jeton e un „load more\", si scannerul nu simuleaza "
+                 "click. Deci `max_pages: 1` si 50 de produse pe scan. Referinta e "
+                 "`.Price__priceOld`, fara eticheta legala -> `nemarcat` (28/50). "
+                 "CAPCANA de parser: zecimala e PUNCT (`94.93 lei`), deci `us_dot` - "
+                 "pe `eu_comma` ar fi iesit 9493,0. Regula sufixelor generate de la "
+                 "BR-1b se aplica identic la selectorii de listare. HTTP nu e "
+                 "alternativa: poarta a intors `None`.",
+        # ── BRW-1 — din sonda BRW-0b §3.2 ──────────────────────────────────────
+        "listing": {
+            "via": "browser",
+            "url": "https://makeup.ro/categorys/723566/",
+            # `max_pages: 1` fara `page_url_template`: garda de descriptor cere
+            # sablonul EXACT cand bucla chiar l-ar citi (de la pagina 2 in sus).
+            # Domeniul n-are nicio paginare masurata, deci un sablon aici ar fi un
+            # URL INVENTAT pus doar ca sa treaca o garda.
+            "max_pages": 1,
+            "currency": "RON",
+            # Clasele poarta sufixe generate (`shop_808tam_ouxm47`), care se
+            # schimba la fiecare build al vitrinei — ancorarea e pe partea stabila,
+            # aceeasi regula ca la `overrides.price_selector` de mai sus.
+            "card": ".ProductCard__card",
+            "link": "a[href^='/product/']",
+            "title": ".ProductCard__title",
+            "price_text": ".Price__priceCurrent",
+            "compare_text": ".Price__priceOld",
+            # PUNCT zecimal (`94.93 lei`), nu virgula: al treilea consumator al
+            # treptei dupa direct-running si brickdepot. Pe `eu_comma` ar fi iesit
+            # 9493,0 — eroarea de 100x care arata perfect plauzibil intr-un feed.
+            "price_parse": "us_dot",
+            "reference_kind": "nemarcat",
+        },
     },
     "hhv.de": {
         "label": "HHV",
@@ -4188,7 +4223,50 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`/en-eu/`, moneda EUR. LIVRAREA IN RO nu s-a masurat: "
                  "`unconfirmed`. headless NEMASURAT. Daca vreodata anti-botul lui "
                  "solebox se relaxeaza la nivelul lui snipes, domeniul poate cobori "
-                 "ieftin pe `jsonld` — structura de date e deja aceeasi.",
+                 "ieftin pe `jsonld` — structura de date e deja aceeasi. "
+                 "BRW-0b/BRW-1 - intra pe axa D prin BROWSER (`via: \"browser\"`), "
+                 "singurul domeniu al valului cu referinta LEGALA. Doua corecturi "
+                 "fata de ipoteza LST-D3, amandoua masurate pe home-ul randat de la "
+                 "G4-V2b: locala e `en-eu` (297 de aparitii, fata de UNA singura "
+                 "pentru `de-de`), iar cardul de listare NU e `.card` — acela e "
+                 "cardul de pe HOME. Listarea foloseste `sni-lib-product-tile`, "
+                 "elementul custom al platformei snipes. 24 de carduri pe pagina, "
+                 "`p1 ∩ p2 = 0`, titlu si imagine 24/24. Coada e ZID, nu grila "
+                 "goala: `?page=500` raspunde 403 cu un shell de 531 KB - de aceea "
+                 "`max_pages` e plafon, nu bisectie.",
+        # ── BRW-1 — din sonda BRW-0b §3.1 ──────────────────────────────────────
+        "listing": {
+            # `via` alege calea de FETCH a scannerului de listari, si e
+            # independenta de `method`: `method` spune cum se citeste un PDP,
+            # `via` cum se aduce o pagina de listare. Contraexemplul viu e
+            # conrad.com — tot `method: "browser"`, dar listarea lui merge pe HTTP
+            # (DEAL-D9), fiindca acolo raspunde 200. Aici HTTP-ul da `None`.
+            "via": "browser",
+            "url": "https://www.solebox.com/en-eu/c/sale-2775",
+            "page_url_template": "https://www.solebox.com/en-eu/c/sale-2775?page={n}",
+            # Plafonul iese din COST, nu din adancime: o pagina care se valideaza
+            # costa 6,2–6,3 s aici, una care nu se valideaza costa plafonul intreg
+            # de poll (22 s). Coada e oricum zid (403 la `?page=500`).
+            "max_pages": 5,
+            "currency": "EUR",
+            # Elementul custom al platformei snipes. NU `.card`: acela e cardul de
+            # pe home, si pe el fusese masurata ipoteza LST-D3.
+            "card": "sni-lib-product-tile",
+            "link": "a[href*='/en-eu/p/']",
+            "title": "a[href*='/en-eu/p/']",
+            "title_from": "link_aria_label",
+            # Cardul poarta TREI preturi: `span.price.sale` (platit),
+            # `del.strikeout` (pretul de lista, marketing) si `.lowest-prior-price`
+            # (minimul de 30 de zile). A treia oara dupa modivo si answear cand
+            # doua linii etichetate divergesc, si a treia oara cea legala castiga.
+            "price_text": "span.price.sale",
+            # AL DOILEA span, nu containerul: primul copil e eticheta „30-day-best
+            # price", iar `eu_comma` ii lipeste „30" de valoare -> 30159,99. E
+            # aceeasi capcana ca la answear, si doar controlul o arata.
+            "compare_text": ".lowest-prior-price span:nth-of-type(2)",
+            "price_parse": "eu_comma",
+            "reference_kind": "min30",
+        },
     },
     "lego.com": {
         "label": "LEGO",
@@ -4326,7 +4404,41 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "magazin obisnuit, livrarea in RO ramane `unconfirmed`. CAPCANA "
                  "pentru axa D: referinta taiata e `UVP` (pret recomandat de "
                  "producator), NU Omnibus — acelasi tipar ca nichiduta si biciclop; "
-                 "masurat „-39 % UVP: 115,00 € -> 69,90 €\". headless NEMASURAT.",
+                 "masurat „-39 % UVP: 115,00 € -> 69,90 €\". headless NEMASURAT. "
+                 "BRW-0/BRW-1 - intra pe axa D prin BROWSER (`via: \"browser\"`), pe "
+                 "`/outlet`. Intrarea din plan, `/angebote`, e GRESITA si asta s-a "
+                 "masurat: se randeaza (325.871 octeti) dar e afisul „Deal des "
+                 "Tages\", cu ZERO jetoane de pret in text - a costat plafonul "
+                 "intreg de poll, 37,62 s, pentru zero carduri. HTTP nu e "
+                 "alternativa nici pe listare: poarta a intors `None` pe AMBELE "
+                 "intrari. Capcana UVP de mai sus e a PDP-ului, nu a outletului: pe "
+                 "`/outlet` e marfa folosita („Gebrauchtware\") cu un SINGUR pret - "
+                 "zero noduri taiate, zero aparitii de `UVP` sau `statt` in toata "
+                 "pagina - deci descriptorul n-are `compare_*` si domeniul califica "
+                 "doar pe R2.",
+        # ── BRW-1 — din sonda BRW-0 §3.1 ───────────────────────────────────────
+        "listing": {
+            "via": "browser",
+            # `/outlet`, NU `/angebote`: a doua e afisul „Deal des Tages", masurat
+            # cu ZERO preturi in text si zero carduri, pe 37,62 s de poll.
+            "url": "https://www.notebooksbilliger.de/outlet",
+            "page_url_template": "https://www.notebooksbilliger.de/outlet?page={n}",
+            # Plafon din COST (v. solebox). Adancimea reala nu s-a masurat; se stie
+            # doar ca pagina 2 exista (20 de carduri, `p1 ∩ p2 = 1`) si ca
+            # `?page=500` e CLAMP — serveste iar pagina 1, plus alte 18, deci
+            # conditia compozita a scannerului o prinde ca submultime.
+            "max_pages": 5,
+            "currency": "EUR",
+            "card": ".product-listing__row",
+            # PDP-urile au forma `/marca+model+<id>`, cu plus-uri.
+            "link": "a[href*='+']",
+            "title": ".product-card__product-heading-title",
+            "price_text": ".product-price__price",
+            "price_parse": "eu_comma",
+            # FARA `compare_*`, si asta e o masuratoare, nu o omisiune: outletul e
+            # de marfa folosita, cu un singur pret. Domeniul califica doar pe R2.
+            "reference_kind": "nemarcat",
+        },
     },
     "footlocker.ro": {
         "label": "Foot Locker",

@@ -5221,3 +5221,144 @@ lui conrad ar fi produs un șablon pe care allow-list-ul de destinație îl resp
 scannerul ar fi cerut deja pagina. `_verifica_descriptor` cere acum potrivirea suffix-safe a
 producției, pe toate cele **55** de descriptoare (`www.conrad.com` trece,
 `conrad.com.attacker.net` nu). Domeniile de listare ajung la **55**.
+
+---
+
+## BRW-1 — ramura de browser ca excepție punctuală: solebox, notebooksbilliger, makeup
+
+Până aici scannerul de listări avea **o singură** cale de fetch: poarta HTTP guarded. Runda asta îi
+adaugă a doua — harness-ul de browser — și trece trei domenii pe ea. Axa D urcă de la **55** la
+**58** de domenii.
+
+### Regula BRW, și de ce s-a scris totuși ramura
+
+Înainte de sonde s-a fixat un prag: **≥ 3 domenii `BROWSER_CSS` cu referință → BRW-1 se scrie.**
+BRW-0 și BRW-0b au măsurat opt domenii `method: browser` și au numărat **1**:
+
+| domeniu | verdict | grilă | referință |
+|---|---|---|---|
+| **solebox.com** | BROWSER_CSS **cu referință** | 24/pagină, `?page={n}` | `min30` (Omnibus) |
+| **notebooksbilliger.de** | BROWSER_CSS, fără referință | 20/pagină, `?page={n}` | nu → doar R2 |
+| **makeup.ro** | BROWSER_FĂRĂ_PAGINARE | 50, o singură pagină | da (`nemarcat`) |
+| conrad.com | FĂRĂ_LISTARE (pe pagina de sale) | caruseluri | — |
+| decathlon.ro | BLOCAT_BROWSER | 403 și în Chrome real | — |
+| sephora.ro | BLOCAT_BROWSER | „Access Denied" (Akamai) | — |
+| hhv.de | NEMĂSURAT | nav-ul se încarcă la click | — |
+| orange.ro | HTTP_SUFICIENT + NEPOTRIVIT | abonamente `lei/lună` | — |
+
+Raportul BRW-0b a aplicat regula și a scris „BRW-1 nu se scrie". **David a cerut-o oricum**, ca
+excepție punctuală pentru cele trei domenii care chiar au grilă. Decizia e a lui și e consemnată ca
+atare — în `notes`, în comentariul de deasupra testelor și aici — tocmai ca să nu fie citită
+vreodată ca verdict al măsurătorii. Costul recurent asumat: **~1 minut de Chromium pe noapte** (3
+domenii, 11 pagini în total).
+
+### `via` vs `method` — și conrad ca și contraexemplu
+
+Cheia nouă din descriptorul de listare e **`via`**, implicit `"http"`. Decizia e a **descriptorului**,
+nu a lui `method`, și distincția nu e cosmetică:
+
+* `method` descrie cum se citește un **PDP** (axa L);
+* `via` descrie cum se aduce o pagină de **listare** (axa D).
+
+Contraexemplul viu e **conrad.com**: e `method: "browser"` fiindcă PDP-ul lui dă 403
+`cf-mitigated: challenge` pe poarta HTTP, dar listarea lui de reduceri răspunde **200 pe HTTP** și
+rămâne deliberat pe calea ieftină (DEAL-D9). O ramură care ar alege după `method` l-ar fi mutat pe
+browser fără să fi măsurat nimic — de la ~1 s la ~5 s pe pagină, pe 15 pagini. `test_brw1_in_registru`
+apără granița prin **comportament**, nu doar prin chei: cu `via` scos din descriptor, scanul trebuie
+să cadă pe poarta HTTP, iar santinela de acolo ridică.
+
+### Costul, și forma lui
+
+Măsurat la BRW-0/0b pe Windows cu Chrome real. Costul **nu e o medie, e bimodal**:
+
+| situație | durata unui apel |
+|---|---|
+| pagină care se validează | **2,1 – 6,3 s** |
+| pagină care se validează târziu (poll 8) | 14,3 s |
+| pagină care NU se validează (grilă absentă sau zid) | **22,1 – 38,0 s** |
+| sephora, cu interval de politețe de 180 s | 180,2 s |
+
+**Eșecul e de șapte ori mai scump decât reușita.** De aici două decizii scrise în cod: `max_pages`
+pe calea de browser se alege din **cost**, nu din adâncimea catalogului (recomandarea ≤ 5, respectată
+de toate trei), iar zero carduri pe pagina 1 e **eroare**, nu tăcere — pe HTTP aceeași grilă goală
+rămâne tăcută, fiindcă acolo un 200 fără produse chiar înseamnă „momentan nicio reducere".
+
+### Ce face ramura
+
+| situație | ce se întâmplă | de ce |
+|---|---|---|
+| HTML cu grilă | scanul continuă normal | HTML-ul e HTML: dedup, clamp, memorie, deal-uri, toate neatinse |
+| HTML nevalidat (după plafonul de poll) | 0 carduri → pagina 1 **`RuntimeError`**, pagina > 1 sfârșit de intrare | harness-ul întoarce corpul și când validarea n-a trecut niciodată — contractul lui |
+| `BrowserFetchBlocked` p1 | **`RuntimeError`**, fără a doua încercare | un zid e un răspuns REAL; G4b a măsurat că insistența pe același URL o înrăutățește |
+| `BrowserFetchBlocked` p > 1 | sfârșit de intrare + WARN | aceeași regulă ca 404 (VAL D) și 5xx (STATE-1): paginile citite rămân comise |
+| `BrowserFetchTooSoon` | `sleep` o dată, cât spune mesajul, apoi o reîncercare | intervalul se RESPECTĂ, nu se ocolește; a doua oară → regula zidului |
+| `BrowserFetchUnavailable` | `RuntimeError` pe orice pagină | browserul lipsă e defecțiune, nu sfârșit — semnal, nu tăcere |
+
+**Validatorul e detectorul de GRILĂ**, adică `extrage_carduri` însuși, nu „primul corp nevid".
+Diferența e chiar lecția vexio (BRW-0c §6): cu `valideaza=None`, harness-ul a acceptat interstițiul
+Cloudflare (6 105 octeți, zero ancore, `<title>Just a moment...</title>`) drept conținut, în 1,29 s,
+fără ca `_detecteaza_blocare` să fie măcar chemat. **Callback-ul de conținut e chiar ce face zidul
+detectabil.** Al doilea motiv pentru care criteriul e `extrage_carduri` și nu o euristică paralelă:
+o a doua regulă ar putea diverge de prima, iar scannerul ar accepta pagini din care apoi citește zero
+produse.
+
+### Cele trei descriptoare
+
+| domeniu | intrare | carduri | `max_pages` | monedă | referință |
+|---|---|---|---|---|---|
+| solebox.com | `/en-eu/c/sale-2775` | 24/pagină, `p1 ∩ p2 = 0` | 5 | EUR | **`min30`** (Omnibus) |
+| notebooksbilliger.de | `/outlet` | 20/pagină | 5 | EUR | `nemarcat`, fără `compare_*` |
+| makeup.ro | `/categorys/723566/` | 50, pagină unică | **1** | RON | `nemarcat` |
+
+Trei capcane, toate măsurate, toate pinuite în teste:
+
+1. **solebox — eticheta cu cifră în ea.** Cardul poartă TREI prețuri: `span.price.sale` (plătit),
+   `del.strikeout` (listă, marketing) și `.lowest-prior-price` (Omnibus). A treia oară după modivo
+   (LST-3b) și answear (LST-D7) când două linii etichetate diverg, și a treia oară cea legală
+   câștigă. Dar containerul Omnibus are **doi copii** — `<span>30-day-best price</span>` și
+   `<span>159,99 €</span>` — iar `eu_comma` lipește „30" de valoare: **30 159,99**. Selectorul e al
+   **doilea** span, și controlul negativ trăiește în test, nu doar în raport.
+2. **solebox — locala și cardul.** Ipoteza LST-D3 era greșită pe ambele: locala validată e `en-eu`
+   (297 apariții în home-ul randat, față de UNA pentru `de-de`), iar `.card` e cardul de pe **home**;
+   listarea folosește `sni-lib-product-tile`, elementul custom al platformei snipes.
+3. **makeup — zecimala.** `94.93 lei`, cu **punct**. Pe `eu_comma` ar fi ieșit 9 493,0 — eroarea de
+   100× care arată perfect plauzibil într-un feed. Clasele au sufixe generate
+   (`shop_808tam_ouxm47`), deci selectorii se ancorează pe partea stabilă, aceeași regulă ca la
+   `overrides.price_selector` de la BR-1b.
+
+Două absențe care sunt și ele măsurători: **notebooksbilliger n-are `compare_*`** (outletul e de
+marfă folosită — zero noduri tăiate, zero `UVP`/`statt` în toată pagina — deci califică doar pe R2;
+capcana UVP din nota lui de registru e a PDP-ului și nu se transferă la listare), iar **makeup n-are
+`page_url_template`** (zero paginare de orice fel; un șablon pus doar ca să treacă o gardă ar fi fost
+un URL inventat).
+
+Și două intrări corectate față de plan: `/outlet` în loc de `/angebote` (afișul „Deal des Tages" se
+randează, dar are ZERO jetoane de preț — a costat 37,62 s pentru zero carduri) și `en-eu` în loc de
+`/de-de/`.
+
+### Sfârșitul paginării, a patra oară
+
+Cele trei domenii adaugă o formă nouă la inventarul de opriri: **coada e ZID**. `?page=500` pe
+solebox răspunde **403**, cu un shell de 531 KB care are titlu real dar zero carduri, zero prețuri și
+`h1` gol. De aceea `max_pages` e plafon, nu bisecție. La celălalt capăt, notebooksbilliger face
+**CLAMP** (pagina 500 servește tot ce era pe pagina 1, plus alte 18), pe care condiția compozită deja
+existentă o prinde ca submulțime.
+
+### PASUL 4 — proba pe magazinul viu
+
+O singură pagină de browser, prin lanțul real: descriptorul din **registru**, validatorul din
+**scanner**, harness-ul din **producție**.
+
+| ce | rezultat |
+|---|---|
+| pagină | `https://www.solebox.com/en-eu/c/sale-2775` |
+| durată | **16,66 s** |
+| octeți | 914 322 |
+| carduri prin `extrage_carduri` | **24** |
+| cu referință | 20 |
+| cu imagine | 24 |
+
+Cifrele de conținut se potrivesc **exact** cu BRW-0b (24 / 20 / 24), iar prețurile citite sunt cele
+măsurate atunci (127,99 cu Omnibus 159,99; 188,99 cu Omnibus 151,19 — al doilea sub prețul de azi,
+adică chiar sensul legal al referinței). Durata e însă de 2,6× față de cele 6,34 s de la BRW-0b:
+lansare la rece plus varianță de rețea. Nu schimbă recomandarea `max_pages ≤ 5` — o întărește.

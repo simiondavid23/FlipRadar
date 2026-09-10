@@ -85,6 +85,12 @@ from app.services.log_manager import set_log_user
 from app.services.deal_scanner import (
     _evalueaza, _prag, _pret_strict, _scrie_stare, _settings, preincarca_pagina,
 )
+from app.services.browser_fetch import (
+    BrowserFetchBlocked,
+    BrowserFetchTooSoon,
+    BrowserFetchUnavailable,
+    fetch_browser_html,
+)
 from app.services.shop_registry import listing_descriptor, listing_domains
 from app.utils.listing_dates import acum_local
 
@@ -106,6 +112,14 @@ _JITTER = 1.5
 # se aseaza) — o repetare imediata ar cadea pe aceeasi stare.
 _PAUZA_RETRY_S = 10
 _TIMEOUT = 25
+
+# BRW-1 — plafonul asteptarii de politete de pe calea de browser, si valoarea de
+# rezerva cand mesajul lui `BrowserFetchTooSoon` nu se poate citi. 240 s fiindca
+# cel mai mare interval configurat azi e 180 s (sephora), iar un domeniu care ar
+# cere mai mult n-ar avea ce cauta intr-un scan de listare: BRW-0b a masurat 180 s
+# de asteptare pentru O pagina, adica ~15 minute pentru cinci.
+_BROWSER_ASTEPTARE_MAX_S = 240
+_BROWSER_ASTEPTARE_IMPLICITA_S = 30
 
 _HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -635,6 +649,113 @@ def _pagina_url(intrare: dict, numar: int) -> str:
     return intrare["page_url_template"].format(n=numar)
 
 
+def _validator_grila(descriptor: dict, domain: str):
+    """Callback-ul de continut al caii de browser: pagina e gata cand chiar are o
+    GRILA, nu cand corpul e nevid.
+
+    `fetch_browser_html` cu `valideaza=None` accepta primul corp nevid — si asta
+    nu e o subtilitate teoretica: la BRW-0c sonda a cerut asa un `home` de pe
+    vexio.ro si a primit interstitiul Cloudflare (6.105 octeti, zero ancore,
+    `<title>Just a moment...</title>`) drept continut, in 1,29 s, fara ca
+    `_detecteaza_blocare` sa fie macar chemat. Callback-ul de continut e chiar ce
+    face zidul detectabil.
+
+    Criteriul e `extrage_carduri` INSUSI, nu o euristica paralela: ce nu se poate
+    parsa cu descriptorul domeniului nu e pagina cautata, oricat de mare ar fi
+    corpul. Un al doilea criteriu ar putea diverge de primul si atunci scannerul
+    ar accepta pagini din care apoi citeste zero produse.
+    """
+    def valideaza(html):
+        carduri = extrage_carduri(html, descriptor, domain)
+        if not carduri:
+            raise ValueError(f"{domain}: inca zero carduri in HTML-ul randat")
+        return carduri
+    return valideaza
+
+
+def _secunde_de_asteptat(mesaj: str) -> float:
+    """Cat mai e de asteptat, citit din mesajul lui `BrowserFetchTooSoon`.
+
+    Forma mesajului e a lui `browser_fetch`: „<domeniu>: <trecut>s de la ultima
+    vizita, minimul e <interval>s". Se scade, nu se ia intervalul intreg: la
+    BRW-0b sephora avea 180 s de interval, trecusera 23, iar asteptarea corecta a
+    fost de 157 s. Fara scadere s-ar fi dormit 180 degeaba.
+    """
+    minim = re.search(r"minimul e (\d+(?:\.\d+)?)s", mesaj or "")
+    trecut = re.search(r"(\d+(?:\.\d+)?)s de la ultima", mesaj or "")
+    if not minim:
+        return _BROWSER_ASTEPTARE_IMPLICITA_S
+    ramas = float(minim.group(1)) - (float(trecut.group(1)) if trecut else 0.0)
+    return max(1.0, min(ramas, _BROWSER_ASTEPTARE_MAX_S))
+
+
+def _pagina_prin_browser(url: str, domain: str, descriptor: dict,
+                         numar: int, pagini_intrare: int) -> str | None:
+    """HTML-ul RANDAT al unei pagini de listare. `None` = sfarsit de intrare.
+
+    **De ce `via` si nu `method`.** `method` descrie cum se citeste un PDP (axa L);
+    `via` descrie cum se aduce o pagina de LISTARE (axa D). Cele doua axe sunt
+    independente, si conrad.com o dovedeste: e `method: "browser"` fiindca PDP-ul
+    lui da 403 pe poarta HTTP, dar listarea lui de reduceri raspunde 200 pe HTTP
+    si ramane deliberat pe calea ieftina (DEAL-D9). O ramura care ar alege dupa
+    `method` l-ar fi mutat pe browser fara sa fi masurat nimic — si l-ar fi
+    scumpit de la ~1 s la ~5 s pe pagina, in cel mai bun caz.
+
+    **Costul, si de ce e bimodal.** Masurat la BRW-0/0b, pe Windows cu Chrome
+    real: o pagina care se valideaza costa **2,1–6,3 s**; una care NU se valideaza
+    costa plafonul intreg de poll plus lansarea, adica **22–38 s**. Esecul e de
+    sapte ori mai scump decat reusita, deci `max_pages` pe calea asta se alege din
+    COST, nu din adancimea catalogului: recomandarea e <= 5.
+
+    **Un `Blocked` nu se reincearca.** GUARD-1 are un retry, dar strict pe `None`
+    — „n-am ajuns la magazin". Un zid e un raspuns REAL al magazinului, iar G4b a
+    masurat ca insistenta pe acelasi URL inrautateste situatia (acolo a produs
+    Access Denied-ul). Pe pagina 1 zidul inseamna intrare moarta si se ridica; pe
+    o pagina > 1 a unei intrari care a citit deja ceva e sfarsit de intrare, cu
+    paginile de dinainte pastrate — exact regula pe care scannerul o are deja
+    pentru 404 (VAL D) si pentru 5xx (STATE-1).
+
+    `TooSoon` e singura exceptie tratata prin asteptare, si tot o singura data:
+    domeniul are interval de politete si el se RESPECTA, nu se ocoleste. A doua
+    oara inseamna ca altcineva tine magazinul ocupat, si atunci se aplica regula
+    zidului.
+    """
+    valideaza = _validator_grila(descriptor, domain)
+    for incercare in (1, 2):
+        try:
+            return fetch_browser_html(url, domain, valideaza=valideaza)
+        except BrowserFetchTooSoon as exc:
+            if incercare == 2:
+                return _zid(domain, url, numar, pagini_intrare, str(exc))
+            asteptare = _secunde_de_asteptat(str(exc))
+            logger.warning(
+                "[ListingScan] %s: interval de politete neimplinit pe pagina %s, "
+                "astept %.0fs si reincerc o data", domain, numar, asteptare)
+            time.sleep(asteptare)
+        except BrowserFetchBlocked as exc:
+            return _zid(domain, url, numar, pagini_intrare, str(exc))
+        except BrowserFetchUnavailable as exc:
+            # Browserul lipseste sau nu s-a putut lansa: nu e vina magazinului si
+            # nu e sfarsit de nimic. Se ridica pe ORICE pagina, ca defectiunea sa
+            # ajunga in ShopScanState in loc sa treaca drept „gata devreme".
+            raise RuntimeError(
+                f"listare esuata la pagina {numar}: browserul nu e disponibil "
+                f"({exc})") from exc
+    return None                                   # pragmatic: bucla are `return` pe toate caile
+
+
+def _zid(domain: str, url: str, numar: int, pagini_intrare: int,
+         motiv: str) -> None:
+    """Un zid de browser: sfarsit de intrare pe o pagina > 1 deja productiva,
+    eroare oriunde altundeva. Fara a doua incercare (v. `_pagina_prin_browser`)."""
+    if numar > 1 and pagini_intrare > 0:
+        logger.warning(
+            "[ListingScan] %s: intrarea s-a oprit la pagina %s (%s) — "
+            "paginile citite raman comise", domain, numar, motiv)
+        return None
+    raise RuntimeError(f"listare esuata la pagina {numar} ({motiv})")
+
+
 def _e_primul_scan(db, domain: str) -> bool:
     """True until a domain has one successful scan behind it.
 
@@ -657,6 +778,10 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
 
     moneda = descriptor.get("currency")
     acum = acum_local()
+
+    # BRW-1 — implicit `"http"`: cei 55 de descriptori de dinainte n-au cheia si
+    # raman pe poarta guarded, neatinsi.
+    via_browser = descriptor.get("via") == "browser"
 
     # Anti-avalanche (design decision, deliberate): on a domain's FIRST successful
     # scan nothing is sent to Discord. R1 is free on this path — every card that
@@ -708,110 +833,132 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
             if numar > 1:
                 _pauza()
             url = _pagina_url(intrare, numar)
-            raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS,
-                                              timeout=_TIMEOUT)
-
-            # GUARD-1 — UN SINGUR retry, si numai pe `None`, si numai pe pagina 1.
-            #
-            # Trei observatii independente, toate cu aceeasi forma — poarta intoarce
-            # `None` o data si merge la cererea urmatoare, pe acelasi URL, cu acelasi
-            # profil:
-            #   * GATE-1  — nike.com;
-            #   * GATE-3  — computeruniverse.net: `/de` a intors `None` la LST-D5, iar
-            #               sonda a cerut EXACT acelasi URL prin ACEEASI poarta si a
-            #               primit 200 din primul hop (1.101.369 de octeti). Runda aia
-            #               a exclus cu cifre RATE, allow-list, normalizarea si
-            #               interstitiul; cauza a ramas nestabilita;
-            #   * LST-D5  — action.com, `prod1`.
-            #
-            # `None` inseamna „n-am ajuns la magazin" (exceptie de retea, poarta
-            # inchisa), NU „magazinul a spus nu". De aia retry-ul e strict pe `None`:
-            # un 403 sau un 500 e un raspuns REAL si repetarea lui n-ar face decat sa
-            # mai bata o data la o usa care tocmai s-a inchis — exact ce a produs
-            # Access Denied-ul de la G4b, unde insistenta pe acelasi URL a inrautatit
-            # situatia.
-            #
-            # Un singur retry, nu o bucla: daca a doua cerere e tot `None`, e o
-            # defectiune reala si trebuie sa se auda. Iar WARN-ul de pe calea
-            # reusita nu e decor — e MASURATOAREA care lipseste: din frecventa lui
-            # se vede daca `None`-urile tranzitorii se aduna pe domeniile Cloudflare
-            # (ipoteza `__cf_bm` din GATE-3) sau sunt uniforme.
-            if raspuns is None and numar == 1:
-                _pauza()
-                time.sleep(_PAUZA_RETRY_S)
+            if via_browser:
+                # BRW-1 — a doua cale de fetch a scannerului de listari. Vezi
+                # `_pagina_prin_browser` pentru de ce `via` si nu `method`.
+                html_pagina = _pagina_prin_browser(url, domain, descriptor,
+                                                   numar, pagini_intrare)
+                if html_pagina is None:
+                    break                 # zid pe o pagina > 1: sfarsit de intrare
+            else:
                 raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS,
                                                   timeout=_TIMEOUT)
-                if raspuns is not None and raspuns.status_code == 200:
-                    logger.warning(
-                        "[ListingScan] %s: `None` tranzitoriu pe pagina 1 (%s), "
-                        "reusit la a doua cerere", domain, url)
-                else:
-                    status = getattr(raspuns, "status_code", None)
-                    raise RuntimeError(
-                        f"listare esuata la pagina {numar} dupa retry "
-                        f"(status: {status})")
 
-            # VAL D — 404 pe o pagina > 1, cu cel putin o pagina reusita in ACELASI
-            # scan, e SFARSIT DE PAGINARE, nu esec. Masurat pe buzzsneakers (SNK-2):
-            # cele 39 de pagini raspund 200, iar pagina 40 da 404 — a treia forma de
-            # final, dupa „grila goala pe 200" si „pagina repetata" din docstring.
-            # Precedentul exista deja in codebase: `olx_scraper.py` are
-            # „404 = paginare depasita (pagina nu exista) -> stop curat, nu eroare".
-            #
-            # Miza nu e cosmetica: RuntimeError cade INAINTE de `db.commit()`, deci un
-            # 404 la final pierdea TOT scanul, inclusiv paginile deja citite.
-            #
-            # Doua granite, amandoua deliberate:
-            #   * pe pagina 1 (`pagini_intrare == 0`) 404 ramane EROARE — acolo
-            #     inseamna listare moarta (URL mutat, categorie stearsa), nu sfarsit;
-            #   * DOAR 404. Un 403 sau un 5xx e zid ori defectiune si trebuie sa se
-            #     vada ca eroare, nu sa fie confundat cu un final de paginare.
-            #
-            # EMAG-D — contorul e cel AL INTRARII, nu cel global. Cu `pagini > 0`,
-            # un 404 pe pagina 1 a categoriei a doua ar fi fost inghitit ca „final
-            # de paginare" doar fiindca prima categorie citise deja pagini, iar o
-            # categorie moarta ar fi disparut din scan in tacere — exact ce trebuie
-            # sa se auda, fiindca inseamna ca hub-ul s-a schimbat.
-            if (raspuns is not None and raspuns.status_code == 404
-                    and numar > 1 and pagini_intrare > 0):
-                break
+                # GUARD-1 — UN SINGUR retry, si numai pe `None`, si numai pe pagina 1.
+                #
+                # Trei observatii independente, toate cu aceeasi forma — poarta intoarce
+                # `None` o data si merge la cererea urmatoare, pe acelasi URL, cu acelasi
+                # profil:
+                #   * GATE-1  — nike.com;
+                #   * GATE-3  — computeruniverse.net: `/de` a intors `None` la LST-D5, iar
+                #               sonda a cerut EXACT acelasi URL prin ACEEASI poarta si a
+                #               primit 200 din primul hop (1.101.369 de octeti). Runda aia
+                #               a exclus cu cifre RATE, allow-list, normalizarea si
+                #               interstitiul; cauza a ramas nestabilita;
+                #   * LST-D5  — action.com, `prod1`.
+                #
+                # `None` inseamna „n-am ajuns la magazin" (exceptie de retea, poarta
+                # inchisa), NU „magazinul a spus nu". De aia retry-ul e strict pe `None`:
+                # un 403 sau un 500 e un raspuns REAL si repetarea lui n-ar face decat sa
+                # mai bata o data la o usa care tocmai s-a inchis — exact ce a produs
+                # Access Denied-ul de la G4b, unde insistenta pe acelasi URL a inrautatit
+                # situatia.
+                #
+                # Un singur retry, nu o bucla: daca a doua cerere e tot `None`, e o
+                # defectiune reala si trebuie sa se auda. Iar WARN-ul de pe calea
+                # reusita nu e decor — e MASURATOAREA care lipseste: din frecventa lui
+                # se vede daca `None`-urile tranzitorii se aduna pe domeniile Cloudflare
+                # (ipoteza `__cf_bm` din GATE-3) sau sunt uniforme.
+                if raspuns is None and numar == 1:
+                    _pauza()
+                    time.sleep(_PAUZA_RETRY_S)
+                    raspuns = _fetch_shop_url_guarded(url, headers=_HEADERS,
+                                                      timeout=_TIMEOUT)
+                    if raspuns is not None and raspuns.status_code == 200:
+                        logger.warning(
+                            "[ListingScan] %s: `None` tranzitoriu pe pagina 1 (%s), "
+                            "reusit la a doua cerere", domain, url)
+                    else:
+                        status = getattr(raspuns, "status_code", None)
+                        raise RuntimeError(
+                            f"listare esuata la pagina {numar} dupa retry "
+                            f"(status: {status})")
 
-            if raspuns is None or raspuns.status_code != 200:
-                # STATE-1 — pe o pagina > 1 a unei intrari care a citit deja cel
-                # putin o pagina, ORICE raspuns nereusit (5xx, 403, 429, sau un
-                # `None` din poarta) e SFARSIT DE INTRARE, nu esec de scan.
+                # VAL D — 404 pe o pagina > 1, cu cel putin o pagina reusita in ACELASI
+                # scan, e SFARSIT DE PAGINARE, nu esec. Masurat pe buzzsneakers (SNK-2):
+                # cele 39 de pagini raspund 200, iar pagina 40 da 404 — a treia forma de
+                # final, dupa „grila goala pe 200" si „pagina repetata" din docstring.
+                # Precedentul exista deja in codebase: `olx_scraper.py` are
+                # „404 = paginare depasita (pagina nu exista) -> stop curat, nu eroare".
                 #
-                # Masurat pe prm (LST-D4): coada listarii `/ro/s/final-sale` da
-                # HTTP 500. Cum `RuntimeError` cade INAINTE de `db.commit()`, un
-                # singur 500 la pagina 30 arunca tot ce citisera primele 29 —
-                # aceeasi pierdere pe care VAL D o reparase deja pentru 404, doar
-                # pe alt cod de stare. Cu 42 de domenii pe axa, un 5xx tranzitoriu
-                # devine o certitudine statistica, nu o ipoteza.
+                # Miza nu e cosmetica: RuntimeError cade INAINTE de `db.commit()`, deci un
+                # 404 la final pierdea TOT scanul, inclusiv paginile deja citite.
                 #
-                # Doua granite raman NESCHIMBATE, si amandoua deliberat:
-                #   * pe pagina 1 (`pagini_intrare == 0`) orice non-200 ramane
-                #     EROARE — acolo inseamna intrare moarta (URL mutat, categorie
-                #     stearsa), care trebuie sa se auda, nu sa treaca drept „gata";
-                #   * 404 ramane sfarsit TACUT (ramura de mai sus), fiindca acolo
-                #     „pagina nu exista" chiar e raspunsul asteptat la coada.
-                # Diferenta fata de 404 e tocmai zgomotul: aici se scrie un WARN,
-                # fiindca un 500 e o anomalie a magazinului, nu o granita normala.
-                status = getattr(raspuns, "status_code", None)
-                if numar > 1 and pagini_intrare > 0:
-                    logger.warning(
-                        "[ListingScan] %s: intrarea %s s-a oprit la pagina %s "
-                        "(status: %s) — paginile citite raman comise",
-                        domain, intrare.get("url"), numar, status)
+                # Doua granite, amandoua deliberate:
+                #   * pe pagina 1 (`pagini_intrare == 0`) 404 ramane EROARE — acolo
+                #     inseamna listare moarta (URL mutat, categorie stearsa), nu sfarsit;
+                #   * DOAR 404. Un 403 sau un 5xx e zid ori defectiune si trebuie sa se
+                #     vada ca eroare, nu sa fie confundat cu un final de paginare.
+                #
+                # EMAG-D — contorul e cel AL INTRARII, nu cel global. Cu `pagini > 0`,
+                # un 404 pe pagina 1 a categoriei a doua ar fi fost inghitit ca „final
+                # de paginare" doar fiindca prima categorie citise deja pagini, iar o
+                # categorie moarta ar fi disparut din scan in tacere — exact ce trebuie
+                # sa se auda, fiindca inseamna ca hub-ul s-a schimbat.
+                if (raspuns is not None and raspuns.status_code == 404
+                        and numar > 1 and pagini_intrare > 0):
                     break
-                raise RuntimeError(
-                    f"listare esuata la pagina {numar} "
-                    f"(status: {status})")
 
-            carduri = extrage_carduri(raspuns.text, descriptor, domain)
+                if raspuns is None or raspuns.status_code != 200:
+                    # STATE-1 — pe o pagina > 1 a unei intrari care a citit deja cel
+                    # putin o pagina, ORICE raspuns nereusit (5xx, 403, 429, sau un
+                    # `None` din poarta) e SFARSIT DE INTRARE, nu esec de scan.
+                    #
+                    # Masurat pe prm (LST-D4): coada listarii `/ro/s/final-sale` da
+                    # HTTP 500. Cum `RuntimeError` cade INAINTE de `db.commit()`, un
+                    # singur 500 la pagina 30 arunca tot ce citisera primele 29 —
+                    # aceeasi pierdere pe care VAL D o reparase deja pentru 404, doar
+                    # pe alt cod de stare. Cu 42 de domenii pe axa, un 5xx tranzitoriu
+                    # devine o certitudine statistica, nu o ipoteza.
+                    #
+                    # Doua granite raman NESCHIMBATE, si amandoua deliberat:
+                    #   * pe pagina 1 (`pagini_intrare == 0`) orice non-200 ramane
+                    #     EROARE — acolo inseamna intrare moarta (URL mutat, categorie
+                    #     stearsa), care trebuie sa se auda, nu sa treaca drept „gata";
+                    #   * 404 ramane sfarsit TACUT (ramura de mai sus), fiindca acolo
+                    #     „pagina nu exista" chiar e raspunsul asteptat la coada.
+                    # Diferenta fata de 404 e tocmai zgomotul: aici se scrie un WARN,
+                    # fiindca un 500 e o anomalie a magazinului, nu o granita normala.
+                    status = getattr(raspuns, "status_code", None)
+                    if numar > 1 and pagini_intrare > 0:
+                        logger.warning(
+                            "[ListingScan] %s: intrarea %s s-a oprit la pagina %s "
+                            "(status: %s) — paginile citite raman comise",
+                            domain, intrare.get("url"), numar, status)
+                        break
+                    raise RuntimeError(
+                        f"listare esuata la pagina {numar} "
+                        f"(status: {status})")
+                html_pagina = raspuns.text
+
+            carduri = extrage_carduri(html_pagina, descriptor, domain)
             linkuri_pagina = {c["url"] for c in carduri}
 
             # --- composite stop condition (measured in LST-1b, see module docstring) ---
             if not linkuri_pagina:
+                # BRW-1 — pe calea de browser, „zero carduri pe pagina 1" NU e o
+                # grila goala: `fetch_browser_html` intoarce HTML si cand
+                # validatorul n-a trecut niciodata (dupa plafonul de poll), iar
+                # validatorul de aici E chiar detectorul de grila. Deci corpul asta
+                # e un shell nerandat sau un zid pe care garda nu l-a recunoscut —
+                # si a costat plafonul intreg de poll (22–38 s, masurat la BRW-0
+                # §7). Tacerea ar transforma un domeniu mort intr-un scan „reusit
+                # cu 0 produse"; pe HTTP tacerea e corecta, fiindca acolo un 200 cu
+                # grila goala chiar inseamna „momentan nicio reducere".
+                if via_browser and numar == 1:
+                    raise RuntimeError(
+                        f"listare esuata la pagina {numar}: browserul a intors "
+                        f"HTML nevalidat (zero carduri)")
                 break                                   # empty grid: otter, caseking
             if linkuri_pagina <= linkuri_vazute:
                 break                                   # clamp: noriel (p1), bergfreunde (last)

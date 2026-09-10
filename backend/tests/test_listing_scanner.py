@@ -818,7 +818,19 @@ def test_listing_domains_exact_cele_din_registru():
                                  # Turnstile TRECUT dar cu redirectul neincaput in
                                  # plafonul de 20 s - de re-masurat cu plafon mai
                                  # mare, o SINGURA data (reputatie de IP).
-                                 "conrad.com"}
+                                 "conrad.com",
+                                 # BRW-1 — primele trei intrari care NU se aduc pe
+                                 # HTTP: `via: "browser"`. Sunt tot ce a
+                                 # supravietuit din opt domenii `method: browser`
+                                 # sondate la BRW-0/0b. Cine NU e aici, si de ce:
+                                 # decathlon.ro si sephora.ro raspund 403,
+                                 # respectiv „Access Denied", si in Chrome real;
+                                 # hhv.de isi incarca nav-ul la click, deci ramane
+                                 # NEMASURAT; orange.ro are grila, dar sunt
+                                 # abonamente cu pret pe luna (nu e catalog de
+                                 # produse) si oricum HTTP-ul ii ajunge.
+                                 "solebox.com", "notebooksbilliger.de",
+                                 "makeup.ro"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -3748,8 +3760,9 @@ def test_deal_d7_in_registru():
 
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
-    assert len(listing_domains()) == 55, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
-                                          "+ conrad.com la DEAL-D9")
+    assert len(listing_domains()) == 58, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
+                                          "+ conrad.com la DEAL-D9 + cele trei "
+                                          "de browser de la BRW-1")
 
 
 # ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
@@ -3906,7 +3919,7 @@ def test_asos_in_registru():
     assert d["currency"] == "EUR"
     assert d["reference_kind"] == "nemarcat"
     assert "asos.com" in listing_domains()
-    assert len(listing_domains()) == 55
+    assert len(listing_domains()) == 58
 
     assert (listing_scanner._pagina_url(d, 2)
             == "https://www.asos.com/women/sale/cat/?page=2&cid=7046")
@@ -3982,8 +3995,14 @@ def test_conrad_in_registru():
 
     `method` NU se atinge: axa L are nevoie de browser headed fiindca PDP-ul da
     403 `cf-mitigated: challenge` pe poarta HTTP (G2B-1b). Axa D merge pe HTTP
-    fiindca scannerul de listari foloseste doar `_fetch_shop_url_guarded`. Testul
-    apara ambele capete deodata: daca cineva „uniformizeaza" `method`-ul, cade.
+    fiindca descriptorul de listare nu declara `via: "browser"`, iar implicitul e
+    HTTP. Testul apara ambele capete deodata: daca cineva „uniformizeaza"
+    `method`-ul, cade.
+
+    BRW-1 a schimbat premisa fara sa schimbe verdictul: din runda aia scannerul
+    ARE o a doua cale de fetch, deci „conrad merge pe HTTP" nu mai e un adevar
+    structural, ci o alegere de descriptor — si de aceea trebuie pinuita. Vezi
+    `test_brw1_in_registru`, care apara exact aceeasi granita din partea cealalta.
     """
     from app.services.shop_registry import SHOP_REGISTRY, browser_domains
 
@@ -3992,7 +4011,7 @@ def test_conrad_in_registru():
     assert "conrad.com" in browser_domains()
 
     assert "conrad.com" in listing_domains()
-    assert len(listing_domains()) == 55
+    assert len(listing_domains()) == 58
 
     d = listing_descriptor("conrad.com")
     assert d["price_parse"] == "us_dot"
@@ -4002,3 +4021,366 @@ def test_conrad_in_registru():
     # Calea CSS, nu cea de stare — conrad are grila in DOM-ul servit pe HTTP.
     assert d["card"] == r".group\/productcard"
     assert not d.get("state_extractor")
+
+
+# ── BRW-1 — ramura de browser in scannerul de listari (`via: "browser"`) ─────
+#
+# BRW-0/0b au masurat opt domenii `method: browser` si au gasit UNUL singur care
+# e listare cu referinta (solebox). Regula fixata inainte de sonda cerea trei,
+# deci raportul a recomandat sa NU se scrie ramura. David a cerut-o oricum, ca
+# exceptie punctuala pentru cele trei domenii care chiar au grila — decizia e a
+# lui si e consemnata ca atare, nu prezentata ca verdict al masuratorii.
+#
+# Ce apara testele de mai jos e tocmai ce face exceptia sigura: ramura se alege
+# dupa DESCRIPTOR (`via`), nu dupa `method`; un zid nu se reincearca niciodata;
+# iar validatorul e detectorul de GRILA, fiindca un callback slab transforma
+# harness-ul intr-o masina de acceptat interstitii (lectia vexio, BRW-0c §6).
+
+_DESCRIPTOR_BRW = {
+    "via": "browser",
+    "url": "https://solebox.com/en-eu/c/sale-2775",
+    "page_url_template": "https://solebox.com/en-eu/c/sale-2775?page={n}",
+    "max_pages": 3,
+    "currency": "EUR",
+    "card": "sni-lib-product-tile",
+    "link": "a[href*='/en-eu/p/']",
+    "title": "a[href*='/en-eu/p/']",
+    "title_from": "link_aria_label",
+    "price_text": "span.price.sale",
+    "compare_text": ".lowest-prior-price span:nth-of-type(2)",
+    "price_parse": "eu_comma",
+    "reference_kind": "min30",
+}
+
+
+@pytest.fixture
+def scan_browser(monkeypatch):
+    """Ruleaza un scan pe calea de BROWSER, cu `fetch_browser_html` stub-uit.
+
+    Stub-ul se pune pe ATRIBUTUL MODULULUI `listing_scanner`, fiindca acolo il
+    citeste ramura — un patch pe `browser_fetch.fetch_browser_html` n-ar fi vazut,
+    numele fiind legat la import.
+
+    Poarta HTTP e stub-uita sa RIDICE: pe calea de browser nu trebuie atinsa
+    deloc, iar o santinela tacuta („n-a fost chemata") s-ar putea confunda cu un
+    test care nu ajunge niciodata pana acolo.
+    """
+    cutie = {"raspunsuri": []}
+    cereri = []
+    dormite = []
+
+    def fals_http(url, **kw):
+        raise AssertionError(f"calea de browser a chemat poarta HTTP pe {url}")
+
+    def fals_browser(url, domain, valideaza=None):
+        cereri.append((url, domain, valideaza))
+        raspunsuri = cutie["raspunsuri"]
+        indice = len(cereri) - 1
+        item = raspunsuri[indice] if indice < len(raspunsuri) else "<html></html>"
+        if isinstance(item, Exception):
+            raise item
+        # Validatorul se cheama CHIAR pe HTML-ul intors, ca in harness-ul real:
+        # asa, un descriptor pe care validatorul l-ar refuza n-are cum sa se
+        # strecoare prin stub.
+        if valideaza is not None:
+            try:
+                valideaza(item)
+            except Exception:                                     # noqa: BLE001
+                pass
+        return item
+
+    monkeypatch.setattr("app.services.scraper_service._fetch_shop_url_guarded",
+                        fals_http)
+    monkeypatch.setattr(listing_scanner, "fetch_browser_html", fals_browser)
+    monkeypatch.setattr(listing_scanner, "listing_domains", lambda: {"solebox.com"})
+    monkeypatch.setattr(listing_scanner, "_pauza", lambda: None)
+    monkeypatch.setattr(listing_scanner.time, "sleep", lambda s: dormite.append(s))
+
+    # `run_listing_scan` agrega si pierde `pagini` (rezumatul are magazine /
+    # produse / alerte / erori). Numarul de pagini e insa chiar invarianta a doua
+    # dintre teste — „intrarea s-a oprit, dar ce citise ramane" — deci se prinde
+    # aici, la sursa, in loc sa fie dedus din altceva.
+    original = listing_scanner._scaneaza_domeniu
+
+    def spion(db, domain, settings, prag):
+        cutie["rezultat"] = original(db, domain, settings, prag)
+        return cutie["rezultat"]
+
+    monkeypatch.setattr(listing_scanner, "_scaneaza_domeniu", spion)
+
+    def ruleaza(raspunsuri, descriptor=None):
+        cereri.clear()
+        dormite.clear()
+        cutie["raspunsuri"] = raspunsuri
+        cutie["rezultat"] = None
+        monkeypatch.setattr(listing_scanner, "listing_descriptor",
+                            lambda _d: dict(descriptor or _DESCRIPTOR_BRW))
+        db = SessionLocal()
+        try:
+            if db.query(RadarSettings).first() is None:
+                _seteaza(db)
+            return listing_scanner.run_listing_scan(db)
+        finally:
+            db.close()
+
+    ruleaza.cereri = cereri
+    ruleaza.dormite = dormite
+    ruleaza.cutie = cutie
+    return ruleaza
+
+
+def _stare_brw(domeniu="solebox.com"):
+    db = SessionLocal()
+    try:
+        return (db.query(ShopScanState)
+                .filter(ShopScanState.shop_domain == domeniu).first())
+    finally:
+        db.close()
+
+
+def test_via_browser_foloseste_fetch_browser_html(scan_browser):
+    """`via: "browser"` muta fetch-ul pe harness, iar poarta HTTP nu se atinge.
+
+    Santinela pe poarta e ACTIVA (ridica), nu pasiva: „n-a fost chemata" e o
+    afirmatie pe care un test o poate face si cand nu ajunge niciodata acolo.
+    """
+    pagina = _fixture("solebox.com")
+    rezultat = scan_browser([pagina, "<html></html>"])
+
+    assert rezultat["magazine"] == 1 and rezultat["erori"] == 0
+    assert rezultat["produse"] == 2
+    # Pagina 1 prin harness, cu domeniul si validatorul pasate corect.
+    url, domeniu, valideaza = scan_browser.cereri[0]
+    assert url == _DESCRIPTOR_BRW["url"]
+    assert domeniu == "solebox.com"
+    assert callable(valideaza), "harness-ul primeste un validator, nu None"
+    # Si validatorul ala e chiar detectorul de grila: pe fixture trece.
+    assert len(valideaza(pagina)) == 2
+
+
+def test_via_browser_blocked_pe_pagina_1_ridica_fara_retry(scan_browser):
+    """Un zid la pagina 1 inchide domeniul din PRIMA.
+
+    GUARD-1 are un retry, dar strict pe `None` — „n-am ajuns la magazin". Un 403
+    e un raspuns REAL, iar G4b a masurat ca insistenta pe acelasi URL
+    inrautateste situatia (acolo a produs Access Denied-ul). Deci exact UN apel.
+    """
+    from app.services.browser_fetch import BrowserFetchBlocked
+
+    rezultat = scan_browser([BrowserFetchBlocked("solebox.com: status 403")])
+
+    assert rezultat["magazine"] == 0 and rezultat["erori"] == 1, (
+        "domeniul a esuat, nu s-a scanat")
+    assert len(scan_browser.cereri) == 1, "un zid NU se reincearca"
+    stare = _stare_brw()
+    assert stare.last_status != "ok"
+    assert "403" in (stare.error_message or "")
+
+
+def test_via_browser_blocked_pe_pagina_2_e_sfarsit_de_intrare(scan_browser, caplog):
+    """Zid pe pagina 2, dupa o pagina reusita: intrarea se opreste, scanul tine.
+
+    Aceeasi regula pe care scannerul o are deja pentru 404 (VAL D) si 5xx
+    (STATE-1) — `RuntimeError` cade INAINTE de `db.commit()`, deci un zid la
+    coada ar arunca tot ce citisera paginile de dinainte.
+    """
+    from app.services.browser_fetch import BrowserFetchBlocked
+
+    with caplog.at_level("WARNING"):
+        rezultat = scan_browser([_fixture("solebox.com"),
+                                 BrowserFetchBlocked("solebox.com: status 403")])
+
+    assert rezultat["magazine"] == 1 and rezultat["erori"] == 0, (
+        "scanul a reusit, cu paginile citite")
+    assert scan_browser.cutie["rezultat"]["pagini"] == 1
+    assert rezultat["produse"] == 2
+    assert len(scan_browser.cereri) == 2
+    assert _stare_brw().last_status == "ok"
+    assert any("s-a oprit la pagina 2" in m for m in caplog.messages)
+
+
+def test_via_browser_too_soon_asteapta_o_data(scan_browser):
+    """Intervalul de politete se RESPECTA, nu se ocoleste — si o singura data.
+
+    Secundele se citesc din mesaj prin SCADERE, nu se ia intervalul intreg: la
+    BRW-0b sephora avea 180 s de interval si trecusera 23, iar asteptarea corecta
+    a fost 157. Aici, 177 din 180 -> 3.
+    """
+    from app.services.browser_fetch import BrowserFetchTooSoon
+
+    prea_devreme = BrowserFetchTooSoon(
+        "solebox.com: 177s de la ultima vizita, minimul e 180s")
+    rezultat = scan_browser([prea_devreme, _fixture("solebox.com"),
+                             "<html></html>"])
+
+    assert rezultat["produse"] == 2
+    # Doua cereri pe ACELASI URL (pagina 1: refuzul, apoi reusita), a treia deja
+    # pe pagina 2 — asteptarea nu consuma pagina, o amana.
+    ceruta = [u for u, _dom, _v in scan_browser.cereri]
+    assert ceruta == [_DESCRIPTOR_BRW["url"], _DESCRIPTOR_BRW["url"],
+                      _DESCRIPTOR_BRW["page_url_template"].format(n=2)]
+    assert scan_browser.dormite == [3.0], "o singura asteptare, cat spune mesajul"
+
+    # A doua oara la rand nu mai e asteptare: se aplica regula zidului.
+    rezultat = scan_browser([prea_devreme, prea_devreme])
+    assert rezultat["erori"] == 1
+    assert len(scan_browser.cereri) == 2
+    assert "minimul e 180s" in (_stare_brw().error_message or "")
+
+
+def test_via_browser_html_nevalidat_e_grila_goala(scan_browser, caplog):
+    """`fetch_browser_html` intoarce HTML si cand validatorul n-a trecut NICIODATA.
+
+    Asta e contractul lui, deliberat: „randata, dar nevalidabila: intoarcem ce
+    avem si lasam apelantul sa ridice eroarea lui". Pentru scanner corpul ala e
+    zero carduri — si pe pagina 1 asta NU e tacere, fiindca a costat plafonul
+    intreg de poll (22-38 s masurate la BRW-0) si inseamna shell nerandat sau zid
+    nerecunoscut. Pe HTTP aceeasi grila goala ramane tacuta: acolo un 200 fara
+    produse chiar inseamna „momentan nicio reducere" (otter, caseking).
+    """
+    rezultat = scan_browser(["<html><body>shell</body></html>"])
+    assert rezultat["erori"] == 1
+    assert "nevalidat" in (_stare_brw().error_message or "")
+
+    # Pe pagina 2, acelasi corp e sfarsit de intrare tacut.
+    with caplog.at_level("WARNING"):
+        rezultat = scan_browser([_fixture("solebox.com"),
+                                 "<html><body>shell</body></html>"])
+    assert rezultat["magazine"] == 1 and rezultat["erori"] == 0
+    assert scan_browser.cutie["rezultat"]["pagini"] == 1
+    assert _stare_brw().last_status == "ok"
+
+
+def test_solebox_carduri():
+    """Cele trei preturi ale platformei snipes, si capcana etichetei cu cifra.
+
+    `.lowest-prior-price` are doi copii — eticheta „30-day-best price" si
+    valoarea — iar `eu_comma` lipeste „30" de valoare daca descriptorul ia
+    containerul. Controlul negativ traieste AICI, nu doar in raport: e singurul
+    lucru care arata ca selectorul „care arata bine" chiar e gresit.
+    """
+    html = _fixture("solebox.com")
+    d = listing_descriptor("solebox.com")
+    carduri = extrage_carduri(html, d, "solebox.com")
+
+    assert [c["price"] for c in carduri] == [127.99, 188.99]
+    assert [c["compare_at"] for c in carduri] == [159.99, 151.19]
+    # Al doilea card are referinta SUB pret: e chiar sensul Omnibus (minimul
+    # ultimelor 30 de zile), nu o eroare de citire. Nu califica pe R1.
+    assert carduri[1]["compare_at"] < carduri[1]["price"]
+    assert d["reference_kind"] == "min30"
+
+    # Controlul negativ: containerul in loc de al doilea span.
+    gresit = dict(d, compare_text=".lowest-prior-price")
+    assert ([c["compare_at"] for c in extrage_carduri(html, gresit, "solebox.com")]
+            == [30159.99, 30151.19])
+
+    # Locala e `en-eu`, nu `/de-de/` (ipoteza LST-D3, corectata la BRW-0b).
+    assert all("/en-eu/p/" in c["url"] for c in carduri)
+    assert "/de-de/" not in d["url"] and "/en-eu/" in d["url"]
+    assert carduri[0]["title"] == "Birkenstock Naples Wrapped beige"
+
+    # IMG-2 — imaginea Cloudinary poarta VIRGULE in cale; se pastreaza intreaga.
+    imagine = carduri[0]["image_url"]
+    assert imagine.startswith("https://asset.solebox.com/images/f_auto,q_auto,")
+    assert imagine.endswith("/02420632_1/birkenstock-naples-wrapped-beige-85575-1")
+
+
+def test_notebooksbilliger_fara_compare():
+    """Outlet de marfa folosita: un singur pret, deci `compare_at` None pe TOATE.
+
+    Absenta e masurata, nu presupusa — zero noduri taiate si zero aparitii de
+    `UVP` sau `statt` in toata pagina (BRW-0 §3.1). Capcana UVP din nota de
+    registru e a PDP-ului, si nu se transfera la listare.
+    """
+    d = listing_descriptor("notebooksbilliger.de")
+    carduri = extrage_carduri(_fixture("notebooksbilliger.de"), d,
+                              "notebooksbilliger.de")
+
+    assert [c["price"] for c in carduri] == [344.99, 249.99]
+    assert [c["compare_at"] for c in carduri] == [None, None]
+    assert "compare_text" not in d and "compare_attr" not in d
+    assert d["reference_kind"] == "nemarcat"
+    assert carduri[0]["title"] == "Lenovo ThinkCentre M720q"
+    # PDP-urile au forma `/marca+model+<id>`.
+    assert carduri[0]["url"].endswith("/lenovo+thinkcentre+m720q+873668")
+
+    # `/outlet`, nu `/angebote` (afisul „Deal des Tages", zero preturi).
+    assert d["url"].endswith("/outlet") and "angebote" not in d["url"]
+    assert (listing_scanner._pagina_url(d, 2)
+            == "https://www.notebooksbilliger.de/outlet?page=2")
+    assert listing_scanner._pagina_url(d, 1) == d["url"]
+
+
+def test_makeup_carduri():
+    """Pagina UNICA, si zecimala cu PUNCT.
+
+    `max_pages: 1` nu e prudenta, e masuratoare: domeniul n-are nicio forma de
+    paginare in URL. Iar `us_dot` e diferenta dintre 94,93 lei si 9493 lei.
+    """
+    d = listing_descriptor("makeup.ro")
+    carduri = extrage_carduri(_fixture("makeup.ro"), d, "makeup.ro")
+
+    assert [c["price"] for c in carduri] == [94.93, 100.0]
+    assert [c["compare_at"] for c in carduri] == [184.0, 136.0]
+    assert d["price_parse"] == "us_dot"
+    assert _pret_eu_comma("94.93 lei") == 9493.0, "de-asta NU `eu_comma`"
+
+    assert d["max_pages"] == 1
+    assert "page_url_template" not in d, (
+        "un sablon nemasurat, pus doar ca sa treaca o garda, e un URL inventat")
+    assert d["currency"] == "RON"
+    assert d["reference_kind"] == "nemarcat"
+    assert carduri[0]["url"] == "https://makeup.ro/product/3673/"
+    assert carduri[0]["title"] == "Paloma Picasso"
+
+
+def test_brw1_in_registru(scan_browser):
+    """Cele trei domenii pe `via: browser`, si granita fata de restul axei.
+
+    Partea care conteaza e a doua jumatate: conrad.com e `method: "browser"` si
+    totusi NU are `via`, fiindca listarea lui raspunde 200 pe HTTP (DEAL-D9). Daca
+    cineva ar rescrie ramura sa aleaga dupa `method`, conrad ar migra tacut pe
+    browser — de la ~1 s la ~5 s pe pagina, si asta pe 15 pagini.
+
+    Si granita aia se dovedeste prin COMPORTAMENT, nu doar prin registru: un test
+    care s-ar uita numai la chei ar trece linistit peste o ramura care alege dupa
+    `method`, fiindca registrul n-are de ce sa se schimbe ca sa apara bug-ul.
+    """
+    from app.services.shop_registry import SHOP_REGISTRY, browser_domains
+
+    pe_browser = {"solebox.com", "notebooksbilliger.de", "makeup.ro"}
+    for domeniu in pe_browser:
+        d = listing_descriptor(domeniu)
+        assert d["via"] == "browser"
+        assert SHOP_REGISTRY[domeniu]["method"] == "browser"
+        assert domeniu in browser_domains(), (
+            "`_verifica_destinatia` cere `method: browser` ca sa navigheze")
+        # Plafonul iese din COST pe calea asta: esecul costa de sapte ori cat
+        # reusita (BRW-0 §7), deci nicio listare de browser nu trece de 5 pagini.
+        assert d["max_pages"] <= 5
+        _verifica_descriptor(domeniu, d)
+
+    assert pe_browser <= listing_domains()
+    assert len(listing_domains()) == 58
+
+    # Restul axei ramane pe HTTP, implicit sau explicit.
+    for domeniu in listing_domains() - pe_browser:
+        via = listing_descriptor(domeniu).get("via")
+        assert via in (None, "http"), f"{domeniu}: `via` neasteptat {via!r}"
+
+    # Contraexemplul: `method: browser` + listare pe HTTP.
+    assert SHOP_REGISTRY["conrad.com"]["method"] == "browser"
+    assert "via" not in listing_descriptor("conrad.com")
+
+    # Si acum proba: solebox.com E `method: browser`, dar cu descriptorul lipsit
+    # de `via` scanul TREBUIE sa cada pe poarta HTTP. Santinela de pe poarta
+    # ridica, deci domeniul iese pe eroare — iar mesajul ei e dovada ca ramura
+    # n-a atins harness-ul. O ramura care ar alege dupa `method` ar trece pe
+    # browser si scanul ar „reusi", tacut.
+    fara_via = {c: v for c, v in _DESCRIPTOR_BRW.items() if c != "via"}
+    rezultat = scan_browser([_fixture("solebox.com")], descriptor=fara_via)
+
+    assert rezultat["erori"] == 1 and rezultat["magazine"] == 0
+    assert scan_browser.cereri == [], "harness-ul de browser nu s-a atins"
+    assert "poarta HTTP" in (_stare_brw().error_message or "")
