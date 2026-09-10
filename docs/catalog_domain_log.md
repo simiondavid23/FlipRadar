@@ -5824,3 +5824,149 @@ rezolvat client-side, iar niciun URL literal nu există în stare. Intră după 
 | sizeer.ro | `?page=2` | 60 | 60 | 24 | 60 | **0** | 60 |
 | answear.ro | `/sale/home` | 80 | 80 | 79 | 80 | 80 | 80 |
 | answear.ro | `/sale/femei` | 80 | 80 | 79 | 80 | 80 | 80 |
+
+## PROD-1 — primul scan cu 55 de domenii: cifre și corecții
+
+Prima rundă din acest jurnal care **nu pornește de la o sondă**, ci de la producție: `shop_scan_state`
+și `flipradar.err.log` după cele două scanări de listări din **10 septembrie**. Sondele măsoară un
+domeniu ca să-l putem adăuga; asta măsoară axa întreagă ca s-o putem ține pornită.
+
+### Durata
+
+| fereastră | domenii | interval | durată |
+|---|---|---|---|
+| noaptea | 28 | 00:28 → 01:19 | **51 min** |
+| după-amiaza | 27 | 15:23 → 16:22 | **59 min** |
+
+Media e ~2 min/domeniu, dar media nu e informația — **distribuția** e:
+
+| domeniu | durată | produse | `max_pages` de dinainte |
+|---|---|---|---|
+| bergfreunde.eu | **14 min** | 12.173 | 200 |
+| otter.ro | **14 min** | 2.546 | 210 |
+| itgalaxy.ro | 7 min | — | — |
+| mediagalaxy.ro | 5 min | — | — |
+| caseking.de | 4 min | — | — |
+
+Două domenii din 28 au mâncat **28 din cele 51 de minute**. Restul de 26 s-au împărțit 23 de minute.
+
+**Golul de 14 ore** dintre 01:19 și 15:23 a fost **sleep al mașinii** (confirmat de David). Nu e nici
+cadență, nici blocaj de rețea.
+
+Și asta explică al doilea lucru care nu se lega: **28 + 27 = 55**, adică exact axa de atunci, deși
+`run_listing_scan` parcurge **toate** domeniile la fiecare rulare — o a doua rulare completă ar fi
+rescris `last_scan_at` pentru toate 55, nu pentru 27. Citirea care se potrivește e că **nu au fost
+două rulări, ci una singură**, înghețată la jumătate: procesul a adormit după domeniul 28 și a
+continuat de acolo la trezire. Lacătul o susține — `_LISTING_LOCK.acquire(blocking=False)` face ca un
+job care ar fi pornit la trezire să iasă imediat cu „scanare deja in curs", deci rularea înghețată
+n-avea cum să fie dublată.
+
+Rămâne o **citire**, nu o dovadă: datele de atunci nu pot deosebi asta de o a doua rulare oprită la
+fel de convenabil. Cu logul de la PASUL 4, întrebarea nici nu se mai pune — o singură linie de
+`start:` urmată de una de `final:` spune care dintre cele două s-a întâmplat.
+
+### Cele trei erori
+
+* **`emag.ro` — `RuntimeError: listare esuata la pagina 1 (status: 511)`.** 511 („Network
+  Authentication Required") e forma în care eMAG răspunde la rafală. Măsurat de **două ori în același
+  scan**: o dată pe pagina 1 (a pierdut tot domeniul, pentru că pe pagina 1 orice non-200 rămâne
+  eroare — graniță deliberată din STATE-1) și o dată ca WARN pe `pc-periferice-software`, oprită la
+  pagina 9. Rafala era **a noastră**: 12 categorii × ~11 pagini la 2,5–4 s.
+* **`prm.com` — `listare esuata la pagina 1 (status: 404)`.** `/ro/s/final-sale`, măsurată pe 8.09,
+  expirase până pe 10.09. `/ro/s/<slug>` sunt **pseudocategorii**, adică campanii editoriale.
+* **`altex.ro` — oprit la pagina 10 cu 502** (432 din 1.440 de produse). **Nu s-a reparat**: STATE-1
+  face exact ce trebuie (paginile citite rămân comise, se scrie un WARN), iar un 502 unic nu
+  distinge încă între „magazinul a obosit" și „intrare prea adâncă". De urmărit la scanul următor.
+
+### Ce s-a schimbat
+
+| domeniu | de la | la | de ce |
+|---|---|---|---|
+| emag.ro | fără interval | `min_fetch_interval_s: 6` | 511 măsurat de două ori |
+| emag.ro | `max_pages: 40` | `6` | 12 × 6 × 60 = 4.320 produse, ~12 min |
+| bergfreunde.eu | `max_pages: 200` | `60` | 14 min → ~5 min (4.320 produse) |
+| otter.ro | `max_pages: 210` | `35` | 14 min → ~4,6 min (840 produse) |
+| prm.com | `/ro/s/final-sale` | 2 intrări cu `?reducere=1` | campania expirase |
+| carrefour.ro | — | doar `notes` | descriptorul e intact |
+
+**6 secunde pe eMAG e ales sub pragul care a cedat, nu peste**: paginile 1–8 treceau la 2,5–4 s, deci
+pragul real e undeva peste; 6 s dublează distanța. Pragul **nu** s-a căutat prin bisecție — ar fi
+însemnat să provocăm blocaje. Efectul trece dincolo de scan: poarta impune intervalul pe *orice*
+cerere către domeniu, deci și add-by-link și `refresh_source` pe un produs eMAG plătesc până la 6 s.
+Acceptat: pe o acțiune manuală e o întârziere, nu un blocaj.
+
+**Plafoanele lui bergfreunde și otter nu sunt egale, și asta e chiar măsurătoarea.** bergfreunde:
+12.173 / 72 pe pagină ≈ 169 de pagini în 840 s = **~5,0 s/pagină**. otter: 2.546 / 24 pe pagină ≈ 106
+pagini în 840 s = **~7,9 s/pagină**. Paginile lui otter sunt de trei ori mai sărace și de 1,6 ori mai
+scumpe, deci 60 de pagini ar fi costat tot ~8 minute acolo. 35 × 7,9 s ≈ 4,6 min. Randamentul mic
+(840 de produse) e cifra care ar justifica o **intrare mai bună** pe otter într-o rundă viitoare — nu
+un plafon mai mare.
+
+Ce se pierde e coada listelor, și e acceptabil pentru că outlet-urile astea sunt **permanente**:
+produsele lor nu expiră într-o zi, iar ce nu intră azi în primele pagini intră la o rotație
+viitoare. Un plafon nu atinge niciuna dintre cele trei condiții de oprire (grilă goală, pagină
+repetată, 404 după o pagină reușită).
+
+### prm — de la o campanie la filtrul propriu de reduceri
+
+Analiza offline a dump-ului LST-D4 a găsit **un singur lucru permanent** în pagină: filtrul de
+reduceri al magazinului, scris verbatim în payload-ul de listă ca
+`{"name":"discount","label":"Doar promoţii","param":"reducere","type":"CHECKBOX","items":{"value":1}}`.
+De aici `?reducere=1`, aplicat pe cele două categorii de nivel 1 (`femei` / `barbati`, intrările
+„Vezi toate" din același meniu).
+
+Măsurat prin poartă, 3 cereri:
+
+| intrare | status | carduri | cu preț | cu referință | anunțate |
+|---|---|---|---|---|---|
+| `/ro/k/femei?reducere=1` | 200 | 80 | 80 | **80** | 7.672 |
+| `/ro/k/barbati?reducere=1` | 200 | 80 | 80 | **80** | 9.374 |
+| `…femei…&page=2` | 200 | 80 | — | — | p1 ∩ p2 = **0** |
+
+Coloana „cu referință" e diferența față de campanie: pe `final-sale`, 46 din 80 de carduri **nu**
+aveau preț tăiat (de aceea `price_text` are doi selectori). Cu filtrul, 80/80 — ceea ce e chiar
+sensul lui. `max_pages` rămâne **25**, neatins: cu două intrări înseamnă 2 × 25 de pagini ≈ 4.000 de
+produse în ~4 min, iar plafonul e acum departe de coadă (~96 și ~117 pagini disponibile), deci nu mai
+e o plasă pe sfârșitul listei, ci pur și simplu bugetul de timp al domeniului.
+
+**Capcana rundei:** meniul marchează `"isSaleLink": true` — dar pe **94 din 94** de intrări de
+categorie. E o constantă de șablon, nu un marcaj de reducere, exact ca `data-availability-id=2` pe
+eMAG. (Nota DEAL-D11 despre answear numără 220 de astfel de noduri fără să spună din câte; pe prm
+fracția e ce demontează semnalul.)
+
+### carrefour — 33 nu înseamnă descriptor stricat
+
+33 de produse față de 384 măsurate la LST-D3 arată exact ca un hash de build schimbat — și
+`Price_priceWrapperRed__BWFkK` chiar e un hash, cu fragilitatea consemnată în registru. Ipotezele se
+deosebesc însă **pe pagină**, numărând selectorul exact lângă varianta lui „pe porțiunea stabilă":
+
+| măsurătoare | exact | `[class*=…]` |
+|---|---|---|
+| preț | 35 | 35 |
+| referință | 20 | 20 |
+
+Egale, deci hash-urile sunt intacte. `.product_container` dă **33** în HTML-ul brut și descriptorul
+extrage **33 din 33**. Campania săptămânală s-a micșorat: 384 (7.09) → 33 (10.09). Prima verificare a
+regulii „dacă un scan dă 0 carduri, selectorii se re-măsoară" — și a ieșit negativ, adică bine.
+
+### Log de start și final
+
+Durata scanurilor de mai sus a trebuit **dedusă** din `last_scan_at`, adică dintr-un efect secundar.
+`run_listing_scan` scrie acum, prin `logger` (nu `print`, ca să poată fi verificat de un test):
+
+```
+[ListingScan] start: 55 domenii, ora 00:28:11
+[ListingScan] bergfreunde.eu: 169 pagini, 12173 produse, 4625 deal-uri active, 0 alerte, 14:02
+[ListingScan] final: 55 domenii, 27 ok, 1 erori, 51:07
+```
+
+Linia de final e în `finally`: exact scanurile care eșuează sunt cele despre care vrem să știm cât au
+ținut. Sumarul întors de funcție primește și el `durata_s`.
+
+### `deals_active` — de ce urmează un prag R1 per domeniu
+
+Aceleași două domenii care au costat timpul produc și feed-uri disproporționate: **4.625** de
+deal-uri active pe bergfreunde și **1.918** pe otter. R1 e gratis pe calea asta — orice card cu preț
+tăiat califică instant — iar un outlet permanent are mii de astfel de carduri tot timpul. Plafonul de
+pagini reduce colateral și numărul ăsta, dar din motivul greșit: taie coada listei, nu produsele
+care n-ar fi trebuit să califice. Pragul R1 **per domeniu** e rundă separată.

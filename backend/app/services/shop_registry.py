@@ -331,6 +331,26 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
+        # PROD-1 — RATE, si masurat de DOUA ori in acelasi scan de productie
+        # (10 septembrie): odata ca `RuntimeError: listare esuata la pagina 1
+        # (status: 511)`, care a pierdut tot domeniul, si odata ca WARN pe
+        # `pc-periferice-software`, oprita la pagina 9 tot cu 511. 511 („Network
+        # Authentication Required") e forma in care eMAG raspunde la rafala, iar
+        # rafala era a noastra: 12 categorii x ~11 pagini la 2,5-4 s din
+        # `_pauza()`, adica ~130 de cereri intr-un sfert de ora.
+        #
+        # 6 s e ales SUB pragul care a cedat, nu peste: paginile 1-8 ale unei
+        # categorii treceau la 2,5-4 s, deci pragul real e undeva peste asta;
+        # 6 s dubleaza distanta si tine domeniul la ~12 min pe scan (vezi
+        # `max_pages`). Nu e o masuratoare a pragului — pragul nu s-a cautat
+        # prin bisectie, fiindca ar fi insemnat sa provocam blocaje.
+        #
+        # ATENTIE, efect DINCOLO de scanul de listare: poarta impune intervalul
+        # pe ORICE cerere catre domeniu (`_fetch_shop_url_guarded`), deci si
+        # add-by-link si `refresh_source` pe un produs eMAG platesc pana la 6 s.
+        # Acceptat: 6 s pe o actiune manuala e o intarziere, nu un blocaj, si e
+        # pretul ca scanul automat sa nu mai arda domeniul pentru toti.
+        "min_fetch_interval_s": 6,
         # ── EMAG-D, din dump-urile EMAG-1 (20-21 august) verificate live ────
         "listing": {
             # Forma cu LISTA, primul consumator al mecanismului. eMAG n-are un URL
@@ -410,7 +430,18 @@ SHOP_REGISTRY: dict[str, dict] = {
             # (`rec-card-item card-item js-card-item` cu `div.card-v2 card-shimmer`
             # gol) — NU au `js-product-data`, si de aia clasa aia e obligatorie in
             # selector. Capcana caruselului, a treia oara dupa LOT5 si powerup.
-            "max_pages": 40,
+            #
+            # PROD-1: 40 -> 6, si cifra e un BUGET, nu o masuratoare de adancime.
+            # Cheia e la nivel de descriptor, dar `_intrari` o rezolva PER INTRARE
+            # (fallback), deci 6 inseamna 6 pagini pentru FIECARE dintre cele 12
+            # categorii: 12 x 6 x 60 = 4 320 de produse pe scan, la ~12 min cu
+            # intervalul de 6 s. Inainte, aceleasi 12 categorii mergeau pana la
+            # ~11 pagini fiecare in rafala si cadeau pe 511 (vezi
+            # `min_fetch_interval_s`). Adancimea reala ramane cea din comentariul
+            # de mai sus (33 de pagini pe `laptop-tablete-telefoane`); ce se pierde
+            # e coada fiecarei categorii, iar resigilatele noi intra pe primele
+            # pagini, care sunt sortate implicit dupa relevanta/noutate.
+            "max_pages": 6,
             "currency": "RON",
             # Cel mai din AFARA dintre cele patru niveluri imbricate cu 60 de
             # noduri fiecare (`card-v2`, `card-v2-wrapper`, `card-v2-content` au
@@ -972,15 +1003,54 @@ SHOP_REGISTRY: dict[str, dict] = {
         "listing": {
             # Vitrina `/ro/`, cea validata pe axa L: radacina globala `prm.com/`
             # are 11 KB si e o poarta de localizare, nu magazinul.
-            "url": "https://prm.com/ro/s/final-sale",
-            "page_url_template": "https://prm.com/ro/s/final-sale?page={n}",
-            # `p1 ∩ p2 = 0` din 80 — paginare reala. ATENTIE la coada: `?page=500`
-            # raspunde HTTP **500**, iar scannerul trateaza ca sfarsit de paginare
-            # DOAR 404; un 5xx pe pagina > 1 ridica RuntimeError si pierde TOT
-            # scanul domeniului (inainte de commit), consemnat in ShopScanState.
-            # Plafonul e deci si o plasa: daca `final-sale` are mai putin de 25 de
-            # pagini, primul scan care trece de coada va esua ZGOMOTOS — ceea ce e
-            # de preferat unei erori tacute, dar cere re-masurarea adancimii.
+            #
+            # PROD-1 — intrarea a fost SCHIMBATA fiindca a expirat. `/ro/s/final-sale`
+            # a dat 404 pe pagina 1 la scanul din 10.09: `/ro/s/<slug>` sunt
+            # PSEUDOCATEGORII, adica campanii editoriale, iar campaniile se sting.
+            # Aceeasi capcana ca la carrefour, cu alt final: acolo campania s-a
+            # micsorat, aici a disparut.
+            #
+            # Inlocuitorul e PERMANENT prin constructie: nu o alta campanie, ci
+            # FILTRUL de reduceri al magazinului, aplicat pe cele doua categorii de
+            # nivel 1. Filtrul e citit verbatim din payload-ul de lista al
+            # dump-ului LST-D4: `{"name":"discount","label":"Doar promoţii",
+            # "param":"reducere","type":"CHECKBOX","items":{"value":1,...}}` — de
+            # unde `?reducere=1`. Slugurile `femei` / `barbati` sunt intrarile
+            # „Vezi toate" de nivel 1 din acelasi meniu.
+            #
+            # CAPCANA, consemnata fiindca era gata sa treaca drept semnal: meniul
+            # marcheaza `"isSaleLink":true`, dar pe 94 din 94 de intrari de
+            # categorie — constanta de sablon, nu marcaj de reducere. A treia oara
+            # dupa `data-availability-id=2` pe eMAG si `data-*`-ul de la toolnation.
+            #
+            # Masurat prin poarta (PROD-1, 3 cereri): femei 200 / 80 de carduri,
+            # barbati 200 / 80, si — spre deosebire de `final-sale`, unde 46 din 80
+            # de carduri n-aveau pret taiat — 80/80 cu pret SI referinta pe ambele,
+            # ceea ce e chiar sensul filtrului. Listele anunta 7 672 (femei) si
+            # 9 374 (barbati) de produse reduse, adica ~96 si ~117 pagini a 80.
+            "entries": [
+                {"url": "https://prm.com/ro/k/femei?reducere=1",
+                 "page_url_template": "https://prm.com/ro/k/femei?reducere=1&page={n}"},
+                {"url": "https://prm.com/ro/k/barbati?reducere=1",
+                 "page_url_template": "https://prm.com/ro/k/barbati?reducere=1&page={n}"},
+            ],
+            # `p1 ∩ p2 = 0` din 80 — paginare reala, re-confirmata la PROD-1 pe
+            # noua intrare (`femei`, `&page=2`: 80 de carduri, zero comune cu p1).
+            # Templateul e masurat pe `femei`; pe `barbati` e aceeasi ruta si
+            # acelasi mecanism — paginarea sta in query string, nu in slug.
+            #
+            # Coada: pe vechea intrare `?page=500` raspundea HTTP **500**. Nota de
+            # atunci spunea ca un 5xx pierde tot scanul domeniului — nu mai e
+            # adevarat, tocmai fiindca acea masuratoare a produs STATE-1: orice
+            # raspuns nereusit pe o pagina > 1 a unei intrari care a citit deja o
+            # pagina e SFARSIT DE INTRARE cu WARN, iar paginile citite raman comise.
+            #
+            # `max_pages` ramane 25 si NU se atinge la PROD-1. Cu doua intrari
+            # inseamna 25 de pagini pentru fiecare, adica 50 x 80 = 4 000 de produse
+            # in ~4 min la ~4,5 s pagina (1,2 s fetch masurat + `_pauza()`) — de la
+            # 25 de pagini pe o singura lista. Plafonul e acum DEPARTE de coada
+            # (~96 si ~117 pagini disponibile), deci nu mai e o plasa pe sfarsitul
+            # listei, ci pur si simplu bugetul de timp al domeniului.
             "max_pages": 25,
             "currency": "RON",
             # Clase de modul CSS cu hash de build (`__cAcr_`, `__eYDbk`): se prind
@@ -1005,7 +1075,8 @@ SHOP_REGISTRY: dict[str, dict] = {
             "reference_kind": "nemarcat",
         },
         "notes": ("FASHION-2b"
-                 " DEAL-D4 - axa D pe vitrina `/ro/`: `/s/final-sale`, 80 de carduri. Referinta e „Preț normal”, NU Omnibus: fraza „Cel mai mic preț DE LA LANSARE” de pe acelasi card e alta semantica. Cardurile nereduse au alt nod de pret, deci `price_text` are doi selectori. ATENTIE: `?page=500` da HTTP 500, iar scannerul trateaza ca final de paginare doar 404 - un 5xx ridica si pierde scanul domeniului."),
+                 " DEAL-D4 - axa D pe vitrina `/ro/`: `/s/final-sale`, 80 de carduri. Referinta e „Preț normal”, NU Omnibus: fraza „Cel mai mic preț DE LA LANSARE” de pe acelasi card e alta semantica. Cardurile nereduse au alt nod de pret, deci `price_text` are doi selectori. ATENTIE: `?page=500` da HTTP 500, iar scannerul trateaza ca final de paginare doar 404 - un 5xx ridica si pierde scanul domeniului."
+                 " PROD-1 - intrarea `/s/final-sale` a EXPIRAT (404 pe pagina 1 la scanul din 10.09): `/ro/s/<slug>` sunt campanii editoriale. Inlocuita cu doua intrari PERMANENTE, filtrul propriu de reduceri pe categoriile de nivel 1: `/ro/k/femei?reducere=1` si `/ro/k/barbati?reducere=1` (`param: reducere`, CHECKBOX, valoare 1, citit din payload-ul LST-D4). Masurat: 80 de carduri pe fiecare, 80/80 cu pret SI referinta, p2 fara niciun link comun cu p1. `isSaleLink: true` din meniu NU e semnal - e pe 94/94 de categorii."),
     },
     "sneakersnstuff.com": {
         "label": "Sneakersnstuff",
@@ -1763,6 +1834,16 @@ SHOP_REGISTRY: dict[str, dict] = {
             # Modules) si se schimba la fiecare deploy. N-au alternativa in dump.
             # Daca un scan da 0 carduri sau 0 preturi, selectorii se RE-MASOARA pe
             # un dump nou; nu se ghicesc.
+            #
+            # PROD-1 — prima verificare a acelei reguli, si a iesit NEGATIV, adica
+            # bine. Scanul din 10.09 a dat 33 de produse fata de 384 masurate la
+            # LST-D3, ceea ce arata exact ca un hash schimbat. Sonda a deosebit
+            # cele doua ipoteze pe pagina, numarand selectorul EXACT si varianta
+            # lui „pe portiunea stabila" (`div[class*='Price_priceWrapperRed']`):
+            # 35 = 35 la pret si 20 = 20 la referinta, deci hash-urile sunt intacte.
+            # `.product_container` da 33 in HTML-ul brut si descriptorul extrage
+            # 33 din 33. Campania SAPTAMANALA s-a micsorat, atat: 384 (7.09) -> 33
+            # (10.09), si de aia `max_pages: 1` ramane corect.
         },
         "notes": "LOT1; DEAL-D2 — NEMASURAT: sonda a ales gresit intrarea din home "
                  "(pagina de REGULAMENTE de tombola, care avea destule blocuri "
@@ -1777,7 +1858,13 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`eu_comma` ar da 879.0. Primul `<img>` al fiecarui card e un "
                  "placeholder `data:` (384/384), respins de normalizator, iar poza "
                  "reala vine de pe al doilea `<img>` (368 poze de produs, 16 bannere "
-                 "de campanie). Referinta e pe 181/384, fara nicio eticheta legala.",
+                 "de campanie). Referinta e pe 181/384, fara nicio eticheta legala. "
+                 "PROD-1 — campania VARIAZA saptamanal: 384 de carduri (7.09) -> 33 "
+                 "(10.09). Nu e un descriptor stricat: hash-urile de build sunt "
+                 "intacte (selectorul exact si cel „pe portiune stabila” dau acelasi "
+                 "numar, 35 si 20), iar din 33 de `.product_container` se extrag 33. "
+                 "Un numar mic de carduri pe acest domeniu e o stire despre campanie, "
+                 "nu despre cod.",
     },
     "flip.ro": {
         "label": "Flip",
@@ -2250,7 +2337,18 @@ SHOP_REGISTRY: dict[str, dict] = {
         "listing": {
             "url": "https://www.bergfreunde.eu/outlet/",
             "page_url_template": "https://www.bergfreunde.eu/outlet/{n}/",
-            "max_pages": 200,
+            # PROD-1: 200 -> 60, plafon de TIMP, nu de adancime. Masurat in scanul
+            # de productie din 10 septembrie: 12 173 de produse in 14 minute, adica
+            # ~169 de pagini a 72 la ~5,0 s bucata (`_pauza()` 2,5-4 s + fetch).
+            # Domeniul asta si otter au fost cele doua varfuri ale unui scan de 51
+            # de minute pe 28 de domenii — 28 de minute din 51, in doua magazine.
+            # 60 x 72 = 4 320 de produse in ~5 min.
+            # Ce se pierde e coada outlet-ului, si e acceptabil tocmai fiindca
+            # outlet-ul e PERMANENT: produsele lui nu expira intr-o zi, iar ce nu
+            # intra azi in primele 60 de pagini intra la o rotatie viitoare a
+            # listei. Un plafon nu schimba niciuna dintre cele trei conditii de
+            # oprire — clamp-ul pe ultima pagina, masurat la LST-1b, ramane.
+            "max_pages": 60,
             "currency": "EUR",
             "card": "li.product-item",
             # IMG-1a/1a2: unde sta poza pe acest domeniu.
@@ -3591,7 +3689,17 @@ SHOP_REGISTRY: dict[str, dict] = {
         "listing": {
             "url": "https://www.otter.ro/reduceri",
             "page_url_template": "https://www.otter.ro/reduceri?p={n}",
-            "max_pages": 210,
+            # PROD-1: 210 -> 35, acelasi plafon de TIMP ca la bergfreunde, dar cu
+            # ALTA cifra, si diferenta e chiar masuratoarea. Productia (10.09):
+            # 2 546 de produse in 14 minute. Paginile de aici au 24 de produse
+            # (LST-1: 197 de pagini a 24), deci 2 546 / 24 ~ 106 pagini in 840 s =
+            # ~7,9 s pe pagina — de 1,6 ori mai scump per pagina decat bergfreunde
+            # SI de 3 ori mai sarac in produse. 60 de pagini ar fi insemnat tot
+            # ~8 minute; 35 x 7,9 s ~ 4,6 min, sub pragul de 5 minute pe domeniu.
+            # Randamentul e insa mic (35 x 24 = 840 de produse), si asta e cifra
+            # care ar justifica o intrare mai buna pe otter intr-o runda viitoare,
+            # nu un plafon mai mare.
+            "max_pages": 35,
             "currency": "RON",
             "card": "li.product-item",
             # IMG-1a/1a2: unde sta poza pe acest domeniu.

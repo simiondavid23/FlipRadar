@@ -10,7 +10,9 @@ DELIBERATA: intersport (LST-2, `dumps_lst2/`) pastreaza PAGINA INTREAGA, toate
 cele 30 de carduri — acolo „30 pe pagina" si „pret taiat pe 30/30" sunt ele
 insele invariante masurate, iar un decupaj de 3 le-ar transforma in proxy.
 """
+import json
 import os
+import re
 import uuid
 
 import pytest
@@ -2651,7 +2653,6 @@ def test_pagina_url_deal_d4():
     asteptat = {
         "fashiondays.ro": "https://www.fashiondays.ro/s/sale-sale-sale-w?page=2",
         "epantofi.ro": "https://epantofi.ro/c/epantofi/akcja:extraseptember_lp?p=2",
-        "prm.com": "https://prm.com/ro/s/final-sale?page=2",
         "douglas.ro": "https://www.douglas.ro/ro/c/reduceri/05?page=2",
         "parfumdreams.de": "https://www.parfumdreams.de/Angebote?p=2",
     }
@@ -2659,6 +2660,16 @@ def test_pagina_url_deal_d4():
         intrare = _intrari(listing_descriptor(domeniu))[0]
         assert _pagina_url(intrare, 2) == url, domeniu
         assert _pagina_url(intrare, 1) == listing_descriptor(domeniu)["url"]
+
+    # prm a IESIT din harta de mai sus la PROD-1, nu fiindca s-ar fi schimbat
+    # forma paginarii, ci fiindca descriptorul a trecut de la `url` la `entries`
+    # (campania a expirat, vezi `test_prm_intrare`): a doua asertiune a buclei
+    # citeste `listing_descriptor(...)["url"]`, care pe forma cu intrari nu exista.
+    # Forma `?…&page={n}` se verifica aici, pe intrare.
+    intrare_prm = _intrari(listing_descriptor("prm.com"))[0]
+    assert _pagina_url(intrare_prm, 1) == "https://prm.com/ro/k/femei?reducere=1"
+    assert _pagina_url(intrare_prm, 2) == ("https://prm.com/ro/k/femei"
+                                           "?reducere=1&page=2")
 
     # nichiduta: numarul de pagina la MIJLOC, nu la coada.
     paginate = [i for i in _intrari(listing_descriptor("nichiduta.ro"))
@@ -5190,3 +5201,158 @@ def test_deal_d11_in_registru():
     assert len(listing_descriptor("pcgarage.ro")["entries"]) == 2
     for domeniu in ("decathlon.ro", "sizeer.ro"):
         assert "entries" not in listing_descriptor(domeniu)
+
+
+# ── PROD-1 — corectii din primul scan de productie cu 55 de domenii ──────────
+#
+# Cifrele de mai jos nu vin dintr-o sonda de descoperire, ci din `shop_scan_state`
+# si `flipradar.err.log` dupa scanurile din 10 septembrie. Sunt bugete de TIMP si
+# de politete, adica exact felul de valoare pe care un refactor viitor o poate
+# schimba fara sa observe ca a schimbat ceva.
+
+def test_emag_interval_si_plafon():
+    """eMAG: 6 s intre cereri, 6 pagini per categorie.
+
+    Scanul din 10.09 a lovit HTTP 511 de doua ori pe acelasi domeniu — o data pe
+    pagina 1 (a pierdut tot domeniul) si o data pe `pc-periferice-software`,
+    oprita la pagina 9. Cauza e forma traficului nostru: 12 categorii x ~11 pagini
+    la 2,5-4 s. Testul pineaza AMBELE jumatati ale corectiei, fiindca fiecare
+    singura ar fi insuficienta: intervalul fara plafon ar face scanul de doua ore,
+    plafonul fara interval ar reduce rafala fara s-o rareasca.
+    """
+    from app.services import scraper_service as ss
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    assert SHOP_REGISTRY["emag.ro"]["min_fetch_interval_s"] == 6
+    # Si chiar ajunge la poarta, care e singurul loc unde valoarea are efect.
+    assert ss._MIN_FETCH_INTERVALE["emag.ro"] == 6
+
+    d = listing_descriptor("emag.ro")
+    intrari = listing_scanner._intrari(d)
+    assert len(intrari) == 12, "cele 12 departamente raman toate pe axa"
+    # Plafonul e scris O data, la nivel de descriptor, dar `_intrari` il rezolva
+    # PER INTRARE — asta e forma verificata aici, fiindca ea decide costul.
+    assert [i["max_pages"] for i in intrari] == [6] * 12
+
+    # Bugetul rezultat, scris ca sa se vada de ce 6: 12 x 6 x 60 de produse.
+    assert 12 * 6 * 60 == 4320
+
+
+def test_plafoane_bergfreunde_otter():
+    """Cele doua varfuri ale scanului de 51 de minute, aduse sub 5 minute fiecare.
+
+    Masurat in productie (10.09): bergfreunde 12 173 de produse in 14 min (~169 de
+    pagini a 72, ~5,0 s pagina), otter 2 546 in 14 min (~106 pagini a 24, ~7,9 s
+    pagina). Impreuna, 28 din cele 51 de minute ale scanului.
+
+    Plafoanele NU sunt egale, si asta e chiar rostul testului: paginile lui otter
+    sunt de trei ori mai sarace si de 1,6 ori mai scumpe, deci acelasi numar de
+    pagini ar costa acolo tot ~8 minute.
+    """
+    berg = listing_descriptor("bergfreunde.eu")["max_pages"]
+    otter = listing_descriptor("otter.ro")["max_pages"]
+
+    assert berg <= 60 and otter <= 60
+    assert berg == 60 and otter == 35
+
+    # Bugetul de timp, cu vitezele masurate: sub 5 minute pe fiecare domeniu.
+    assert berg * 5.0 <= 300
+    assert otter * 7.9 <= 300
+
+
+def test_prm_intrare():
+    """prm nu mai sta pe o campanie expirata, ci pe filtrul permanent de reduceri.
+
+    `/ro/s/final-sale` a dat 404 pe pagina 1 la scanul din 10.09 — `/ro/s/<slug>`
+    sunt pseudocategorii editoriale. Inlocuitorul e `?reducere=1` (parametrul
+    propriu al magazinului, citit din payload-ul LST-D4) pe cele doua categorii de
+    nivel 1, amandoua masurate live la PROD-1: 200, 80 de carduri, 80/80 cu pret
+    si referinta.
+    """
+    d = listing_descriptor("prm.com")
+    _verifica_descriptor("prm.com", d)
+
+    assert "url" not in d, "forma cu `entries`, nu cea cu `url`"
+    intrari = listing_scanner._intrari(d)
+    assert [i["url"] for i in intrari] == [
+        "https://prm.com/ro/k/femei?reducere=1",
+        "https://prm.com/ro/k/barbati?reducere=1",
+    ]
+    # Campania expirata nu mai apare NICAIERI in descriptor — nici ca url, nici
+    # ascunsa intr-un template de paginare.
+    assert "final-sale" not in json.dumps(d)
+
+    # Filtrul e ce face intrarea permanenta; fara el, cele doua ar fi simple
+    # categorii si feed-ul s-ar umple de produse nereduse.
+    for intrare in intrari:
+        assert "reducere=1" in intrare["url"]
+        assert "reducere=1" in intrare["page_url_template"]
+
+    # Plafonul NU s-a atins la PROD-1: cu doua intrari inseamna 2 x 25 de pagini.
+    assert d["max_pages"] == 25
+
+
+def test_run_listing_scan_logheaza_start_si_final(monkeypatch, caplog):
+    """Scanul isi consemneaza inceputul, sfarsitul si durata — inclusiv cand cade.
+
+    Pana la PROD-1 durata unui scan se putea afla doar dedusa din `last_scan_at`,
+    adica dintr-un efect secundar. `finally` nu e decor: exact scanurile care
+    esueaza sunt cele despre care vrem sa stim cat au tinut.
+    """
+    import logging
+
+    monkeypatch.setattr(listing_scanner, "listing_domains",
+                        lambda: {"otter.ro", "caseking.de"})
+    monkeypatch.setattr(listing_scanner, "_scrie_stare",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(listing_scanner, "_scaneaza_domeniu",
+                        lambda *a, **k: {"produse": 3, "deals_active": 2,
+                                         "alerte": 1, "pagini": 4})
+
+    db = SessionLocal()
+    try:
+        if db.query(RadarSettings).first() is None:
+            _seteaza(db)
+        with caplog.at_level(logging.INFO,
+                             logger="app.services.listing_scanner"):
+            rezumat = listing_scanner.run_listing_scan(db)
+    finally:
+        db.close()
+
+    mesaje = [r.getMessage() for r in caplog.records]
+    assert any("start: 2 domenii" in m for m in mesaje), mesaje
+    final = [m for m in mesaje if "[ListingScan] final:" in m]
+    assert len(final) == 1, mesaje
+    assert "2 ok" in final[0] and "0 erori" in final[0]
+    # Durata e in rezumat SI in linia de final, in `mm:ss`.
+    assert "durata_s" in rezumat and rezumat["durata_s"] >= 0
+    assert re.search(r"\d{2}:\d{2}$", final[0]), final[0]
+
+    # Ramura cu EXCEPTIE. Aici conteaza de unde vine: garda per-domeniu inghite
+    # orice ridica `_scaneaza_domeniu` si o numara ca `erori`, deci un magazin
+    # mort NU dovedeste nimic despre `finally` — scanul iese normal. Trebuie o
+    # exceptie care SCAPA din bucla, si cea realista e scrierea starii (DB cazut
+    # la mijlocul scanului): fara `finally`, exact scanurile astea ar ramane
+    # singurele fara nicio urma de durata.
+    caplog.clear()
+
+    def _db_cazut(*a, **k):
+        raise RuntimeError("DB cazut")
+
+    monkeypatch.setattr(listing_scanner, "_scrie_stare", _db_cazut)
+    db = SessionLocal()
+    try:
+        with caplog.at_level(logging.INFO,
+                             logger="app.services.listing_scanner"):
+            with pytest.raises(RuntimeError, match="DB cazut"):
+                listing_scanner.run_listing_scan(db)
+    finally:
+        db.close()
+
+    final = [r.getMessage() for r in caplog.records
+             if "[ListingScan] final:" in r.getMessage()]
+    assert len(final) == 1, final
+    assert "0 ok" in final[0] and "0 erori" in final[0]
+    assert re.search(r"\d{2}:\d{2}$", final[0]), final[0]
+    # Si lacatul s-a eliberat: `finally`-ul din afara ramane intact.
+    assert not listing_scanner.is_listing_scan_running()

@@ -1170,6 +1170,14 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
             "alerte": alerte, "pagini": pagini}
 
 
+def _mmss(secunde: float) -> str:
+    """`mm:ss`, cu minutele NEROSTOGOLITE peste 60 — un scan de 71 de minute se
+    scrie `71:04`, nu `01:11:04`. Scanurile de aici se compara intre ele in
+    minute, si o forma cu ore ar cere impartit in minte la fiecare citire."""
+    intreg = int(secunde)
+    return f"{intreg // 60:02d}:{intreg % 60:02d}"
+
+
 def run_listing_scan(db) -> dict:
     """Job entry point (APScheduler, every 24h). Returns a summary for logging."""
     # MON-4 — defensive reset: jobs run on pool threads, and a user_id left over
@@ -1192,25 +1200,53 @@ def run_listing_scan(db) -> dict:
         prag = _prag(settings)
 
         rezumat = {"magazine": 0, "produse": 0, "alerte": 0, "erori": 0}
-        for domain in domenii:
-            try:
-                rezultat = _scaneaza_domeniu(db, domain, settings, prag)
-            except Exception as exc:                # noqa: BLE001
-                # A dead shop (changed markup, block, network) does NOT stop the
-                # rest: its state shows up in the health panel, the others carry on.
-                db.rollback()
-                _scrie_stare(db, domain, "error", eroare=f"{type(exc).__name__}: {exc}"[:500])
-                rezumat["erori"] += 1
-                print(f"[ListingScan] {domain}: eroare — {type(exc).__name__}: {exc}")
-                continue
-            _scrie_stare(db, domain, "ok", produse=rezultat["produse"],
-                         deals_active=rezultat["deals_active"])
-            rezumat["magazine"] += 1
-            rezumat["produse"] += rezultat["produse"]
-            rezumat["alerte"] += rezultat["alerte"]
-            print(f"[ListingScan] {domain}: {rezultat['pagini']} pagini, "
-                  f"{rezultat['produse']} produse, {rezultat['deals_active']} deal-uri "
-                  f"active, {rezultat['alerte']} alerte")
+
+        # PROD-1 — pana aici scanul nu-si consemna nici inceputul, nici sfarsitul,
+        # si asta se vedea in analiza primului scan cu 55 de domenii: durata (51 si
+        # 59 de minute pe cele doua rulari din 10 septembrie) a trebuit DEDUSA din
+        # `last_scan_at`-urile din `shop_scan_state`, adica dintr-un efect
+        # secundar. Cu 55 de domenii, „cat a durat tot" si „cat a durat fiecare"
+        # sunt chiar cifrele din care se aleg plafoanele — vezi bergfreunde si
+        # otter, care singure au mancat 28 din cele 51 de minute.
+        #
+        # `logger`, nu `print`, din acelasi motiv ca la STATE-1: un `print` nu
+        # poate fi verificat de un test.
+        t_scan = time.monotonic()
+        logger.info("[ListingScan] start: %d domenii, ora %s",
+                    len(domenii), acum_local().strftime("%H:%M:%S"))
+        try:
+            for domain in domenii:
+                t_domeniu = time.monotonic()
+                try:
+                    rezultat = _scaneaza_domeniu(db, domain, settings, prag)
+                except Exception as exc:                # noqa: BLE001
+                    # A dead shop (changed markup, block, network) does NOT stop the
+                    # rest: its state shows up in the health panel, the others carry on.
+                    db.rollback()
+                    _scrie_stare(db, domain, "error", eroare=f"{type(exc).__name__}: {exc}"[:500])
+                    rezumat["erori"] += 1
+                    # Durata si pe ramura de eroare, nu doar pe cea reusita: un 404
+                    # pe pagina 1 pica in doua secunde, un blocaj de retea in
+                    # zeci — acelasi mesaj, alt diagnostic.
+                    print(f"[ListingScan] {domain}: eroare dupa {_mmss(time.monotonic() - t_domeniu)}"
+                          f" — {type(exc).__name__}: {exc}")
+                    continue
+                _scrie_stare(db, domain, "ok", produse=rezultat["produse"],
+                             deals_active=rezultat["deals_active"])
+                rezumat["magazine"] += 1
+                rezumat["produse"] += rezultat["produse"]
+                rezumat["alerte"] += rezultat["alerte"]
+                print(f"[ListingScan] {domain}: {rezultat['pagini']} pagini, "
+                      f"{rezultat['produse']} produse, {rezultat['deals_active']} deal-uri "
+                      f"active, {rezultat['alerte']} alerte, {_mmss(time.monotonic() - t_domeniu)}")
+        finally:
+            # In `finally` DELIBERAT: daca ceva cade in afara buclei (sau bucla e
+            # intrerupta), linia de final trebuie sa se scrie oricum — altfel
+            # exact scanurile care esueaza raman cele fara durata consemnata.
+            rezumat["durata_s"] = round(time.monotonic() - t_scan, 1)
+            logger.info("[ListingScan] final: %d domenii, %d ok, %d erori, %s",
+                        len(domenii), rezumat["magazine"], rezumat["erori"],
+                        _mmss(rezumat["durata_s"]))
         return rezumat
     finally:
         _LISTING_LOCK.release()
