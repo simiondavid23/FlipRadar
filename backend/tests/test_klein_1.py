@@ -12,6 +12,15 @@ Ce lipsea cu adevarat si se repara aici, masurat pe fixture:
     descriere ("...bis Mai 2031") in locul primei inmatriculari.
 
 Totul offline: fixture-ul `kleinanzeigen_auto_search.html` + HTML sintetic.
+
+TZ-4 — testele care trec prin CAUTARE isi injecteaza ancora de timp
+(`monkeypatch.setattr(ka, "acum_piata", ...)`), fiindca pe calea aia `now` ramane None si
+`_parse_card_date` isi ia singur „acum"-ul. Pana acum ziua se verifica fata de
+`datetime.now()`, adica ziua MASINII: intre 00:00 si 01:00 ora Romaniei, la Berlin e inca
+ziua precedenta, deci parserul intorcea corect „ieri" iar testul cerea gresit „azi" (esec
+fals reprodus de doua ori pe 11.09, la 00:18 si 00:25). Parserul e corect si nu s-a atins;
+ce lipsea era acoperirea. Garzile TZ-1/TZ-3 pinuiau deja proprietatea, dar prin `now`
+INJECTAT direct in parser — nu pe calea unde ancora vine din `acum_piata()`.
 """
 import asyncio
 import os
@@ -22,7 +31,10 @@ from app.scrapers.auto.listings import kleinanzeigen_auto as ka
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures",
                     "kleinanzeigen_auto_search.html")
 
-# `now` fix pentru testele pure — o zi si o ora fara ambiguitate.
+# Ancora de timp a fisierului — o zi si o ora fara ambiguitate: `now` explicit pentru
+# testele pure, iar pe calea de cautare aceeasi valoare intra prin `acum_piata`.
+# Ora e a PIETEI (`FUS_ANUNTURI`), ca tipul intors de `acum_piata` in productie:
+# datetime NAIV. 15:00 la Bucuresti = 14:00 la Berlin, deci ziua e aceeasi in ambele.
 _ACUM = datetime(2026, 9, 6, 15, 0, 0)
 
 
@@ -82,9 +94,11 @@ def test_t1_toate_cardurile_cu_identitatea_lor(monkeypatch):
 # ── T2 — primul card obisnuit: locatia si data nu se amesteca ───────────────────
 
 def test_t2_card_obisnuit_locatie_si_data_separate(monkeypatch):
-    inainte = datetime.now()
+    # TZ-4 — ancora vine din ceasul INJECTAT, nu din al masinii: pe calea de cautare
+    # `_data_din_card` se cheama fara `now`, deci parserul citeste `acum_piata()`.
+    monkeypatch.setattr(ka, "acum_piata", lambda: _ACUM)
+
     out = _cauta(monkeypatch)
-    dupa = datetime.now()
     r = next(x for x in out if x["external_id"] == "3505136877")
 
     # Locatia si data stau in acelasi container parinte si se lipesc la get_text()
@@ -93,9 +107,9 @@ def test_t2_card_obisnuit_locatie_si_data_separate(monkeypatch):
     assert "Bergkamen" in r["locatie"]
     assert "Heute" not in r["locatie"]
 
-    assert r["listed_at"] is not None
-    assert (r["listed_at"].hour, r["listed_at"].minute) == (14, 25)
-    assert r["listed_at"].date() in (inainte.date(), dupa.date())   # "Heute" = azi
+    # „Heute" fata de 06.09, 15:00 ora anunturilor (= 14:00 la Berlin) -> 06.09, 13:25
+    # la Berlin, adica 14:25 in feed. Valoare EXACTA, nu doar ora si minutul.
+    assert r["listed_at"] == datetime(2026, 9, 6, 14, 25)
     assert r["listed_at"].tzinfo is None                            # conventia Auto
     assert r["refreshed_at"] is None   # cardul n-are informatie de repromovare
 
@@ -103,6 +117,24 @@ def test_t2_card_obisnuit_locatie_si_data_separate(monkeypatch):
 def test_t2b_data_cardului_cu_now_injectat():
     """Aceeasi valoare, dar cu ceasul fixat — fara dependenta de ziua rularii."""
     assert ka._data_din_card(_card("3505136877"), now=_ACUM) == datetime(2026, 9, 6, 14, 25)
+
+
+def test_t2b_heute_in_fereastra_00_01_e_ziua_berlinului(monkeypatch):
+    """00:30 la Bucuresti = 23:30 la Berlin, ZIUA PRECEDENTA: „Heute" e 06.09, nu 07.09.
+
+    Cazul care a produs esecul FALS la PROD-1 (reprodus la 00:18 si 00:25 pe 11.09):
+    testul de mai sus compara ziua cu `datetime.now().date()`, adica ziua MASINII, iar in
+    fereastra 00:00-01:00 cele doua zile difera. Parserul il trata DEJA corect — `acum` se
+    muta in `Europe/Berlin` inainte de a decide ziua (TZ-1/TZ-3) — doar ca testul nu-l
+    acoperea: garzile TZ-1/TZ-3 injecteaza `now` direct in `_parse_card_date`, pe cand aici
+    ancora e cea reala a caii de cautare, `acum_piata()`.
+    """
+    monkeypatch.setattr(ka, "acum_piata", lambda: datetime(2026, 9, 7, 0, 30))
+
+    out = _cauta(monkeypatch)
+    r = next(x for x in out if x["external_id"] == "3505136877")
+
+    assert r["listed_at"] == datetime(2026, 9, 6, 14, 25)   # ziua BERLINULUI, nu a masinii
 
 
 # ── T3 — cardul TOP promovat ─────────────────────────────────────────────────────

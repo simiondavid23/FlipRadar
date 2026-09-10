@@ -5970,3 +5970,5 @@ deal-uri active pe bergfreunde și **1.918** pe otter. R1 e gratis pe calea asta
 tăiat califică instant — iar un outlet permanent are mii de astfel de carduri tot timpul. Plafonul de
 pagini reduce colateral și numărul ăsta, dar din motivul greșit: taie coada listei, nu produsele
 care n-ar fi trebuit să califice. Pragul R1 **per domeniu** e rundă separată.
+
+> **Notă de igienă (TZ-4).** Cele două eșecuri ale `test_klein_1` din noaptea rundei erau FALSE: testul compara ziua lui `listed_at` cu `datetime.now().date()`, adică ziua MAȘINII, iar între 00:00 și 01:00 ora României la Berlin e încă ziua precedentă. Fereastra 00:00–01:00 e închisă de TZ-4 — ancora de timp se injectează prin `acum_piata`; parserul era deja corect și nu s-a atins.
