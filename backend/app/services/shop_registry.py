@@ -552,7 +552,56 @@ SHOP_REGISTRY: dict[str, dict] = {
         "delivery": "ro_storefront",
         "method": "jsonld",
         "status": "validated",
-        "notes": "RETAIL-5c; DEAL-D2 — in afara axei D: prima cerere de listare cu profilul implicit a primit challenge Cloudflare (403, `cf-mitigated: challenge`, `<title>Just a moment...`) chiar pe radacina domeniului. Se reia doar daca se schimba amprenta.",
+        # DEAL-D10a — amprenta, si de ce e ea cheia intregului domeniu.
+        #
+        # Nota de mai jos se incheia cu „se reia doar daca se schimba amprenta".
+        # LST-D9 a schimbat-o si domeniul s-a deschis din a doua incercare. Efect
+        # COLATERAL deliberat: `_impersonate_for` e per DOMENIU, deci profilul se
+        # aplica si pe axa L (PDP-urile `jsonld`). Verificat live la D10a inainte
+        # de a fi scris aici — vezi nota.
+        "impersonate": "firefox135",
+        "notes": "RETAIL-5c; DEAL-D2 — in afara axei D: prima cerere de listare cu profilul implicit a primit challenge Cloudflare (403, `cf-mitigated: challenge`, `<title>Just a moment...`) chiar pe radacina domeniului. Se reia doar daca se schimba amprenta. "
+                 "BRW-0d — zidul e TERMINAL si in browser (Turnstile), deci calea "
+                 "de browser nu era o alternativa. LST-D9/DEAL-D10a — deschis pe "
+                 "`firefox135`: pe implicit poarta da `None` si cererea directa 403 cu "
+                 "`cf_chl_opt` x7 si ZERO ancore, pe a doua treapta de Chrome tot "
+                 "`None`, iar Firefox a dat 200 cu 324.749 octeti si 1.024 de "
+                 "ancore. Home-ul deblocat isi "
+                 "declara singur cele doua listari. Profilul e acelasi cu al lui "
+                 "43einhalb/flanco/notino, deci nu e o treapta noua.",
+        # ── DEAL-D10a — din sonda LST-D9 §4.3 ─────────────────────────────────
+        "listing": {
+            # Ambele intrari sunt ANCORE ale home-ului deblocat, nu ghicite.
+            "entries": [
+                {"url": "https://www.vexio.ro/reduceri-finale/",
+                 "page_url_template": "https://www.vexio.ro/reduceri-finale/pagina{n}/"},
+                {"url": "https://www.vexio.ro/promotii/",
+                 "page_url_template": "https://www.vexio.ro/promotii/pagina{n}/"},
+            ],
+            # Paginarea e in CALE, nu in query, si nu e o presupunere: p1 poarta
+            # `<link rel="next" href=".../pagina2/">` si un bloc de paginare cu
+            # `title="Pagina 2 din 147"` (respectiv 122 pe `/promotii/`). Plafonul
+            # e insa 10, nu 147: 10 x 23 = 230 de produse per intrare si scan, in
+            # linie cu conrad (15). Adancimea reala ramane consemnata aici ca sa
+            # se vada ca plafonul e o ALEGERE de cost, nu o margine masurata.
+            "max_pages": 10,
+            "currency": "RON",
+            "card": "article.product-box",
+            # `a[data-ecproduct]` e ancora de PRODUS. Cardul mai are una,
+            # `a.preview` („Vezi detalii"), catre acelasi URL, si un `h2.name > a`.
+            "link": "a[data-ecproduct]",
+            # `h2.name` poarta si MARCA („Logitech Boxe Z313, 25W RMS"), pe cand
+            # atributul `title` al ancorei da doar modelul („Boxe Z313, 25W RMS").
+            "title": "h2.name",
+            # `div.price` are AMBELE preturi in text („263,99 lei 239,99 lei"),
+            # deci selectorul trebuie scopat pe latura platita.
+            "price_text": "div.price .discounted strong",
+            "compare_text": "del.small",
+            "price_parse": "eu_comma",
+            # Fara eticheta legala pe card: nici PRP, nici minim de 30 de zile —
+            # doar un pret taiat si un badge de procent. 23/23 si 20/20 il au.
+            "reference_kind": "nemarcat",
+        },
     },
     "mediagalaxy.ro": {
         "label": "Media Galaxy",
@@ -2841,7 +2890,56 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "ULTIMA pagina (activa 10, canonical si h1 neschimbate), nu la "
                  "prima ca action — deci `max_pages` = 10 se citeste direct din "
                  "paginator. Unele carduri poarta un INTERVAL de pret "
-                 "(„999,00 - 1.199,00 €”), care nu e un pret de citit.",
+                 "(„999,00 - 1.199,00 €”), care nu e un pret de citit. "
+                 "LST-D9/DEAL-D10a — verdictul NEPOTRIVIT de mai sus era despre "
+                 "SECOND-HAND, si ramane corect acolo. Produsele NOI reduse traiesc "
+                 "in alta parte: `/dealzone.html`, ancora „%Dealzone\" a home-ului, "
+                 "necurata vreodata pana la LST-D9. Magazinul NU-si arata reducerea "
+                 "ca pret taiat pe NICIUNA din cele patru pagini masurate ale lui "
+                 "(second-hand, hama-sale, dealzone, offers): zero `<del>`, zero "
+                 "`<s>`, zero `line-through`, zero `UVP`, zero `statt`, zero `-N%`. "
+                 "O arata ca ECONOMIE, si acolo e pe 48/48. `/offers.html` (36 de "
+                 "carduri, alt sablon) are 0/36 economie, deci NU intra: ar fi o "
+                 "intrare fara referinta, pe alt selector de card decat dealzone.",
+        # ── DEAL-D10a — din sonda LST-D9 §3.1 ─────────────────────────────────
+        "listing": {
+            "url": "https://www.foto-erhardt.com/dealzone.html",
+            # Paginarea e RELATIVA in pagina (`href="?page=2"`), iar sonda a
+            # respins-o gresit: `_absolut` rezolva orice href fata de RADACINA
+            # (regula corecta pentru linkurile de CARD, gresita pentru paginare) si
+            # ajungea la `foto-erhardt.com/?page=2`, fara cale. Verificat direct:
+            # `dealzone.html?page=2` da 200 cu 48 de carduri si intersectie 1.
+            "page_url_template": "https://www.foto-erhardt.com/dealzone.html?page={n}",
+            # Pagina declara 6 pagini; plafonul e 8 ca sa incapa o campanie ceva
+            # mai mare fara sa se re-scrie registrul. Oprirea reala o da grila
+            # goala sau clamp-ul.
+            "max_pages": 8,
+            "currency": "EUR",
+            # Cardul E chiar ancora: 48 de `a.products__product`, copii DIRECTI ai
+            # containerului, cu ZERO ancore interioare. De aici `link: "@self"`.
+            "card": "div.products a.products__product",
+            "link": "@self",
+            "title": ".products__name",
+            "image": "img",
+            "price_text": "span.products__price--standard",
+            # DEAL-D10a — referinta e o RECONSTRUCTIE: pret + economie.
+            # „699,00 €" + „50,00 € saved" = 749,00. `eu_comma` curata singur si
+            # cuvantul „saved", si simbolul, si spatiul neintrerupt.
+            "compare_saving_text": "small.products__price--saved",
+            "price_parse": "eu_comma",
+            # Ramane `nemarcat` DELIBERAT: 749,00 nu e un pret pe care magazinul
+            # l-a declarat vreodata, ci unul calculat de noi din doua pe care le-a
+            # declarat. Corect aritmetic, dar nu o referinta legala — deci acelasi
+            # grad de incredere ca un pret taiat fara eticheta.
+            "reference_kind": "nemarcat",
+        },
+        # Pretul e BRUT („VAT incl." pe card).
+        #
+        # Dealzone e o campanie CU TERMEN: fiecare card poarta `data-ending`
+        # (epoca) si un `products__countdown`. Consecinta operationala: un scan
+        # care intoarce ZERO carduri nu inseamna neaparat descriptor stricat, ci
+        # poate insemna „campania s-a incheiat" — se re-masoara inainte de a se
+        # umbla la selectori.
     },
     "f64.ro": {
         "label": "F64",
@@ -4559,7 +4657,84 @@ SHOP_REGISTRY: dict[str, dict] = {
                  "`/de/de/…`, zero linkuri de produs, niciun h1, zero colectii "
                  "de produse in starea serializata. `/magazin/` a fost exclus "
                  "explicit din candidate (e REVISTA, nu catalog, G4-V4b) si nu "
-                 "s-a cerut.",
+                 "s-a cerut. "
+                 "LST-D9/DEAL-D10a — verdictul DEAL-D5 „JS_ONLY / pagina goala\" era "
+                 "corect PENTRU PAGINA AIA si gresit pentru domeniu: "
+                 "`landingpage/-2568` se numeste chiar „Sale\" si e un HUB de zece "
+                 "categorii, nu un raft. Fiecare categorie apare in el de DOUA ori, "
+                 "iar a doua forma poarta filtrul de reduceri, verbatim: "
+                 "`?VIEWALL=1&specialprice=1`. Home-ul n-avea de unde sa-l dea — "
+                 "nav-ul lui de categorii e client-side (117 ancore, ZERO cai "
+                 "`/shop/kategorie`). A doua corectie de acelasi fel: pretul taiat "
+                 "EXISTA, dar clasa lui e `p.highprice` (32/32 pe doua categorii), "
+                 "nu `line-through` (3/16) — cautarea markerului gresit era gata sa "
+                 "declare domeniul fara referinta.",
+        # ── DEAL-D10a — din sonda LST-D9 §3.3 ─────────────────────────────────
+        "listing": {
+            # Cele ZECE categorii, verbatim din hub-ul `landingpage/-2568`
+            # (`dumps_lstd5/reichelt.de_p1.html`). `specialprice=1` NU e ghicit:
+            # e chiar filtrul pe care pagina il pune pe a doua forma a fiecarei
+            # categorii. `/magazin/` ramane exclus (e revista, nu catalog).
+            "entries": [
+                # Bauelemente
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/bauelemente-2875?VIEWALL=1&specialprice=1"},
+                # Raspberry Pi / Arduino
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/entwicklerboards-8241?VIEWALL=1&specialprice=1"},
+                # Stromversorgung
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/stromversorgung-1012?VIEWALL=1&specialprice=1"},
+                # Messtechnik
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/messtechnik-5868?VIEWALL=1&specialprice=1"},
+                # Werkstatt und Loettechnik
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/messtechnik_und_werkstattbedarf-536?VIEWALL=1&specialprice=1"},
+                # Haustechnik / Sicherheit
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/haus-_und_sicherheitstechnik-2712?VIEWALL=1&specialprice=1"},
+                # Netzwerktechnik
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/netzwerktechnik-5820?VIEWALL=1&specialprice=1"},
+                # PC-Technik
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/pc-technik-639?VIEWALL=1&specialprice=1"},
+                # Sat & TV / Audio / Video
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/sat-tv_audio_video-2876?VIEWALL=1&specialprice=1"},
+                # Kommunikation & Buero
+                {"url": "https://www.reichelt.de/de/de/shop/kategorie/buero_kommunikation-845?VIEWALL=1&specialprice=1"},
+            ],
+            # O singura pagina per categorie: `VIEWALL=1` NU extinde peste 16, si
+            # asta s-a masurat pe amandoua categoriile sondate. 16 x 10 = ~160 de
+            # produse pe scan.
+            "max_pages": 1,
+            "currency": "EUR",
+            "card": "#productResult div.al_gallery_article",
+            # PRIMA ancora a cardului e logo-ul PRODUCATORULUI
+            # (`/shop/hersteller/FREI`) — sonda a ars doua cereri pe ea. Ancora de
+            # produs se scopeaza explicit.
+            "link": "a[href*='/shop/produkt/']",
+            # `[itemprop=name]` e un `<meta>`, deci n-are TEXT: titlul iesea gol pe
+            # 16/16. Numele complet sta in atributul `title` al ancorei de produs —
+            # exact modul scris la DEAL-D4 pentru officeshoes, al doilea consumator.
+            "title": "[itemprop='name']",
+            "title_from": "link_title",
+            # A DOUA fata a capcanei logo-ului: prima `<img>` a cardului e tot
+            # logo-ul producatorului (`web/logo/FREI.png?type=Manufacturer`).
+            # Imaginea produsului se scopeaza sub ACEEASI ancora ca linkul.
+            "image": "a[href*='/shop/produkt/'] img",
+            # Pretul se citeste din ATRIBUT, si nu din comoditate: in text
+            # zecimalele stau intr-un `<sup>` („0, 08 €"), adica treapta `eu_sup`.
+            # Calea de atribut ocoleste capcana cu totul.
+            "price_attr": ["meta[itemprop='price']", "content"],
+            "price_parse": "attr_float",
+            # Referinta e in TEXT, deci isi declara parserul ei (DEAL-D2).
+            # Badge-ul „SPARE" NU se citeste: are doua forme pe aceleasi carduri —
+            # 25 procentuale („SPARE 89%") si 7 in suma („SPARE 150,00 €").
+            "compare_text": "p.highprice",
+            "compare_parse": "eu_comma",
+            # Fara eticheta legala: nici UVP, nici Omnibus, doar un pret mai mare.
+            "reference_kind": "nemarcat",
+        },
+        # Pretul e BRUT — `inkl. 19% gesetzl. MwSt` pe card, pe `CCTYPE=private`,
+        # care e si implicitul portii. NU e capcana conrad (acolo pretul era NET).
+        # Comutatorul `CCTYPE=private|business|nonprofit` exista si e vizibil in
+        # pagina; daca implicitul s-ar schimba vreodata pe `business`, preturile
+        # ar deveni nete si comparatia cu magazinele romanesti ar subestima
+        # sistematic. De re-masurat daca apare un cookie de sesiune pe poarta.
     },
 
     # ── SNK-2 — lotul de sneakers (sonda SNK-1) ───────────────────────────────

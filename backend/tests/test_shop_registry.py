@@ -327,6 +327,12 @@ def test_harta_de_impersonate_e_pinuita():
         "43einhalb.com": "firefox135",   # ACCESS-2
         "flanco.ro": "firefox135",       # CONTENT-2
         "notino.ro": "firefox135",       # LOT4
+        # DEAL-D10a — LST-D9 a masurat challenge Cloudflare pe profilul
+        # implicit (poarta `None` + 403 cu `cf_chl_opt`, ZERO ancore) si 200
+        # cu 1.024 de ancore pe Firefox. Profilul se aplica pe AMBELE axe:
+        # domeniul e `jsonld` pe axa L, iar D10a a verificat live ca PDP-ul
+        # chiar trece asa (239,99 RON, in stoc) inainte de a-l scrie.
+        "vexio.ro": "firefox135",        # DEAL-D10a
         "elefant.ro": "chrome",          # ELF-2 — 403 Cloudflare pe implicit, 200 pe chrome
         "cyberport.at": "chrome",        # G2B-2 — challenge Cloudflare pe implicit, 200 pe chrome
         # IMP-2 — 0/4 blocat pe chrome131 vs 2/4 pe chrome146: INTERMITENT, nu

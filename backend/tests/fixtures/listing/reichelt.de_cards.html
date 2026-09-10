@@ -1,0 +1,243 @@
+<!-- DEAL-D10a - doua carduri decupate VERBATIM din
+     dumps_lstd9/reichelt.de_p1.html (4,0 MB, 16 carduri), pagina
+     /shop/kategorie/bauelemente-2875?VIEWALL=1&specialprice=1
+
+     Cardul 1 - Mini-DIN-Printbuchse:  0,08 EUR de la 0,70 EUR (SPARE 89%)
+     Cardul 2 - Buchsenleisten 2,00mm: 0,08 EUR de la 0,62 EUR (SPARE 88%)
+
+     TREI capcane, toate pastrate verbatim:
+       * PRIMA ancora a cardului e logo-ul PRODUCATORULUI
+         (`/de/de/shop/hersteller/FREI`), nu produsul. Un `link: "a"` generic ar
+         culege pagina de producator - sonda LST-D9 chiar a ars doua cereri asa.
+         De aceea fixture-ul pastreaza ordinea reala a ancorelor.
+       * Zecimalele pretului platit stau intr-un `<sup>` („0, 08 €"), adica
+         treapta `eu_sup`. Descriptorul ocoleste capcana citind
+         `meta[itemprop=price]` prin calea de ATRIBUT.
+       * `[itemprop=name]` e un `<meta>` - n-are TEXT. Titlul vine din atributul
+         `title` al ancorei de produs (`title_from: "link_title"`).
+     Referinta e `p.highprice`, NU `line-through` (care apare pe 3 din 16).
+-->
+<!-- Containerul `#productResult` e PASTRAT: selectorul de card e scopat
+     sub el, tocmai fiindca pagina reala mai are noduri `al_gallery_article`
+     in afara raftului. Fara wrapper, fixture-ul ar da zero carduri. -->
+<div id="productResult">
+<div class="al_gallery_article" data-filtered="0" data-product='{
+    "artid"   :"7284",
+    "quantity":"0",
+    "wg"      :"0"
+  }' data-sortorder="0" itemtype="http://schema.org/Product">
+<meta content="Mini-DIN-Printbuchse, 8-polig" itemprop="name"/>
+<meta content="EB-DIO M08" itemprop="productID"/>
+<meta content="FREI" itemprop="sku"/>
+<div class="al_gallery_article_logos">
+<div class="productSavePercent">
+<p class="fontOne">SPARE</p>
+<p class="fontOneAndHalf">89%</p>
+</div>
+<div class="al_herstlogo">
+<a href="https://www.reichelt.de/de/de/shop/hersteller/FREI" title="zum Hersteller">
+<img alt="Herstellerlogo" height="50" loading="lazy" src="https://cdn-reichelt.de/resize/100%2F-/web/logo/FREI.png?type=Manufacturer&amp;resize=100%252F-&amp;" width="100">
+</img></a>
+</div>
+<div class="al_artlogo">
+<a href="https://www.reichelt.de/de/de/shop/produkt/mini-din-printbuchse_8-polig-7284" title="Mini-DIN-Printbuchse, 8-polig" xmlns="">
+<a href="https://www.reichelt.de/de/de/shop/produkt/mini-din-printbuchse_8-polig-7284">
+<picture>
+<img alt="Mini-DIN-Printbuchse, 8-polig" data-src="https://cdn-reichelt.de/resize/130%2F-/web/artikel_ws/C160%2FEBDIOM06.jpg?type=Product&amp;resize=130%252F-&amp;" height="130" id="myimage-0" itemprop="image" loading="lazy" src="https://cdn-reichelt.de/resize/130%2F-/web/artikel_ws/C160%2FEBDIOM06.jpg?type=Product&amp;resize=130%252F-&amp;" width="130"/>
+</picture>
+</a>
+</a>
+</div>
+<p class="text-center">Produktabbildung: Abb. ähnlich / KI-generiert</p>
+</div>
+<div class="al_gallery_article_artinfo">
+<div class="al_artinfo_headline" itemprop="name">
+<a class="al_artinfo_link" href="https://www.reichelt.de/de/de/shop/produkt/mini-din-printbuchse_8-polig-7284" itemprop="url" title="EB-DIO M08 - Mini-DIN-Printbuchse, 8-polig">Artikel-Nr.:
+                EB-DIO M08<br/>Mini-DIN-Printbuchse, 8-polig</a>
+</div>
+<div class="al_artinfo_props">
+<ul>
+<li>
+<p>Typ</p>
+<p>DIN-Steckverbinder </p>
+</li>
+<li>
+<p>Ausführung</p>
+<p>Einbaubuchse </p>
+</li>
+<li>
+<p>Polzahl</p>
+<p>8 </p>
+</li>
+<li>
+<p>Aufbau</p>
+<p>Printmontage </p>
+</li>
+<li>
+<p>Anschluss</p>
+<p>Printmontage </p>
+</li>
+</ul>
+</div>
+</div>
+<div class="al_gallery_article_artlinks" itemscope="" itemtype="http://schema.org/Offer">
+<div class="al_artlinks_price">
+<div class="productPriceArea" itemprop="offers" itemscope="itemscope" itemtype="http://schema.org/Offer">
+<p class="highprice">0,70 €</p>
+<p class="productPrice productSpecialPrice">0,<sup class="productPriceUp">08</sup> €</p>
+<small class="block">
+<a class="priceTax triangle-right" data-event-listener='[{
+             "event":"click",
+             "func":"articleView.info.getAdditionalData",
+             "data":{"id":"open-modal-shipping","url":"/api/shipping/costs/"}
+            }]' href="#open-modal-shipping">
+                            inkl. 19% gesetzl. MwSt.
+                        zzgl. Versandkosten
+        </a>
+</small>
+<meta content="0.08" itemprop="price"/>
+<meta content="EUR" itemprop="priceCurrency"/>
+</div>
+</div>
+<div class="inbasket inline-block" id="productId-7284">
+<small>
+<a class="availability status_1 triangle-right" data-event-listener='[{
+             "event":"click",
+             "func":"articleView.info.getAdditionalData",
+             "data":{"id":"open-modal-availability","url":"/api/shipping/availability/"}
+            }]' href="#open-modal-availability" title="Info">
+<link href="http://schema.org/InStock" itemprop="availability"/>
+            ab Lager, Lieferzeit: 1 - 2 Werktage
+        </a>
+</small>
+<div class="amount quantity">
+<div class="left">
+<p class="quantityButton quantityDown" data-click-handler="modifyQuantity.decreaseQuantity">-</p>
+</div>
+<input class="anzahlInputArticle productQuantity" data-cartid="0" data-change-handler="modifyQuantity.setQuantity" data-productid="7284" data-sum-elementid="null" max="99999" min="0" name="quantity[7284]" placeholder="1 Stück" title="Menge EB-DIO M08" type="number" value="0"/>
+<div class="left">
+<p class="quantityButton quantityUp" data-click-handler="modifyQuantity.increaseQuantity">+</p>
+</div>
+</div>
+<input class="submitButton left" data-cartid="0" data-click-handler="modifyQuantity.cartButton" data-productid="7284" name="Uebernehmen[7284]" title=" in den Warenkorb" type="submit" value="in den Warenkorb"/>
+</div>
+</div>
+</div>
+<div class="al_gallery_article" data-filtered="0" data-product='{
+    "artid"   :"119984",
+    "quantity":"0",
+    "wg"      :"0"
+  }' data-sortorder="1" itemtype="http://schema.org/Product">
+<meta content="Buchsenleisten 2,00 mm, 1X03, gerade" itemprop="name"/>
+<meta content="MPE 156-1-003" itemprop="productID"/>
+<meta content="BINDER MPE GMBH" itemprop="sku"/>
+<div class="al_gallery_article_logos">
+<div class="productSavePercent">
+<p class="fontOne">SPARE</p>
+<p class="fontOneAndHalf">88%</p>
+</div>
+<div class="al_herstlogo">
+<a href="https://www.reichelt.de/de/de/shop/hersteller/BINDER%20MPE%20GMBH" title="zum Hersteller">
+<img alt="Herstellerlogo" height="50" loading="lazy" src="https://cdn-reichelt.de/resize/100%2F-/web/logo/BINDER_MPE_GMBH.png?type=Manufacturer&amp;resize=100%252F-&amp;" width="100">
+</img></a>
+</div>
+<div class="al_artlogo">
+<a href="https://www.reichelt.de/de/de/shop/produkt/buchsenleisten_2_00_mm_1x03_gerade-119984" title="Buchsenleisten 2,00 mm, 1X03, gerade" xmlns="">
+<a href="https://www.reichelt.de/de/de/shop/produkt/buchsenleisten_2_00_mm_1x03_gerade-119984">
+<picture>
+<img alt="Buchsenleisten 2,00 mm, 1X03, gerade" data-src="https://cdn-reichelt.de/resize/130%2F-/web/artikel_ws/C140%2FMPE_156_1_003.jpg?type=Product&amp;resize=130%252F-&amp;" height="130" id="myimage-0" itemprop="image" loading="lazy" src="https://cdn-reichelt.de/resize/130%2F-/web/artikel_ws/C140%2FMPE_156_1_003.jpg?type=Product&amp;resize=130%252F-&amp;" width="130"/>
+</picture>
+</a>
+</a>
+</div>
+</div>
+<div class="al_gallery_article_artinfo">
+<div class="al_artinfo_headline" itemprop="name">
+<a class="al_artinfo_link" href="https://www.reichelt.de/de/de/shop/produkt/buchsenleisten_2_00_mm_1x03_gerade-119984" itemprop="url" title="MPE 156-1-003 - Buchsenleisten 2,00 mm, 1X03, gerade">Artikel-Nr.:
+                MPE 156-1-003<br/>Buchsenleisten 2,00 mm, 1X03, gerade</a>
+</div>
+<div class="al_artinfo_props">
+<ul>
+<li>
+<p>Typ</p>
+<p>Buchsenleiste </p>
+</li>
+<li>
+<p>Aufbau</p>
+<p>gerade </p>
+</li>
+<li>
+<p>Rastermaß</p>
+<p>2,00 mm</p>
+</li>
+<li>
+<p>Polzahl</p>
+<p>1 x 3 </p>
+</li>
+<li>
+<p>Belastungsgrenze</p>
+<p>1,5 A / 150 V DC </p>
+</li>
+<li>
+<p>Temperatur, max.</p>
+<p>-40 ... +105 °C</p>
+</li>
+<li>
+<p>Höhe</p>
+<p>4,3 mm</p>
+</li>
+<li>
+<p>Approbation</p>
+<p>UL 94V-0 </p>
+</li>
+<li>
+<p>Kontaktmaterial</p>
+<p>Kupferlegierung / Thermoplast </p>
+</li>
+</ul>
+</div>
+</div>
+<div class="al_gallery_article_artlinks" itemscope="" itemtype="http://schema.org/Offer">
+<div class="al_artlinks_price">
+<div class="productPriceArea" itemprop="offers" itemscope="itemscope" itemtype="http://schema.org/Offer">
+<p class="highprice">0,62 €</p>
+<p class="productPrice productSpecialPrice">0,<sup class="productPriceUp">08</sup> €</p>
+<small class="block">
+<a class="priceTax triangle-right" data-event-listener='[{
+             "event":"click",
+             "func":"articleView.info.getAdditionalData",
+             "data":{"id":"open-modal-shipping","url":"/api/shipping/costs/"}
+            }]' href="#open-modal-shipping">
+                            inkl. 19% gesetzl. MwSt.
+                        zzgl. Versandkosten
+        </a>
+</small>
+<meta content="0.08" itemprop="price"/>
+<meta content="EUR" itemprop="priceCurrency"/>
+</div>
+</div>
+<div class="inbasket inline-block" id="productId-119984">
+<small>
+<a class="availability status_4 triangle-right" data-event-listener='[{
+             "event":"click",
+             "func":"articleView.info.getAdditionalData",
+             "data":{"id":"open-modal-availability","url":"/api/shipping/availability/"}
+            }]' href="#open-modal-availability" title="Info">
+<link href="http://schema.org/InStock" itemprop="availability"/>
+            Restposten, Lieferzeit: 1 - 2 Werktage
+        </a>
+</small>
+<div class="amount quantity">
+<div class="left">
+<p class="quantityButton quantityDown" data-click-handler="modifyQuantity.decreaseQuantity">-</p>
+</div>
+<input class="anzahlInputArticle productQuantity" data-cartid="0" data-change-handler="modifyQuantity.setQuantity" data-productid="119984" data-sum-elementid="null" max="99999" min="0" name="quantity[119984]" placeholder="1 Stück" title="Menge MPE 156-1-003" type="number" value="0"/>
+<div class="left">
+<p class="quantityButton quantityUp" data-click-handler="modifyQuantity.increaseQuantity">+</p>
+</div>
+</div>
+<input class="submitButton left" data-cartid="0" data-click-handler="modifyQuantity.cartButton" data-productid="119984" name="Uebernehmen[119984]" title=" in den Warenkorb" type="submit" value="in den Warenkorb"/>
+</div>
+</div>
+</div>
+</div>

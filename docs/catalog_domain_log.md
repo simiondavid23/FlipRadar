@@ -5362,3 +5362,149 @@ Cifrele de conținut se potrivesc **exact** cu BRW-0b (24 / 20 / 24), iar prețu
 măsurate atunci (127,99 cu Omnibus 159,99; 188,99 cu Omnibus 151,19 — al doilea sub prețul de azi,
 adică chiar sensul legal al referinței). Durata e însă de 2,6× față de cele 6,34 s de la BRW-0b:
 lansare la rece plus varianță de rețea. Nu schimbă recomandarea `max_pages ≤ 5` — o întărește.
+
+---
+
+## DEAL-D10a — vexio, reichelt, foto-erhardt (sonda LST-D9)
+
+Trei domenii intră pe axa D, și niciunul n-a cerut o cale de **fetch** nouă. Ce a lipsit a fost, de
+fiecare dată, altceva: la vexio o **amprentă**, la reichelt o **intrare**, la foto-erhardt două
+bucăți mici de **mecanism**. Axa D urcă de la **58** la **61** de domenii.
+
+### Cele șapte verdicte ale sondei LST-D9
+
+| domeniu | verdict | intră la | ce i-a lipsit |
+|---|---|---|---|
+| **vexio.ro** | CSS + amprentă | **D10a** | `impersonate: firefox135` |
+| **reichelt.de** | CSS pur | **D10a** | intrarea (categoriile din hub-ul de sale) |
+| **foto-erhardt.com** | CSS + două mecanisme | **D10a** | `link: "@self"` + referință din economie |
+| bstn.com | STATE + amprentă | D10b | extractor de stare (`__NEXT_DATA__.serverState`) |
+| computeruniverse.net | STATE + `entries` | D10b | extractor de stare (`algoliaServerState`) |
+| jb-spielwaren.de | STATE | D10b | extractor de stare (`<template #item-data>`) |
+| sizeer.ro | **nu intră** | — | API pe gazdă nevalidată (`adafir.eu`) → allow-list |
+
+### Cele două amprente
+
+Zidurile HTTP ale ambelor domenii fuseseră măsurate **doar pe `chrome`**. Schimbarea amprentei le-a
+deschis pe amândouă, cu cheia `impersonate` care **exista deja** în registru:
+
+| domeniu | `chrome` | `chrome131` | `firefox135` |
+|---|---|---|---|
+| **vexio.ro** | poarta `None`; direct 403, `cf_chl_opt` ×7, **0 ancore** | poarta `None` | **200, 324.749 octeți, 1.024 ancore** |
+| bstn.com | 403 (și în **browser**, la JSON-0) | **200, 386.844 octeți, 573 ancore** | necerut (baleiajul se oprește la primul care trece) |
+
+vexio intră aici; bstn la D10b, fiindcă are nevoie și de un extractor de stare.
+
+**`impersonate` e per DOMENIU, deci se aplică și pe axa L** — un efect colateral, nu un detaliu.
+PASUL 4.1 l-a verificat live înainte ca profilul să fie scris în registru: PDP-ul `jsonld` al lui
+vexio răspunde pe `firefox135` cu **239,99 RON, în stoc** — exact prețul pe care îl arată și cardul
+de listare. Dacă ar fi căzut, runda s-ar fi oprit: nu se sacrifică axa L pentru D.
+
+### Cele două mecanisme noi
+
+**`link: "@self"`** — simetricul lui `@parent_a`. Cardul E chiar ancora: cele 48 de
+`a.products__product` ale lui foto-erhardt sunt copii **direcți** ai containerului, cu **zero**
+ancore interioare. Nici `select_one` (care caută doar descendenți) nici `@parent_a` (care urcă la
+container, nu la o ancoră) nu-l pot atinge. Când `@self` e cerut pe un card care nu e ancoră, cardul
+se **sare** — o cădere înapoi pe `select_one` ar face un descriptor greșit să meargă pe jumătate din
+pagini și să tacă pe restul.
+
+**Referința din economie** (`compare_saving_text`) — foto-erhardt e primul magazin al axei care nu-și
+arată deloc reducerea ca preț tăiat. Măsurat pe **patru** pagini ale lui (second-hand, hama-sale,
+dealzone, offers): zero `<del>`, zero `<s>`, zero `line-through`, zero `UVP`, zero `statt`, zero
+`-N%`. O scrie ca economie, și acolo e pe **48/48**:
+
+```html
+<small class="products__ribbon">Save 50,00€ NOW!</small>
+<span  class="products__price--standard">699,00 €</span>
+<small class="products__price--saved"> 50,00 € saved</small>
+```
+
+699,00 + 50,00 = **749,00**. Trei decizii, toate deliberate:
+
+* **`reference_kind` rămâne `nemarcat`**, și nu primește o valoare nouă. 749,00 nu e un preț pe care
+  magazinul l-a declarat vreodată, ci unul calculat de noi din două pe care le-a declarat. E o
+  reconstrucție corectă aritmetic, dar nu o referință legală — deci același grad de încredere ca un
+  preț tăiat fără etichetă, și aceeași tratare în aval.
+* **Exclusivă cu `compare_text`/`compare_attr`.** Nu fiindcă s-ar contrazice, ci fiindcă a doua cale
+  s-ar aprinde **tăcut** doar pe cardurile unde prima n-a găsit nimic — și atunci două semantici (un
+  preț declarat și unul reconstruit) ar sta în aceeași coloană, fără ca vreun câmp să spună care e
+  care. Garda de descriptori respinge combinația.
+* **Fail-safe pe `None`**: economie lipsă, neparsabilă sau `<= 0` → nicio referință. O economie de
+  zero înseamnă „nu e redus acum", nu „referința e egală cu prețul" — a doua citire ar publica un
+  deal de 0%.
+
+### Trei verdicte vechi răsturnate, toate din același motiv
+
+De fiecare dată, markerul măsurat era greșit — a patra confirmare a lecției WL-4:
+
+1. **reichelt `landingpage/-2568` nu e goală.** DEAL-D5 o declarase „JS_ONLY, 2 jetoane de preț, zero
+   ancore". Se numește chiar **„Sale"** și e un **hub de zece categorii**, fiecare listată de două
+   ori — a doua oară cu filtrul `?VIEWALL=1&specialprice=1`, citit **verbatim** din pagină. Home-ul
+   n-avea de unde să-l dea: nav-ul lui de categorii e client-side (117 ancore, zero căi
+   `/shop/kategorie`).
+2. **Prețul tăiat al lui reichelt există** — clasa lui e `p.highprice` (**32/32** pe două categorii),
+   nu `line-through` (3/16). Căutarea markerului greșit era gata să declare domeniul fără referință.
+3. **computeruniverse are grila pe frunze, nu pe hub** — și cele 40 de „produse" ale hub-ului sunt
+   recomandări Dynamic Yield („Outlet Reco 01"), a șasea capcană de carusel a proiectului. (Intră la
+   D10b.)
+
+### Anomalia `_absolut`, și cât de departe ajunge
+
+**Instrumentul, nu magazinul.** `sonda_lstd*._absolut` rezolvă orice href față de **rădăcină**
+(CORECȚIA 7, LST-D4). Regula e corectă pentru linkurile de **card** — producția chiar așa le rezolvă
+(`listing_scanner._link_of`) — dar paginarea nu trece niciodată prin ea: `page_url_template` se scrie
+de mână în registru. Aplicată pe `href="?page=2"` de pe `/dealzone.html`, dă
+`foto-erhardt.com/?page=2`, pierde calea, iar sonda raportează „infinite-scroll".
+
+**PASUL 3 a recitit toate verdictele afectate, offline, cu rezolvarea corectă**
+(`urljoin(url_pagina, href)`), pe **20 de domenii** cu `max_pages: 1` și pe toate dump-urile lor de
+listare din orice rundă:
+
+| rezultat | valoare |
+|---|---|
+| domenii examinate | 20 (44 de intrări) |
+| fără niciun dump de listare pe disc | 1 (`bonami.ro`) |
+| **cu paginare relativă regăsită** | **0** |
+
+Detectorul a fost validat cu un **control pozitiv** înainte de a i se crede zeroul: pe dump-ul lui
+foto-erhardt găsește toate cele 5 `?page=N`, și arată ambele rezolvări (`…/dealzone.html?page=2`
+corect, `foto-erhardt.com/?page=2` cel al sondei).
+
+**Concluzia: raza de acțiune a bug-ului e exact un domeniu — chiar cel pe care runda asta îl repară.**
+Celelalte 19 verdicte „fără paginare" stau în picioare. Niciun descriptor nu s-a schimbat pe baza
+PASULUI 3, și nici n-avea ce.
+
+### Cele trei descriptoare
+
+| domeniu | intrări | produse | monedă | preț | referință |
+|---|---|---|---|---|---|
+| vexio.ro | 2 (`/reduceri-finale/`, `/promotii/`) | 23 + 20 pe pagină | RON | `.discounted strong` | `del.small`, **43/43** |
+| reichelt.de | 10 categorii | 16 fiecare (~160) | EUR | `meta[itemprop=price]` (atribut) | `p.highprice`, **32/32** |
+| foto-erhardt.com | 1 (`/dealzone.html`) | 48 pe pagină | EUR | `.products__price--standard` | economie, **48/48** |
+
+Trei capcane pinuite în fixture-uri, toate măsurate:
+
+* **vexio**: `div.price` poartă **ambele** prețuri în text („263,99 lei 239,99 lei"). Selectorul e
+  scopat pe latura plătită. Controlul negativ a ieșit chiar mai bine decât mă așteptam: pe container,
+  `eu_comma` — strict prin construcție — refuză „263.99239.99" și întoarce `None`, deci cardul se
+  pierde în **tăcere** în loc să intre cu un preț de 100×. Tăcerea e tot un bug, doar unul care se
+  vede la numărul de produse, nu în prețuri.
+* **reichelt**: prima ancoră a cardului e **logo-ul producătorului** (`/shop/hersteller/FREI`) — sonda
+  a ars două cereri pe ea. Linkul **și imaginea** se scopează pe ancora de produs; fără asta,
+  `image_url` ieșea `web/logo/FREI.png?type=Manufacturer`.
+* **foto-erhardt**: cele două carduri au economii **diferite** (50,00 și 299,01) tocmai ca o
+  reconstrucție greșită (scădere, sau economia luată drept referință) să nu poată trece din
+  întâmplare pe unul din ele.
+
+**O corecție la o presupunere comodă a mea:** am scris inițial testul lui reichelt pornind de la ideea
+că `<sup>`-ul rupe prețul și `eu_comma` l-ar citi greșit. Măsurat, textul e `"0, 08 €"` și `eu_comma`
+dă **0.08** — supraviețuiește, fiindcă virgula zecimală e deja acolo. Calea de atribut nu repară deci
+o citire greșită; ea **elimină dependența** de felul în care magazinul împarte zecimalele între noduri
+— exact ce s-a schimbat sub evomag (`529 99`, fără virgulă) și a costat un parser nou.
+
+### Ce rămâne pentru D10b
+
+bstn.com (8.463 de produse, `impersonate: chrome131`), computeruniverse.net (`entries` × 10 frunze) și
+jb-spielwaren.de (200/pagină, referință `rrp`) — toate trei pe extractoare de stare, pe arhitectura
+R4a care există deja.

@@ -329,9 +329,23 @@ def _link_of(card, descriptor, domain: str):
 
     `@parent_a` is noriel's shape, measured in LST-1: the product anchor WRAPS the
     whole card and carries no class, so it can only be reached by walking up.
+
+    DEAL-D10a — `@self` e simetricul lui: cardul E chiar ancora. Forma masurata la
+    LST-D9 pe foto-erhardt: cele 48 de `a.products__product` sunt copii DIRECTI ai
+    containerului `div.products`, cu ZERO ancore interioare. Nici `select_one`
+    (care cauta doar descendenti) nici `@parent_a` (care urca la container, nu la
+    o ancora) nu-l pot atinge — de aceea e nevoie de un al treilea mod, nu de un
+    selector mai destept.
+
+    Ce se intampla cand `@self` e cerut pe un card care NU e ancora: cardul se
+    SARE, ca la orice link lipsa. Alternativa — sa cadem inapoi pe `select_one` —
+    ar face un descriptor gresit sa mearga pe jumatate din pagini si sa taca pe
+    restul, adica exact felul de descriptor care pare ca merge.
     """
     selector = descriptor.get("link")
-    if selector == "@parent_a":
+    if selector == "@self":
+        nod = card if (card.name == "a" and card.get("href")) else None
+    elif selector == "@parent_a":
         nod = card.find_parent("a", href=True)
     else:
         nod = card.select_one(selector) if selector else None
@@ -415,6 +429,54 @@ def _pret_of(card, descriptor, cheie_attr: str, cheie_text: str, domain: str = "
         nod = card.select_one(selector)
         return parser(_text_of(nod)) if nod is not None else None
     return None
+
+
+def _referinta_din_economie(card, descriptor, pret: float, domain: str):
+    """Referinta RECONSTRUITA din economia afisata: `pret + economie`.
+
+    DEAL-D10a, din LST-D9 §3.1. foto-erhardt e primul magazin al axei care nu-si
+    arata deloc reducerea ca pret taiat — masurat pe PATRU pagini ale lui (cele
+    doua de la LST-D5 plus `/dealzone.html` si `/offers.html`): zero `<del>`, zero
+    `<s>`, zero `line-through`, zero `UVP`, zero `statt`, zero `-N%`. Reducerea e
+    scrisa ca ECONOMIE, si e acolo pe 48/48 de carduri:
+
+        <small class="products__ribbon">Save 50,00€ NOW!</small>
+        <span  class="products__price products__price--standard">699,00 €</span>
+        <small class="products__price products__price--saved"> 50,00 € saved</small>
+
+    699,00 + 50,00 = 749,00. Parserul e ACELASI ca al pretului (`price_parse`),
+    fiindca e acelasi magazin care scrie ambele numere: `eu_comma` curata singur
+    si „saved", si „€", si spatiul neintrerupt.
+
+    SEMANTICA, si de ce `reference_kind` NU primeste o valoare noua: 749,00 nu e
+    un pret pe care magazinul l-a DECLARAT vreodata, ci unul pe care il calculam
+    noi din doua numere pe care le-a declarat. E o reconstructie aritmetic
+    corecta, dar nu o referinta legala — nici PRP, nici minim de 30 de zile. Deci
+    ramane `nemarcat`, exact ca un pret taiat fara eticheta: acelasi grad de
+    incredere, aceeasi tratare in aval.
+
+    Fail-safe pe None in loc de ghicit: daca lipseste nodul, daca textul nu se
+    parseaza, sau daca economia e <= 0, nu se intoarce nimic. O economie de zero
+    inseamna „produsul nu e redus acum", nu „referinta e egala cu pretul" — a doua
+    citire ar publica un deal de 0%.
+    """
+    selector = descriptor.get("compare_saving_text")
+    if not selector:
+        return None
+    nod = card.select_one(selector)
+    if nod is None:
+        return None
+    nume = descriptor.get("price_parse") or "eu_comma"
+    parser = _PARSERE_TEXT.get(nume)
+    if parser is None:
+        raise ValueError(
+            f"{domain or '<domeniu necunoscut>'}: `price_parse` necunoscut "
+            f"{nume!r} pe `compare_saving_text` — valorile admise sunt "
+            f"{sorted(_PARSERE_TEXT)}")
+    economie = parser(_text_of(nod))
+    if economie is None or economie <= 0:
+        return None
+    return round(pret + economie, 2)
 
 
 def _in_stoc(card, descriptor) -> bool:
@@ -593,6 +655,8 @@ def extrage_carduri(html: str, descriptor: dict, domain: str) -> list[dict]:
             continue
         compare_at = _pret_of(card, descriptor, "compare_attr", "compare_text",
                               domain)
+        if compare_at is None:
+            compare_at = _referinta_din_economie(card, descriptor, pret, domain)
         if compare_at is not None and compare_at <= 0:
             compare_at = None
         iesire.append({

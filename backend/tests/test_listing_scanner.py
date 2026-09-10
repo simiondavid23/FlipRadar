@@ -830,7 +830,19 @@ def test_listing_domains_exact_cele_din_registru():
                                  # abonamente cu pret pe luna (nu e catalog de
                                  # produse) si oricum HTTP-ul ii ajunge.
                                  "solebox.com", "notebooksbilliger.de",
-                                 "makeup.ro"}
+                                 "makeup.ro",
+                                 # DEAL-D10a — cele trei ale sondei LST-D9. Toate
+                                 # au intrat pe o INTRARE noua, nu pe un mecanism
+                                 # de fetch nou: vexio pe alta amprenta
+                                 # (`firefox135`), reichelt pe categoriile din
+                                 # hub-ul lui de sale (`?specialprice=1`),
+                                 # foto-erhardt pe `/dealzone.html`. Din lotul
+                                 # LST-D9 NU sunt aici: sizeer.ro (API pe gazda
+                                 # nevalidata `adafir.eu` -> allow-list), plus
+                                 # bstn.com, computeruniverse.net si
+                                 # jb-spielwaren.de, care cer extractoare de
+                                 # STARE si intra la D10b.
+                                 "vexio.ro", "reichelt.de", "foto-erhardt.com"}
 
 
 def test_descriptorul_e_copie_nu_referinta():
@@ -914,6 +926,35 @@ def _verifica_descriptor(domeniu, d):
             _verifica_paginare(f"{domeniu}: intrarea {i}", intrare, efectiv)
     else:
         _verifica_paginare(domeniu, d, int(d["max_pages"]))
+
+    # DEAL-D10a — `link` are acum TREI moduri speciale in afara selectorilor CSS,
+    # si toate trei sunt cuvinte rezervate care incep cu `@`. Garda le enumera ca
+    # sa nu treaca un `@self_` sau un `@parent` scris gresit: `_link_of` ar cadea
+    # pe ramura de selector si `select_one("@parent")` ridica SelectorSyntaxError
+    # la primul card, adica dupa ce pagina a fost deja ceruta.
+    link = d.get("link")
+    if isinstance(link, str) and link.startswith("@"):
+        assert link in {"@self", "@parent_a"}, (
+            f"{domeniu}: mod de `link` necunoscut {link!r}")
+
+    # DEAL-D10a — referinta din ECONOMIE e EXCLUSIVA cu cea citita direct.
+    #
+    # Amandoua ajung in acelasi camp, iar `extrage_carduri` incearca intai
+    # `compare_*` si abia apoi economia. Un descriptor cu ambele n-ar fi
+    # contradictoriu, ci mai rau: ar avea o a doua cale care se aprinde TACIT doar
+    # pe cardurile unde prima n-a gasit nimic, deci s-ar amesteca doua semantici
+    # (un pret declarat si unul reconstruit) in aceeasi coloana, fara ca vreun
+    # camp sa spuna care e care.
+    if d.get("compare_saving_text"):
+        for interzisa in ("compare_text", "compare_attr"):
+            assert interzisa not in d, (
+                f"{domeniu}: `compare_saving_text` e exclusiv cu `{interzisa}` — "
+                f"referinta reconstruita si cea citita n-au voie sa se amestece")
+        # Reconstructia NU e o referinta declarata de magazin, deci nu are voie
+        # sa pretinda o eticheta legala.
+        assert d["reference_kind"] == "nemarcat", (
+            f"{domeniu}: o referinta RECONSTRUITA (pret + economie) nu poate fi "
+            f"{d['reference_kind']!r} — ramane `nemarcat`")
 
     pe_stare = bool(d.get("state_extractor"))
     pe_css = bool(d.get("card"))
@@ -3760,9 +3801,10 @@ def test_deal_d7_in_registru():
 
     assert {"alternate.de", "sivasdescalzo.com", "nike.com", "answear.ro",
             "endclothing.com"} <= listing_domains()
-    assert len(listing_domains()) == 58, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
+    assert len(listing_domains()) == 61, ("53 la DEAL-D7 + asos.com la DEAL-D8 "
                                           "+ conrad.com la DEAL-D9 + cele trei "
-                                          "de browser de la BRW-1")
+                                          "de browser de la BRW-1 + vexio / "
+                                          "reichelt / foto-erhardt la DEAL-D10a")
 
 
 # ── IMG-2 — virgula din calea unui CDN nu separa candidati de `srcset` ───────
@@ -3919,7 +3961,7 @@ def test_asos_in_registru():
     assert d["currency"] == "EUR"
     assert d["reference_kind"] == "nemarcat"
     assert "asos.com" in listing_domains()
-    assert len(listing_domains()) == 58
+    assert len(listing_domains()) == 61
 
     assert (listing_scanner._pagina_url(d, 2)
             == "https://www.asos.com/women/sale/cat/?page=2&cid=7046")
@@ -4011,7 +4053,7 @@ def test_conrad_in_registru():
     assert "conrad.com" in browser_domains()
 
     assert "conrad.com" in listing_domains()
-    assert len(listing_domains()) == 58
+    assert len(listing_domains()) == 61
 
     d = listing_descriptor("conrad.com")
     assert d["price_parse"] == "us_dot"
@@ -4362,7 +4404,7 @@ def test_brw1_in_registru(scan_browser):
         _verifica_descriptor(domeniu, d)
 
     assert pe_browser <= listing_domains()
-    assert len(listing_domains()) == 58
+    assert len(listing_domains()) == 61
 
     # Restul axei ramane pe HTTP, implicit sau explicit.
     for domeniu in listing_domains() - pe_browser:
@@ -4384,3 +4426,270 @@ def test_brw1_in_registru(scan_browser):
     assert rezultat["erori"] == 1 and rezultat["magazine"] == 0
     assert scan_browser.cereri == [], "harness-ul de browser nu s-a atins"
     assert "poarta HTTP" in (_stare_brw().error_message or "")
+
+
+# ── DEAL-D10a — vexio / reichelt / foto-erhardt, plus cele doua mecanisme ────
+#
+# Sonda LST-D9 a masurat sapte domenii; trei intra aici, si niciunul dintre ele
+# n-a cerut o cale de FETCH noua. Ce a lipsit a fost, de fiecare data, altceva:
+# la vexio o AMPRENTA (`firefox135`), la reichelt o INTRARE (categoriile din
+# hub-ul de sale, cu `?specialprice=1`), iar la foto-erhardt doua bucati mici de
+# mecanism — `link: "@self"` si o referinta care se RECONSTRUIESTE din economie.
+#
+# Restul lotului LST-D9 (bstn, computeruniverse, jb-spielwaren) cere extractoare
+# de stare si intra la D10b; sizeer nu intra deloc (API pe gazda nevalidata).
+
+
+def test_link_self():
+    """`@self`: cardul E ancora. Si ce se intampla cand nu e.
+
+    Forma masurata pe foto-erhardt: 48 de `a.products__product`, copii DIRECTI ai
+    containerului, cu ZERO ancore interioare. Nici `select_one` (care cauta doar
+    descendenti) nici `@parent_a` (care urca la container, nu la o ancora) n-o pot
+    atinge — de aceea e nevoie de un al treilea mod.
+    """
+    d = {"card": "div.g a", "link": "@self", "title": ".t",
+         "price_text": ".p", "price_parse": "eu_comma",
+         "currency": "EUR", "reference_kind": "nemarcat", "max_pages": 1,
+         "url": "https://x.ro/"}
+    html = ('<div class="g"><a class="c" href="/produs-1.html">'
+            '<span class="t">Unu</span><span class="p">10,00 &euro;</span></a></div>')
+    carduri = extrage_carduri(html, d, "x.ro")
+    assert len(carduri) == 1
+    assert carduri[0]["url"] == "https://x.ro/produs-1.html"
+    assert carduri[0]["title"] == "Unu"
+
+    # Card care NU e ancora: se SARE, ca la orice link lipsa. Nu se cade inapoi pe
+    # `select_one`, fiindca un descriptor gresit ar merge atunci pe jumatate din
+    # pagini si ar tacea pe restul.
+    d_div = dict(d, card="div.g div")
+    html_div = ('<div class="g"><div class="c">'
+                '<span class="t">Unu</span><span class="p">10,00 &euro;</span></div></div>')
+    assert extrage_carduri(html_div, d_div, "x.ro") == []
+
+    # Si o ancora fara `href` e tot un card sarit.
+    html_fara = ('<div class="g"><a class="c">'
+                 '<span class="t">Unu</span><span class="p">10,00 &euro;</span></a></div>')
+    assert extrage_carduri(html_fara, d, "x.ro") == []
+
+
+def test_compare_din_economie():
+    """Referinta RECONSTRUITA: `pret + economie`, si cele doua cazuri in care nu e.
+
+    699,00 + 50,00 = 749,00. Adunarea e sensul: economia e cat s-a TAIAT din
+    pretul de dinainte, deci referinta e mai MARE decat pretul platit. O scadere
+    ar da 649,00 — un „deal" inversat, care in feed arata perfect plauzibil.
+    """
+    d = {"card": "div.g a", "link": "@self", "title": ".t",
+         "price_text": ".p", "compare_saving_text": ".s",
+         "price_parse": "eu_comma", "currency": "EUR",
+         "reference_kind": "nemarcat", "max_pages": 1, "url": "https://x.ro/"}
+
+    def unul(economie: str | None):
+        nod = f'<small class="s">{economie}</small>' if economie is not None else ""
+        html = (f'<div class="g"><a href="/p.html"><span class="t">T</span>'
+                f'<span class="p">699,00 &euro;</span>{nod}</a></div>')
+        return extrage_carduri(html, d, "x.ro")[0]
+
+    assert unul(" 50,00 &euro; saved")["compare_at"] == 749.0
+    assert unul("Save 50,00&euro; NOW!")["compare_at"] == 749.0, (
+        "`eu_comma` curata singur si cuvintele, si simbolul")
+
+    # Fara nod de economie: None, nu pretul si nu zero.
+    assert unul(None)["compare_at"] is None
+    # Economie zero inseamna „nu e redus acum", NU „referinta egala cu pretul":
+    # a doua citire ar publica un deal de 0%.
+    assert unul("0,00 &euro; saved")["compare_at"] is None
+    # Text neparsabil: tot None, niciodata ghicit.
+    assert unul("reducere speciala")["compare_at"] is None
+
+    # `compare_text` are PRIORITATE: economia e doar rezerva, si nu se aplica
+    # peste o referinta deja citita.
+    d2 = dict(d, compare_text="del")
+    html = ('<div class="g"><a href="/p.html"><span class="t">T</span>'
+            '<span class="p">699,00 &euro;</span><del>800,00 &euro;</del>'
+            '<small class="s">50,00 &euro; saved</small></a></div>')
+    assert extrage_carduri(html, d2, "x.ro")[0]["compare_at"] == 800.0
+
+
+def test_foto_erhardt_carduri():
+    """Cele doua mecanisme noi, pe cardurile reale.
+
+    Economiile celor doua carduri sunt DIFERITE (50,00 si 299,01) tocmai ca o
+    reconstructie gresita sa nu poata trece din intamplare pe unul din ele.
+    """
+    d = listing_descriptor("foto-erhardt.com")
+    carduri = extrage_carduri(_fixture("foto-erhardt.com"), d, "foto-erhardt.com")
+
+    assert [c["price"] for c in carduri] == [699.0, 699.99]
+    assert [c["compare_at"] for c in carduri] == [749.0, 999.0]
+    assert all(c["compare_at"] > c["price"] for c in carduri), (
+        "economia se ADUNA: referinta e mai mare decat pretul platit")
+    assert carduri[0]["title"] == "Canon RF 100-400mm f5.6-8 IS USM"
+    # URL-ul vine din ancora-card insasi (`@self`), absolutizat.
+    assert carduri[0]["url"] == ("https://www.foto-erhardt.com/lenses/canon-lenses/"
+                                 "rf-lenses/canon-rf-100-400mm-f5-6-8-is-usm.html")
+    assert all(c["image_url"] for c in carduri)
+    assert d["link"] == "@self" and d["compare_saving_text"]
+    # Reconstructia NU pretinde o eticheta legala.
+    assert d["reference_kind"] == "nemarcat"
+
+    # Paginarea pe care sonda o respinsese: `href="?page=2"` rezolvat fata de
+    # PAGINA, nu fata de radacina (LST-D9 §6.1).
+    assert (listing_scanner._pagina_url(d, 2)
+            == "https://www.foto-erhardt.com/dealzone.html?page=2")
+    assert listing_scanner._pagina_url(d, 1) == d["url"]
+
+
+def test_reichelt_carduri():
+    """Cele trei capcane ale cardului reichelt, toate pinuite.
+
+    1. Prima ancora a cardului e logo-ul PRODUCATORULUI — sonda a ars doua cereri
+       pe `/shop/hersteller/…`. Linkul si imaginea se scopeaza pe ancora de produs.
+    2. Zecimalele pretului platit stau intr-un `<sup>` („0, 08 €"), deci calea de
+       TEXT ar cere `eu_sup`; descriptorul ocoleste prin atribut.
+    3. `[itemprop=name]` e un `<meta>` fara text — titlul vine din `title`-ul
+       ancorei (`title_from: "link_title"`, al doilea consumator dupa officeshoes).
+    """
+    d = listing_descriptor("reichelt.de")
+    carduri = extrage_carduri(_fixture("reichelt.de"), d, "reichelt.de")
+
+    assert [c["price"] for c in carduri] == [0.08, 0.08]
+    assert [c["compare_at"] for c in carduri] == [0.7, 0.62]
+    assert carduri[0]["title"] == "Mini-DIN-Printbuchse, 8-polig"
+    for c in carduri:
+        assert "/shop/produkt/" in c["url"], "linkul NU e pagina de producator"
+        assert "/hersteller/" not in c["url"]
+        assert "type=Product" in c["image_url"], "imaginea NU e logo-ul marcii"
+        assert "logo" not in c["image_url"]
+
+    assert d["price_attr"] == ["meta[itemprop='price']", "content"]
+    assert d["price_parse"] == "attr_float"
+    assert d["compare_parse"] == "eu_comma", "referinta e in TEXT, deci alt parser"
+    assert d["title_from"] == "link_title"
+
+    # Ce se vede pe calea de TEXT, masurat — si o corectie la o presupunere
+    # comoda: `<sup>` chiar rupe numarul in doua cuvinte („0, 08 €"), dar
+    # `eu_comma` SUPRAVIETUIESTE aici, fiindca virgula zecimala e deja in text.
+    # Deci calea de atribut nu repara o citire gresita, ci elimina dependenta de
+    # felul in care magazinul imparte zecimalele intre noduri — care e exact ce
+    # s-a schimbat sub evomag (`529 99`, fara virgula) si a costat un parser nou.
+    from bs4 import BeautifulSoup
+    card = BeautifulSoup(_fixture("reichelt.de"), "html.parser").select_one(
+        "#productResult div.al_gallery_article")
+    text_pret = listing_scanner._text_of(card.select_one("p.productPrice"))
+    assert text_pret == "0, 08 €", f"forma masurata a textului: {text_pret!r}"
+    assert card.select_one("meta[itemprop='price']")["content"] == "0.08", (
+        "atributul e exact, indiferent de cum arata textul")
+
+
+def test_reichelt_entries_10():
+    """Cele zece categorii, toate cu filtrul citit din hub, si toate pagina-unica."""
+    d = listing_descriptor("reichelt.de")
+    intrari = d["entries"]
+    assert len(intrari) == 10
+    for intrare in intrari:
+        assert "specialprice=1" in intrare["url"]
+        assert "VIEWALL=1" in intrare["url"]
+        assert "/shop/kategorie/" in intrare["url"]
+        # `VIEWALL=1` NU extinde peste 16, masurat pe doua categorii — deci o
+        # singura pagina, si deci niciun sablon de paginare (garda o cere).
+        assert "page_url_template" not in intrare
+    assert d["max_pages"] == 1
+    assert len({i["url"] for i in intrari}) == 10
+    # `/magazin/` e REVISTA, nu catalog (G4-V4b): nu are ce cauta printre intrari.
+    assert not any("/magazin/" in i["url"] for i in intrari)
+
+
+def test_vexio_carduri():
+    """Preturile lui vexio, si de ce selectorul de pret e SCOPAT.
+
+    `div.price` poarta ambele preturi in text („263,99 lei 239,99 lei"), deci un
+    selector pe container ar da 263,99239,99 prin `eu_comma`. Controlul negativ e
+    pastrat aici, nu doar in raport.
+    """
+    d = listing_descriptor("vexio.ro")
+    carduri = extrage_carduri(_fixture("vexio.ro"), d, "vexio.ro")
+
+    assert [c["price"] for c in carduri] == [239.99, 379.0]
+    assert [c["compare_at"] for c in carduri] == [263.99, 383.99]
+    assert carduri[0]["title"] == "Logitech Boxe Z313, 25W RMS", (
+        "`h2.name` poarta si marca; atributul `title` al ancorei da doar modelul")
+    assert all("vexio.ro" in c["url"] for c in carduri)
+    assert all(c["image_url"] for c in carduri)
+    assert d["currency"] == "RON" and d["reference_kind"] == "nemarcat"
+
+    # Controlul negativ, si el iese mai bine decat ma asteptam: pe containerul cu
+    # AMBELE preturi, textul e „263,99 lei 239,99 lei", iar `eu_comma` — care e
+    # STRICT prin constructie — refuza „263.99239.99" si intoarce None. Cardul se
+    # pierde deci in TACERE, in loc sa intre cu un pret de 100x. Tacerea e tot un
+    # bug, doar unul care se vede la numarul de produse, nu in preturi.
+    gresit = dict(d, price_text="div.price")
+    assert extrage_carduri(_fixture("vexio.ro"), gresit, "vexio.ro") == [], (
+        "selectorul nescopat lipeste cele doua preturi si parserul strict le refuza")
+    assert listing_scanner._pret_eu_comma("263,99 lei 239,99 lei") is None
+
+
+def test_vexio_impersonate_si_entries():
+    """Amprenta e cheia intregului domeniu, si se aplica pe AMBELE axe.
+
+    `chrome` da poarta `None` + 403 cu interstitiul Cloudflare; `chrome131` tot
+    `None`; `firefox135` a dat 200 cu 1.024 de ancore. Profilul nu e o treapta
+    noua — il folosesc deja 43einhalb, flanco si notino.
+    """
+    from app.services.scraper_service import _impersonate_for
+    from app.services.shop_registry import SHOP_REGISTRY
+
+    assert SHOP_REGISTRY["vexio.ro"]["impersonate"] == "firefox135"
+    # `_impersonate_for` e suffix-safe, ca allow-list-ul C-14.
+    assert _impersonate_for("https://vexio.ro/x") == "firefox135"
+    assert _impersonate_for("https://www.vexio.ro/reduceri-finale/") == "firefox135"
+    # Efectul colateral, PINUIT deliberat: profilul se aplica si pe axa L, unde
+    # domeniul e `jsonld`. D10a a verificat live ca PDP-ul chiar trece asa.
+    assert SHOP_REGISTRY["vexio.ro"]["method"] == "jsonld"
+
+    d = listing_descriptor("vexio.ro")
+    assert len(d["entries"]) == 2
+    assert d["entries"][0]["url"].endswith("/reduceri-finale/")
+    assert d["entries"][1]["url"].endswith("/promotii/")
+    # Paginarea e in CALE (`/paginaN/`), citita din `<link rel="next">`.
+    intrare = listing_scanner._intrari(d)[0]
+    assert (listing_scanner._pagina_url(intrare, 2)
+            == "https://www.vexio.ro/reduceri-finale/pagina2/")
+    assert listing_scanner._pagina_url(intrare, 1) == intrare["url"]
+
+
+def test_garda_accepta_self_si_saving():
+    """Garda de descriptori cunoaste ambele mecanisme noi — si ce RESPINGE.
+
+    O garda care se poate verifica doar pe registrul real n-are cum sa dovedeasca
+    ce respinge, de aceea `_verifica_descriptor` se cheama si pe dicturi sintetice.
+    """
+    baza = {"url": "https://x.ro/s", "max_pages": 1, "currency": "EUR",
+            "reference_kind": "nemarcat", "card": "div.g a", "link": "@self",
+            "title": ".t", "price_text": ".p", "price_parse": "eu_comma"}
+    _verifica_descriptor("x.ro", dict(baza))
+    _verifica_descriptor("x.ro", dict(baza, compare_saving_text=".s"))
+
+    # Mod de `link` necunoscut: `select_one("@parent")` ar ridica
+    # SelectorSyntaxError abia la primul card, adica dupa cererea paginii.
+    with pytest.raises(AssertionError, match="mod de `link` necunoscut"):
+        _verifica_descriptor("x.ro", dict(baza, link="@parent"))
+
+    # Economia si referinta citita n-au voie impreuna.
+    with pytest.raises(AssertionError, match="exclusiv"):
+        _verifica_descriptor("x.ro", dict(baza, compare_saving_text=".s",
+                                          compare_text="del"))
+    with pytest.raises(AssertionError, match="exclusiv"):
+        _verifica_descriptor("x.ro", dict(baza, compare_saving_text=".s",
+                                          compare_attr=["del", "data-v"]))
+
+    # O reconstructie nu poate pretinde o eticheta legala.
+    for eticheta in ("prp", "min30"):
+        with pytest.raises(AssertionError, match="RECONSTRUITA"):
+            _verifica_descriptor("x.ro", dict(baza, compare_saving_text=".s",
+                                              reference_kind=eticheta))
+
+    # Si cele trei domenii reale trec prin aceeasi garda.
+    for domeniu in ("vexio.ro", "reichelt.de", "foto-erhardt.com"):
+        _verifica_descriptor(domeniu, listing_descriptor(domeniu))
