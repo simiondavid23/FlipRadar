@@ -94,7 +94,7 @@ function ProductDetailInner() {
     return (
       <div style={{ maxWidth: "960px", margin: "0 auto", textAlign: "center", paddingTop: "4rem" }}>
         <p style={{ color: "var(--text-primary)", fontSize: "1rem", marginBottom: "0.5rem" }}>Produs inexistent</p>
-        <Link href="/dashboard/products" style={{ color: "#60a5fa", fontSize: "0.875rem" }}>← Inapoi la produse</Link>
+        <Link href="/dashboard/products" style={{ color: "#60a5fa", fontSize: "0.875rem" }}>← Inapoi la Produse Urmarite</Link>
       </div>
     );
   }
@@ -240,7 +240,7 @@ function ProductDetailInner() {
       <div style={{ maxWidth: "960px", margin: "0 auto", textAlign: "center", paddingTop: "4rem" }}>
         <Package style={{ width: "3rem", height: "3rem", margin: "0 auto 1rem", color: "var(--text-secondary)" }} />
         <p style={{ color: "var(--text-primary)", fontSize: "1rem", marginBottom: "0.5rem" }}>Produsul nu a fost gasit</p>
-        <Link href="/dashboard/products" style={{ color: "#60a5fa", fontSize: "0.875rem" }}>← Inapoi la produse</Link>
+        <Link href="/dashboard/products" style={{ color: "#60a5fa", fontSize: "0.875rem" }}>← Inapoi la Produse Urmarite</Link>
       </div>
     );
   }
@@ -291,7 +291,7 @@ function ProductDetailInner() {
         onMouseEnter={(e) => { e.currentTarget.style.color = "white"; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = "#94a3b8"; }}
       >
-        <ArrowLeft style={{ width: "14px", height: "14px" }} /> Inapoi la produse
+        <ArrowLeft style={{ width: "14px", height: "14px" }} /> Inapoi la Produse Urmarite
       </Link>
 
       {/* Product header */}

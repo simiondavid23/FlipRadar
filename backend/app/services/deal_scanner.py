@@ -319,8 +319,8 @@ def _scaneaza_magazin(db, domain: str, settings, prag: float) -> dict:
                 db.flush()
                 de_notificat.append(deal)
             else:
-                # D7: starea e a USERULUI, deci ramane neatinsa — `ignorat` ramane
-                # `ignorat`, `vazut` ramane `vazut`. Fara alerta la reaparitie.
+                # D7: starea e a USERULUI, deci ramane neatinsa — `vazut` ramane
+                # `vazut` (MAG-1 a scos `ignorat`). Fara alerta la reaparitie.
                 deal.title = str(produs.get("title") or "")[:500]
                 deal.url = url
                 deal.image_url = image_url

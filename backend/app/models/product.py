@@ -22,6 +22,12 @@ class Product(Base):
     description = Column(Text, nullable=True)
     source = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
+    # MAG-1 — CUM a intrat produsul prima data: link | deal | scan | manual (multimea
+    # inchisa `ORIGINS` din routers/products.py, validata la intrare). Nullable pentru
+    # randurile de dinaintea migrarii; la dedup NU se rescrie — un produs adaugat prin
+    # link si reintalnit intr-un deal ramane `link`, fiindca `origin` descrie
+    # provenienta, nu ultima atingere.
+    origin = Column(String(10), nullable=True)
     current_price = Column(Float, nullable=True)
     # FlipRadar — pret de lista original (pentru detectarea reducerilor / on_sale)
     original_price = Column(Numeric(10, 2), nullable=True)
@@ -37,3 +43,17 @@ class Product(Base):
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
     # FlipRadar — sugestii de surse (potrivire pe nume) care asteapta confirmarea userului.
     suggestions = relationship("ProductSourceSuggestion", back_populates="product", cascade="all, delete-orphan")
+    # FASHION-3b — referintele de revanzare mor odata cu produsul (coloana declara deja
+    # ondelete="CASCADE", dar bazele existente au FK-ul creat fara el: cascada ORM e
+    # singura care acopera si instalarile vechi).
+    resale_references = relationship("ResaleReference", back_populates="product",
+                                     cascade="all, delete-orphan")
+    # MAG-1 — deal-urile promovate in acest produs. DELIBERAT fara cascada de stergere:
+    # un deal e o OBSERVATIE a scannerului despre un magazin, nu o proprietate a
+    # produsului, deci stergerea produsului nu are voie sa-l stearga. Comportamentul
+    # implicit al SQLAlchemy pe o relatie fara cascada e exact ce vrem — anuleaza
+    # `promoted_product_id` pe copii inainte de DELETE-ul parintelui, deci FK-ul din
+    # baza (NO ACTION, cu PRAGMA foreign_keys=ON) nu mai are ce sa refuze. FK-ul NU s-a
+    # schimbat in baza: pe SQLite asta ar fi cerut un rebuild de tabela pe 28k randuri,
+    # iar relatia ORM rezolva problema fara sa atinga schema.
+    promoted_deals = relationship("Deal", back_populates="promoted_product")

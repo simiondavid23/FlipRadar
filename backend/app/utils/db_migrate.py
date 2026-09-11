@@ -346,6 +346,34 @@ def _portable_migrations(conn, inspector):
     for _nume in _TZ2_GRUPURI:
         _tz2_backfill_grup(conn, inspector, _nume)
 
+    # MAG-1 — provenienta produsului (link | deal | scan | manual).
+    if _table_exists(inspector, "products") and not _column_exists(inspector, "products", "origin"):
+        _migrate(conn, "add_products_origin",
+                 "ALTER TABLE products ADD COLUMN origin VARCHAR(10)")
+
+    # MAG-1 — backfill. Doua UPDATE-uri, in ordinea asta: produsele care sunt tinta
+    # unui deal promovat sunt sigur `deal`; pentru RESTUL nu exista nicio urma in baza
+    # din care sa deducem daca au venit prin link, prin scanare sau de mana, asa ca
+    # toate primesc `link` — aproximare deliberata (decizia lui David), fiindca `link`
+    # e calea prin care a intrat covarsitor majoritatea catalogului existent.
+    # Doua inregistrari separate in loc de _migrate_steps: fiecare UPDATE e valid si
+    # util singur, deci nu au nevoie de atomicitate comuna, iar reluarea e sigura —
+    # ambele sunt idempotente prin `WHERE origin IS NULL`.
+    if _table_exists(inspector, "products") and _table_exists(inspector, "deals"):
+        _migrate(conn, "backfill_products_origin_deal",
+                 "UPDATE products SET origin = 'deal' WHERE origin IS NULL AND id IN "
+                 "(SELECT promoted_product_id FROM deals WHERE promoted_product_id IS NOT NULL)")
+    if _table_exists(inspector, "products"):
+        _migrate(conn, "backfill_products_origin_link",
+                 "UPDATE products SET origin = 'link' WHERE origin IS NULL")
+
+    # MAG-1 — starea `ignorat` a fost scoasa din feed-ul de deal-uri (D6): randurile
+    # care o mai poarta coboara in `vazut`, singura stare manuala ramasa. Fara asta ar
+    # fi ramas invizibile — niciun filtru din UI nu le-ar mai fi numit.
+    if _table_exists(inspector, "deals"):
+        _migrate(conn, "deals_ignorat_to_vazut",
+                 "UPDATE deals SET state = 'vazut' WHERE state = 'ignorat'")
+
 
 # --- TZ-2: coloanele convertite, pe grupuri ------------------------------------
 # Ordinea in fiecare grup e mic -> mare: la o cadere, cat mai mult e deja aplicat.

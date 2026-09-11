@@ -26,12 +26,12 @@ const SHOP_CHIP = {
 };
 
 // Filtrul de stare. `active` merge ca query param spre backend; `state` la fel.
-// „Active" ascunde deliberat deal-urile ignorate — sunt tot active, dar userul
-// le-a scos din atentie.
+// MAG-1 — tab-ul „Ignorate" a disparut odata cu starea `ignorat`: un deal nedorit
+// iese oricum din feed cand scannerul nu-l mai vede, deci „Active" nu mai are ce
+// sa ascunda si nu mai trimite `exclude_state`.
 const STATE_TABS = [
   { key: "active", label: "Active" },
   { key: "noi", label: "Noi" },
-  { key: "ignorate", label: "Ignorate" },
   { key: "incheiate", label: "Încheiate" },
 ];
 
@@ -125,11 +125,6 @@ export default function DealsPage() {
       if (tab === "incheiate") filtre.active = false;
       else filtre.active = true;
       if (tab === "noi") filtre.state = "nou";
-      if (tab === "ignorate") filtre.state = "ignorat";
-      // Tab-ul „Active" arata tot ce e viu MAI PUTIN ce a fost ignorat explicit.
-      // Era un filter() pe lista deja incarcata; cu paginare ar fi taiat DIN
-      // pagina curenta, deci ar fi dat pagini inegale — a coborat pe server.
-      if (tab === "active") filtre.exclude_state = "ignorat";
       if (shopFilter) filtre.shop_domain = shopFilter;
       if (sourceFilter) filtre.source = sourceFilter;
       if (minDiscount) filtre.min_discount = Number(minDiscount);
@@ -240,24 +235,6 @@ export default function DealsPage() {
     if (deal.state === "nou") {
       patch(deal.id, { state: "vazut" });
       dealsAPI.setState(deal.id, "vazut").catch(() => {});
-    }
-  };
-
-  const handleIgnore = async (deal) => {
-    const anterior = deals;
-    const totalAnterior = total;
-    // Scoatere optimista din feed-ul curent (in „Ignorate" ramane vizibil).
-    // DEAL-3 — totalul scade odata cu randul, altfel butonul „Incarca mai multe"
-    // ar ramane aprins pe un rest care nu mai exista.
-    setDeals((prev) => prev.filter((d) => d.id !== deal.id));
-    setTotal((t) => (t == null ? t : t - 1));
-    try {
-      await dealsAPI.setState(deal.id, "ignorat");
-      loadSide();
-    } catch (err) {
-      setDeals(anterior);
-      setTotal(totalAnterior);
-      setActionMessage(err.response?.data?.detail || "Nu am putut ignora deal-ul.");
     }
   };
 
@@ -405,8 +382,7 @@ export default function DealsPage() {
                   price: deal.price,
                   currency: deal.currency,
                   found_at: deal.first_seen_at,
-                  status: deal.state === "promovat" ? "saved"
-                    : deal.state === "ignorat" ? "ignored" : null,
+                  status: deal.state === "promovat" ? "saved" : null,
                 }}
                 image={deal.image_url}
                 showMarginLine={false}
@@ -500,7 +476,6 @@ export default function DealsPage() {
                 onOpen={() => handleOpen(deal)}
                 onOpenExternal={() => handleOpen(deal)}
                 onSave={() => handlePromote(deal)}
-                onIgnore={() => handleIgnore(deal)}
                 isSelected={false}
                 onToggleSelect={() => {}}
               />

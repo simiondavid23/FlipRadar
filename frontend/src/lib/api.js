@@ -247,6 +247,10 @@ export const facebookGroupsAPI = {
 };
 
 // FlipRadar — Produse Urmarite (fuziune favorite + watchlist)
+// MAG-1 — pagina „Produse Urmarite" s-a fuzionat in /dashboard/products, care isi ia
+// lista din productsAPI.getProducts (imbogatita server-side cu starea de urmarire).
+// `toggleMonitoring` ramane singurul apel folosit din UI; `getAll` si `remove` raman
+// pentru compatibilitate — endpointurile exista in continuare si sunt testate.
 export const trackedProductsAPI = {
   getAll: () => api.get("/api/tracked-products/"),
   toggleMonitoring: (id, active, alert_threshold) =>

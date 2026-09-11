@@ -18,6 +18,10 @@ class ProductCreate(BaseModel):
     original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str = "EUR"
+    # MAG-1 — provenienta produsului: link | deal | scan | manual. Absent -> `manual`
+    # (formularul din UI). Validat contra ORIGINS in create_product, nu aici: mesajul
+    # de eroare al aplicatiei e mai limpede decat cel generat de un Literal pydantic.
+    origin: Optional[str] = None
     # FASHION-1c — marimea sursei salvate; "" = fara varianta (rand product-level).
     # E camp de SURSA, nu de produs: vezi excluderea din model_dump in create_product.
     variant: str = ""
@@ -83,10 +87,29 @@ class ProductResponse(BaseModel):
     original_price: Optional[float] = None
     resale_price: Optional[float] = None
     currency: str
+    # MAG-1 — provenienta; None pe randurile ramase nemigrate.
+    origin: Optional[str] = None
     created_at: datetime
     sources: List[ProductSourceResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TrackedPricePoint(BaseModel):
+    """MAG-1 — un punct din sparkline-ul paginii. `recorded_at` e ISO-string, nu
+    datetime: forma vine verbatim din `_enrich_with_tracking`, aceeasi functie care
+    alimenteaza GET /api/tracked-products/ (contract deja consumat de UI)."""
+    price: float
+    recorded_at: Optional[str] = None
+
+
+class ProductListItemResponse(ProductResponse):
+    """MAG-1 — randul din lista fuzionata „Produse Urmarite”: produsul plus starea de
+    urmarire care pana acum traia doar in GET /api/tracked-products/. Campurile sunt
+    calculate in batch (vezi services/product_tracking.py), nu prin relatii lazy."""
+    monitoring_active: bool = False
+    alert_threshold: Optional[float] = None
+    price_history: List[TrackedPricePoint] = []
 
 
 class RefreshSourceResult(BaseModel):

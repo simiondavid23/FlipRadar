@@ -212,6 +212,8 @@ export default function ScrapingPage() {
         sku: product.sku || null,
         category: product.category || null,
         subcategory: product.subcategory || null,
+        // MAG-1 — provenienta: produsul vine dintr-un rezultat de scanare.
+        origin: "scan",
       });
       alert(buildSaveMessage(res.data, product.name));
     } catch (e) {
@@ -226,6 +228,7 @@ export default function ScrapingPage() {
         source: product.source, source_url: product.source_url, image_url: product.image_url,
         ean: product.ean || null, sku: product.sku || null,
         category: product.category || null, subcategory: product.subcategory || null,
+        origin: "scan",                      // MAG-1, ca la saveProduct
       });
       await trackedProductsAPI.toggleMonitoring(saved.data.id, true, null);
       const status = saved.data.is_new

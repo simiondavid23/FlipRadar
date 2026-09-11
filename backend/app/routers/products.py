@@ -12,10 +12,12 @@ from app.models.product import Product
 from app.models.product_source import ProductSource
 from app.models.product_source_suggestion import ProductSourceSuggestion
 from app.models.price_history import PriceHistory
+from app.models.tracked_product import TrackedProduct
 from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
     ProductResponse,
+    ProductListItemResponse,
     ProductSaveResponse,
     ProductDetailResponse,
     ProductFromUrlRequest,
@@ -29,6 +31,7 @@ from app.utils.auth import get_current_user, require_feature
 from app.utils.category_mapper import infer_category_from_name
 from app.models.user import User
 from app.services.currency_service import convert
+from app.services.product_tracking import enrich_with_tracking
 from app.services.scraper_service import (
     fetch_ean_from_url,
     refresh_source,
@@ -41,7 +44,7 @@ from app.services.product_page_extractor import (
     ProductExtractionError,
     VALIDATED_DOMAINS,
 )
-# LOT1 — politica de identitate a URL-ului per magazin (vezi create_product_from_url).
+# LOT1 — politica de identitate a URL-ului per magazin (vezi creeaza_din_link).
 from app.services.shop_registry import url_identity_of
 from app.utils.listing_dates import acum_local
 
@@ -140,12 +143,31 @@ router = APIRouter(prefix="/api/products", tags=["Products"])
 # suprafata de scraping ca routerul /api/scraping, deci acelasi gard de feature.
 _scraping_user = require_feature("can_use_scraping")
 
+# MAG-1 — multimea INCHISA a provenientelor unui produs:
+#   link   — adaugat de user dintr-un link de pagina de produs (/from-url)
+#   deal   — promovat din feed-ul de deal-uri (/api/deals/{id}/promote)
+#   scan   — salvat din rezultatele unei cautari pe magazine (/dashboard/scraping)
+#   manual — introdus de mana in formularul din pagina de produse
+# Inchisa si validata la intrare, ca o valoare gresita sa dea 422 explicit in loc de
+# un chip mut in UI — acelasi tipar ca `_SURSE` din routerul de deal-uri.
+ORIGINS = {"link", "deal", "scan", "manual"}
+
+
+def _valideaza_origin(origin: Optional[str]) -> None:
+    """422 pe o provenienta din afara multimii. `None` e legal: inseamna „nespecificat”
+    (la creare devine `manual`, la filtrare inseamna „fara filtru”)."""
+    if origin is not None and origin not in ORIGINS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Provenienta invalida. Valori acceptate: {', '.join(sorted(ORIGINS))}.",
+        )
+
 
 def _user_products_query(db: Session, user_id: int):
     return db.query(Product).filter(Product.user_id == user_id)
 
 
-@router.get("/", response_model=List[ProductResponse])
+@router.get("/", response_model=List[ProductListItemResponse])
 def get_products(
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
@@ -155,14 +177,38 @@ def get_products(
     roi_min: Optional[float] = Query(None),
     roi_max: Optional[float] = Query(None),
     source: Optional[str] = Query(None),
+    origin: Optional[str] = Query(None),
+    monitored: Optional[bool] = Query(None),
     sort_by: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Listează produsele utilizatorului curent cu filtre și sortare opționale."""
+    """Listează produsele utilizatorului curent cu filtre și sortare opționale.
+
+    MAG-1 — de la fuziunea paginilor, fiecare rând poartă și starea de urmărire
+    (`monitoring_active`, `alert_threshold`, `price_history`), calculată în batch după
+    ce paginarea a redus lista — deci costul nu depinde de mărimea catalogului.
+    """
+    _valideaza_origin(origin)
+
     query = _user_products_query(db, current_user.id)
+
+    if origin:
+        query = query.filter(Product.origin == origin)
+
+    if monitored is not None:
+        # Subinterogare pe id-urile monitorizate ale userului: un JOIN ar fi duplicat
+        # rândurile dacă un produs ar ajunge vreodată cu două rânduri de tracking, iar
+        # `monitored=False` cere oricum forma negativă (produse FĂRĂ rând activ).
+        monitorizate = (
+            db.query(TrackedProduct.product_id)
+            .filter(TrackedProduct.user_id == current_user.id,
+                    TrackedProduct.monitoring_active == True)  # noqa: E712
+        )
+        query = query.filter(Product.id.in_(monitorizate) if monitored
+                             else ~Product.id.in_(monitorizate))
 
     if search:
         pattern = f"%{search.strip()}%"
@@ -232,7 +278,29 @@ def get_products(
         )
         query = query.order_by(roi_expr.desc().nullslast())
 
-    return query.offset(skip).limit(limit).all()
+    randuri = query.offset(skip).limit(limit).all()
+
+    # MAG-1 — îmbogățirea vine DUPĂ paginare: trei interogări pe cel mult `limit`
+    # id-uri, nu pe tot catalogul. Funcția e aceeași care alimentează
+    # GET /api/tracked-products/, deci cele două pagini nu pot arăta lucruri diferite.
+    tracking = enrich_with_tracking(db, current_user.id, [p.id for p in randuri])
+
+    iesire = []
+    for p in randuri:
+        # Validarea trece INTAI prin ProductResponse, apoi campurile de urmarire se
+        # adauga peste. Un `ProductListItemResponse.model_validate(p)` direct ar fi
+        # picat: `from_attributes` ar fi citit relatia ORM `Product.price_history`
+        # (obiecte PriceHistory intregi) in campul omonim al schemei, care asteapta
+        # punctele scurte {price, recorded_at}. Numele coincide deliberat — e cel pe
+        # care il consuma deja UI-ul de la /api/tracked-products/.
+        extra = tracking.get(p.id) or {}
+        iesire.append(ProductListItemResponse(
+            **ProductResponse.model_validate(p).model_dump(),
+            monitoring_active=bool(extra.get("monitoring_active", False)),
+            alert_threshold=extra.get("alert_threshold"),
+            price_history=extra.get("price_history", []),
+        ))
+    return iesire
 
 
 @router.get("/filter-options")
@@ -382,6 +450,10 @@ def _build_save_response(product: Product, is_new: bool, previous_price: Optiona
         "original_price": product.original_price,
         "resale_price": product.resale_price,
         "currency": product.currency,
+        # MAG-1 — dictionarul e construit camp cu camp (nu din obiectul ORM), deci o
+        # coloana noua trebuie adaugata si aici, altfel raspunsul ar cadea tacit pe
+        # `None`-ul implicit din schema.
+        "origin": product.origin,
         "created_at": product.created_at,
         "is_new": is_new,
         "previous_price": previous_price,
@@ -491,6 +563,12 @@ def create_product(
         )
         return _build_save_response(existing, is_new=False, previous_price=old_primary_price)
 
+    # MAG-1 — provenienta se valideaza INAINTE de dedup: o valoare gresita trebuie sa
+    # dea 422 chiar si cand cererea ar fi cazut pe o ramura de actualizare, altfel
+    # apelantul ar primi 200 pentru un camp pe care serverul l-a ignorat in tacere.
+    _valideaza_origin(product_data.origin)
+    origin = product_data.origin or "manual"
+
     user_products = _user_products_query(db, current_user.id)
 
     if product_data.ean:
@@ -516,7 +594,15 @@ def create_product(
 
     # `variant` e camp de SURSA, nu de produs: Product nu are coloana, deci ar pica
     # cu TypeError daca l-am trece prin **model_dump().
-    new_product = Product(**product_data.model_dump(exclude={"variant"}), user_id=current_user.id)
+    # MAG-1 — `origin` se exclude si el si se pune explicit: valoarea scrisa e cea
+    # NORMALIZATA (None -> "manual"), nu cea bruta din payload. Se scrie DOAR aici, pe
+    # ramura de produs nou — ramurile de dedup de mai sus intorc devreme, deci un
+    # produs existent isi pastreaza provenienta initiala.
+    new_product = Product(
+        **product_data.model_dump(exclude={"variant", "origin"}),
+        user_id=current_user.id,
+        origin=origin,
+    )
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
@@ -645,7 +731,27 @@ def create_product_from_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(_scraping_user),
 ):
+    """Ruta publica de adaugare prin link. Corpul traieste in `creeaza_din_link`.
+
+    MAG-1 — separarea exista ca `origin` sa NU devina parametru de request: FastAPI
+    transforma orice parametru simplu cu valoare implicita in query param, deci un
+    `origin: str = "link"` pe ruta ar fi lasat orice client sa-si eticheteze produsul
+    cum vrea. Aici provenienta e fixata la "link" si nu poate fi influentata din afara.
+    """
+    return creeaza_din_link(payload, background_tasks, db, current_user, origin="link")
+
+
+def creeaza_din_link(
+    payload: ProductFromUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    current_user: User,
+    origin: str = "link",
+):
     """Adauga un produs pornind DOAR de la link-ul paginii de magazin.
+
+    Apelata de ruta de mai sus (cu `origin="link"`) si de `promote_deal` (cu
+    `origin="deal"`) — nu e montata ca endpoint, deci `origin` ramane un detaliu intern.
 
     Extrage datele cu extractorul generic, apoi deleaga integral salvarea catre
     create_product: dedup-ul per user, snapshot-ul initial de pret si task-urile
@@ -718,6 +824,10 @@ def create_product_from_url(
             category=main_cat,
             subcategory=sub_cat,
             variant=wanted,
+            # MAG-1 — "link" pe calea publica, "deal" cand apelantul e promovarea.
+            # La dedup nu se aplica: create_product intoarce devreme si pastreaza
+            # provenienta initiala a produsului existent.
+            origin=origin,
         ),
         background_tasks=background_tasks,
         db=db,
@@ -890,6 +1000,13 @@ def delete_product(
     )
     if not product:
         raise HTTPException(status_code=404, detail="Produsul nu a fost gasit")
+
+    # MAG-1 — un deal promovat in acest produs isi pierde tinta, dar nu si existenta:
+    # il coboram din `promovat` in `vazut`, deci ramane in feed daca inca e activ si
+    # poate fi promovat din nou. `promoted_product_id` se anuleaza singur prin relatie
+    # (vezi Product.promoted_deals) — fara asta, DELETE-ul ar fi picat pe FK.
+    for deal in product.promoted_deals:
+        deal.state = "vazut"
 
     db.delete(product)
     db.commit()

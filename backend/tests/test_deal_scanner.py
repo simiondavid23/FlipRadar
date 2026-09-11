@@ -225,7 +225,9 @@ def test_ciclu_de_viata(scan):
          deal_discount_threshold=20.0)
     db = SessionLocal()
     try:
-        db.query(Deal).first().state = "ignorat"
+        # MAG-1: `vazut` e acum singura stare pe care o poate scrie userul
+        # (`ignorat` a fost scoasa); rolul ei in acest test e neschimbat.
+        db.query(Deal).first().state = "vazut"
         db.commit()
     finally:
         db.close()
@@ -234,13 +236,13 @@ def test_ciclu_de_viata(scan):
     scan([[]])
     deal = _deals()[0]
     assert deal.ended_at is not None
-    assert deal.state == "ignorat"
+    assert deal.state == "vazut"
 
-    # Reaparut -> redevine activ, dar `ignorat` NU redevine `nou`.
+    # Reaparut -> redevine activ, dar `vazut` NU redevine `nou`.
     scan([[_produs(1, [_varianta("100.00", compare_at="200.00")])]])
     deal = _deals()[0]
     assert deal.ended_at is None
-    assert deal.state == "ignorat"
+    assert deal.state == "vazut"
 
 
 def test_discord_doar_la_nou(scan, monkeypatch):
@@ -668,7 +670,7 @@ def test_inchiderea_nu_atinge_starea_userului(scan):
          deal_discount_threshold=20.0)
     db = SessionLocal()
     try:
-        db.query(Deal).filter(Deal.external_id == "7002").first().state = "ignorat"
+        db.query(Deal).filter(Deal.external_id == "7002").first().state = "vazut"
         db.commit()
     finally:
         db.close()
@@ -677,7 +679,7 @@ def test_inchiderea_nu_atinge_starea_userului(scan):
 
     deal = [d for d in _deals() if d.external_id == "7002"][0]
     assert deal.ended_at is not None
-    assert deal.state == "ignorat"
+    assert deal.state == "vazut"
 
 
 def test_inchiderea_shopify_nu_atinge_refresh_diff(scan):
@@ -865,9 +867,12 @@ def test_deal3_limit_offset_si_count(auth_client):
     assert auth_client.get("/api/deals/count").json() == {"total": 5}
 
 
-def test_deal3_exclude_state_categorie_si_sortare(auth_client, monkeypatch):
-    """T2 — `exclude_state` inlocuieste filtrul client-side de pe tab-ul „Active",
-    iar categoria si sortarea au coborat si ele pe server."""
+def test_deal3_categorie_sortare_si_starea_ignorat_respinsa(auth_client, monkeypatch):
+    """T2 — categoria si sortarea au coborat pe server.
+
+    MAG-1 — partea de `exclude_state` a disparut odata cu starea `ignorat`: filtrul
+    exista DOAR ca tab-ul „Active" sa ascunda ignoratele. Ce a ramas din ea e assertul
+    INVERSAT de mai jos: PATCH cu `ignorat` trebuie acum RESPINS, nu acceptat."""
     from app.services.shop_registry import SHOP_REGISTRY
 
     # Cursul e fixat in test: masuram ORDINEA, nu valorile BNR. Un SINGUR
@@ -897,12 +902,16 @@ def test_deal3_exclude_state_categorie_si_sortare(auth_client, monkeypatch):
         db.close()
 
     ids = {d["external_id"]: d["id"] for d in auth_client.get("/api/deals/").json()}
+    # MAG-1 — inversat: `ignorat` nu mai e o stare pe care userul o poate scrie.
     assert auth_client.patch(f"/api/deals/{ids['p3']}",
-                             json={"state": "ignorat"}).status_code == 200
+                             json={"state": "ignorat"}).status_code == 422
+    assert auth_client.patch(f"/api/deals/{ids['p3']}",
+                             json={"state": "vazut"}).status_code == 200, (
+        "`vazut` ramane singura stare manuala si trebuie sa treaca")
 
-    assert len(auth_client.get("/api/deals/?exclude_state=ignorat").json()) == 5
-    assert (auth_client.get("/api/deals/count?exclude_state=ignorat").json()
-            == {"total": 5}), "numaratoarea vede EXACT filtrele listei"
+    # Numaratoarea vede EXACT filtrele listei — verificat pe filtrul care a ramas.
+    assert (auth_client.get("/api/deals/count?category=sneakers").json()
+            == {"total": 6})
 
     # sort=price compara in RON, prin ACEEASI conversie ca afisarea:
     #   p6 30 SEK = 15 | p5 20 RON | p1 5 EUR = 25 | p4 40 | p3 60 | p2 80
@@ -920,7 +929,6 @@ def test_deal3_exclude_state_categorie_si_sortare(auth_client, monkeypatch):
     assert auth_client.get("/api/deals/?category=inexistenta").json() == []
 
     assert auth_client.get("/api/deals/?sort=invalid").status_code == 422
-    assert auth_client.get("/api/deals/?exclude_state=inventat").status_code == 422
 
 
 def test_deal3_stats_agregat(auth_client):

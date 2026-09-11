@@ -83,7 +83,7 @@ def test_retentia_sterge_doar_incheiatele_vechi_nepromovate():
         db.flush()
 
         _deal(db, "vechi_nou", incheiat_acum_zile=40, stare="nou")
-        _deal(db, "vechi_ignorat", incheiat_acum_zile=40, stare="ignorat")
+        _deal(db, "vechi_vazut", incheiat_acum_zile=40, stare="vazut")
         _deal(db, "vechi_promovat", incheiat_acum_zile=40, stare="promovat",
               produs_id=produs.id)
         _deal(db, "recent_incheiat", incheiat_acum_zile=10, stare="nou")

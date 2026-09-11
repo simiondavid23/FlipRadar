@@ -4,7 +4,8 @@ import { productsAPI, trackedProductsAPI } from "@/lib/api";
 import Link from "next/link";
 import TopBar from "@/components/shared/TopBar";
 import PageHeading, { Hl } from "@/components/shared/PageHeading";
-import { Search, Plus, Eye, ExternalLink, Package, X, ChevronRight, Trash2, Pencil, Tag, Save, Filter, RefreshCcw } from "lucide-react";
+import FeedErrorBanner from "@/components/shared/FeedErrorBanner";
+import { Search, Plus, ExternalLink, Package, X, ChevronRight, Trash2, Pencil, Tag, Save, Filter, RefreshCcw, Bell, Activity, Heart } from "lucide-react";
 
 // FlipRadar — ITEM 9: optiuni fixe pentru selectorul de sursa. Valorile trebuie
 // sa coincida exact cu cele salvate de scrapere (domeniul magazinului).
@@ -16,6 +17,25 @@ const STORE_SOURCES = [
   { label: "Sole", value: "sole.ro" },
   { label: "FarmaciaTei", value: "farmaciatei.ro" },
 ];
+
+// MAG-1 — randul de chip-uri de deasupra filtrelor. Fiecare trimite un parametru
+// SERVER-SIDE, combinabil cu restul filtrelor (nu filtreaza lista deja primita).
+// Produsele `scan` si `manual` apar doar sub „Toate": doua chip-uri in plus pentru
+// cazuri rare ar incarca randul, iar badge-ul de pe card le face oricum vizibile.
+const SCOPE_CHIPS = [
+  { key: "all", label: "Toate", params: {} },
+  { key: "link", label: "Din link", params: { origin: "link" } },
+  { key: "deal", label: "Din deal-uri", params: { origin: "deal" } },
+  { key: "monitored", label: "Monitorizate", params: { monitored: true } },
+];
+
+// MAG-1 — eticheta si culoarea chip-ului de provenienta de pe card.
+const ORIGIN_LABELS = {
+  link: { label: "Link", rgb: "96,165,250", color: "#60a5fa" },
+  deal: { label: "Deal", rgb: "74,222,128", color: "#4ade80" },
+  scan: { label: "Scanare", rgb: "167,139,250", color: "#a78bfa" },
+  manual: { label: "Manual", rgb: "148,163,184", color: "#94a3b8" },
+};
 
 function computeRoi(price, resale) {
   if (resale == null || price == null) return null;
@@ -41,6 +61,87 @@ function RoiBadge({ price, resale }) {
     }}>
       {label}
     </span>
+  );
+}
+
+// MAG-1 — chip mic de provenienta, in acelasi limbaj vizual ca RoiBadge.
+function OriginChip({ origin }) {
+  const meta = ORIGIN_LABELS[origin];
+  if (!meta) return null;   // randuri vechi, nemigrate (origin NULL)
+  return (
+    <span style={{
+      padding: "2.5px 7px", borderRadius: "7px",
+      fontFamily: "var(--font-mono)", fontSize: "8.5px", fontWeight: 700, letterSpacing: ".08em",
+      textTransform: "uppercase",
+      background: `rgba(${meta.rgb},0.14)`, border: `1px solid rgba(${meta.rgb},0.4)`, color: meta.color,
+    }}>
+      {meta.label}
+    </span>
+  );
+}
+
+// MAG-1 — portat din tracked-products (178-187, 213-222): variatia fata de penultimul
+// punct din istoric. Sub 0,5% e zgomot de rotunjire, nu o miscare de pret.
+function VariationBadge({ history }) {
+  const puncte = Array.isArray(history)
+    ? history.map((h) => Number(h?.price ?? h)).filter((n) => isFinite(n))
+    : [];
+  if (puncte.length < 2) return null;
+  const prev = puncte[puncte.length - 2];
+  const last = puncte[puncte.length - 1];
+  if (!prev || prev === last) return null;
+  const pct = ((last - prev) / prev) * 100;
+  if (Math.abs(pct) < 0.5) return null;
+  const jos = pct < 0;
+  return (
+    <span style={{
+      padding: "2px 7px", borderRadius: "7px", fontFamily: "var(--font-mono)", fontSize: "9px", fontWeight: 700,
+      background: jos ? "rgba(74,222,128,0.14)" : "rgba(248,113,113,0.14)",
+      border: `1px solid ${jos ? "rgba(74,222,128,0.4)" : "rgba(248,113,113,0.4)"}`,
+      color: jos ? "#4ade80" : "#f87171",
+    }}>
+      {jos ? "▼" : "▲"} {pct > 0 ? "+" : ""}{pct.toFixed(1)}%
+    </span>
+  );
+}
+
+// MAG-1 — portat din tracked-products (188-192, 223-231).
+function UnderTargetBadge({ product }) {
+  const atins = product.monitoring_active
+    && product.alert_threshold != null
+    && product.current_price != null
+    && product.current_price <= product.alert_threshold;
+  if (!atins) return null;
+  return (
+    <span style={{
+      padding: "2px 7px", borderRadius: "7px", fontFamily: "var(--font-mono)", fontSize: "9px", fontWeight: 700,
+      background: "rgba(74,222,128,0.14)", color: "#4ade80",
+      border: "1px solid rgba(74,222,128,0.45)",
+    }}>
+      Sub tinta
+    </span>
+  );
+}
+
+// MAG-1 — sparkline pe ultimele puncte, portat din tracked-products (306-322).
+function Sparkline({ history }) {
+  const puncte = Array.isArray(history)
+    ? history.map((h) => Number(h?.price ?? h)).filter((n) => isFinite(n))
+    : [];
+  if (puncte.length === 0) return null;
+  const max = Math.max(...puncte);
+  const min = Math.min(...puncte);
+  const range = max - min || 1;
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: "32px" }}>
+      {puncte.map((pr, idx) => (
+        // maxWidth: cu un singur punct, flex:1 ar intinde bara pe tot randul
+        <div key={idx} style={{
+          flex: 1, maxWidth: "26px", height: `${6 + ((pr - min) / range) * 26}px`,
+          background: "linear-gradient(180deg,#22d3ee,#2563eb)", borderRadius: "2px", opacity: 0.75,
+        }} />
+      ))}
+    </div>
   );
 }
 
@@ -88,6 +189,13 @@ export default function ProductsPage() {
   const [inlineResaleId, setInlineResaleId] = useState(null);
   const [inlineResaleValue, setInlineResaleValue] = useState("");
   const [inlineResaleSaving, setInlineResaleSaving] = useState(false);
+
+  // MAG-1 — starea adusa din pagina „Produse Urmarite", acum fuzionata aici.
+  const [scope, setScope] = useState("all");
+  const [loadError, setLoadError] = useState(null);
+  // Valori draft pentru inputul „Alerta pret", per produs.
+  const [alertDrafts, setAlertDrafts] = useState({});
+  const [busyId, setBusyId] = useState(null);
 
   const copyToClipboard = async (value, key) => {
     if (!value) return;
@@ -145,10 +253,16 @@ export default function ProductsPage() {
   // dintre setState (asincron) si request (overrides.sortBy / overrides.filtersOverride).
   const loadProducts = async (overrides = {}) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const f = overrides.filtersOverride ?? filters;
       const effectiveSortBy = overrides.sortBy ?? sortBy;
-      const params = {};
+      // MAG-1 — chip-ul de scop trece prin ACELASI mecanism de overrides ca sortarea:
+      // altfel primul click ar trimite valoarea veche (setState e asincron).
+      const effectiveScope = overrides.scope ?? scope;
+      const params = {
+        ...(SCOPE_CHIPS.find((c) => c.key === effectiveScope)?.params || {}),
+      };
       if (search.trim()) params.search = search.trim();
       if (f.source) params.source = f.source;
       if (f.brand) params.brand = f.brand;
@@ -162,9 +276,16 @@ export default function ProductsPage() {
       setProducts(response.data);
     } catch (error) {
       console.error("Eroare la incarcarea produselor:", error);
+      setLoadError("Nu am putut încărca datele. Reîncearcă.");
     } finally {
       setLoading(false);
     }
+  };
+
+  // MAG-1 — schimbarea chip-ului de scop, cu acelasi tipar anti-race ca sortarea.
+  const handleScopeChange = (key) => {
+    setScope(key);
+    loadProducts({ scope: key });
   };
 
   const handleSearch = (e) => {
@@ -181,7 +302,8 @@ export default function ProductsPage() {
     setShowBrandDropdown(false);
     setSearch("");
     loadFilterOptions("");
-    loadProducts({ filtersOverride: cleared });
+    setScope("all");
+    loadProducts({ filtersOverride: cleared, scope: "all" });
   };
 
   // FlipRadar — schimbarea sursei reseteaza brand + categorie si reincarca
@@ -207,6 +329,9 @@ export default function ProductsPage() {
         ...newProduct,
         current_price: newProduct.current_price ? parseFloat(newProduct.current_price) : null,
         resale_price: newProduct.resale_price ? parseFloat(newProduct.resale_price) : null,
+        // MAG-1 — explicit, desi backend-ul pune tot `manual` in lipsa lui: asa se
+        // citeste din formular ce provenienta primeste produsul.
+        origin: "manual",
       };
       await productsAPI.createProduct(productData);
       setShowAddForm(false);
@@ -217,12 +342,56 @@ export default function ProductsPage() {
     }
   };
 
-  const handleTrackProduct = async (productId) => {
+  // MAG-1 — portat verbatim din tracked-products/page.js (60-80): toggle-ul de
+  // monitorizare inlocuieste vechiul buton „Urmareste produsul", care putea doar sa
+  // PORNEASCA monitorizarea si nu arata niciodata daca era deja pornita.
+  const toggleMonitoring = async (product) => {
+    const next = !product.monitoring_active;
+    setBusyId(product.id);
     try {
-      await trackedProductsAPI.toggleMonitoring(productId, true, null);
-      alert("Produs adaugat in Produse Urmarite — monitorizare activata!");
-    } catch (error) {
-      alert(error.response?.data?.detail || "Eroare");
+      const draft = alertDrafts[product.id];
+      const raw = next ? (draft !== undefined ? draft : product.alert_threshold) : null;
+      const threshold = raw === "" || raw == null ? null : parseFloat(raw);
+      await trackedProductsAPI.toggleMonitoring(product.id, next, threshold);
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === product.id
+            ? { ...p, monitoring_active: next, alert_threshold: next ? (threshold ?? p.alert_threshold) : null }
+            : p
+        )
+      );
+    } catch (err) {
+      alert(err.response?.data?.detail || "Eroare la actualizarea monitorizarii");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // MAG-1 — portat din tracked-products/page.js (82-107).
+  const setAlert = async (product) => {
+    const draft = alertDrafts[product.id];
+    const value = draft !== undefined ? draft : product.alert_threshold;
+    if (value === "" || value == null) {
+      alert("Introdu o valoare valida pentru alerta de pret");
+      return;
+    }
+    const parsed = parseFloat(value);
+    if (!isFinite(parsed) || parsed < 0) {
+      alert("Alerta de pret trebuie sa fie un numar pozitiv");
+      return;
+    }
+    setBusyId(product.id);
+    try {
+      await trackedProductsAPI.toggleMonitoring(product.id, true, parsed);
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === product.id ? { ...p, monitoring_active: true, alert_threshold: parsed } : p
+        )
+      );
+    } catch (err) {
+      alert(err.response?.data?.detail || "Eroare la setarea alertei de pret");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -334,6 +503,8 @@ export default function ProductsPage() {
     marginBottom: "0.375rem", color: "var(--text-secondary)",
   };
 
+  const monitoredCount = products.filter((p) => p.monitoring_active).length;
+
   const hasActiveFilters =
     filters.source || filters.brand || filters.category ||
     filters.price_min !== "" || filters.price_max !== "" ||
@@ -346,7 +517,7 @@ export default function ProductsPage() {
 
   return (
     <div>
-      <TopBar path={["CATALOG", "OPORTUNITĂȚI"]}>
+      <TopBar path={["MAGAZINE", "PRODUSE URMĂRITE"]}>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
           className={showAddForm ? "btn-neutral" : "btn-cyan"}
@@ -356,9 +527,9 @@ export default function ProductsPage() {
       </TopBar>
 
       <PageHeading
-        icon={Search}
-        title="Descoperă Oportunități"
-        subtitle={<>Caută produse și identifică oportunități de revânzare — <Hl>{products.length} produse</Hl> în vizualizare.</>}
+        icon={Heart}
+        title="Produse Urmărite"
+        subtitle={<>Toate produsele tale, din link sau din deal-uri — <Hl>{products.length} în vizualizare</Hl>, {monitoredCount} cu monitorizare activă.</>}
       >
         <select
           value={sortBy}
@@ -409,6 +580,25 @@ export default function ProductsPage() {
           </button>
         </div>
       </form>
+
+      {/* MAG-1 — chip-uri de scop. Toate trimit parametri SERVER-SIDE, combinabili cu
+          filtrele de mai jos; produsele `scan`/`manual` apar doar sub „Toate". */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", marginTop: "12px" }}>
+        {SCOPE_CHIPS.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => handleScopeChange(c.key)}
+            className={`tab-pill${scope === c.key ? " active" : ""}`}
+            style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
+          >
+            {scope === c.key && <span className="pill-nav-dot" />}
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      <FeedErrorBanner message={loadError} onRetry={() => loadProducts()} />
 
       {/* Filter panel */}
       {showFilters && (
@@ -725,11 +915,21 @@ export default function ProductsPage() {
                       )
                     )}
                     <RoiBadge price={product.current_price} resale={product.resale_price} />
+                    <OriginChip origin={product.origin} />
+                    <VariationBadge history={product.price_history} />
+                    <UnderTargetBadge product={product} />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                     {product.current_price != null && (
                       <span style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "-.4px", color: "#ffffff" }}>
                         {product.current_price} <span style={{ fontSize: "11.5px", fontWeight: 500, color: "var(--text-tertiary)" }}>{product.currency}</span>
+                      </span>
+                    )}
+                    {/* MAG-1 — pret de lista taiat, portat din tracked-products (243-247). */}
+                    {product.original_price != null && product.current_price != null
+                      && product.original_price > product.current_price && (
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)", textDecoration: "line-through" }}>
+                        {product.original_price} {product.currency}
                       </span>
                     )}
                     {/* Resale price inline edit */}
@@ -818,17 +1018,23 @@ export default function ProductsPage() {
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                  {/* MAG-1 — toggle-ul portat din tracked-products (258-272): arata si
+                      starea, nu doar actiunea, spre deosebire de vechiul buton „ochi". */}
                   <button
-                    onClick={() => handleTrackProduct(product.id)}
-                    title="Urmareste produsul (monitorizare pret)"
+                    type="button"
+                    onClick={() => toggleMonitoring(product)}
+                    disabled={busyId === product.id}
+                    title={product.monitoring_active
+                      ? "Monitorizat activ — click pentru a opri"
+                      : "Monitorizare inactiva — click pentru a porni"}
                     style={{
-                      padding: "0.5rem", borderRadius: "10px", backgroundColor: "transparent",
-                      border: "none", cursor: "pointer", color: "var(--text-secondary)", transition: "all 0.15s ease",
+                      display: "inline-flex", alignItems: "center", gap: "0.5rem",
+                      padding: "0.375rem 0.5rem", borderRadius: "10px",
+                      background: "transparent", border: "none",
+                      cursor: busyId === product.id ? "wait" : "pointer",
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--bg-hover)"; e.currentTarget.style.color = "#a78bfa"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
                   >
-                    <Eye style={{ width: "18px", height: "18px" }} />
+                    <span className={`toggle-cyan${product.monitoring_active ? " on" : ""}`} aria-hidden="true" />
                   </button>
                   {product.source_url && (
                     <a
@@ -884,6 +1090,49 @@ export default function ProductsPage() {
                   </Link>
                 </div>
               </div>
+
+              {/* MAG-1 — sectiunea de monitorizare activa, portata din
+                  tracked-products (274-324): prag de alerta + sparkline. */}
+              {product.monitoring_active && (
+                <div style={{
+                  display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px",
+                  marginTop: "0.875rem", paddingTop: "0.875rem",
+                  borderTop: "1px solid rgba(94,140,255,.1)",
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-muted)" }}>
+                    <Activity style={{ width: "13px", height: "13px" }} />
+                    Pretul este verificat automat periodic
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                    <Bell style={{ width: "13px", height: "13px", color: "var(--text-mono)" }} strokeWidth={1.8} />
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={alertDrafts[product.id] !== undefined
+                        ? alertDrafts[product.id]
+                        : (product.alert_threshold ?? "")}
+                      onChange={(e) => setAlertDrafts((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                      placeholder="Alerta pret"
+                      style={{
+                        width: "130px",
+                        background: "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.08) 55%, transparent) border-box",
+                        border: "1px solid transparent",
+                        borderRadius: "9px", padding: "6px 10px", color: "var(--text-primary)",
+                        fontSize: "12px", fontFamily: "var(--font-sans)", outline: "none",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAlert(product)}
+                      disabled={busyId === product.id}
+                      className="btn-cyan"
+                      style={{ padding: "6px 12px", borderRadius: "9px", fontSize: "11px" }}
+                    >
+                      Seteaza
+                    </button>
+                  </div>
+                  <Sparkline history={product.price_history} />
+                </div>
+              )}
 
               {editingId === product.id && (
                 <form

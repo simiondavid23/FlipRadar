@@ -28,16 +28,18 @@ router = APIRouter(tags=["Deals"])
 # D7 — starile pe care le poate seta USERUL. `nou` e pusa de scanner, iar
 # `promovat` doar de endpointul de promovare: amandoua ar fi minciuni daca ar
 # putea fi scrise direct din UI.
-_STARI_MANUALE = {"vazut", "ignorat"}
+# MAG-1 — `ignorat` a fost scoasa: un deal pe care userul nu-l vrea dispare oricum
+# singur din feed cand scannerul nu-l mai vede (`ended_at`), deci a doua forma de
+# „ascunde-l" era doar o stare in plus de intretinut in UI si in filtre.
+_STARI_MANUALE = {"vazut"}
 
 # DEAL-2b — cele trei surse ale feed-ului. Lista e inchisa si validata la intrare,
 # ca o valoare gresita sa dea 422 explicit, nu o lista goala derutanta.
 _SURSE = {"shopify_enum", "refresh_diff", "listing_scan", "api_enum"}
 
-# DEAL-3 — multimile inchise pentru parametrii noi. `_STARI` e mai larga decat
-# `_STARI_MANUALE`: `exclude_state` doar CITESTE starea, deci are voie sa numeasca
-# si starile pe care userul nu le poate scrie.
-_STARI = {"nou", "vazut", "ignorat", "promovat"}
+# DEAL-3 — multimea inchisa a sortarilor. `_STARI` a disparut odata cu
+# `exclude_state` (MAG-1): parametrul exista DOAR ca tab-ul „Active" sa poata ascunde
+# deal-urile ignorate, iar fara starea `ignorat` n-a mai ramas cu ce sa fie chemat.
 _SORTARI = {"discount", "recent", "price"}
 
 # Plafonul paginii. 60 acopera un ecran de carduri cu rezerva, iar 500 e taria
@@ -88,32 +90,25 @@ def _serialize(deal: Deal) -> dict:
     }
 
 
-def _valideaza(source, exclude_state, sort):
+def _valideaza(source, sort):
     """Validarile comune. Fiecare parametru inchis intr-o multime da 422 explicit,
     nu o lista goala derutanta — aceeasi regula ca `source` de la DEAL-2b."""
     if source is not None and source not in _SURSE:
         raise HTTPException(
             status_code=422,
             detail=f"Sursă invalidă. Valori acceptate: {', '.join(sorted(_SURSE))}.")
-    if exclude_state is not None and exclude_state not in _STARI:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Stare invalidă. Valori acceptate: {', '.join(sorted(_STARI))}.")
     if sort is not None and sort not in _SORTARI:
         raise HTTPException(
             status_code=422,
             detail=f"Sortare invalidă. Valori acceptate: {', '.join(sorted(_SORTARI))}.")
 
 
-def _filtre(q, state, shop_domain, source, active, min_discount,
-            exclude_state, category):
+def _filtre(q, state, shop_domain, source, active, min_discount, category):
     """Filtrele, intr-un singur loc, fiindca sunt folosite de DOUA endpointuri:
     lista si numaratoarea. Daca ar fi scrise de doua ori, ar putea devia, iar un
     total care nu se potriveste cu randurile afisate e mai rau decat lipsa lui."""
     if state:
         q = q.filter(Deal.state == state)
-    if exclude_state:
-        q = q.filter(Deal.state != exclude_state)
     if source:
         q = q.filter(Deal.deal_source == source)
     if shop_domain:
@@ -186,7 +181,6 @@ def list_deals(
     source: Optional[str] = None,
     active: Optional[bool] = None,
     min_discount: Optional[float] = None,
-    exclude_state: Optional[str] = None,
     category: Optional[str] = None,
     sort: str = "discount",
     limit: int = Query(_LIMITA_IMPLICITA, ge=1, le=_LIMITA_MAXIMA),
@@ -208,10 +202,10 @@ def list_deals(
     aducea toate randurile active — 21k pe productie — si le filtra/sorta in
     browser; costul nu era SQLite (216 ms masurati), ci ORM-ul, JSON-ul si DOM-ul.
     """
-    _valideaza(source, exclude_state, sort)
+    _valideaza(source, sort)
 
     q = _filtre(db.query(Deal), state, shop_domain, source, active,
-                min_discount, exclude_state, category)
+                min_discount, category)
 
     iesire = []
     for d in q.order_by(*_ordine(sort)).offset(offset).limit(limit).all():
@@ -230,7 +224,6 @@ def deals_count(
     source: Optional[str] = None,
     active: Optional[bool] = None,
     min_discount: Optional[float] = None,
-    exclude_state: Optional[str] = None,
     category: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -241,10 +234,10 @@ def deals_count(
     Trece prin `_filtre`, aceeasi functie ca lista, ca numaratoarea sa nu poata
     devia de la ce se afiseaza. COUNT in SQL, deci nu se materializeaza niciun
     obiect ORM."""
-    _valideaza(source, exclude_state, None)
+    _valideaza(source, None)
 
     q = _filtre(db.query(Deal), state, shop_domain, source, active,
-                min_discount, exclude_state, category)
+                min_discount, category)
     return {"total": q.with_entities(func.count(Deal.id)).scalar() or 0}
 
 
@@ -454,28 +447,30 @@ def promote_deal(
 ):
     """Promoveaza un deal in produs urmarit.
 
-    Refoloseste INTEGRAL calea add-by-link: `create_product_from_url` e apelat ca
-    functie, exact pattern-ul prin care el insusi deleaga la `create_product`. Asa
-    vin gratis dedup-ul per user, snapshot-ul de pret, backfill-ul EAN si
-    cross-shop — o a doua implementare ar diverge de prima la prima schimbare.
+    Refoloseste INTEGRAL calea add-by-link: `creeaza_din_link` (corpul rutei
+    /from-url) e apelat ca functie, exact pattern-ul prin care el insusi deleaga la
+    `create_product`. Asa vin gratis dedup-ul per user, snapshot-ul de pret,
+    backfill-ul EAN si cross-shop — o a doua implementare ar diverge de prima la prima
+    schimbare. Singura diferenta fata de calea publica e `origin="deal"` (MAG-1).
 
     Daca extractia live esueaza (produs disparut intre timp), eroarea HTTP a caii
     existente se propaga si deal-ul ramane NESCHIMBAT.
     """
-    from app.routers.products import create_product_from_url
+    from app.routers.products import creeaza_din_link
     from app.schemas.product import ProductFromUrlRequest
 
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if deal is None:
         raise HTTPException(status_code=404, detail="Deal inexistent.")
 
-    rezultat = create_product_from_url(
+    rezultat = creeaza_din_link(
         payload=ProductFromUrlRequest(url=deal.url),
         background_tasks=background_tasks,
         db=db,
         current_user=current_user,
+        origin="deal",
     )
-    # create_product_from_url intoarce payload-ul de detaliu, cu produsul sub
+    # creeaza_din_link intoarce payload-ul de detaliu, cu produsul sub
     # cheia "product" (vezi _build_detail_response) — nu un id la radacina.
     product_id = rezultat["product"].id
 
@@ -497,7 +492,7 @@ def promote_deal(
     db.commit()
     db.refresh(deal)
 
-    # `product_id` la radacina: raspunsul lui create_product_from_url e deja un
+    # `product_id` la radacina: raspunsul lui creeaza_din_link e deja un
     # obiect imbricat, iar UI-ul are nevoie de id fara sa-i cunoasca forma.
     return {"deal": _serialize(deal), "product_id": product_id,
             "product": rezultat["product"]}

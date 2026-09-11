@@ -1135,7 +1135,7 @@ def test_inchiderea_pe_calificare_nu_atinge_starea(scan):
     db = SessionLocal()
     try:
         for d in db.query(Deal).all():
-            d.state = "ignorat"
+            d.state = "vazut"        # MAG-1: singura stare manuala ramasa
         db.commit()
     finally:
         db.close()
@@ -1145,7 +1145,7 @@ def test_inchiderea_pe_calificare_nu_atinge_starea(scan):
 
     for d in _deals():
         assert d.ended_at is not None
-        assert d.state == "ignorat", "inchiderea nu rescrie starea userului"
+        assert d.state == "vazut", "inchiderea nu rescrie starea userului"
 
 
 # ── LST-3 — regatuljocurilor.ro (PrestaShop `prices-drop`) ───────────────────

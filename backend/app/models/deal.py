@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text,
     UniqueConstraint,
 )
+from sqlalchemy.orm import relationship
 
 from app.utils.listing_dates import acum_local
 from app.database import Base
@@ -22,9 +23,10 @@ class Deal(Base):
     care le guverneaza (prag, webhook, magazine dezactivate) raman per-user pe
     RadarSettings, ca tot restul.
 
-    Ciclu de viata (D7): nou -> vazut / ignorat / promovat. Disparitia din scan NU
-    sterge randul, ci scrie `ended_at` — istoria deal-urilor e informatie de
-    arbitraj. Reaparitia unui deal `ignorat` nu il face din nou `nou`.
+    Ciclu de viata (D7, revizuit la MAG-1): nou -> vazut / promovat. Disparitia din
+    scan NU sterge randul, ci scrie `ended_at` — istoria deal-urilor e informatie de
+    arbitraj. Starea `ignorat` a existat pana la MAG-1 si a fost coborata in `vazut`
+    printr-o migrare; randuri noi cu ea nu se mai pot crea.
     """
 
     __tablename__ = "deals"
@@ -70,3 +72,7 @@ class Deal(Base):
     last_seen_at = Column(DateTime, default=lambda: acum_local(), nullable=False)
     ended_at = Column(DateTime, nullable=True)
     promoted_product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    # MAG-1 — perechea relatiei declarate pe Product.promoted_deals. Fara cascada de
+    # stergere in niciun sens: stergerea produsului doar anuleaza legatura (vezi
+    # comentariul de pe Product), iar deal-ul supravietuieste si poate fi repromovat.
+    promoted_product = relationship("Product", back_populates="promoted_deals")

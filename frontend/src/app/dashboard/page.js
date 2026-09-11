@@ -388,7 +388,7 @@ export default function DashboardPage() {
           label="Produse urmărite"
           value={stats?.monitored_count || 0}
           note="urmărite de tine"
-          href="/dashboard/tracked-products"
+          href="/dashboard/products"
         />
         <KpiCard
           idx="08"
@@ -440,7 +440,7 @@ export default function DashboardPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
             <QuickAction href="/dashboard/products" icon={Search} title="Caută produse" suffix="CATALOG" />
             <QuickAction href="/dashboard/inventory" icon={Boxes} title="Gestionează inventarul" suffix={`${stats?.inventory_items_count || 0} ART.`} />
-            <QuickAction href="/dashboard/tracked-products" icon={Eye} title="Vezi produsele urmărite" suffix={`${stats?.monitored_count || 0} URM.`} />
+            <QuickAction href="/dashboard/products" icon={Eye} title="Vezi produsele urmărite" suffix={`${stats?.monitored_count || 0} URM.`} />
             <QuickAction href="/dashboard/radar" icon={Radar} title="Anunțuri noi în feed" suffix={`${new24h} NOI`} />
           </div>
         </Panel>

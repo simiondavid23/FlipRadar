@@ -6,8 +6,8 @@ from app.database import get_db
 from app.models.tracked_product import TrackedProduct
 from app.models.alert import Alert
 from app.models.product import Product
-from app.models.price_history import PriceHistory
 from app.models.user import User
+from app.services.product_tracking import enrich_with_tracking
 from app.utils.auth import get_current_user
 
 # Prefixul /api/tracked-products este aplicat la include_router in main.py.
@@ -35,42 +35,17 @@ def get_tracked_products(
         for p in db.query(Product).filter(Product.id.in_(pids)).all():
             products_by_id[p.id] = p
 
-    # BH-02 — istoricul de preț pentru sparkline, într-un SINGUR query (evită N+1).
-    history_by_pid: dict = {}
-    if pids:
-        _hist_rows = (
-            db.query(PriceHistory)
-            .filter(PriceHistory.product_id.in_(pids))
-            .order_by(PriceHistory.product_id, PriceHistory.recorded_at.asc())
-            .all()
-        )
-        for _h in _hist_rows:
-            history_by_pid.setdefault(_h.product_id, []).append(_h)
-
-    # Pragul de alerta, batch: ultima alerta price_drop activa per produs.
-    thresholds_by_pid: dict = {}
-    if pids:
-        _alert_rows = (
-            db.query(Alert)
-            .filter(
-                Alert.user_id == current_user.id,
-                Alert.product_id.in_(pids),
-                Alert.alert_type == "price_drop",
-                Alert.is_active == True,
-                Alert.is_triggered == False,
-            )
-            .order_by(Alert.product_id, Alert.id)
-            .all()
-        )
-        for _a in _alert_rows:
-            # Ordonat crescator dupa id -> ultima alerta per produs castiga.
-            thresholds_by_pid[_a.product_id] = float(_a.target_price)
+    # MAG-1 — monitorizarea, pragul si istoricul vin din functia COMUNA cu
+    # GET /api/products/ (pagina fuzionata are nevoie de aceleasi campuri). Forma
+    # raspunsului de aici e neschimbata; s-a mutat doar calculul.
+    tracking = enrich_with_tracking(db, current_user.id, pids)
 
     result = []
     for t in tracked_rows:
         p = products_by_id.get(t.product_id)
         if not p:
             continue
+        extra = tracking.get(p.id, {})
         result.append({
             "id": p.id,
             "name": p.name,
@@ -85,12 +60,8 @@ def get_tracked_products(
             "brand": getattr(p, "brand", None),
             "saved_at": t.added_at.isoformat() if t.added_at else None,
             "monitoring_active": t.monitoring_active,
-            "alert_threshold": thresholds_by_pid.get(p.id),
-            "price_history": [
-                {"price": float(h.price),
-                 "recorded_at": h.recorded_at.isoformat() if h.recorded_at else None}
-                for h in history_by_pid.get(p.id, [])[-7:]
-            ],
+            "alert_threshold": extra.get("alert_threshold"),
+            "price_history": extra.get("price_history", []),
         })
 
     return sorted(result, key=lambda x: x["saved_at"] or "", reverse=True)

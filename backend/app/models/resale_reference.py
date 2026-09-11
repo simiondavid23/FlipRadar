@@ -48,4 +48,7 @@ class ResaleReference(Base):
     updated_at = Column(DateTime, default=lambda: acum_local(),
                         onupdate=lambda: acum_local())
 
-    product = relationship("Product")
+    # MAG-1 — `back_populates` in loc de relatie unidirectionala: cascada de stergere
+    # traieste pe Product.resale_references, iar SQLAlchemy cere ca ambele capete sa se
+    # cunoasca pentru ca stergerea parintelui sa curete copiii.
+    product = relationship("Product", back_populates="resale_references")

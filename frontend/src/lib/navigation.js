@@ -18,10 +18,12 @@ export const MODULES = [
     label: "Magazine",
     icon: Globe,
     pages: [
-      { name: "Descoperă Oportunități", href: "/dashboard/products", icon: Search },
+      // MAG-1 — pagina de descoperire si cea de urmarire s-au fuzionat intr-una
+      // singura, pe ruta supravietuitoare /dashboard/products;
+      // /dashboard/tracked-products a devenit redirect si a iesit din tab-uri.
+      { name: "Produse Urmărite", href: "/dashboard/products", icon: Heart },
       { name: "Deal-uri", href: "/dashboard/deals", icon: Percent },
       { name: "Scanare Magazine", href: "/dashboard/scraping", icon: Globe, flag: "can_use_scraping" },
-      { name: "Produse Urmărite", href: "/dashboard/tracked-products", icon: Heart },
     ],
   },
   {

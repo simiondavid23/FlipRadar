@@ -1099,7 +1099,8 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                         de_notificat.append(deal)
                 else:
                     # D7: the state belongs to the USER, so it stays untouched —
-                    # `ignorat` stays `ignorat`. No alert on reappearance.
+                    # `vazut` stays `vazut` (MAG-1 removed `ignorat`). No alert on
+                    # reappearance.
                     deal.title = card["title"]
                     # IMG-1b — `or deal.image_url`: un scan in care extractia da None
                     # (tema schimbata, card fara poza in acea zi) nu STERGE o poza deja
