@@ -4,7 +4,11 @@ import Link from "next/link";
 import { Calendar, Bell } from "lucide-react";
 
 // Bara de sus comuna tuturor paginilor de dashboard:
-// breadcrumb mono · chip cu data curenta · clopotel cu dot cyan · slot de actiuni.
+// breadcrumb mono · chip cu data curenta · clopotel spre Alerte Pret · slot de actiuni.
+//
+// UI-1 — clopotelul avea si un punct cyan, randat NECONDITIONAT: nu numara nimic
+// (TopBar nu face niciun fetch), deci anunta mereu alerte care puteau sa nu existe.
+// Scos; un punct real ar avea nevoie de o sursa de date, nu de un span.
 //
 // `path` = segmentele de dupa FLIPRADAR, ex. ["RADAR PIATA", "FEED ANUNTURI"].
 // `children` = actiunile din dreapta (ex. butonul "Scanează acum").
@@ -77,12 +81,6 @@ export default function TopBar({ path = [], children, showDate = true, showBell 
           }}
         >
           <Bell style={{ width: "15px", height: "15px", color: "var(--text-dim)" }} strokeWidth={1.8} />
-          <span
-            style={{
-              position: "absolute", top: "8px", right: "9px", width: "6px", height: "6px",
-              borderRadius: "50%", background: "#22d3ee", boxShadow: "0 0 7px #22d3ee",
-            }}
-          />
         </Link>
       )}
       {children}

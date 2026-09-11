@@ -9,6 +9,7 @@
 //   onToggleCompare      — daca lipseste, butonul de comparare nu apare (opt-in)
 import { useState } from "react";
 import { ImageOff, Bookmark, EyeOff, ExternalLink, Check, Trash2, Scale, RefreshCw } from "lucide-react";
+import IconButton from "@/components/IconButton";
 import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge, bumpInfo } from "./listingHelpers";
 
 // FRONT-1 — culoarea de avertizare discreta pentru anunturile repromovate. Aceeasi
@@ -49,6 +50,12 @@ export default function ListingFeedCard({
     : bulkSelected
       ? "rgba(148,163,184,.4)"
       : CARD_BORDER;
+
+  // UI-1 — primul rand de actiuni exista doar daca are ce tine. Pe un deal incheiat
+  // (`hideActions`, fara comparare si fara stergere) ar fi ramas un rand gol care
+  // ar fi impins butonul de deschidere in jos cu un gap in plus.
+  const randUnuAreContinut = (!hideActions && (onSave || onIgnore))
+    || Boolean(onToggleCompare) || Boolean(onDelete);
 
   return (
     <div
@@ -310,9 +317,24 @@ export default function ListingFeedCard({
             </button>
           </div>
         ) : (
-        <div style={{ display: "flex", gap: "6px", marginTop: "auto", paddingTop: "8px", alignItems: "center" }}>
-          {!hideActions && (
-          <>
+        // UI-1 — zona de actiuni pe DOUA randuri. Inainte, „Deschide pe <platforma>"
+        // statea pe acelasi rand cu „Salveaza"/„Ignora" si se taia la nume lungi
+        // (LaJumate, Autoscout24, Facebook Marketplace). Orice reglaj de padding sau
+        // de font s-ar fi rupt la primul nume si mai lung, deci butonul a coborat pe
+        // randul lui, pe toata latimea — acolo incape mereu.
+        <div style={{
+          display: "flex", flexDirection: "column", gap: "0.375rem",
+          marginTop: "auto", paddingTop: "8px",
+        }}>
+          {randUnuAreContinut && (
+          // `alignItems: "stretch"` NU e decorativ: de el depinde ca IconButton
+          // (aspectRatio 1) sa iasa patrat, la inaltimea butoanelor cu text.
+          <div style={{ display: "flex", gap: "0.375rem", alignItems: "stretch" }}>
+          {/* Fiecare buton cere handlerul lui. `hideActions` singur nu mai e de ajuns:
+              feed-ul de deal-uri paseaza `onSave` (promovare) dar NU si `onIgnore`,
+              de cand starea `ignorat` a fost scoasa la MAG-1 — butonul randat
+              neconditionat arunca TypeError la click. */}
+          {!hideActions && onSave && (
           <button
             onClick={(e) => { e.stopPropagation(); onSave(); }}
             style={{
@@ -328,6 +350,8 @@ export default function ListingFeedCard({
             <Bookmark style={{ width: "11px", height: "11px" }} strokeWidth={2} />
             {listing.status === "saved" ? "Salvat" : "Salvează"}
           </button>
+          )}
+          {!hideActions && onIgnore && (
           <button
             onClick={(e) => { e.stopPropagation(); onIgnore(); }}
             style={{
@@ -343,8 +367,33 @@ export default function ListingFeedCard({
             <EyeOff style={{ width: "11px", height: "11px" }} strokeWidth={2} />
             {listing.status === "ignored" ? "Ignorat" : "Ignoră"}
           </button>
-          </>
           )}
+          {/* Butoanele-iconita se lipesc de marginea dreapta; `marginLeft: auto` sta
+              pe PRIMUL prezent, ca randul sa arate la fel si cand unul lipseste. */}
+          {onToggleCompare && (
+            <IconButton
+              icon={Scale}
+              title={compareSelected ? "Scoate din comparare" : "Adaugă la comparare"}
+              active={compareSelected}
+              onClick={onToggleCompare}
+              style={{ marginLeft: "auto" }}
+            />
+          )}
+          {/* `onDelete &&`: feed-ul de deal-uri nu paseaza handlerul, iar butonul
+              randat neconditionat arunca TypeError la click. */}
+          {onDelete && (
+            <IconButton
+              icon={Trash2}
+              title="Șterge anunțul"
+              danger
+              className="listing-trash"
+              onClick={onDelete}
+              style={onToggleCompare ? undefined : { marginLeft: "auto" }}
+            />
+          )}
+          </div>
+          )}
+
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -354,7 +403,7 @@ export default function ListingFeedCard({
             title={openLabel}
             className="listing-open"
             style={{
-              flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "5px",
+              width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "5px",
               padding: "6px 8px", borderRadius: "9px",
               border: "1px solid rgba(34,211,238,.4)",
               background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)",
@@ -364,33 +413,6 @@ export default function ListingFeedCard({
           >
             <ExternalLink style={{ width: "11px", height: "11px" }} strokeWidth={2} />
             {openLabel}
-          </button>
-          {onToggleCompare && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleCompare(); }}
-              title={compareSelected ? "Scoate din comparare" : "Adaugă la comparare"}
-              style={{
-                border: "none", cursor: "pointer",
-                padding: "4px", borderRadius: "8px",
-                color: compareSelected ? "#7ee7f8" : "var(--text-tertiary)",
-                background: compareSelected ? "rgba(34,211,238,.12)" : "transparent",
-                display: "inline-flex", alignItems: "center",
-                transition: "all 0.12s",
-              }}
-            >
-              <Scale style={{ width: "13px", height: "13px" }} strokeWidth={1.8} />
-            </button>
-          )}
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            title="Șterge anunțul"
-            className="listing-trash"
-            style={{
-              marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer",
-              color: "#f87171", display: "inline-flex", alignItems: "center", padding: "4px",
-            }}
-          >
-            <Trash2 style={{ width: "13px", height: "13px" }} strokeWidth={1.8} />
           </button>
         </div>
         )}
