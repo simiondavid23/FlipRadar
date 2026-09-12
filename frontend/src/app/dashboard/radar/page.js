@@ -644,7 +644,7 @@ export default function RadarFeedPage() {
           reviewEnabled={reviewEnabled}
           onGenerateAI={() => generateAIReview(selected.id)}
           generatingAI={generatingAI}
-          reviewSettingsHref="/dashboard/settings"
+          reviewSettingsHref="/dashboard/settings#analiza-ai"
           detailBannerSlot={<RadarDetailBanner listing={selected} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
         />
       )}

@@ -46,7 +46,7 @@ export default function ListingDetailModal({
   reviewEnabled = true,
   onGenerateAI,
   generatingAI,
-  reviewSettingsHref = "/dashboard/settings",
+  reviewSettingsHref = "/dashboard/settings#analiza-ai",
   detailBannerSlot = null,
   mlSlot = null,
   children = null,

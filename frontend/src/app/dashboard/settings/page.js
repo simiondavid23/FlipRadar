@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import TopBar from "@/components/shared/TopBar";
 import PageHeading from "@/components/shared/PageHeading";
+import SettingsRow from "@/components/shared/SettingsRow";
 
 const EMPTY_PROXY = { enabled: false, host: "", port: "", username: "", password: "", password_set: false };
 
@@ -24,14 +25,30 @@ const CANALE_DEAL = [
   ["diverse", "Magazine — Diverse"],
 ];
 
+// SET-1b — cheile fiecarui rand Discord. ACEEASI lista alimenteaza calculul de
+// `dirty` si corpul PATCH-ului, ca un rand sa nu poata trimite alte chei decat cele
+// pe care le-a marcat modificate (`SettingsUpdate` are toate campurile optionale).
+const CHEI_DISCORD = {
+  "discord-radar": ["discord_webhook_all", "discord_webhook_buy_now", "discord_webhook_maybe"],
+  "discord-auto": ["discord_webhook_auto_all", "discord_webhook_auto", "discord_webhook_auto_b"],
+  "discord-imobiliare": ["discord_webhook_imob_all", "discord_webhook_imob_a", "discord_webhook_imob_b"],
+  "discord-magazine": ["discord_webhooks_deals"],
+  "discord-alerte": ["discord_webhook_alerts"],
+};
+
 export default function SettingsPage() {
   // ── Radar settings state (copiat din vechea pagina /dashboard/radar/settings) ──
   const [settings, setSettings] = useState(null);
+  // SET-1b — ultima valoare CONFIRMATA (venita din backend sau dintr-un save
+  // reusit). `dirty` per rand = diferenta fata de asta, nu un flag pus de mana:
+  // un camp readus manual la valoarea salvata inceteaza sa fie murdar.
+  const [savedSettings, setSavedSettings] = useState(null);
   const [fbStatus, setFbStatus] = useState({ status: null });
   // FB-LOGIN — asteptare activa + polling de status (in loc de setTimeout orb).
   const [fbConnecting, setFbConnecting] = useState(false);
   const fbPollRef = useRef(null);
   const [proxy, setProxy] = useState(EMPTY_PROXY);
+  const [savedProxy, setSavedProxy] = useState(EMPTY_PROXY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [flashThreshold, setFlashThreshold] = useState(15);
@@ -45,6 +62,7 @@ export default function SettingsPage() {
   const [aiSaving, setAiSaving] = useState(false);
   const [aiTesting, setAiTesting] = useState(false);
   const [aiTestResult, setAiTestResult] = useState(null);  // {ok, model} | {ok:false, error}
+  const [savedAi, setSavedAi] = useState({ provider: "groq", model: "" });
   const [newAlias, setNewAlias] = useState("");
   const [newZone, setNewZone] = useState("");
   // SHOP-2b — scannerul de deal-uri: prag + lista de magazine scanate.
@@ -54,6 +72,9 @@ export default function SettingsPage() {
   const [listingR1Threshold, setListingR1Threshold] = useState("");
   const [savingListingR1, setSavingListingR1] = useState(false);
   const [dealShops, setDealShops] = useState([]);
+  // SET-1b — filtrul grilei de magazine. Pur client-side: lista completa e deja
+  // in memorie, iar contorul din summary ramane pe ea, nu pe cea filtrata.
+  const [shopFilter, setShopFilter] = useState("");
 
   const load = useCallback(async () => {
     const [s, fb, px, us, ds] = await Promise.all([
@@ -63,7 +84,7 @@ export default function SettingsPage() {
       usersAPI.getSettings().catch(() => null),
       dealsAPI.shops().catch(() => null),
     ]);
-    if (s?.data) setSettings(s.data);
+    if (s?.data) { setSettings(s.data); setSavedSettings(s.data); }
     if (s?.data?.deal_discount_threshold != null) {
       setDealThreshold(String(s.data.deal_discount_threshold));
     }
@@ -72,12 +93,16 @@ export default function SettingsPage() {
     }
     if (ds?.data) setDealShops(ds.data);
     if (fb?.data) setFbStatus(fb.data);
-    if (px?.data) setProxy({ ...EMPTY_PROXY, ...px.data, password: "" });
+    if (px?.data) {
+      const p = { ...EMPTY_PROXY, ...px.data, password: "" };
+      setProxy(p); setSavedProxy(p);
+    }
     if (us?.data?.ai_features_config) setAiFeatures(us.data.ai_features_config);
     if (us?.data) {
       setAiProvider(us.data.ai_provider || "groq");
       setAiModel(us.data.ai_model || "");
       setAiKeySet(!!us.data.ai_api_key_set);
+      setSavedAi({ provider: us.data.ai_provider || "groq", model: us.data.ai_model || "" });
     }
     if (us?.data?.flash_deal_threshold != null) setFlashThreshold(Math.round(us.data.flash_deal_threshold * 100));
     setLoading(false);
@@ -99,36 +124,63 @@ export default function SettingsPage() {
     update({ [key]: newVal });
     try {
       await radarAPI.updateSettings({ [key]: newVal });
+      // Comutatoarele se salveaza instant, deci NU au voie sa aprinda `dirty`:
+      // confirmarea muta si referinta.
+      setSavedSettings((prev) => (prev ? { ...prev, [key]: newVal } : prev));
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la actualizare.");
       update({ [key]: !newVal });
     }
   };
 
-  const saveDiscord = async () => {
-    setSaving(true);
+  // SET-1b — un rand Discord isi trimite DOAR cheile proprii. `saveDiscord` global
+  // a dispat: trimitea toate cele 11 webhook-uri la orice atingere, deci un camp
+  // pe care nu-l deschiseseai putea pleca spre server cu valoarea din memorie.
+  const [savingRow, setSavingRow] = useState(null);
+
+  const cheiModificate = (rand) => {
+    if (!settings || !savedSettings) return [];
+    return (CHEI_DISCORD[rand] || []).filter(
+      (k) => JSON.stringify(settings[k] ?? null) !== JSON.stringify(savedSettings[k] ?? null));
+  };
+  const randMurdar = (rand) => cheiModificate(rand).length > 0;
+
+  const salveazaRand = async (rand) => {
+    const chei = CHEI_DISCORD[rand] || [];
+    const payload = {};
+    for (const k of chei) {
+      // Harta de canale pleaca INTREAGA (backendul o inlocuieste); restul sunt
+      // stringuri, iar un camp golit trebuie sa ajunga "" ca sa stearga webhook-ul.
+      payload[k] = k === "discord_webhooks_deals" ? (settings[k] || {}) : (settings[k] || "");
+    }
+    setSavingRow(rand);
     try {
-      await radarAPI.updateSettings({
-        discord_webhook_all: settings.discord_webhook_all || "",
-        discord_webhook_buy_now: settings.discord_webhook_buy_now || "",
-        discord_webhook_maybe: settings.discord_webhook_maybe || "",
-        discord_webhook_auto: settings.discord_webhook_auto || "",
-        discord_webhook_auto_all: settings.discord_webhook_auto_all || "",
-        discord_webhook_auto_b: settings.discord_webhook_auto_b || "",
-        discord_webhook_imob_all: settings.discord_webhook_imob_all || "",
-        discord_webhook_imob_a: settings.discord_webhook_imob_a || "",
-        discord_webhook_imob_b: settings.discord_webhook_imob_b || "",
-        discord_webhook_alerts: settings.discord_webhook_alerts || "",
-        // DISC-1 — harta se trimite INTREAGA: backend-ul o inlocuieste, iar un
-        // camp golit in formular sterge cheia. De aceea nu se filtreaza aici.
-        discord_webhooks_deals: settings.discord_webhooks_deals || {},
-      });
-      alert("Webhook-uri Discord salvate.");
+      await radarAPI.updateSettings(payload);
+      setSavedSettings((prev) => ({ ...(prev || {}), ...payload }));
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la salvare.");
     } finally {
-      setSaving(false);
+      setSavingRow(null);
     }
+  };
+
+  // Butonul de salvare al unui rand Discord: dezactivat cand n-ai ce salva, ca sa
+  // nu trimiti un PATCH identic cu starea din server.
+  const butonSalvareRand = (rand) => {
+    const murdar = randMurdar(rand);
+    return (
+      <div>
+        <button
+          onClick={() => salveazaRand(rand)}
+          disabled={savingRow === rand || !murdar}
+          style={{ ...primaryBtn(savingRow === rand), opacity: murdar ? (savingRow === rand ? 0.6 : 1) : 0.45,
+                   cursor: murdar ? (savingRow === rand ? "wait" : "pointer") : "default" }}
+        >
+          <Save style={{ width: "14px", height: "14px" }} />
+          {savingRow === rand ? "Se salveaza..." : murdar ? "Salveaza webhook-urile" : "Nimic de salvat"}
+        </button>
+      </div>
+    );
   };
 
   const saveFlashThreshold = async () => {
@@ -161,6 +213,7 @@ export default function SettingsPage() {
     try {
       await radarAPI.updateSettings({ deal_discount_threshold: pct });
       update({ deal_discount_threshold: pct });
+      setSavedSettings((prev) => (prev ? { ...prev, deal_discount_threshold: pct } : prev));
       alert(pct === null ? "Pragul revine la implicit (20%)." : "Pragul de discount a fost salvat.");
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la salvare.");
@@ -182,6 +235,7 @@ export default function SettingsPage() {
     try {
       await radarAPI.updateSettings({ listing_r1_threshold: pct });
       update({ listing_r1_threshold: pct });
+      setSavedSettings((prev) => (prev ? { ...prev, listing_r1_threshold: pct } : prev));
       alert(pct === null ? "Pragul revine la implicit (40%)." : "Pragul pentru listări a fost salvat.");
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la salvare.");
@@ -202,9 +256,35 @@ export default function SettingsPage() {
     update({ deal_shops_disabled: lista });
     try {
       await radarAPI.updateSettings({ deal_shops_disabled: lista });
+      setSavedSettings((prev) => (prev ? { ...prev, deal_shops_disabled: lista } : prev));
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la actualizare.");
       setDealShops((prev) => prev.map((s) => (s.domain === domain ? { ...s, disabled: !s.disabled } : s)));
+      update({ deal_shops_disabled: settings.deal_shops_disabled || [] });
+    }
+  };
+
+  // SET-1b — „Toate"/„Niciunul" actioneaza pe setul VIZIBIL, nu pe toata lista:
+  // altfel un filtru activ ar da impresia unei actiuni locale cu efect global.
+  const setareLotMagazine = async (activeaza) => {
+    const vizibile = magazineFiltrate.map((m) => m.domain);
+    if (vizibile.length === 0) return;
+    const vizibil = new Set(vizibile);
+    const dezactivate = new Set(settings.deal_shops_disabled || []);
+    for (const d of vizibile) {
+      if (activeaza) dezactivate.delete(d);
+      else dezactivate.add(d);
+    }
+    const lista = [...dezactivate];
+    const inainte = dealShops;
+    setDealShops((prev) => prev.map((m) => (vizibil.has(m.domain) ? { ...m, disabled: !activeaza } : m)));
+    update({ deal_shops_disabled: lista });
+    try {
+      await radarAPI.updateSettings({ deal_shops_disabled: lista });
+      setSavedSettings((prev) => (prev ? { ...prev, deal_shops_disabled: lista } : prev));
+    } catch (e) {
+      alert(e.response?.data?.detail || "Eroare la actualizare.");
+      setDealShops(inainte);
       update({ deal_shops_disabled: settings.deal_shops_disabled || [] });
     }
   };
@@ -214,16 +294,20 @@ export default function SettingsPage() {
     const updated = { ...(settings.custom_zone_aliases || {}), [newAlias.toLowerCase().trim()]: newZone.trim() };
     update({ custom_zone_aliases: updated });
     setNewAlias(""); setNewZone("");
-    try { await radarAPI.updateSettings({ custom_zone_aliases: updated }); }
-    catch (e) { alert(e.response?.data?.detail || "Eroare la salvare zonă."); }
+    try {
+      await radarAPI.updateSettings({ custom_zone_aliases: updated });
+      setSavedSettings((prev) => (prev ? { ...prev, custom_zone_aliases: updated } : prev));
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la salvare zonă."); }
   };
 
   const removeZoneAlias = async (alias) => {
     const updated = { ...(settings.custom_zone_aliases || {}) };
     delete updated[alias];
     update({ custom_zone_aliases: updated });
-    try { await radarAPI.updateSettings({ custom_zone_aliases: updated }); }
-    catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere zonă."); }
+    try {
+      await radarAPI.updateSettings({ custom_zone_aliases: updated });
+      setSavedSettings((prev) => (prev ? { ...prev, custom_zone_aliases: updated } : prev));
+    } catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere zonă."); }
   };
 
   const testWebhook = async (url) => {
@@ -251,7 +335,8 @@ export default function SettingsPage() {
       });
       alert("Configurația proxy a fost salvată.");
       const px = await radarAPI.getProxy();
-      setProxy({ ...EMPTY_PROXY, ...px.data, password: "" });
+      const p = { ...EMPTY_PROXY, ...px.data, password: "" };
+      setProxy(p); setSavedProxy(p);
     } catch (e) {
       alert(e.response?.data?.detail || "Eroare la salvare proxy.");
     } finally {
@@ -328,6 +413,7 @@ export default function SettingsPage() {
         setAiKeySet(!!r.data.ai_api_key_set);
         setAiModel(r.data.ai_model || "");
         setAiProvider(r.data.ai_provider || "groq");
+        setSavedAi({ provider: r.data.ai_provider || "groq", model: r.data.ai_model || "" });
       }
       setAiKeyInput("");   // nu păstrăm cheia tastată după salvare
     } catch (e) {
@@ -352,6 +438,89 @@ export default function SettingsPage() {
     }
   };
 
+  // ── SET-1b: summary-urile randurilor ──────────────────────────────────────
+  // Toate se citesc din starea REALA. Cand `settings` inca lipseste nu randam
+  // niciun rand (vezi guard-ul de mai jos), deci aici putem presupune ca exista.
+  const PLATFORME_RADAR = [
+    "platform_olx_enabled", "platform_vinted_enabled", "platform_okazii_enabled",
+    "platform_facebook_enabled", "platform_lajumate_enabled", "platform_publi24_enabled",
+  ];
+
+  const magazineFiltrate = (() => {
+    const q = shopFilter.trim().toLowerCase();
+    if (!q) return dealShops;
+    return dealShops.filter((m) =>
+      String(m.label || "").toLowerCase().includes(q) ||
+      String(m.domain || "").toLowerCase().includes(q));
+  })();
+
+  const setate = (chei) => chei.filter((k) => (settings?.[k] || "").trim()).length;
+
+  const sumarPlatforme = () => {
+    const n = PLATFORME_RADAR.filter((k) => !!settings[k]).length;
+    let fb = "Facebook inactiv";
+    if (fbStatus.status === "active") {
+      fb = fbStatus.age_hours != null
+        ? `Facebook conectat acum ${fbStatus.age_hours < 48
+            ? Math.round(fbStatus.age_hours) + "h"
+            : Math.round(fbStatus.age_hours / 24) + " zile"}`
+        : "Facebook conectat";
+    } else if (fbStatus.status === "expired") {
+      fb = "Facebook expirat";
+    }
+    return `${n}/${PLATFORME_RADAR.length} active · ${fb}`;
+  };
+
+  const sumarDiscordModul = (rand) =>
+    `${setate(CHEI_DISCORD[rand])}/${CHEI_DISCORD[rand].length} webhook-uri setate`;
+
+  const sumarMagazineDiscord = () => {
+    const harta = settings.discord_webhooks_deals || {};
+    const n = CANALE_DEAL.filter(([c]) => (harta[c] || "").trim()).length;
+    return `${n}/${CANALE_DEAL.length} canale setate`;
+  };
+
+  const sumarAlerte = () =>
+    `${(settings.discord_webhook_alerts || "").trim() ? "webhook setat" : "webhook nesetat"}`
+    + ` · Flash Deal ${flashThreshold}%`;
+
+  const sumarDealuri = () => {
+    const prag = settings.deal_discount_threshold ?? 20;
+    const r1 = settings.listing_r1_threshold ?? 40;
+    const active = dealShops.filter((m) => !m.disabled).length;
+    return `prag ${prag}% · R1 ${r1}% · ${active}/${dealShops.length} magazine`;
+  };
+
+  const sumarZone = () => {
+    const n = Object.keys(settings.custom_zone_aliases || {}).length;
+    return `${n} ${n === 1 ? "alias" : "alias-uri"}`;
+  };
+
+  const sumarAi = () => {
+    const review = aiFeatures.ai_radar_review !== false ? "review on" : "review off";
+    const furnizor = aiProvider === "gemini" ? "Gemini" : "Groq";
+    return `${review} · ${furnizor} · ${aiKeySet ? "cheie setata" : "cheie lipsa"}`;
+  };
+
+  const sumarProxy = () => {
+    if (!proxy.enabled) return "dezactivat";
+    const gazda = (proxy.host || "").trim();
+    if (!gazda) return "activ · host nesetat";
+    return (proxy.port || "").trim() ? `${gazda}:${proxy.port}` : gazda;
+  };
+
+  // Proxy si AI nu au chei in `settings`, deci `dirty` se calculeaza pe
+  // snapshot-urile lor proprii. Parola conteaza doar cand a fost TASTATA
+  // (nu se precompleteaza niciodata, deci "" nu inseamna „stearsa").
+  const proxyMurdar =
+    !!proxy.enabled !== !!savedProxy.enabled
+    || (proxy.host || "") !== (savedProxy.host || "")
+    || (proxy.port || "") !== (savedProxy.port || "")
+    || (proxy.username || "") !== (savedProxy.username || "")
+    || !!(proxy.password || "");
+  const aiMurdar =
+    aiProvider !== savedAi.provider || (aiModel || "") !== (savedAi.model || "") || !!aiKeyInput;
+
   return (
     <div style={{ maxWidth: "900px" }}>
       <TopBar path={["SETĂRI"]} />
@@ -375,8 +544,7 @@ export default function SettingsPage() {
         </div>
       ) : (
         <>
-          {/* Platforms */}
-          <Section title="Platforme active — Radar Piață">
+          <SettingsRow id="platforme" title="Platforme active — Radar Piață" summary={sumarPlatforme()}>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
               Aceste comutatoare afectează doar scanările din Radar Piață. Modulele Auto Anunțuri
               și Imobiliare își aleg platformele la nivel de keyword.
@@ -425,13 +593,9 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-          </Section>
+          </SettingsRow>
 
-          {/* Grupuri Facebook — Chirii (mutat din pagina standalone real-estate-monitor/groups) */}
-          <FacebookGroupsSection />
-
-          {/* Discord */}
-          <Section title="Discord Webhooks">
+          <SettingsRow id="discord-radar" title="Discord — Radar Piață" summary={sumarDiscordModul("discord-radar")} dirty={randMurdar("discord-radar")}>
             <WebhookInput
               label="Webhook ALL — toate deal-urile"
               value={settings.discord_webhook_all || ""}
@@ -450,22 +614,28 @@ export default function SettingsPage() {
               onChange={(v) => update({ discord_webhook_maybe: v })}
               onTest={() => testWebhook(settings.discord_webhook_maybe)}
             />
+            <PlatformToggle label="Menționează @here pentru Grade A în Radar Piață" enabled={!!settings.discord_here_radar} onToggle={() => togglePlatform("discord_here_radar")} />
+            {butonSalvareRand("discord-radar")}
+          </SettingsRow>
 
-            <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Auto Anunțuri</div>
+          <SettingsRow id="discord-auto" title="Discord — Auto Anunțuri" summary={sumarDiscordModul("discord-auto")} dirty={randMurdar("discord-auto")}>
             <WebhookInput label="Auto — Toate anunțurile" value={settings.discord_webhook_auto_all || ""} onChange={(v) => update({ discord_webhook_auto_all: v })} onTest={() => testWebhook(settings.discord_webhook_auto_all)} />
             <WebhookInput label="Auto — Doar Grade A" value={settings.discord_webhook_auto || ""} onChange={(v) => update({ discord_webhook_auto: v })} onTest={() => testWebhook(settings.discord_webhook_auto)} />
             <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "-0.25rem" }}>Primești notificări doar pentru anunțuri de Grad A.</div>
             <WebhookInput label="Auto — Doar Grade B" value={settings.discord_webhook_auto_b || ""} onChange={(v) => update({ discord_webhook_auto_b: v })} onTest={() => testWebhook(settings.discord_webhook_auto_b)} />
             <PlatformToggle label="Menționează @here pentru Grade A în Auto Anunțuri" enabled={!!settings.discord_here_auto} onToggle={() => togglePlatform("discord_here_auto")} />
+            {butonSalvareRand("discord-auto")}
+          </SettingsRow>
 
-            <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Imobiliare</div>
+          <SettingsRow id="discord-imobiliare" title="Discord — Imobiliare" summary={sumarDiscordModul("discord-imobiliare")} dirty={randMurdar("discord-imobiliare")}>
             <WebhookInput label="Imobiliare — Toate anunțurile" value={settings.discord_webhook_imob_all || ""} onChange={(v) => update({ discord_webhook_imob_all: v })} onTest={() => testWebhook(settings.discord_webhook_imob_all)} />
             <WebhookInput label="Imobiliare — Doar Grade A" value={settings.discord_webhook_imob_a || ""} onChange={(v) => update({ discord_webhook_imob_a: v })} onTest={() => testWebhook(settings.discord_webhook_imob_a)} />
             <WebhookInput label="Imobiliare — Doar Grade B" value={settings.discord_webhook_imob_b || ""} onChange={(v) => update({ discord_webhook_imob_b: v })} onTest={() => testWebhook(settings.discord_webhook_imob_b)} />
             <PlatformToggle label="Menționează @here pentru Grade A în Imobiliare" enabled={!!settings.discord_here_imob} onToggle={() => togglePlatform("discord_here_imob")} />
-            <PlatformToggle label="Menționează @here pentru Grade A în Radar Piață" enabled={!!settings.discord_here_radar} onToggle={() => togglePlatform("discord_here_radar")} />
+            {butonSalvareRand("discord-imobiliare")}
+          </SettingsRow>
 
-            <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Magazine (deal-uri)</div>
+          <SettingsRow id="discord-magazine" title="Discord — Magazine" summary={sumarMagazineDiscord()} dirty={randMurdar("discord-magazine")}>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
               Fiecare deal nou pleacă pe canalul magazinului lui <em>și</em> pe „Toate
               deal-urile”. Magazinele fără canal declarat merg în „Diverse”. Un câmp gol
@@ -480,8 +650,10 @@ export default function SettingsPage() {
                 onTest={() => testWebhook((settings.discord_webhooks_deals || {})[canal])}
               />
             ))}
+            {butonSalvareRand("discord-magazine")}
+          </SettingsRow>
 
-            <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Alerte preț</div>
+          <SettingsRow id="discord-alerte" title="Discord — Alerte preț" summary={sumarAlerte()} dirty={randMurdar("discord-alerte")}>
             <WebhookInput label="Alerte preț & Flash Deals" value={settings.discord_webhook_alerts || ""} onChange={(v) => update({ discord_webhook_alerts: v })} onTest={() => testWebhook(settings.discord_webhook_alerts)} />
 
             <div style={{ marginTop: "0.5rem", padding: "0.625rem 0.75rem", background: "rgba(4,9,18,.45)", borderRadius: "10px", border: "1px solid var(--border-color)" }}>
@@ -498,17 +670,10 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
+            {butonSalvareRand("discord-alerte")}
+          </SettingsRow>
 
-            <div style={{ marginTop: "0.625rem" }}>
-              <button onClick={saveDiscord} disabled={saving} style={primaryBtn(saving)}>
-                <Save style={{ width: "14px", height: "14px" }} />
-                Salvează webhooks
-              </button>
-            </div>
-          </Section>
-
-          {/* SHOP-2b — scannerul de deal-uri Shopify */}
-          <Section title="Deal-uri Catalog">
+          <SettingsRow id="deal-uri-catalog" title="Deal-uri Catalog" summary={sumarDealuri()}>
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0 0 0.5rem" }}>
               Scanarea rulează la fiecare 6 ore pe magazinele Shopify din catalog și
               raportează produsele reduse sub pragul de mai jos.
@@ -577,8 +742,33 @@ export default function SettingsPage() {
                   Nu am putut încărca lista de magazine.
                 </p>
               ) : (
+                <>
+                {/* SET-1b — filtrare doar client-side; „Toate"/„Niciunul" lucreaza pe
+                    ce se vede, deci un filtru activ restrange si actiunea de lot. */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", flexWrap: "wrap" }}>
+                  <input
+                    type="text"
+                    value={shopFilter}
+                    onChange={(e) => setShopFilter(e.target.value)}
+                    placeholder="Filtrează după nume sau domeniu…"
+                    style={{ ...inputStyle, flex: 1, minWidth: "170px" }}
+                  />
+                  <button onClick={() => setareLotMagazine(true)} disabled={magazineFiltrate.length === 0}
+                    style={{ ...smallBtn("#7ee7f8"), opacity: magazineFiltrate.length === 0 ? 0.45 : 1 }}>
+                    Toate
+                  </button>
+                  <button onClick={() => setareLotMagazine(false)} disabled={magazineFiltrate.length === 0}
+                    style={{ ...smallBtn("#94a3b8"), opacity: magazineFiltrate.length === 0 ? 0.45 : 1 }}>
+                    Niciunul
+                  </button>
+                </div>
+                {magazineFiltrate.length === 0 ? (
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>
+                    Niciun magazin nu se potrivește filtrului.
+                  </p>
+                ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: "6px" }}>
-                  {dealShops.map((shop) => (
+                  {magazineFiltrate.map((shop) => (
                     <label
                       key={shop.domain}
                       style={{
@@ -603,12 +793,15 @@ export default function SettingsPage() {
                     </label>
                   ))}
                 </div>
+                )}
+                </>
               )}
             </div>
-          </Section>
+          </SettingsRow>
 
-          {/* Zone personalizate — Imobiliare */}
-          <Section title="Zone personalizate — Imobiliare">
+          <FacebookGroupsSection />
+
+          <SettingsRow id="zone-imobiliare" title="Zone personalizate — Imobiliare" summary={sumarZone()}>
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: "0 0 0.5rem" }}>
               Adaugă alias-uri pentru zone nerecunoscute automat. Ex: „langa IKEA Băneasa” → „Băneasa”.
             </p>
@@ -626,74 +819,9 @@ export default function SettingsPage() {
               <input placeholder='Zonă canonică (ex: "Băneasa")' value={newZone} onChange={(e) => setNewZone(e.target.value)} style={inputStyle} />
               <button onClick={addZoneAlias} style={primaryBtn(false)}>Adaugă</button>
             </div>
-          </Section>
+          </SettingsRow>
 
-          {/* Proxy */}
-          <Section title="Proxy (opțional)">
-            <PlatformToggle
-              label="Activează proxy"
-              enabled={!!proxy.enabled}
-              onToggle={() => setProxy({ ...proxy, enabled: !proxy.enabled })}
-            />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-              <div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Host</div>
-                <input
-                  type="text"
-                  value={proxy.host}
-                  onChange={(e) => setProxy({ ...proxy, host: e.target.value })}
-                  placeholder="proxy.exemplu.ro"
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Port</div>
-                <input
-                  type="text"
-                  value={proxy.port}
-                  onChange={(e) => setProxy({ ...proxy, port: e.target.value })}
-                  placeholder="8080"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-              <div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Username</div>
-                <input
-                  type="text"
-                  value={proxy.username}
-                  onChange={(e) => setProxy({ ...proxy, username: e.target.value })}
-                  placeholder="(opțional)"
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>
-                  Parolă {proxy.password_set && <span style={{ color: "#4ade80" }}>(setată)</span>}
-                </div>
-                <input
-                  type="password"
-                  value={proxy.password}
-                  onChange={(e) => setProxy({ ...proxy, password: e.target.value })}
-                  placeholder={proxy.password_set ? "Lasă gol pentru a păstra parola existentă" : "(opțional)"}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-              Folosește un proxy dacă primești erori de blocare la scraping. Lasă gol dacă nu ai nevoie.
-            </div>
-            <div>
-              <button onClick={saveProxy} disabled={saving} style={primaryBtn(saving)}>
-                <Save style={{ width: "14px", height: "14px" }} />
-                Salvează configurație proxy
-              </button>
-            </div>
-          </Section>
-
-          {/* Analiză AI */}
-          <Section title="Analiză AI">
+          <SettingsRow id="analiza-ai" title="Analiză AI" summary={sumarAi()} dirty={aiMurdar}>
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
               Când deschizi un anunț în Radar Piață, Auto Anunțuri sau Imobiliare, se generează
               automat o analiză AI. Fiecare analiză înseamnă un apel către furnizorul AI configurat.
@@ -757,7 +885,70 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
-          </Section>
+          </SettingsRow>
+
+          <SettingsRow id="proxy" title="Proxy (opțional)" summary={sumarProxy()} dirty={proxyMurdar}>
+            <PlatformToggle
+              label="Activează proxy"
+              enabled={!!proxy.enabled}
+              onToggle={() => setProxy({ ...proxy, enabled: !proxy.enabled })}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+              <div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Host</div>
+                <input
+                  type="text"
+                  value={proxy.host}
+                  onChange={(e) => setProxy({ ...proxy, host: e.target.value })}
+                  placeholder="proxy.exemplu.ro"
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Port</div>
+                <input
+                  type="text"
+                  value={proxy.port}
+                  onChange={(e) => setProxy({ ...proxy, port: e.target.value })}
+                  placeholder="8080"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+              <div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Username</div>
+                <input
+                  type="text"
+                  value={proxy.username}
+                  onChange={(e) => setProxy({ ...proxy, username: e.target.value })}
+                  placeholder="(opțional)"
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>
+                  Parolă {proxy.password_set && <span style={{ color: "#4ade80" }}>(setată)</span>}
+                </div>
+                <input
+                  type="password"
+                  value={proxy.password}
+                  onChange={(e) => setProxy({ ...proxy, password: e.target.value })}
+                  placeholder={proxy.password_set ? "Lasă gol pentru a păstra parola existentă" : "(opțional)"}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+              Folosește un proxy dacă primești erori de blocare la scraping. Lasă gol dacă nu ai nevoie.
+            </div>
+            <div>
+              <button onClick={saveProxy} disabled={saving} style={primaryBtn(saving)}>
+                <Save style={{ width: "14px", height: "14px" }} />
+                Salvează configurație proxy
+              </button>
+            </div>
+          </SettingsRow>
         </>
       )}
 
@@ -766,17 +957,6 @@ export default function SettingsPage() {
   );
 }
 
-
-function Section({ title, children }) {
-  return (
-    <section className="glass-panel" style={{ padding: "18px", marginTop: "14px" }}>
-      <h2 style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "14px" }}>{title}</h2>
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        {children}
-      </div>
-    </section>
-  );
-}
 
 // ── Grupuri Facebook — Chirii (migrat din real-estate-monitor/groups; tab "posts" eliminat,
 //    redundant cu Feed Imobiliare filtrat pe platforma facebook_groups) ─────────────────────
@@ -903,8 +1083,22 @@ function FacebookGroupsSection() {
     } finally { setTesting(false); }
   };
 
+  // Summary-ul se calculeaza din `configs`, adica din aceeasi sursa pe care o
+  // randeaza randul. Semnalul de cookies acopera toate cele trei forme de
+  // nefolosinta (expirate / invalide / lipsa), fiindca oricare dintre ele
+  // opreste scanarea grupului.
+  const active = configs.filter((c) => c.is_active).length;
+  const cookiesRele = configs.some(
+    (c) => c.last_run_status === "cookies_expirate"
+        || c.last_run_status === "cookies_invalide"
+        || !c.has_cookies || !c.cookies_saved_at);
+  const sumar = loading
+    ? "se încarcă…"
+    : `${configs.length} ${configs.length === 1 ? "grup" : "grupuri"} · ${active} active`
+      + (cookiesRele ? " · ⚠ cookies" : "");
+
   return (
-    <Section title="Grupuri Facebook — Chirii">
+    <SettingsRow id="grupuri-facebook" title="Grupuri Facebook — Chirii" summary={sumar}>
       <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>
         Grupuri de închirieri monitorizate. Postările care se potrivesc criteriilor keyword-urilor
         tale de tip „Grupuri Facebook” apar automat în Feed Imobiliare.
@@ -992,7 +1186,7 @@ function FacebookGroupsSection() {
         </div>
       )}
       {showModal && <FacebookGroupModal config={editing} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadConfigs(); }} />}
-    </Section>
+    </SettingsRow>
   );
 }
 

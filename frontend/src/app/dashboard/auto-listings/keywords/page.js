@@ -364,7 +364,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
               <Info style={{ width: "16px", height: "16px", flexShrink: 0, marginTop: "0.1rem" }} />
               <span>
                 Facebook Auto folosește sesiunea autentificată din{" "}
-                <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Nu suportă filtre tehnice structurate.
+                <a href="/dashboard/settings#platforme" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Nu suportă filtre tehnice structurate.
               </span>
             </div>
           )}
@@ -524,7 +524,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, catData, 
             />
             <NotifToggle
               label="Notificări Discord"
-              subtitle="Trimite la webhook-urile configurate în Setări"
+              subtitle={<>Trimite la webhook-urile configurate în <a href="/dashboard/settings#discord-auto" style={{ color: "#7ee7f8" }}>Setări</a></>}
               value={form.notify_discord}
               onChange={(v) => set({ notify_discord: v })}
             />

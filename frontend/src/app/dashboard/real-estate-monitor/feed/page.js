@@ -226,7 +226,7 @@ export default function REFeedPage() {
           <div>
             <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Sesiunea Facebook Marketplace a expirat</p>
             <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
-              Keyword-urile Facebook Marketplace nu vor returna rezultate. Reautentifică-te din <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>.
+              Keyword-urile Facebook Marketplace nu vor returna rezultate. Reautentifică-te din <a href="/dashboard/settings#platforme" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>.
             </p>
           </div>
         </div>
@@ -239,7 +239,7 @@ export default function REFeedPage() {
           <div>
             <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Cookie-urile Grupurilor Facebook au expirat</p>
             <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
-              Grupurile configurate nu mai sunt scanate. Re-lipește cookie-urile din <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Grupuri Facebook</a>.
+              Grupurile configurate nu mai sunt scanate. Re-lipește cookie-urile din <a href="/dashboard/settings#grupuri-facebook" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Grupuri Facebook</a>.
             </p>
           </div>
         </div>

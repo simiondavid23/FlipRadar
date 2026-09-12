@@ -360,7 +360,8 @@ export default function DealsPage() {
           textAlign: "center", padding: "3rem", marginTop: "14px",
           color: "var(--text-dim)", fontSize: "12.5px",
         }}>
-          Niciun deal aici. Scanarea rulează la fiecare 6 ore — verifică în Setări
+          Niciun deal aici. Scanarea rulează la fiecare 6 ore — verifică în{" "}
+          <a href="/dashboard/settings#deal-uri-catalog" style={{ color: "#7ee7f8" }}>Setări</a>{" "}
           pragul de discount și magazinele active.
         </div>
       ) : (

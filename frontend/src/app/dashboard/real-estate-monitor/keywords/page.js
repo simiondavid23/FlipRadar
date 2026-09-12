@@ -377,12 +377,12 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
 
           {platform === "facebook_groups" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "10px", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Postările din grupurile configurate în Setări → „Grupuri Facebook — Chirii” vor fi incluse automat în feed pentru acest keyword.
+              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Postările din grupurile configurate în <a href="/dashboard/settings#grupuri-facebook" style={{ color: "#fbbf24" }}>Setări → „Grupuri Facebook — Chirii”</a> vor fi incluse automat în feed pentru acest keyword.
             </div>
           )}
           {platform === "facebook_marketplace" && (
             <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "rgba(245,158,11,0.06)", border: "0.5px solid rgba(245,158,11,0.2)", borderRadius: "10px", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Doar <strong>Închiriere</strong> e disponibil — categoria de vânzare Facebook nu conține anunțuri imobiliare reale.
+              <Info style={{ width: "14px", height: "14px", display: "inline", verticalAlign: "-2px", marginRight: "0.35rem" }} />Facebook Marketplace folosește sesiunea autentificată din <a href="/dashboard/settings#platforme" style={{ color: "#fbbf24" }}>Setări → Facebook</a>. Doar <strong>Închiriere</strong> e disponibil — categoria de vânzare Facebook nu conține anunțuri imobiliare reale.
             </div>
           )}
 
@@ -513,7 +513,7 @@ function KeywordModal({ editing, platform, setPlatform, form, setForm, saving, c
             />
             <NotifToggle
               label="Notificări Discord"
-              subtitle="Trimite la webhook-urile configurate în Setări"
+              subtitle={<>Trimite la webhook-urile configurate în <a href="/dashboard/settings#discord-imobiliare" style={{ color: "#7ee7f8" }}>Setări</a></>}
               value={form.notify_discord}
               onChange={(v) => set({ notify_discord: v })}
             />

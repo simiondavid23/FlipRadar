@@ -57,7 +57,7 @@ function RadarSavedModal({ listing, onClose, onSave, onIgnore, reviewEnabled }) 
       reviewEnabled={reviewEnabled}
       onGenerateAI={generateAI}
       generatingAI={generatingAI}
-      reviewSettingsHref="/dashboard/settings"
+      reviewSettingsHref="/dashboard/settings#analiza-ai"
       detailBannerSlot={<RadarDetailBanner listing={detail} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
     />
   );

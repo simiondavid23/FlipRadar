@@ -1757,7 +1757,7 @@ export default function RadarKeywordsPage() {
                 />
                 <NotifToggle
                   label="Notificări Discord"
-                  subtitle="Trimite la webhook-urile configurate în Setări Radar"
+                  subtitle={<>Trimite la webhook-urile configurate în <a href="/dashboard/settings#discord-radar" style={{ color: "#7ee7f8" }}>Setări</a></>}
                   value={form.notify_discord}
                   onChange={(v) => setForm({ ...form, notify_discord: v })}
                 />

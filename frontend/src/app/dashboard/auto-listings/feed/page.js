@@ -254,7 +254,7 @@ export default function AutoFeedPage() {
             <p style={{ fontSize: "12.5px", fontWeight: 600, color: "#fb923c", margin: 0 }}>Sesiunea Facebook a expirat</p>
             <p style={{ fontSize: "11.5px", color: "var(--text-dim)", margin: "3px 0 0" }}>
               Keyword-urile de tip Facebook Auto nu vor returna rezultate. Reautentifică-te din{" "}
-              <a href="/dashboard/settings" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>
+              <a href="/dashboard/settings#platforme" style={{ color: "#fb923c", fontWeight: 600 }}>Setări → Facebook</a>
               {" "}pentru a reactiva scanarea.
             </p>
           </div>
@@ -628,7 +628,7 @@ export function AutoListingModal({ listing, onClose, onSave, onIgnore, reviewEna
       reviewEnabled={reviewEnabled}
       onGenerateAI={generateAI}
       generatingAI={generatingAI}
-      reviewSettingsHref="/dashboard/settings"
+      reviewSettingsHref="/dashboard/settings#analiza-ai"
       detailBannerSlot={!enriched.detail_fetched ? (
         <div style={{ padding: "0 1.25rem", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
           <Info style={{ width: "12px", height: "12px", flexShrink: 0 }} />
