@@ -27,7 +27,6 @@ from app.routers import currency, inventory, sales, reports, radar
 from app.routers import user_settings  # FlipRadar — ITEM 16: setari Flash Deal
 from app.routers import auto  # FlipRadar — Loturi & Licitatii (Copart/IAAI/SCA/OpenLane)
 from app.routers import real_estate  # FlipRadar — Modul Imobiliare (OLX/Storia/Imobiliare.ro)
-from app.routers import resale  # FASHION-3a — referinte de revanzare + profiluri de taxe
 from app.routers.facebook_groups import router as facebook_groups_router  # FlipRadar — Grupuri Facebook
 from app.routers.tracked_products import router as tracked_router  # FlipRadar — Produse Urmarite (model unificat TrackedProduct)
 from app.routers.logs import router as logs_router  # FlipRadar — Jurnale Live (SSE)
@@ -47,7 +46,6 @@ from app.models import sale as sale_model
 from app.models import radar_keyword, radar_listing, radar_seen_id
 from app.models import radar_settings
 from app.models import vinted_catalog  # RP-2 — arbore dinamic de categorii Vinted
-from app.models import radar_message_template, push_subscription
 # FlipRadar — tabele noi pentru modulele auto/imobiliare (doar schema, populate ulterior)
 from app.models import real_estate_listing, auto_lot, auto_listing
 # FlipRadar — Grupuri Facebook (config + postari)
@@ -57,7 +55,6 @@ from app.models import discord_queue_db
 # MODIFICARE 12 — persistare optionala log-uri SSE (tabel log_entries)
 from app.models import log_entry
 # FASHION-3a — referinta de revanzare + profilul de taxe (fara migrare: tabele noi)
-from app.models import resale_fee_profile, resale_reference
 # SHOP-2a — scannerul de deal-uri Shopify: observatii globale + memoria de pret
 # care alimenteaza referinta R2 + starea de sanatate per magazin.
 from app.models import deal, fb_pool, fb_scan_state, shop_price_memory, shop_scan_state
@@ -777,7 +774,6 @@ app.include_router(radar.router)
 app.include_router(user_settings.router)
 app.include_router(auto.router)
 app.include_router(real_estate.router)
-app.include_router(resale.router)  # FASHION-3a
 app.include_router(facebook_groups_router)
 app.include_router(tracked_router, prefix="/api/tracked-products")
 app.include_router(logs_router)

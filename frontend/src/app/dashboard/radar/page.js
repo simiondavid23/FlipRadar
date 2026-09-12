@@ -136,7 +136,6 @@ export default function RadarFeedPage() {
   const [feedTotal, setFeedTotal] = useState(0);
   const [feedPage, setFeedPage] = useState(1);
   const [keywords, setKeywords] = useState([]);
-  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const reqIdRef = useRef(0);
@@ -184,15 +183,6 @@ export default function RadarFeedPage() {
       setKeywords(r.data || []);
     } catch (e) {
       console.error("[Radar] keywords:", e);
-    }
-  }, []);
-
-  const loadTemplates = useCallback(async () => {
-    try {
-      const r = await radarAPI.getTemplates();
-      setTemplates(r.data || []);
-    } catch (e) {
-      console.error("[Radar] templates:", e);
     }
   }, []);
 
@@ -268,9 +258,8 @@ export default function RadarFeedPage() {
 
   useEffect(() => {
     loadKeywords();
-    loadTemplates();
     loadStats();
-  }, [loadKeywords, loadTemplates, loadStats]);
+  }, [loadKeywords, loadStats]);
 
   useEffect(() => {
     loadListings();
@@ -656,10 +645,6 @@ export default function RadarFeedPage() {
           onGenerateAI={() => generateAIReview(selected.id)}
           generatingAI={generatingAI}
           reviewSettingsHref="/dashboard/settings"
-          showTemplates
-          templates={templates}
-          onRenderTemplate={radarAPI.renderTemplate}
-          templatesHref="/dashboard/settings"
           detailBannerSlot={<RadarDetailBanner listing={selected} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
         />
       )}

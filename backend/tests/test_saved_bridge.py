@@ -68,7 +68,7 @@ def _row(row_id):
 
 
 def _refresh(uid, ext, listing_over=None, kw=None, monkeypatch=None,
-             notif_calls=None, push_calls=None):
+             notif_calls=None):
     from app.database import SessionLocal
     listing = {"external_id": ext, "price": 100.0, "currency": "RON"}
     listing.update(listing_over or {})
@@ -76,11 +76,6 @@ def _refresh(uid, ext, listing_over=None, kw=None, monkeypatch=None,
         monkeypatch.setattr(rs, "send_radar_notification",
                             lambda **kwargs: (notif_calls.append(kwargs) or 1)
                             if notif_calls is not None else 1)
-        monkeypatch.setattr(rs, "is_push_configured",
-                            lambda: push_calls is not None)
-        if push_calls is not None:
-            monkeypatch.setattr(rs, "notify_user_push",
-                                lambda *a, **kw2: push_calls.append(kw2))
         monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
     db = SessionLocal()
     try:
@@ -133,17 +128,16 @@ def test_moneda_diferita_nu_se_compara(auth_client, monkeypatch):
     assert _row(rid).price == 200.0               # pretul NU s-a atins
 
 
-def test_scadere_pe_salvat_notifica_discord_si_push(auth_client, monkeypatch):
-    notif, push = [], []
+def test_scadere_pe_salvat_notifica_discord(auth_client, monkeypatch):
+    notif = []
     uid, rid, ext = _mk_radar_row(auth_client, price=200.0, status="saved")
     out = _refresh(uid, ext, {"price": 180.0},    # -10% >= pragul de 5%
                    kw=_KwStub(notify_discord=True), monkeypatch=monkeypatch,
-                   notif_calls=notif, push_calls=push)
+                   notif_calls=notif)
     assert out == "notified"
     assert len(notif) == 1
     assert notif[0]["listing_id"] == f"pricedrop-{rid}-180"   # dedup pe nivel de pret
     assert "Pret scazut" in notif[0]["listing"]["title"]
-    assert len(push) == 1
     assert _row(rid).price == 180.0
 
 

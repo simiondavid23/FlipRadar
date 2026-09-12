@@ -6,7 +6,7 @@ adaugata ulterior infometata, id-poisoning la delete+recreate (SQLite refolosest
 id-ul), flood-ul de notificari la prima scanare, plafonul primei scanari doar pe
 Vinted, validari lipsa la create/update, soft-delete pe Auto/Imobiliare (stop
 re-notificari), commit inainte de notify (dubluri), curatarea cozii Discord,
-canalele *_all fara C/D, push cu RON hardcodat. FAST-1: poll_interval_minutes=1
+canalele *_all fara C/D. FAST-1: poll_interval_minutes=1
 permis doar pe platformele rapide; tick 1 min; enrichment plafonat la 5 min.
 """
 import inspect
@@ -259,10 +259,3 @@ def test_cleanup_sterge_failed_si_dedup():
         assert out["failed"] >= 1 and out["dedup"] >= 1
     finally:
         db.close()
-
-
-# ── push cu moneda reala ─────────────────────────────────────────────────────────
-
-def test_push_foloseste_moneda_listingului():
-    src = inspect.getsource(rs)
-    assert "listing.get('currency') or 'RON'" in src

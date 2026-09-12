@@ -89,7 +89,6 @@ def _scan(monkeypatch, uid: int, anunt: dict, notif=None, cursuri=None):
     monkeypatch.setattr(rs, "_run_scraper",
                         lambda *a, **k: [dict(anunt)] if k.get("page", 1) == 1 else [])
     monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
-    monkeypatch.setattr(rs, "is_push_configured", lambda: False)
     monkeypatch.setattr(rs, "send_radar_notification",
                         lambda **kw: (notif.append(kw) if notif is not None else None) or 1)
     # `_platform_scan_due` tine de cadenta, nu de SEEN-2: fara asta al doilea scan din

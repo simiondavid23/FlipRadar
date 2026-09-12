@@ -21,13 +21,10 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.config import VAPID_PUBLIC_KEY
 from app.rate_limit import limiter
 from app.database import get_db
-from app.models.push_subscription import PushSubscription
 from app.models.radar_keyword import RadarKeyword
 from app.models.radar_listing import RadarListing
-from app.models.radar_message_template import RadarMessageTemplate
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.radar.ai_reviewer import generate_ai_review
@@ -267,35 +264,9 @@ class ProxyConfig(BaseModel):
     password: str = ""
 
 
-class TemplateCreate(BaseModel):
-    name: str
-    platform: str = "all"
-    template_text: str
-    is_default: bool = False
-
-
-class TemplateUpdate(BaseModel):
-    name: Optional[str] = None
-    platform: Optional[str] = None
-    template_text: Optional[str] = None
-    is_default: Optional[bool] = None
-
-
-class TemplateRender(BaseModel):
-    listing_id: int
-    pret_oferit: Optional[float] = None
-
-
 class BulkAction(BaseModel):
     listing_ids: list[int]
     action: str  # "saved" | "ignored" | "sold"
-
-
-class PushSubscribe(BaseModel):
-    endpoint: str
-    p256dh: str
-    auth: str
-    user_agent: Optional[str] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1656,177 +1627,6 @@ def update_proxy_settings(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# MESSAGE TEMPLATES
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-_DEFAULT_TEMPLATES = [
-    ("Interes general (OLX)", "olx",
-     "Bună ziua! Sunt interesat de {titlu}. Este încă disponibil? "
-     "Puteți face {pret_oferit} RON? Mulțumesc!"),
-    ("Ofertă directă (OLX)", "olx",
-     "Bună! Văd că vindeți {titlu} la {pret_cerut} RON. "
-     "Vă ofer {pret_oferit} RON cash, ridicare imediată. Mergeți?"),
-    ("Vinted casual", "vinted",
-     "Salut! Mă interesează {titlu}. Faci {pret_oferit}?"),
-    ("Universal", "all",
-     "Bună ziua, sunt interesat de {titlu}. Este disponibil?"),
-]
-
-
-def _ensure_default_templates(db: Session, user_id: int) -> None:
-    """La primul acces, populeaza userul cu sabloanele default."""
-    existing = db.query(RadarMessageTemplate).filter(RadarMessageTemplate.user_id == user_id).first()
-    if existing:
-        return
-    for name, platform, text in _DEFAULT_TEMPLATES:
-        db.add(RadarMessageTemplate(
-            user_id=user_id,
-            name=name,
-            platform=platform,
-            template_text=text,
-            is_default=True,
-        ))
-    db.commit()
-
-
-def _template_to_dict(t: RadarMessageTemplate) -> dict:
-    return {
-        "id": t.id,
-        "name": t.name,
-        "platform": t.platform,
-        "template_text": t.template_text,
-        "is_default": t.is_default,
-        "created_at": t.created_at.isoformat() if t.created_at else None,
-    }
-
-
-@router.get("/templates")
-def list_templates(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _ensure_default_templates(db, current_user.id)
-    rows = (
-        db.query(RadarMessageTemplate)
-        .filter(RadarMessageTemplate.user_id == current_user.id)
-        .order_by(RadarMessageTemplate.created_at.asc())
-        .all()
-    )
-    return [_template_to_dict(t) for t in rows]
-
-
-@router.post("/templates")
-def create_template(
-    data: TemplateCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    if not data.name.strip() or not data.template_text.strip():
-        raise HTTPException(status_code=400, detail="Numele și textul șablonului sunt obligatorii.")
-    t = RadarMessageTemplate(
-        user_id=current_user.id,
-        name=data.name.strip(),
-        platform=(data.platform or "all").lower(),
-        template_text=data.template_text,
-        is_default=bool(data.is_default),
-    )
-    db.add(t)
-    db.commit()
-    db.refresh(t)
-    return _template_to_dict(t)
-
-
-@router.put("/templates/{template_id}")
-def update_template(
-    template_id: int,
-    data: TemplateUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    t = db.query(RadarMessageTemplate).filter(
-        RadarMessageTemplate.id == template_id,
-        RadarMessageTemplate.user_id == current_user.id,
-    ).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Șablonul nu a fost găsit.")
-    if data.name is not None:
-        t.name = data.name.strip()
-    if data.platform is not None:
-        t.platform = data.platform.lower()
-    if data.template_text is not None:
-        t.template_text = data.template_text
-    if data.is_default is not None:
-        t.is_default = bool(data.is_default)
-    db.commit()
-    db.refresh(t)
-    return _template_to_dict(t)
-
-
-@router.delete("/templates/{template_id}")
-def delete_template(
-    template_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    t = db.query(RadarMessageTemplate).filter(
-        RadarMessageTemplate.id == template_id,
-        RadarMessageTemplate.user_id == current_user.id,
-    ).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Șablonul nu a fost găsit.")
-    db.delete(t)
-    db.commit()
-    return {"message": "Șablon șters."}
-
-
-_PLATFORM_NICE = {"olx": "OLX", "vinted": "Vinted", "okazii": "Okazii", "facebook": "Facebook Marketplace"}
-
-
-@router.post("/templates/{template_id}/render")
-def render_template(
-    template_id: int,
-    payload: TemplateRender,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Inlocuieste placeholder-ele cu datele unui listing al userului."""
-    t = db.query(RadarMessageTemplate).filter(
-        RadarMessageTemplate.id == template_id,
-        RadarMessageTemplate.user_id == current_user.id,
-    ).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Șablonul nu a fost găsit.")
-    listing = (
-        db.query(RadarListing)
-        .filter(RadarListing.id == payload.listing_id, RadarListing.user_id == current_user.id)
-        .first()
-    )
-    if not listing:
-        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
-    keyword = db.query(RadarKeyword).filter(RadarKeyword.id == listing.keyword_id).first()
-
-    if payload.pret_oferit is not None and payload.pret_oferit > 0:
-        pret_oferit = float(payload.pret_oferit)
-    elif keyword and keyword.max_price:
-        pret_oferit = float(keyword.max_price)
-    else:
-        pret_oferit = round(float(listing.price) * 0.9, 2)
-
-    rendered = t.template_text
-    rendered = rendered.replace("{titlu}", listing.title or "")
-    rendered = rendered.replace("{pret_cerut}", f"{int(round(listing.price))}")
-    rendered = rendered.replace("{pret_oferit}", f"{int(round(pret_oferit))}")
-    rendered = rendered.replace("{platforma}", _PLATFORM_NICE.get(listing.platform, listing.platform or ""))
-    return {
-        "template_id": t.id,
-        "listing_id": listing.id,
-        "rendered_text": rendered,
-        "pret_oferit": pret_oferit,
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # BULK ACTIONS
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1956,70 +1756,4 @@ def keyword_price_trend(
         "overall_min": overall_min,
         "overall_max": overall_max,
         "trend_direction": trend,
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# WEB PUSH
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@router.get("/push/vapid-public-key")
-def get_vapid_public_key(current_user: User = Depends(get_current_user)):
-    return {"public_key": VAPID_PUBLIC_KEY, "configured": bool(VAPID_PUBLIC_KEY)}
-
-
-@router.post("/push/subscribe")
-def push_subscribe(
-    data: PushSubscribe,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    existing = db.query(PushSubscription).filter(
-        PushSubscription.user_id == current_user.id,
-        PushSubscription.endpoint == data.endpoint,
-    ).first()
-    if existing:
-        existing.p256dh = data.p256dh
-        existing.auth = data.auth
-        existing.user_agent = data.user_agent
-        db.commit()
-        return {"message": "Subscription actualizat.", "id": existing.id}
-    sub = PushSubscription(
-        user_id=current_user.id,
-        endpoint=data.endpoint,
-        p256dh=data.p256dh,
-        auth=data.auth,
-        user_agent=data.user_agent,
-    )
-    db.add(sub)
-    db.commit()
-    db.refresh(sub)
-    return {"message": "Notificările push sunt active.", "id": sub.id}
-
-
-@router.delete("/push/unsubscribe")
-def push_unsubscribe(
-    endpoint: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    q = db.query(PushSubscription).filter(PushSubscription.user_id == current_user.id)
-    if endpoint:
-        q = q.filter(PushSubscription.endpoint == endpoint)
-    count = q.delete(synchronize_session=False)
-    db.commit()
-    return {"message": f"{count} subscription(s) șterse."}
-
-
-@router.get("/push/status")
-def push_status(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    total = db.query(func.count(PushSubscription.id)).filter(PushSubscription.user_id == current_user.id).scalar() or 0
-    return {
-        "subscribed": int(total) > 0,
-        "subscriptions_count": int(total),
-        "configured": bool(VAPID_PUBLIC_KEY),
     }

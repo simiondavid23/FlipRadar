@@ -184,7 +184,6 @@ def _scan(monkeypatch, uid: int, listing: dict, eur_ron: float = 5.0,
                         lambda *a, **k: [dict(listing)] if k.get("page", 1) == 1 else [])
     monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
     monkeypatch.setattr(rs, "send_radar_notification", lambda **kwargs: 0)
-    monkeypatch.setattr(rs, "is_push_configured", lambda: False)
 
     db = SessionLocal()
     try:

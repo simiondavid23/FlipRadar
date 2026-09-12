@@ -1,15 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { radarAPI, usersAPI, facebookGroupsAPI, resaleAPI, dealsAPI } from "@/lib/api";
+import { radarAPI, usersAPI, facebookGroupsAPI, dealsAPI } from "@/lib/api";
 import {
   Settings as SettingsIcon, Save, Send, ToggleLeft, ToggleRight,
   CheckCircle2, AlertCircle,
-  BellRing, BellOff,
   Plus, Pencil, Trash2, RefreshCw, X, ExternalLink, Play, AlertTriangle, Clock
 } from "lucide-react";
-import {
-  isPushSupported, registerPushNotifications, unregisterPushNotifications
-} from "@/lib/push";
 import TopBar from "@/components/shared/TopBar";
 import PageHeading from "@/components/shared/PageHeading";
 
@@ -36,7 +32,6 @@ export default function SettingsPage() {
   const [fbConnecting, setFbConnecting] = useState(false);
   const fbPollRef = useRef(null);
   const [proxy, setProxy] = useState(EMPTY_PROXY);
-  const [pushStatus, setPushStatus] = useState({ subscribed: false, configured: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [flashThreshold, setFlashThreshold] = useState(15);
@@ -61,11 +56,10 @@ export default function SettingsPage() {
   const [dealShops, setDealShops] = useState([]);
 
   const load = useCallback(async () => {
-    const [s, fb, px, ps, us, ds] = await Promise.all([
+    const [s, fb, px, us, ds] = await Promise.all([
       radarAPI.getSettings().catch(() => null),
       radarAPI.getFacebookStatus().catch(() => null),
       radarAPI.getProxy().catch(() => null),
-      radarAPI.getPushStatus().catch(() => null),
       usersAPI.getSettings().catch(() => null),
       dealsAPI.shops().catch(() => null),
     ]);
@@ -79,7 +73,6 @@ export default function SettingsPage() {
     if (ds?.data) setDealShops(ds.data);
     if (fb?.data) setFbStatus(fb.data);
     if (px?.data) setProxy({ ...EMPTY_PROXY, ...px.data, password: "" });
-    if (ps?.data) setPushStatus(ps.data);
     if (us?.data?.ai_features_config) setAiFeatures(us.data.ai_features_config);
     if (us?.data) {
       setAiProvider(us.data.ai_provider || "groq");
@@ -266,28 +259,6 @@ export default function SettingsPage() {
     }
   };
 
-  const activatePush = async () => {
-    try {
-      await registerPushNotifications();
-      const r = await radarAPI.getPushStatus();
-      setPushStatus(r.data);
-      alert("Notificări push activate.");
-    } catch (e) {
-      alert(e.message || "Eroare la activare push.");
-    }
-  };
-
-  const deactivatePush = async () => {
-    try {
-      await unregisterPushNotifications();
-      const r = await radarAPI.getPushStatus();
-      setPushStatus(r.data);
-      alert("Notificări push dezactivate.");
-    } catch (e) {
-      alert(e.message || "Eroare la dezactivare push.");
-    }
-  };
-
   const connectFacebook = async () => {
     if (!confirm("Se va deschide o fereastră browser ca să te loghezi în Facebook. Continui?")) return;
     try {
@@ -388,7 +359,7 @@ export default function SettingsPage() {
       <PageHeading
         icon={SettingsIcon}
         title="Setări"
-        subtitle="Preferințele contului tău — notificări, platforme, AI, șabloane și taxe de revânzare."
+        subtitle="Preferințele contului tău — notificări, platforme, AI și magazine."
       />
 
       {loading ? (
@@ -458,11 +429,6 @@ export default function SettingsPage() {
 
           {/* Grupuri Facebook — Chirii (mutat din pagina standalone real-estate-monitor/groups) */}
           <FacebookGroupsSection />
-
-          {/* Șabloane Mesaje (mutat din pagina standalone radar/templates; generalizat pe toate modulele) */}
-          <MessageTemplatesSection />
-
-          <ResaleFeesSection />
 
           {/* Discord */}
           <Section title="Discord Webhooks">
@@ -726,49 +692,6 @@ export default function SettingsPage() {
             </div>
           </Section>
 
-          {/* Push notifications */}
-          <Section title="Notificări Push Browser">
-            {!isPushSupported() ? (
-              <div style={{ padding: "0.75rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
-                Browserul tău nu suportă notificări push.
-              </div>
-            ) : !pushStatus.configured ? (
-              <div style={{ padding: "0.75rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "#fde047", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <AlertCircle style={{ width: "14px", height: "14px" }} />
-                Notificările push nu sunt configurate pe server (VAPID_PUBLIC_KEY lipsește din .env).
-              </div>
-            ) : (
-              <>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-                  <span style={{
-                    color: pushStatus.subscribed ? "#4ade80" : "#fde047",
-                    fontSize: "0.875rem",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.375rem",
-                  }}>
-                    {pushStatus.subscribed ? <CheckCircle2 style={{ width: "14px", height: "14px" }} /> : <AlertCircle style={{ width: "14px", height: "14px" }} />}
-                    {pushStatus.subscribed ? "✅ Activate" : "⚠️ Inactive"}
-                  </span>
-                  {pushStatus.subscribed ? (
-                    <button onClick={deactivatePush} style={smallBtn("#f87171")}>
-                      <BellOff style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.25rem" }} />
-                      Dezactivează
-                    </button>
-                  ) : (
-                    <button onClick={activatePush} style={smallBtn("#60a5fa")}>
-                      <BellRing style={{ width: "14px", height: "14px", display: "inline", marginRight: "0.25rem" }} />
-                      Activează notificări push
-                    </button>
-                  )}
-                </div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                  Funcționează în Brave, Chrome, Edge, Firefox când browserul e deschis. Permite notificările pentru acest site din setările browserului dacă e blocat.
-                </div>
-              </>
-            )}
-          </Section>
-
           {/* Analiză AI */}
           <Section title="Analiză AI">
             <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
@@ -843,207 +766,6 @@ export default function SettingsPage() {
   );
 }
 
-// ── FASHION-3b — Taxe revanzare ─────────────────────────────────────────────
-// Profilurile vin seed-uite de backend la primul GET (StockX + GOAT cu procentele
-// verificate manual). Fixele si transportul raman 0 pana le completeaza userul:
-// depind de contul lui, deci nicio valoare implicita n-ar fi corecta.
-const RESALE_CURRENCIES = ["EUR", "USD", "RON"];
-const EMPTY_FEE_FORM = {
-  platform: "", label: "", commission_pct: "", processing_pct: "", extra_pct: "",
-  fixed_fee: "", shipping_cost: "", currency: "EUR",
-};
-
-function ResaleFeesSection() {
-  const [profiles, setProfiles] = useState([]);
-  const [drafts, setDrafts] = useState({});          // id -> valori editate
-  const [savingId, setSavingId] = useState(null);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(EMPTY_FEE_FORM);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      const res = await resaleAPI.getFeeProfiles();
-      setProfiles(res.data);
-      setDrafts(Object.fromEntries(res.data.map((p) => [p.id, { ...p }])));
-    } catch {
-      setError("Nu am putut incarca profilurile de taxe.");
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const setField = (id, key, value) =>
-    setDrafts((d) => ({ ...d, [id]: { ...d[id], [key]: value } }));
-
-  const saveProfile = async (id) => {
-    setSavingId(id);
-    setError("");
-    const d = drafts[id] || {};
-    const num = (v) => (v === "" || v == null ? 0 : Number(v));
-    try {
-      await resaleAPI.updateFeeProfile(id, {
-        label: d.label,
-        commission_pct: num(d.commission_pct),
-        processing_pct: num(d.processing_pct),
-        extra_pct: num(d.extra_pct),
-        fixed_fee: num(d.fixed_fee),
-        shipping_cost: num(d.shipping_cost),
-        currency: d.currency,
-      });
-      await load();
-    } catch (e) {
-      setError(e.response?.data?.detail || "Nu am putut salva profilul.");
-    } finally {
-      setSavingId(null);
-    }
-  };
-
-  const createProfile = async () => {
-    setError("");
-    const num = (v) => (v === "" || v == null ? 0 : Number(v));
-    try {
-      await resaleAPI.createFeeProfile({
-        platform: form.platform.trim(),
-        label: form.label.trim() || form.platform.trim(),
-        commission_pct: num(form.commission_pct),
-        processing_pct: num(form.processing_pct),
-        extra_pct: num(form.extra_pct),
-        fixed_fee: num(form.fixed_fee),
-        shipping_cost: num(form.shipping_cost),
-        currency: form.currency,
-      });
-      setForm(EMPTY_FEE_FORM);
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e.response?.data?.detail || "Nu am putut crea profilul.");
-    }
-  };
-
-  const numField = (label, value, onChange, suffix) => (
-    <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-      {label}
-      <div style={{ position: "relative" }}>
-        <input type="number" step="0.01" min="0" value={value ?? ""} onChange={(e) => onChange(e.target.value)}
-          style={{ ...inputStyle, marginTop: "0.25rem", paddingRight: suffix ? "1.75rem" : undefined }} />
-        {suffix && (
-          <span style={{ position: "absolute", right: "0.625rem", top: "50%", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-            {suffix}
-          </span>
-        )}
-      </div>
-    </label>
-  );
-
-  const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.5rem" };
-
-  return (
-    <Section title="Taxe revanzare">
-      <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", margin: 0 }}>
-        Taxele nu se citesc automat de pe platforme — se configureaza aici. Procentele vin
-        completate cu valorile publicate oficial; taxele fixe si transportul depind de contul
-        tau, deci raman 0 pana le completezi.
-      </p>
-      {error && <p style={{ fontSize: "0.8125rem", color: "#f87171", margin: 0 }}>{error}</p>}
-
-      {profiles.map((p) => {
-        const d = drafts[p.id] || {};
-        return (
-          <div key={p.id} style={{
-            border: "1px solid var(--border-color)", borderRadius: "10px",
-            padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)" }}>
-                {p.label}{" "}
-                <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--text-muted)" }}>({p.platform})</span>
-              </h3>
-              <span style={{ fontSize: "0.7rem", color: p.verified_at ? "#4ade80" : "var(--text-muted)" }}>
-                {p.verified_at ? `Procente verificate la ${p.verified_at}` : "Valori modificate de tine"}
-              </span>
-            </div>
-
-            <div style={grid}>
-              {numField("Comision", d.commission_pct, (v) => setField(p.id, "commission_pct", v), "%")}
-              {numField("Procesare", d.processing_pct, (v) => setField(p.id, "processing_pct", v), "%")}
-              {numField("Extra", d.extra_pct, (v) => setField(p.id, "extra_pct", v), "%")}
-              {numField("Taxa fixa", d.fixed_fee, (v) => setField(p.id, "fixed_fee", v))}
-              {numField("Transport", d.shipping_cost, (v) => setField(p.id, "shipping_cost", v))}
-              <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-                Moneda taxelor
-                <select value={d.currency || "EUR"} onChange={(e) => setField(p.id, "currency", e.target.value)}
-                  style={{ ...inputStyle, marginTop: "0.25rem" }}>
-                  {RESALE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-            </div>
-
-            {p.note && (
-              <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: 0 }}>{p.note}</p>
-            )}
-            <div>
-              <button onClick={() => saveProfile(p.id)} disabled={savingId === p.id} style={primaryBtn(savingId === p.id)}>
-                <Save style={{ width: "14px", height: "14px" }} />
-                {savingId === p.id ? "Se salveaza…" : "Salveaza"}
-              </button>
-            </div>
-          </div>
-        );
-      })}
-
-      {showForm ? (
-        <div style={{
-          border: "1px solid var(--border-color)", borderRadius: "10px",
-          padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem",
-        }}>
-          <div style={grid}>
-            <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-              Platforma
-              <input type="text" value={form.platform} placeholder="ex: vinted"
-                onChange={(e) => setForm({ ...form, platform: e.target.value })}
-                style={{ ...inputStyle, marginTop: "0.25rem" }} />
-            </label>
-            <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-              Nume afisat
-              <input type="text" value={form.label} placeholder="ex: Vinted"
-                onChange={(e) => setForm({ ...form, label: e.target.value })}
-                style={{ ...inputStyle, marginTop: "0.25rem" }} />
-            </label>
-            {numField("Comision", form.commission_pct, (v) => setForm({ ...form, commission_pct: v }), "%")}
-            {numField("Procesare", form.processing_pct, (v) => setForm({ ...form, processing_pct: v }), "%")}
-            {numField("Extra", form.extra_pct, (v) => setForm({ ...form, extra_pct: v }), "%")}
-            {numField("Taxa fixa", form.fixed_fee, (v) => setForm({ ...form, fixed_fee: v }))}
-            {numField("Transport", form.shipping_cost, (v) => setForm({ ...form, shipping_cost: v }))}
-            <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-              Moneda taxelor
-              <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                style={{ ...inputStyle, marginTop: "0.25rem" }}>
-                {RESALE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button onClick={createProfile} disabled={!form.platform.trim()} style={primaryBtn(!form.platform.trim())}>
-              <Plus style={{ width: "14px", height: "14px" }} />
-              Adauga
-            </button>
-            <button onClick={() => { setShowForm(false); setForm(EMPTY_FEE_FORM); setError(""); }} style={fgSecondaryBtn}>
-              Anuleaza
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <button onClick={() => setShowForm(true)} style={fgSecondaryBtn}>
-            <Plus style={{ width: "14px", height: "14px" }} />
-            Adauga profil
-          </button>
-        </div>
-      )}
-    </Section>
-  );
-}
 
 function Section({ title, children }) {
   return (
@@ -1117,166 +839,6 @@ function fgToList(v) {
   try { const p = JSON.parse(v || "[]"); return Array.isArray(p) ? p : []; } catch { return []; }
 }
 
-// ── Șabloane Mesaje (migrat din pagina standalone radar/templates) ──────────────
-// Generalizat: platforma acoperă TOATE cele 3 module (Radar + Imobiliare + Auto) + "all".
-const TEMPLATE_PLATFORM_OPTIONS = [
-  { value: "all", label: "Universal (toate platformele)" },
-  { value: "olx", label: "OLX" },
-  { value: "vinted", label: "Vinted" },
-  { value: "okazii", label: "Okazii" },
-  { value: "facebook", label: "Facebook" },
-  { value: "lajumate", label: "LaJumate" },
-  { value: "publi24", label: "Publi24" },
-  { value: "storia", label: "Storia (imobiliare)" },
-  { value: "imobiliare_ro", label: "Imobiliare.ro" },
-  { value: "autovit", label: "Autovit" },
-  { value: "olx_auto", label: "OLX Auto" },
-  { value: "mobile_de", label: "Mobile.de" },
-  { value: "autoscout24", label: "AutoScout24" },
-  { value: "facebook_auto", label: "Facebook Auto" },
-  { value: "kleinanzeigen_auto", label: "Kleinanzeigen" },
-];
-const TEMPLATE_PLACEHOLDERS = ["{titlu}", "{pret_cerut}", "{pret_oferit}", "{platforma}"];
-const EMPTY_TEMPLATE_FORM = { name: "", platform: "all", template_text: "", is_default: false };
-
-function MessageTemplatesSection() {
-  const [items, setItems] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(EMPTY_TEMPLATE_FORM);
-  const textareaRef = useRef(null);
-
-  const load = useCallback(async () => {
-    try { const r = await radarAPI.getTemplates(); setItems(r.data || []); }
-    catch (e) { console.error("[Templates]", e); }
-  }, []);
-  // Fetch inline la montare (nu apelăm load() sincron în efect — regula
-  // set-state-in-effect); load() rămâne pentru refetch după create/update/delete.
-  useEffect(() => {
-    let cancelled = false;
-    radarAPI.getTemplates()
-      .then((r) => { if (!cancelled) setItems(r.data || []); })
-      .catch((e) => console.error("[Templates]", e));
-    return () => { cancelled = true; };
-  }, []);
-
-  const openCreate = () => { setEditingId(null); setForm(EMPTY_TEMPLATE_FORM); setShowForm(true); };
-  const openEdit = (t) => {
-    setEditingId(t.id);
-    setForm({ name: t.name, platform: t.platform, template_text: t.template_text, is_default: t.is_default });
-    setShowForm(true);
-  };
-
-  const submit = async (e) => {
-    e?.preventDefault();
-    if (!form.name.trim() || !form.template_text.trim()) { alert("Numele și textul sunt obligatorii."); return; }
-    try {
-      if (editingId) await radarAPI.updateTemplate(editingId, form);
-      else await radarAPI.createTemplate(form);
-      setShowForm(false); load();
-    } catch (e) { alert(e.response?.data?.detail || "Eroare la salvare."); }
-  };
-
-  const remove = async (id) => {
-    if (!confirm("Ștergi acest șablon?")) return;
-    try { await radarAPI.deleteTemplate(id); load(); }
-    catch (e) { alert(e.response?.data?.detail || "Eroare la ștergere."); }
-  };
-
-  const insertPlaceholder = (ph) => {
-    const ta = textareaRef.current;
-    if (!ta) { setForm({ ...form, template_text: form.template_text + ph }); return; }
-    const start = ta.selectionStart || 0;
-    const end = ta.selectionEnd || 0;
-    const newText = form.template_text.slice(0, start) + ph + form.template_text.slice(end);
-    setForm({ ...form, template_text: newText });
-    requestAnimationFrame(() => { ta.focus(); const pos = start + ph.length; ta.setSelectionRange(pos, pos); });
-  };
-
-  const tInput = {
-    width: "100%", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)",
-    borderRadius: "10px", padding: "0.5rem 0.75rem", color: "var(--text-primary)",
-    fontSize: "0.875rem", outline: "none",
-  };
-
-  return (
-    <Section title="Șabloane Mesaje">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", margin: 0 }}>
-          Mesaje pre-formulate pe care le poți copia rapid când contactezi vânzătorul, în orice modul ({items.length} șabloane).
-        </p>
-        <button onClick={openCreate} style={{
-          display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem",
-          background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px",
-          fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", flexShrink: 0,
-        }}>
-          <Plus style={{ width: "16px", height: "16px" }} /> Șablon nou
-        </button>
-      </div>
-
-      {items.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "1.75rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", color: "var(--text-secondary)", fontSize: "0.8125rem" }}>
-          Nu ai niciun șablon. Creează unul cu butonul de mai sus.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "0.75rem" }}>
-          {items.map((t) => (
-            <div key={t.id} style={{ background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "10px", padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
-                <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)" }}>{t.name}</h3>
-                <span style={{ padding: "0.125rem 0.5rem", backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.3)", borderRadius: "8px", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase" }}>{t.platform}</span>
-              </div>
-              <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{t.template_text}</p>
-              <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
-                <button onClick={() => openEdit(t)} style={smallBtn("#60a5fa")}><Pencil style={{ width: "12px", height: "12px", marginRight: "0.25rem", display: "inline" }} />Editează</button>
-                <button onClick={() => remove(t.id)} style={smallBtn("#f87171")}><Trash2 style={{ width: "12px", height: "12px", marginRight: "0.25rem", display: "inline" }} />Șterge</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showForm && (
-        <div onClick={() => setShowForm(false)} style={{ position: "fixed", inset: 0, background: "rgba(2,5,12,0.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
-          <form onClick={(e) => e.stopPropagation()} onSubmit={submit} style={{ background: "var(--bg-card)", backdropFilter: "blur(20px)", border: "1px solid var(--border-color)", borderRadius: "14px", maxWidth: "560px", width: "100%", maxHeight: "90vh", overflowY: "auto", padding: "1.25rem" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.875rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)" }}>{editingId ? "Editează șablon" : "Șablon nou"}</h2>
-              <button type="button" onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}><X style={{ width: "20px", height: "20px" }} /></button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <label>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Nume</div>
-                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={tInput} placeholder="ex: Interes general OLX" required />
-              </label>
-              <label>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Platformă</div>
-                <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} style={tInput}>
-                  {TEMPLATE_PLATFORM_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-              </label>
-              <label>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontWeight: 500 }}>Text șablon</div>
-                <textarea ref={textareaRef} value={form.template_text} onChange={(e) => setForm({ ...form, template_text: e.target.value })} rows={6} style={{ ...tInput, resize: "vertical", fontFamily: "inherit" }} placeholder="Bună ziua, sunt interesat de {titlu}..." required />
-              </label>
-              <div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.375rem" }}>Click pe un placeholder pentru a-l insera la poziția cursorului:</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
-                  {TEMPLATE_PLACEHOLDERS.map((ph) => (
-                    <button key={ph} type="button" onClick={() => insertPlaceholder(ph)} style={{ padding: "0.25rem 0.5rem", background: "rgba(4,9,18,.45)", border: "1px solid var(--border-color)", borderRadius: "8px", color: "#8fb5f7", fontFamily: "monospace", fontSize: "0.75rem", cursor: "pointer" }}>{ph}</button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
-              <button type="button" onClick={() => setShowForm(false)} style={{ padding: "0.5rem 0.875rem", background: "rgba(4,9,18,.45)", color: "var(--text-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", fontSize: "0.8125rem", cursor: "pointer" }}>Anulează</button>
-              <button type="submit" style={{ padding: "0.5rem 0.875rem", background: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(34,211,238,.04) 60%, transparent)", color: "#7ee7f8", border: "1px solid rgba(34,211,238,.42)", borderRadius: "10px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}><Save style={{ width: "14px", height: "14px" }} />Salvează</button>
-            </div>
-          </form>
-        </div>
-      )}
-    </Section>
-  );
-}
 
 function FacebookGroupsSection() {
   const [configs, setConfigs] = useState([]);

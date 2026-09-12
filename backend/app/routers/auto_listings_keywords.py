@@ -16,7 +16,6 @@ from app.services.auto_listings.excel_exporter import build_auto_xlsx
 from app.services.bnr_exchange import get_eur_ron
 from app.services.radar.ai_reviewer import generate_ai_review
 from app.services.ai_service import AIConfigError
-from app.models.radar_message_template import RadarMessageTemplate
 from app.utils.auth import get_current_user
 from app.utils.id_csv import parse_id_csv
 
@@ -439,62 +438,6 @@ def generate_auto_ai_review(
     listing.ai_review = review
     db.commit()
     return {"ai_review": review}
-
-
-_AUTO_PLATFORM_NICE = {
-    "autovit": "Autovit", "olx_auto": "OLX", "mobile_de": "Mobile.de",
-    "autoscout24": "AutoScout24", "facebook_auto": "Facebook Marketplace",
-    "kleinanzeigen_auto": "Kleinanzeigen",
-}
-
-
-class AutoTemplateRender(BaseModel):
-    template_id: int
-    pret_oferit: Optional[float] = None
-
-
-@router.post("/feed/{listing_id}/render-template")
-def render_auto_template(
-    listing_id: int,
-    payload: AutoTemplateRender,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Randare sablon mesaj pentru un anunt Auto — mirror pe radar.py::render_template,
-    dar interogheaza AutoFeedListing in loc de RadarListing (sabloanele sunt partajate)."""
-    t = db.query(RadarMessageTemplate).filter(
-        RadarMessageTemplate.id == payload.template_id,
-        RadarMessageTemplate.user_id == current_user.id,
-    ).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Șablonul nu a fost găsit.")
-    listing = db.query(AutoFeedListing).filter(
-        AutoFeedListing.id == listing_id,
-        AutoFeedListing.user_id == current_user.id,
-    ).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Anunțul nu a fost găsit.")
-    keyword = db.query(AutoKeyword).filter(AutoKeyword.id == listing.keyword_id).first()
-
-    price = float(listing.price) if listing.price is not None else 0.0
-    if payload.pret_oferit is not None and payload.pret_oferit > 0:
-        pret_oferit = float(payload.pret_oferit)
-    elif keyword and keyword.price_max:
-        pret_oferit = float(keyword.price_max)
-    else:
-        pret_oferit = round(price * 0.9, 2)
-
-    rendered = t.template_text
-    rendered = rendered.replace("{titlu}", listing.title or "")
-    rendered = rendered.replace("{pret_cerut}", f"{int(round(price))}")
-    rendered = rendered.replace("{pret_oferit}", f"{int(round(pret_oferit))}")
-    rendered = rendered.replace("{platforma}", _AUTO_PLATFORM_NICE.get(listing.platform, listing.platform or ""))
-    return {
-        "template_id": t.id,
-        "listing_id": listing.id,
-        "rendered_text": rendered,
-        "pret_oferit": pret_oferit,
-    }
 
 
 @router.delete("/feed/{listing_id}")

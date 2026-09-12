@@ -67,7 +67,7 @@ _CACHED_KEY: bytes | None = None
 def _key_file():
     """Calea fisierului de cheie persistat: <data_dir>/cookie_encryption_key.
 
-    Acelasi model ca secret_key/vapid_private_key din app.paths (PKG-DATA).
+    Acelasi model ca secret_key din app.paths (PKG-DATA).
     Import lazy ca modulul sa ramana importabil fara app.paths in teste vechi."""
     from pathlib import Path
     from app.paths import get_data_dir

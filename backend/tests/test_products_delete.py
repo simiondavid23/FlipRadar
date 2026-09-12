@@ -18,7 +18,6 @@ import pytest
 from app.database import SessionLocal
 from app.models.deal import Deal
 from app.models.product import Product
-from app.models.resale_reference import ResaleReference
 
 
 @pytest.fixture(autouse=True)
@@ -138,41 +137,6 @@ def test_stergerea_produsului_promovat_reuseste_si_coboara_dealul_in_vazut():
         d = db.query(Deal).filter(Deal.id == deal_id).one()
         assert d.promoted_product_id is None, "legatura trebuia anulata, nu lasata"
         assert d.state == "vazut", "deal-ul coboara din `promovat`, dar ramane in feed"
-    finally:
-        db.close()
-
-
-# ── T2 — referintele de revanzare mor odata cu produsul ─────────────────────────
-def test_stergerea_produsului_duce_si_referintele_de_revanzare():
-    assert _pragma_fk_activ() == 1, (
-        "PRAGMA foreign_keys e 0 pe engine-ul de test: fara el, testul ar trece si "
-        "fara fix, deci n-ar dovedi nimic (vezi raport MAG-0 §5.2c)")
-
-    client, uid = _client_nou()
-    r = client.post("/api/products/", json={"name": "MAG1 cu referinta",
-                                            "current_price": 150})
-    assert r.status_code == 200, r.text
-    product_id = r.json()["id"]
-
-    db = SessionLocal()
-    try:
-        db.add(ResaleReference(product_id=product_id, platform="stockx",
-                               variant="", ref_price=210.0))
-        db.commit()
-        assert db.query(ResaleReference).filter(
-            ResaleReference.product_id == product_id).count() == 1
-    finally:
-        db.close()
-
-    r = client.delete(f"/api/products/{product_id}")
-    assert r.status_code == 200, r.text
-
-    db = SessionLocal()
-    try:
-        assert db.query(Product).filter(Product.id == product_id).first() is None
-        assert db.query(ResaleReference).filter(
-            ResaleReference.product_id == product_id).count() == 0, \
-            "referinta de revanzare a ramas orfana"
     finally:
         db.close()
 

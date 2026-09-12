@@ -47,7 +47,6 @@ export default function AutoFeedPage() {
   const [feedTotal, setFeedTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [keywords, setKeywords] = useState([]);
-  const [templates, setTemplates] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ platform: "", grade: "", status: "active", keyword_id: "" });
@@ -117,7 +116,6 @@ export default function AutoFeedPage() {
 
   useEffect(() => {
     autoListingsAPI.getKeywords().then((r) => setKeywords(r.data || [])).catch(() => {});
-    radarAPI.getTemplates().then((r) => setTemplates(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { loadFeed(); loadStats(); }, [loadFeed, loadStats]);
 
@@ -425,7 +423,6 @@ export default function AutoFeedPage() {
           onClose={() => setSelected(null)}
           onSave={() => setStatus(selected.id, selected.status === "saved" ? "active" : "saved")}
           onIgnore={() => setStatus(selected.id, selected.status === "ignored" ? "active" : "ignored")}
-          templates={templates}
           reviewEnabled={reviewEnabled}
         />
       )}
@@ -584,7 +581,7 @@ function AutoImportScore({ listing }) {
   );
 }
 
-export function AutoListingModal({ listing, onClose, onSave, onIgnore, templates, reviewEnabled }) {
+export function AutoListingModal({ listing, onClose, onSave, onIgnore, reviewEnabled }) {
   const [detail, setDetail] = useState(null);
   const [generatingAI, setGeneratingAI] = useState(false);
   // Imbogatire on-demand (poze/descriere/vanzator/data). Merge cu base ca sa pastram campurile
@@ -632,10 +629,6 @@ export function AutoListingModal({ listing, onClose, onSave, onIgnore, templates
       onGenerateAI={generateAI}
       generatingAI={generatingAI}
       reviewSettingsHref="/dashboard/settings"
-      showTemplates
-      templates={templates}
-      onRenderTemplate={(tid, body) => autoListingsAPI.renderTemplate(body.listing_id, { template_id: tid, pret_oferit: body.pret_oferit })}
-      templatesHref="/dashboard/settings"
       detailBannerSlot={!enriched.detail_fetched ? (
         <div style={{ padding: "0 1.25rem", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
           <Info style={{ width: "12px", height: "12px", flexShrink: 0 }} />

@@ -43,11 +43,6 @@ class Product(Base):
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
     # FlipRadar — sugestii de surse (potrivire pe nume) care asteapta confirmarea userului.
     suggestions = relationship("ProductSourceSuggestion", back_populates="product", cascade="all, delete-orphan")
-    # FASHION-3b — referintele de revanzare mor odata cu produsul (coloana declara deja
-    # ondelete="CASCADE", dar bazele existente au FK-ul creat fara el: cascada ORM e
-    # singura care acopera si instalarile vechi).
-    resale_references = relationship("ResaleReference", back_populates="product",
-                                     cascade="all, delete-orphan")
     # MAG-1 — deal-urile promovate in acest produs. DELIBERAT fara cascada de stergere:
     # un deal e o OBSERVATIE a scannerului despre un magazin, nu o proprietate a
     # produsului, deci stergerea produsului nu are voie sa-l stearga. Comportamentul

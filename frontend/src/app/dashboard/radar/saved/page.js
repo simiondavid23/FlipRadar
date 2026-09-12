@@ -17,7 +17,7 @@ const openLabelOf = (p) => PLATFORM_LABELS[p?.toLowerCase()] || "Deschide anunț
 
 // Modal identic cu feed-ul Radar (review AI + șabloane + ML + detaliu on-demand Vinted/FB),
 // cu detaliul îmbogățit ținut local (nu mutăm starea paginii-feed).
-function RadarSavedModal({ listing, onClose, onSave, onIgnore, templates, reviewEnabled }) {
+function RadarSavedModal({ listing, onClose, onSave, onIgnore, reviewEnabled }) {
   const [detail, setDetail] = useState(listing);
   const [generatingAI, setGeneratingAI] = useState(false);
   useEffect(() => { setDetail(listing); }, [listing.id]);
@@ -58,10 +58,6 @@ function RadarSavedModal({ listing, onClose, onSave, onIgnore, templates, review
       onGenerateAI={generateAI}
       generatingAI={generatingAI}
       reviewSettingsHref="/dashboard/settings"
-      showTemplates
-      templates={templates}
-      onRenderTemplate={radarAPI.renderTemplate}
-      templatesHref="/dashboard/settings"
       detailBannerSlot={<RadarDetailBanner listing={detail} onLoadVintedDetail={loadVintedDetail} onLoadFacebookDetail={loadFacebookDetail} />}
     />
   );
@@ -70,8 +66,6 @@ function RadarSavedModal({ listing, onClose, onSave, onIgnore, templates, review
 export default function RadarSavedPage() {
   const { user } = useAuth();
   const reviewEnabled = user?.ai_features_config?.ai_radar_review !== false;
-  const [templates, setTemplates] = useState([]);
-  useEffect(() => { radarAPI.getTemplates().then((r) => setTemplates(r.data || [])).catch(() => {}); }, []);
 
   const fetchList = useCallback(async (status) => {
     const r = await radarAPI.getListings({ status, per_page: 200 });
@@ -104,7 +98,7 @@ export default function RadarSavedPage() {
           onToggleSelect={h.onToggleSelect}
         />
       )}
-      renderModal={(l, h) => <RadarSavedModal listing={l} {...h} templates={templates} reviewEnabled={reviewEnabled} />}
+      renderModal={(l, h) => <RadarSavedModal listing={l} {...h} reviewEnabled={reviewEnabled} />}
     />
   );
 }

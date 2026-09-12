@@ -48,10 +48,9 @@ _MODELE_CONVERTITE = [
     "auto_lot_keyword.py", "deal.py", "discord_queue_db.py",
     "facebook_group_config.py", "facebook_group_post.py", "inventory.py",
     "price_history.py", "product.py", "product_source.py",
-    "product_source_suggestion.py", "push_subscription.py", "radar_keyword.py",
-    "radar_message_template.py", "radar_seen_id.py", "radar_settings.py",
-    "real_estate_listing.py", "real_estate_monitor_keyword.py",
-    "resale_fee_profile.py", "resale_reference.py", "sale.py",
+    "product_source_suggestion.py", "radar_keyword.py",
+    "radar_seen_id.py", "radar_settings.py",
+    "real_estate_listing.py", "real_estate_monitor_keyword.py", "sale.py",
     "tracked_product.py", "user.py", "vinted_catalog.py",
 ]
 

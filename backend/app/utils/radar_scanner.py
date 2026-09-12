@@ -25,7 +25,6 @@ from app.models.radar_seen_id import RadarSeenId
 from app.models.radar_settings import RadarSettings
 from app.models.user import User
 from app.services.email_service import is_configured as smtp_configured, send_email
-from app.services.push_service import is_push_configured, notify_user_push
 from app.services.radar import health_watchdog
 from app.services.discord_service import send_radar_notification
 from app.services.log_manager import log_manager, set_log_user
@@ -2233,24 +2232,14 @@ def _reaparitie_fara_rand(db: Session, user, kw, platform: str, listing: dict,
             listing_id=f"pricedrop-seen-{user.id}-{platform}-{ext_id}-{int(pret_nou)}",
             db=db,
         )
-    # Email/push: aceleasi conditii ca la un anunt nou de grad A/B din bucla. Apelurile
-    # sunt repetate aici, nu extrase din bucla: extragerea ar fi atins blocul de
+    # Email: aceleasi conditii ca la un anunt nou de grad A/B din bucla. Apelul
+    # e repetat aici, nu extras din bucla: extragerea ar fi atins blocul de
     # notificari al caii normale, care nu se schimba in runda asta.
     if score_data["score"] in ("A", "B") and getattr(kw, "notify_email", False):
         _send_email_alert(user, listing, kw, score_data["score"],
                           score_data["margin_pct"],
                           listed_at=listing.get("listed_at"), found_at=rand.found_at,
                           refreshed_at=listing.get("refreshed_at"))
-    if score_data["score"] in ("A", "B") and is_push_configured():
-        try:
-            notify_user_push(
-                db, user.id,
-                title=f"Preț scăzut: {(listing.get('title') or '')[:50]}",
-                body=(f"{int(initial)} → {int(pret_nou)} {moneda_noua} · {platform}"),
-                url=f"/dashboard/radar?listing={rand.id}",
-            )
-        except Exception as exc:
-            print(f"[RadarScanner] Push esuat: {exc}")
     return "revived"
 
 
@@ -2378,17 +2367,6 @@ def _refresh_seen_listing(db: Session, user, kw, platform: str,
             listing_id=f"pricedrop-{row.id}-{int(new_price)}",
             db=db,
         )
-    if is_push_configured():
-        try:
-            notify_user_push(
-                db, user.id,
-                title=f"Preț scăzut: {(row.title or '')[:50]}",
-                body=(f"{int(old_price)} → {int(new_price)} {row.currency or 'RON'} · "
-                      f"{platform}"),
-                url=f"/dashboard/radar?listing={row.id}",
-            )
-        except Exception as exc:
-            print(f"[RadarScanner] Push esuat: {exc}")
     return "notified"
 
 
@@ -2924,7 +2902,7 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
 
                     # FEED-AUDIT (A4): prima scanare a unei platforme aduce istoricul
                     # (anunturi posibil vechi) — le salvam in feed dar NU notificam;
-                    # flood-ul Discord/email/push pornea la fiecare keyword nou.
+                    # flood-ul Discord/email pornea la fiecare keyword nou.
                     if not score_data["filtered"] and not _first_scan:
                         # Discord doar daca keyword-ul are notify_discord activ
                         if getattr(kw, "notify_discord", False):
@@ -2951,21 +2929,6 @@ def _scan_user(db: Session, user: User, only_platform: Optional[str] = None) -> 
                                 found_at=listing_db.found_at,
                                 refreshed_at=listing.get("refreshed_at"),
                             )
-                        # Web Push pentru deal-uri prioritare (A/B)
-                        if score_data["score"] in ("A", "B") and is_push_configured():
-                            try:
-                                notify_user_push(
-                                    db, user.id,
-                                    title=f"[{score_data['score']}] {listing.get('title', '')[:50]}",
-                                    body=(
-                                        f"{int(listing.get('price') or 0)} {listing.get('currency') or 'RON'} · "
-                                        f"Marjă {score_data['margin_pct']:.0f}% · "
-                                        f"{platform} · {listing.get('location') or '—'}"
-                                    ),
-                                    url=f"/dashboard/radar?listing={listing_db.id}",
-                                )
-                            except Exception as exc:
-                                print(f"[RadarScanner] Push esuat: {exc}")
                 except Exception as exc:
                     print(f"[RadarScanner] Eroare la procesare listing: {exc}")
                     log_manager.emit("radar", "ERR", f"Eroare {platform}: {str(exc)[:100]}")

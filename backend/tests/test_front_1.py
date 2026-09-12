@@ -341,7 +341,6 @@ def _alerta_pret_scazut(monkeypatch, listing: dict) -> dict:
     monkeypatch.setattr(rs, "send_radar_notification",
                         lambda **kw: notificari.append(kw) or 1)
     monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
-    monkeypatch.setattr(rs, "is_push_configured", lambda: False)
     monkeypatch.setattr(rs, "smtp_configured", lambda: False)
 
     db = SessionLocal()
@@ -446,7 +445,6 @@ def _alerta_scadere_pe_rand(monkeypatch, *, listed_at, refreshed_at,
     monkeypatch.setattr(rs, "send_radar_notification",
                         lambda **kw: notificari.append(kw) or 1)
     monkeypatch.setattr(rs.log_manager, "emit", lambda *a, **k: None)
-    monkeypatch.setattr(rs, "is_push_configured", lambda: False)
 
     db = SessionLocal()
     try:

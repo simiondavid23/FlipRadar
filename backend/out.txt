@@ -1,0 +1,111 @@
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 20%]
+........................................................................ [ 23%]
+........................................................................ [ 26%]
+........................................................................ [ 29%]
+........................................................................ [ 32%]
+........................................................................ [ 35%]
+........................................................................ [ 38%]
+........................................................................ [ 41%]
+........................................................................ [ 44%]
+........................................................................ [ 47%]
+........................................................................ [ 50%]
+........................................................................ [ 53%]
+........................................................................ [ 56%]
+........................................................................ [ 59%]
+........................................................................ [ 62%]
+........................................................................ [ 65%]
+........................................................................ [ 68%]
+........................................................................ [ 71%]
+........................................................................ [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 80%]
+........................................................................ [ 83%]
+........................................................................ [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 98%]
+....................................                                     [100%]
+============================== warnings summary ===============================
+venv\Lib\site-packages\slowapi\extension.py:717: 12 warnings
+  C:\licenta\flipRadar\backend\venv\Lib\site-packages\slowapi\extension.py:717: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(func):
+
+tests/test_alerts_discord.py::test_flash_deal_enqueues_discord
+  C:\licenta\flipRadar\backend\venv\Lib\site-packages\sqlalchemy\engine\default.py:952: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute(statement, parameters)
+
+tests/test_authorization.py: 9 warnings
+tests/test_fbg_alerts.py: 6 warnings
+tests/test_fbg_cookies.py: 4 warnings
+tests/test_fbg_ingest.py: 3 warnings
+  C:\licenta\flipRadar\backend\venv\Lib\site-packages\sqlalchemy\sql\schema.py:3624: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    return util.wrap_callable(lambda ctx: fn(), fn)  # type: ignore
+
+tests/test_fb_bazin.py: 19 warnings
+  C:\licenta\flipRadar\backend\tests\test_fb_bazin.py:62: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    acum = datetime.utcnow()
+
+tests/test_fb_bazin.py::test_retentia_sterge_pe_ultima_vedere_nu_pe_prima
+  C:\licenta\flipRadar\backend\tests\test_fb_bazin.py:273: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    acum = datetime.utcnow()
+
+tests/test_fb_bazin.py::test_retentia_respecta_pragul
+  C:\licenta\flipRadar\backend\tests\test_fb_bazin.py:287: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    acum = datetime.utcnow()
+
+tests/test_fb_bazin.py::test_marimea_bazinului_raporteaza_pe_module
+  C:\licenta\flipRadar\backend\tests\test_fb_bazin.py:295: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    acum = datetime.utcnow()
+
+tests/test_fb_bazin.py::test_marimea_bazinului_raporteaza_pe_module
+tests/test_fb_executor.py::test_stare_executor_dupa_un_tick
+  C:\licenta\flipRadar\backend\app\scrapers\facebook\bazin.py:110: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    varsta_zile = round((datetime.utcnow() - ref).total_seconds() / 86400.0, 2)
+
+tests/test_fbg_alerts.py::test_tranzitia_in_cookies_expirate_alerteaza
+tests/test_fbg_alerts.py::test_repetitia_nu_re_alerteaza
+tests/test_fbg_alerts.py::test_repetitia_nu_re_alerteaza
+tests/test_fbg_cookies.py::test_add_cookies_respins_seteaza_status_cookies_invalide
+tests/test_fbg_cookies.py::test_eroarea_generica_ramane_status_eroare
+  C:\licenta\flipRadar\backend\app\services\facebook_group_service.py:20: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/test_fbg_cookies.py::test_save_cookies_stocheaza_forma_normalizata
+  C:\licenta\flipRadar\backend\app\routers\facebook_groups.py:210: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    config.cookies_saved_at = datetime.utcnow()
+
+tests/test_radar_currency_score.py::test_anunt_in_eur_e_scorat_pe_valoarea_in_ron
+tests/test_radar_currency_score.py::test_anunt_scump_in_eur_nu_mai_primeste_grad_fals
+tests/test_radar_currency_score.py::test_control_aceeasi_cifra_in_ron_ramane_neatinsa
+  C:\licenta\flipRadar\backend\tests\test_radar_currency_score.py:185: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    rs._scan_user(db, db.query(User).get(uid))
+
+tests/test_radar_currency_score.py::test_refresh_seen_recalculeaza_scorul_pe_valoarea_in_ron
+  C:\licenta\flipRadar\backend\tests\test_radar_currency_score.py:323: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    row = db.query(RadarListing).get(rid)
+
+tests/test_saved_bridge.py::test_pret_neschimbat_face_doar_bump
+tests/test_saved_bridge.py::test_pretul_nou_actualizeaza_pret_si_scor
+tests/test_saved_bridge.py::test_moneda_diferita_nu_se_compara
+tests/test_saved_bridge.py::test_scadere_pe_salvat_notifica_discord_si_push
+tests/test_saved_bridge.py::test_scadere_sub_prag_pe_salvat_nu_notifica
+  C:\licenta\flipRadar\backend\tests\test_saved_bridge.py:65: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    return db.query(RadarListing).get(row_id)
+
+tests/test_saved_bridge.py::test_auto_reaparitia_actualizeaza_pret_si_grad
+  C:\licenta\flipRadar\backend\tests\test_saved_bridge.py:205: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    row = db.query(AutoFeedListing).get(rid)
+
+tests/test_saved_bridge.py::test_auto_moneda_diferita_nu_atinge_pretul
+  C:\licenta\flipRadar\backend\tests\test_saved_bridge.py:222: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    row = db.query(AutoFeedListing).get(rid)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2412 passed, 76 warnings in 352.66s (0:05:52)

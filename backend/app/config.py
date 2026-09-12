@@ -6,7 +6,7 @@ load_dotenv()
 # PKG-DATA — directorul de date scriibil al instantei (dev = cwd; sub
 # PyInstaller = LOCALAPPDATA/XDG). Rezolvat dupa load_dotenv ca FLIPRADAR_DATA_DIR
 # din .env sa fie vizibil.
-from app.paths import get_data_dir, get_or_create_secret_key, get_or_create_vapid_keys
+from app.paths import get_data_dir, get_or_create_secret_key
 DATA_DIR = get_data_dir()
 
 # DATABASE_URL: env-ul are prioritate; altfel default SQLite in directorul de date.
@@ -39,13 +39,3 @@ PROXY_HOST = os.getenv("PROXY_HOST", "")
 PROXY_PORT = os.getenv("PROXY_PORT", "")
 PROXY_USER = os.getenv("PROXY_USER", "")
 PROXY_PASS = os.getenv("PROXY_PASS", "")
-
-# Web Push (VAPID)
-VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
-VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "flipradar@exemplu.ro")
-if not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY):
-    # VAPID-AUTO: env-ul conteaza doar ca pereche COMPLETA (o jumatate din env
-    # + o jumatate generata ar fi criptografic invalida); altfel perechea
-    # per-instanta din data dir (generata + persistata la prima pornire).
-    VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY = get_or_create_vapid_keys(DATA_DIR)

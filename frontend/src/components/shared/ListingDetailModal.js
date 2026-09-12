@@ -1,15 +1,15 @@
 "use client";
 // Modal de detaliu partajat (Radar + Auto). Extras 1:1 din radar/page.js::ListingModal.
 // Structura comuna (antet, galerie, bloc PREȚ/marjă/scor, vânzător/date, Descriere, Review AI,
-// Mesaje rapide, acțiuni) traieste aici; bucatile specifice modulului vin prin props:
+// acțiuni) traieste aici; bucatile specifice modulului vin prin props:
 //   detailBannerSlot / mlSlot — ReactNode-uri opt-in (Radar: Vinted/FB detail + ML)
-//   showReview / showTemplates / onBlockSeller — opt-in
+//   showReview / onBlockSeller — opt-in
 //   children — slot ADIȚIONAL la finalul modalului (Auto pune Import Score aici)
 // Culorile/insignele/eticheta "Deschide" vin ca props (nu hardcodat Radar).
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   X, ImageOff, Tag, MapPin, Calendar, Sparkles,
-  Bookmark, EyeOff, ExternalLink, MessageSquare, Copy, Check, RefreshCw,
+  Bookmark, EyeOff, ExternalLink, RefreshCw,
 } from "lucide-react";
 import { marginColor, formatListedDate, timeAgo, sellerRatingLabel, memberSinceLabel, PretScazutBadge, bumpInfo } from "./listingHelpers";
 
@@ -47,10 +47,6 @@ export default function ListingDetailModal({
   onGenerateAI,
   generatingAI,
   reviewSettingsHref = "/dashboard/settings",
-  showTemplates = false,
-  templates = [],
-  onRenderTemplate,
-  templatesHref = "/dashboard/settings",
   detailBannerSlot = null,
   mlSlot = null,
   children = null,
@@ -338,11 +334,6 @@ export default function ListingDetailModal({
           </div>
         )}
 
-        {/* Mesaje rapide */}
-        {showTemplates && (
-          <MessageTemplateBlock listing={listing} templates={templates} onRenderTemplate={onRenderTemplate} templatesHref={templatesHref} />
-        )}
-
         {/* Acțiuni */}
         <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid rgba(94,140,255,.1)", display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button
@@ -408,130 +399,4 @@ function btn(color, bg, border) {
     display: "inline-flex",
     alignItems: "center",
   };
-}
-
-// Mesaje rapide — parametrizat: onRenderTemplate(templateId, {listing_id, pret_oferit}) + templatesHref.
-function MessageTemplateBlock({ listing, templates, onRenderTemplate, templatesHref }) {
-  const compat = templates.filter((t) => t.platform === "all" || t.platform === listing.platform);
-  const [templateId, setTemplateId] = useState(compat[0]?.id || "");
-  const defaultPretOferit = Math.round(listing.fee_ceiling || listing.price * 0.9);
-  const [pret, setPret] = useState(defaultPretOferit);
-  const [rendered, setRendered] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (compat[0]?.id && !templateId) setTemplateId(compat[0].id);
-    setPret(Math.round(listing.fee_ceiling || listing.price * 0.9));
-  }, [listing.id]);
-
-  if (templates.length === 0) {
-    return (
-      <div style={{ padding: "0 1.25rem 1rem" }}>
-        <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-          <MessageSquare style={{ width: "14px", height: "14px", color: "#7ee7f8" }} strokeWidth={1.8} />
-          Mesaje rapide
-        </div>
-        <div style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
-          Configurează șabloane în <a href={templatesHref}>Șabloane Mesaje</a>.
-        </div>
-      </div>
-    );
-  }
-
-  const render = async () => {
-    if (!templateId) return;
-    setBusy(true);
-    try {
-      const r = await onRenderTemplate(templateId, {
-        listing_id: listing.id,
-        pret_oferit: parseFloat(pret) || null,
-      });
-      setRendered(r.data?.rendered_text || "");
-    } catch (e) {
-      alert(e.response?.data?.detail || "Eroare la randare șablon.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copy = async () => {
-    if (!rendered) return;
-    try {
-      await navigator.clipboard.writeText(rendered);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      alert("Nu am putut copia. Selectează manual textul.");
-    }
-  };
-
-  const ctlStyle = {
-    background: "linear-gradient(rgba(6,11,22,.7),rgba(6,11,22,.7)) padding-box, linear-gradient(135deg, rgba(34,211,238,.3), rgba(59,130,246,.08) 55%, transparent) border-box",
-    border: "1px solid transparent",
-    borderRadius: "10px", padding: "7px 11px",
-    color: "var(--text-primary)", fontSize: "12px",
-    fontFamily: "var(--font-sans)", outline: "none",
-  };
-
-  return (
-    <div style={{ padding: "0 1.25rem 1rem" }}>
-      <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-        <MessageSquare style={{ width: "14px", height: "14px", color: "#7ee7f8" }} strokeWidth={1.8} />
-        Mesaje rapide
-      </div>
-      <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
-        <select
-          value={templateId}
-          onChange={(e) => setTemplateId(parseInt(e.target.value) || "")}
-          style={{ ...ctlStyle, minWidth: "200px" }}
-        >
-          {compat.length === 0 && <option value="">Niciun șablon pentru această platformă</option>}
-          {compat.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          value={pret}
-          onChange={(e) => setPret(e.target.value)}
-          style={{ ...ctlStyle, width: "120px" }}
-          placeholder="Preț oferit"
-        />
-        <button onClick={render} disabled={busy || !templateId} className="btn-cyan" style={{ padding: "7px 14px", borderRadius: "10px", fontSize: "12px" }}>
-          {busy ? "…" : "Generează"}
-        </button>
-      </div>
-      {rendered && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-          <textarea
-            readOnly
-            value={rendered}
-            rows={4}
-            style={{
-              width: "100%",
-              background: "rgba(4,9,18,.45)", border: "1px solid rgba(94,140,255,.13)",
-              borderRadius: "12px", padding: "10px 12px",
-              color: "var(--text-primary)", fontSize: "12.5px",
-              fontFamily: "var(--font-sans)", resize: "vertical", outline: "none",
-            }}
-          />
-          <div style={{ display: "flex", gap: "0.375rem" }}>
-            <button onClick={copy} style={{
-              padding: "7px 12px",
-              background: copied ? "rgba(74,222,128,.14)" : "rgba(148,163,184,.07)",
-              color: copied ? "#4ade80" : "var(--text-dim)",
-              border: `1px solid ${copied ? "rgba(74,222,128,.32)" : "rgba(148,163,184,.2)"}`,
-              borderRadius: "10px", fontSize: "12px", fontWeight: 600,
-              fontFamily: "var(--font-sans)",
-              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px",
-            }}>
-              {copied ? <Check style={{ width: "12px", height: "12px" }} strokeWidth={2} /> : <Copy style={{ width: "12px", height: "12px" }} strokeWidth={2} />}
-              {copied ? "Copiat!" : "Copiază"}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }

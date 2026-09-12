@@ -70,12 +70,9 @@ AutoListing = _model("AutoListing")
 FacebookGroupConfig = _model("FacebookGroupConfig")
 RadarKeyword = _model("RadarKeyword")
 RadarListing = _model("RadarListing")
-RadarMessageTemplate = _model("RadarMessageTemplate")
 RealEstateMonitorKeyword = _model("RealEstateMonitorKeyword")
 RealEstateMonitorListing = _model("RealEstateMonitorListing")
 RealEstateListing = _model("RealEstateListing")  # tabelul vechi (deprecat), /real-estate/saved
-ResaleFeeProfile = _model("ResaleFeeProfile")
-ResaleReference = _model("ResaleReference")
 Deal = _model("Deal")  # SHOP-2a — resursa GLOBALA pe instanta (fara user_id)
 
 _NAME = "AN1-authz"
@@ -262,13 +259,6 @@ def _f_radar_listing(uid):
         return [li.id]
 
 
-def _f_radar_template(uid):
-    with _session() as db:
-        t = RadarMessageTemplate(user_id=uid, name=_NAME, template_text="salut {titlu}")
-        db.add(t); db.flush()
-        return [t.id]
-
-
 def _f_re_monitor_listing(uid):
     with _session() as db:
         li = RealEstateMonitorListing(user_id=uid, platform="olx"); db.add(li); db.flush()
@@ -286,24 +276,6 @@ def _f_re_saved_listing(uid):
     with _session() as db:
         li = RealEstateListing(user_id=uid); db.add(li); db.flush()
         return [li.id]
-
-
-def _f_resale_fee_profile(uid):
-    with _session() as db:
-        pr = ResaleFeeProfile(user_id=uid, platform=f"authz-{uuid.uuid4().hex[:8]}",
-                              label=_NAME)
-        db.add(pr); db.flush()
-        return [pr.id]
-
-
-def _f_resale_reference(uid):
-    # Ownership-ul referintei vine prin produs (nu are user_id propriu).
-    with _session() as db:
-        p = Product(user_id=uid, name=_NAME); db.add(p); db.flush()
-        ref = ResaleReference(product_id=p.id, platform="stockx", variant="",
-                              ref_price=1.0)
-        db.add(ref); db.flush()
-        return [ref.id]
 
 
 def _f_deal(uid):
@@ -340,12 +312,9 @@ RESOURCE_FACTORIES = {
     "facebook_config": _f_facebook_config,
     "radar_keyword": _f_radar_keyword,
     "radar_listing": _f_radar_listing,
-    "radar_template": _f_radar_template,
     "re_monitor_listing": _f_re_monitor_listing,
     "re_monitor_keyword": _f_re_monitor_keyword,
     "re_saved_listing": _f_re_saved_listing,
-    "resale_fee_profile": _f_resale_fee_profile,
-    "resale_reference": _f_resale_reference,
 }
 
 
@@ -377,7 +346,6 @@ ENDPOINTS = [
     ("DELETE", "/api/auto-listings/feed/{listing_id}", "auto_feed_listing", None, DENIED),
     ("GET", "/api/auto-listings/feed/{listing_id}/detail", "auto_feed_listing", None, DENIED),
     ("POST", "/api/auto-listings/feed/{listing_id}/generate-review", "auto_feed_listing", None, DENIED),
-    ("POST", "/api/auto-listings/feed/{listing_id}/render-template", "auto_feed_listing", {"template_id": 1}, DENIED),
     ("PATCH", "/api/auto-listings/feed/{listing_id}/status", "auto_feed_listing", {"status": "saved"}, DENIED),
     ("GET", "/api/auto-listings/keywords/{keyword_id}/impact", "auto_keyword", None, SAFE_200),
     ("DELETE", "/api/auto-listings/keywords/{kw_id}", "auto_keyword", None, DENIED),
@@ -424,10 +392,6 @@ ENDPOINTS = [
     ("GET", "/api/radar/listings/{listing_id}/facebook-detail", "radar_listing", None, DENIED),
     ("PATCH", "/api/radar/listings/{listing_id}/status", "radar_listing", {"status": "saved"}, DENIED),
     ("GET", "/api/radar/listings/{listing_id}/vinted-detail", "radar_listing", None, DENIED),
-    # ── radar templates ──
-    ("DELETE", "/api/radar/templates/{template_id}", "radar_template", None, DENIED),
-    ("PUT", "/api/radar/templates/{template_id}", "radar_template", {}, DENIED),
-    ("POST", "/api/radar/templates/{template_id}/render", "radar_template", {"listing_id": 1}, DENIED),
     # ── real-estate-monitor (feed + keywords) ──
     ("DELETE", "/api/real-estate-monitor/feed/{listing_id}", "re_monitor_listing", None, DENIED),
     ("PATCH", "/api/real-estate-monitor/feed/{listing_id}/status", "re_monitor_listing", {"status": "saved"}, DENIED),
@@ -436,15 +400,6 @@ ENDPOINTS = [
     ("PUT", "/api/real-estate-monitor/keywords/{kw_id}", "re_monitor_keyword", {"name": "x", "platform": "olx"}, DENIED),
     # ── real-estate (saved, tabel vechi) ──
     ("DELETE", "/api/real-estate/listings/saved/{listing_id}", "re_saved_listing", None, DENIED),
-    # ── resale (FASHION-3a): profiluri de taxe + referinte de revanzare ──
-    # Referintele nu au user_id: ownership-ul lor se verifica prin join la produs.
-    ("PUT", "/api/resale/fee-profiles/{profile_id}", "resale_fee_profile", {}, DENIED),
-    ("GET", "/api/products/{product_id}/resale-references", "product", None, DENIED),
-    ("POST", "/api/products/{product_id}/resale-references", "product",
-     {"platform": "stockx", "ref_price": 1.0}, DENIED),
-    ("DELETE", "/api/resale/references/{ref_id}", "resale_reference", None, DENIED),
-    ("PUT", "/api/resale/references/{ref_id}", "resale_reference", {}, DENIED),
-    ("POST", "/api/resale/references/{ref_id}/set-primary", "resale_reference", None, DENIED),
     # ── sales ──
     ("DELETE", "/api/sales/{sale_id}", "sale", None, DENIED),
     ("PUT", "/api/sales/{sale_id}", "sale", {}, DENIED),

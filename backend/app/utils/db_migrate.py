@@ -430,7 +430,7 @@ _TZ2_GRUPURI = {
         ("real_estate_keywords", "last_scan_at"), ("real_estate_keywords", "created_at"),
         ("auto_keywords", "created_at"),
         ("auto_lot_keywords", "created_at"), ("auto_lot_keywords", "last_scan_at"),
-        ("radar_settings", "updated_at"), ("radar_message_templates", "created_at"),
+        ("radar_settings", "updated_at"),
         ("shop_scan_state", "last_scan_at"),
         ("auto_lot", "auction_date"), ("auto_lot", "last_seen_at"),
         ("auto_lot", "created_at"),
@@ -448,9 +448,6 @@ _TZ2_GRUPURI = {
         ("users", "created_at"), ("users", "updated_at"),
         ("alerts", "triggered_at"), ("alerts", "created_at"),
         ("tracked_products", "added_at"),
-        ("resale_fee_profiles", "created_at"), ("resale_fee_profiles", "updated_at"),
-        ("resale_references", "fetched_at"), ("resale_references", "created_at"),
-        ("resale_references", "updated_at"),
         ("sales", "created_at"),
         ("inventory_items", "created_at"), ("inventory_items", "updated_at"),
         ("products", "created_at"), ("products", "updated_at"),
@@ -460,7 +457,6 @@ _TZ2_GRUPURI = {
         ("price_history", "recorded_at"),
     ],
     "tz2c_rest": [
-        ("push_subscriptions", "created_at"),
         ("auto_listing", "created_at"), ("auto_listing", "last_seen_at"),
         ("real_estate_listing", "created_at"), ("real_estate_listing", "last_seen_at"),
         ("vinted_catalogs", "updated_at"),
@@ -1450,6 +1446,21 @@ def run_migrations():
         _migrate(conn, "drop_chat_messages_table", "DROP TABLE IF EXISTS chat_messages")
         # -- Cleanup post-licenta (ML-1): subsistemul ML eliminat, tabela nefolosita.
         _migrate(conn, "drop_market_listings_table", "DROP TABLE IF EXISTS market_listings")
+        # -- Cleanup post-licenta (SET-1a): notificarile push browser eliminate.
+        _migrate(conn, "drop_push_subscriptions_table",
+            "DROP TABLE IF EXISTS push_subscriptions")
+        # -- Cleanup post-licenta (SET-1a): sabloanele de mesaje eliminate.
+        _migrate(conn, "drop_radar_message_templates_table",
+            "DROP TABLE IF EXISTS radar_message_templates")
+        # -- Cleanup post-licenta (SET-1a): referintele si taxele de revanzare
+        # (FASHION-3) eliminate. Ordinea FK conteaza: referintele au FK spre
+        # products, profilurile spre users — ambele tabele-parinte RAMAN, deci
+        # doar copiii se sterg, iar `Product.resale_price` (mai vechi decat
+        # FASHION-3, folosit de analiza de profitabilitate) nu e atins.
+        _migrate(conn, "drop_resale_references_table",
+            "DROP TABLE IF EXISTS resale_references")
+        _migrate(conn, "drop_resale_fee_profiles_table",
+            "DROP TABLE IF EXISTS resale_fee_profiles")
 
     _backfill_product_sources()
     # Izolare per-migrare, ca la _migrate(): un esec (tipic: lock_timeout pe DROP,
