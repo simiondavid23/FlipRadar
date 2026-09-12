@@ -15,6 +15,19 @@ import PageHeading from "@/components/shared/PageHeading";
 
 const EMPTY_PROXY = { enabled: false, host: "", port: "", username: "", password: "", password_set: false };
 
+// DISC-1 — canalele Discord ale modulului Magazine, in ordinea din server.
+// `toate` primeste orice deal; restul sunt canalele pe care le ruteaza registrul
+// (cheia `channel` a fiecarui domeniu). Un magazin fara canal cade pe „diverse”.
+const CANALE_DEAL = [
+  ["toate", "Magazine — Toate deal-urile"],
+  ["electronice", "Magazine — Electronice"],
+  ["sneakers", "Magazine — Sneakers"],
+  ["haine", "Magazine — Haine"],
+  ["jucarii", "Magazine — Jucării"],
+  ["beauty", "Magazine — Beauty"],
+  ["diverse", "Magazine — Diverse"],
+];
+
 export default function SettingsPage() {
   // ── Radar settings state (copiat din vechea pagina /dashboard/radar/settings) ──
   const [settings, setSettings] = useState(null);
@@ -84,6 +97,10 @@ export default function SettingsPage() {
 
   const update = (patch) => setSettings({ ...settings, ...patch });
 
+  // DISC-1 — o singura cheie din harta de webhook-uri a modulului Magazine.
+  const updateDealWebhook = (canal, valoare) =>
+    update({ discord_webhooks_deals: { ...(settings.discord_webhooks_deals || {}), [canal]: valoare } });
+
   const togglePlatform = async (key) => {
     const newVal = !settings[key];
     update({ [key]: newVal });
@@ -109,7 +126,9 @@ export default function SettingsPage() {
         discord_webhook_imob_a: settings.discord_webhook_imob_a || "",
         discord_webhook_imob_b: settings.discord_webhook_imob_b || "",
         discord_webhook_alerts: settings.discord_webhook_alerts || "",
-        discord_webhook_deals: settings.discord_webhook_deals || "",
+        // DISC-1 — harta se trimite INTREAGA: backend-ul o inlocuieste, iar un
+        // camp golit in formular sterge cheia. De aceea nu se filtreaza aici.
+        discord_webhooks_deals: settings.discord_webhooks_deals || {},
       });
       alert("Webhook-uri Discord salvate.");
     } catch (e) {
@@ -480,6 +499,22 @@ export default function SettingsPage() {
             <PlatformToggle label="Menționează @here pentru Grade A în Imobiliare" enabled={!!settings.discord_here_imob} onToggle={() => togglePlatform("discord_here_imob")} />
             <PlatformToggle label="Menționează @here pentru Grade A în Radar Piață" enabled={!!settings.discord_here_radar} onToggle={() => togglePlatform("discord_here_radar")} />
 
+            <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Magazine (deal-uri)</div>
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.25rem" }}>
+              Fiecare deal nou pleacă pe canalul magazinului lui <em>și</em> pe „Toate
+              deal-urile”. Magazinele fără canal declarat merg în „Diverse”. Un câmp gol
+              înseamnă canal dezactivat.
+            </p>
+            {CANALE_DEAL.map(([canal, eticheta]) => (
+              <WebhookInput
+                key={canal}
+                label={eticheta}
+                value={(settings.discord_webhooks_deals || {})[canal] || ""}
+                onChange={(v) => updateDealWebhook(canal, v)}
+                onTest={() => testWebhook((settings.discord_webhooks_deals || {})[canal])}
+              />
+            ))}
+
             <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)", marginTop: "0.75rem" }}>Discord — Alerte preț</div>
             <WebhookInput label="Alerte preț & Flash Deals" value={settings.discord_webhook_alerts || ""} onChange={(v) => update({ discord_webhook_alerts: v })} onTest={() => testWebhook(settings.discord_webhook_alerts)} />
 
@@ -513,12 +548,10 @@ export default function SettingsPage() {
               raportează produsele reduse sub pragul de mai jos.
             </p>
 
-            <WebhookInput
-              label="Discord — Deal-uri"
-              value={settings.discord_webhook_deals || ""}
-              onChange={(v) => update({ discord_webhook_deals: v })}
-              onTest={() => testWebhook(settings.discord_webhook_deals)}
-            />
+            {/* DISC-1 — webhook-ul unic de deal-uri a fost inlocuit de cele sapte
+                canale din sectiunea „Discord — Magazine (deal-uri)”. Nu mai apare
+                aici: un input care nu mai ruteaza nimic ar arata identic cu unul
+                care ruteaza. */}
 
             <PlatformToggle
               label="Scanare deal-uri activă"

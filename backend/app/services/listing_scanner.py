@@ -91,7 +91,8 @@ from app.services.browser_fetch import (
     BrowserFetchUnavailable,
     fetch_browser_html,
 )
-from app.services.shop_registry import listing_descriptor, listing_domains
+from app.services.shop_registry import (deal_channel, listing_descriptor,
+                                         listing_domains)
 from app.utils.listing_dates import acum_local
 
 # STATE-1 — un logger de modul, doar pentru sfarsitul de intrare pe non-200. Restul
@@ -686,16 +687,24 @@ def _intrari(descriptor: dict) -> list[dict]:
     descriptor's. eMAG needs that fallback because the hub publishes ONE total
     (7996 products) and no per-category count, so a per-entry cap could only be
     invented.
+
+    DISC-1 — `channel` se plimba mai departe (None pe forma `url`, fiindca acolo
+    canalul e al DOMENIULUI si sta in registru, nu in descriptor). Normalizarea
+    reconstruieste dictul cheie cu cheie, deci o cheie necarata s-ar pierde tacut
+    intre registru si scanner — iar simptomul ar fi cel mai prost cu putinta:
+    rutare corecta pe 98 de magazine si gresita doar pe eMAG.
     """
     brute = descriptor.get("entries")
     if not brute:
         return [{"url": descriptor["url"],
                  "page_url_template": descriptor.get("page_url_template"),
-                 "max_pages": int(descriptor.get("max_pages") or 1)}]
+                 "max_pages": int(descriptor.get("max_pages") or 1),
+                 "channel": None}]
     return [{"url": intrare["url"],
              "page_url_template": intrare.get("page_url_template"),
              "max_pages": int(intrare.get("max_pages")
-                              or descriptor.get("max_pages") or 1)}
+                              or descriptor.get("max_pages") or 1),
+             "channel": intrare.get("channel")}
             for intrare in brute]
 
 
@@ -881,7 +890,12 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
     pagini = 0
     # D7 — notificarile se strang aici si pleaca DUPA commit-ul paginii, ca un
     # timeout de retea catre Discord sa nu mai prelungeasca tranzactia.
-    de_notificat: list[Deal] = []
+    # DISC-1 — perechi (deal, canal), nu doar deal-uri: canalul se stie AICI, din
+    # intrarea de listare care tocmai a produs cardul, si nu se mai poate deduce
+    # din randul comis (Deal n-are coloana de canal, deliberat — rutarea e o
+    # proprietate a registrului, nu a observatiei, si trebuie sa se schimbe cand
+    # se schimba registrul, nu la urmatorul scan).
+    de_notificat: list[tuple[Deal, str]] = []
 
     intrari = _intrari(descriptor)
     for indice_intrare, intrare in enumerate(intrari):
@@ -1096,7 +1110,7 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
                     db.add(deal)
                     db.flush()
                     if not primul_scan:
-                        de_notificat.append(deal)
+                        de_notificat.append((deal, deal_channel(domain, intrare)))
                 else:
                     # D7: the state belongs to the USER, so it stays untouched —
                     # `vazut` stays `vazut` (MAG-1 removed `ignorat`). No alert on
@@ -1140,8 +1154,11 @@ def _scaneaza_domeniu(db, domain: str, settings, prag: float) -> dict:
             # Notificarea pleaca DOAR pentru randuri deja comise: altfel am putea
             # anunta un deal pe care un rollback ulterior l-ar face sa nu fi existat.
             # Plafonul se verifica aici, nu la append, ca sa ramana global pe domeniu.
-            for deal in de_notificat:
-                if alerte < _MAX_ALERTE and send_deal_notification(deal, settings):
+            # DISC-1 — plafonul numara DEAL-URI, nu mesaje: un deal care pleaca si
+            # pe `toate` si pe canalul lui consuma o singura unitate din buget.
+            # `send_deal_notification` intoarce True daca a plecat macar unul.
+            for deal, canal in de_notificat:
+                if alerte < _MAX_ALERTE and send_deal_notification(deal, settings, canal):
                     alerte += 1
             de_notificat.clear()
 

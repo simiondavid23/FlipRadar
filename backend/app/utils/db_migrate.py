@@ -292,6 +292,46 @@ def _portable_migrations(conn, inspector):
             _migrate(conn, f"add_radar_settings_{_col}",
                      f"ALTER TABLE radar_settings ADD COLUMN {_col} {_type}")
 
+    # DISC-1 — harta canal -> webhook a modulului Magazine. Coloana e TEXT, ca
+    # `deal_shops_disabled` si `custom_zone_aliases`: SQLAlchemy `JSON` se
+    # serializeaza in TEXT pe SQLite, iar dialectul e unic de la SQLITE-1.
+    if (_table_exists(inspector, "radar_settings")
+            and not _column_exists(inspector, "radar_settings", "discord_webhooks_deals")):
+        _migrate(conn, "add_radar_settings_discord_webhooks_deals",
+                 "ALTER TABLE radar_settings ADD COLUMN discord_webhooks_deals TEXT")
+
+    # DISC-1 — vechiul webhook UNIC de deal-uri devine cheia `toate`, singura cu
+    # aceeasi semantica („orice deal, indiferent de magazin"). Fara backfill,
+    # comutarea ar fi taiat notificarile in tacere pentru cine avea deja un
+    # webhook configurat — adica exact regresia care se observa cel mai greu.
+    #
+    # `json_object` in loc de concatenare de siruri: URL-urile intra ca VALOARE
+    # legata, deci ghilimelele si backslash-urile se escapeaza de SQLite, nu de
+    # noi. Idempotent prin `WHERE`, ca reluarea dupa o cadere sa nu strice harta
+    # deja scrisa de mana din UI.
+    #
+    # „Neconfigurat" are PATRU forme, si nici una nu e teoretica:
+    #   NULL   — randul existent caruia ALTER TABLE tocmai i-a adaugat coloana;
+    #   '{}'   — randul scris prin ORM dupa adaugare, fiindca modelul declara
+    #            `default=dict`. Fara forma asta, backfill-ul ar fi sarit exact
+    #            randurile create de `_get_or_create_settings`;
+    #   'null' — tipul `JSON` al lui SQLAlchemy persista un `None` din Python ca
+    #            JSON null, nu ca SQL NULL (`none_as_null` e False implicit), deci
+    #            un `s.discord_webhooks_deals = None` scris candva de mana n-ar
+    #            fi nici NULL, nici '{}';
+    #   ''     — rand scris de o cale care n-a trecut prin serializator.
+    # Toate patru inseamna acelasi lucru pentru cititor (`... or {}`), deci toate
+    # patru trebuie sa insemne acelasi lucru si pentru migrare.
+    if (_table_exists(inspector, "radar_settings")
+            and _column_exists(inspector, "radar_settings", "discord_webhook_deals")
+            and _column_exists(inspector, "radar_settings", "discord_webhooks_deals")):
+        _migrate(conn, "backfill_radar_settings_discord_webhooks_deals",
+                 "UPDATE radar_settings "
+                 "SET discord_webhooks_deals = json_object('toate', discord_webhook_deals) "
+                 "WHERE discord_webhook_deals IS NOT NULL AND discord_webhook_deals != '' "
+                 "AND (discord_webhooks_deals IS NULL "
+                 "     OR discord_webhooks_deals IN ('', '{}', 'null'))")
+
     # DEAL-2b — pragul separat al lui R1 pe calea de listare, pe radar_settings.
     # Acelasi tipar ca blocul SHOP-2a de mai sus: garda _column_exists, un singur
     # ALTER, inregistrare prin _migrate. Nullable, fara default: None inseamna

@@ -24,6 +24,33 @@ Campurile unei intrari:
   label       — numele magazinului, pentru UI
   category    — electronice | fashion | sneakers | incaltaminte | tcg | outdoor
                 | jucarii | foto | beauty
+  channel     — OBLIGATORIU (DISC-1/1b), canalul Discord pe care pleaca deal-urile
+                domeniului: electronice | sneakers | haine | jucarii | beauty |
+                diverse.
+                La DISC-1 campul era OPTIONAL si absenta insemna `diverse`. La
+                DISC-1b cele 24 de domenii ramase implicite au primit eticheta lor,
+                iar regula s-a INVERSAT: `test_fiecare_domeniu_are_channel` cade
+                daca un magazin nou intra fara ea. Motivul e ca implicitul se
+                purta prea bine — un magazin de electronice uitat ajungea in
+                `diverse`, feed-ul mergea, si nimic nu semnala greseala. Acum
+                greseala se vede la test, nu pe Discord peste doua luni.
+                `deal_channel` PASTREAZA totusi rezerva pe `diverse`, si nu e
+                contradictie: ea acopera randuri vechi ale unui magazin scos din
+                registru intre timp, unde alternativa ar fi o excepție in mijlocul
+                unui scan.
+                E DELIBERAT separat de `category`,
+                desi cele doua seamana: `category` descrie ce vinde magazinul si
+                are 15 valori crescute organic pe masura ce intrau valuri;
+                `channel` descrie unde se uita David si are exact sase, fiindca
+                atatea canale exista in serverul lui. Legarea lor ar fi insemnat
+                ca adaugarea unei categorii noi (`farmacie`, `biciclete`) ruteaza
+                tacut intr-un canal inexistent.
+                Pe descriptorii cu `entries`, cheia poate aparea SI pe o intrare,
+                si atunci INTRAREA are prioritate — vezi eMAG Resigilate, unde
+                cele 12 departamente merg de la laptopuri la scutece. Regula
+                intreaga (intrare > domeniu > `diverse`) traieste intr-un singur
+                loc, `deal_channel()`; niciun consumator n-are voie sa tina lista
+                lui de domenii per canal.
   country     — cod de tara ISO, sau "EU" cand tara exacta nu e confirmata
   delivery    — ro_confirmed   (livreaza in RO, confirmat la sonda)
                 ro_storefront  (magazin cu vitrina .ro)
@@ -219,6 +246,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "amazon.de": {
         "label": "Amazon.de",
         "category": "general",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "custom",
@@ -274,6 +302,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "altex.ro": {
         "label": "Altex",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -327,6 +356,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "emag.ro": {
         "label": "eMAG",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -365,6 +395,15 @@ SHOP_REGISTRY: dict[str, dict] = {
             # sunt luate verbatim din ancorele lui. Numarul de pagina sta la
             # MIJLOC, intre categorie si `/d` — citit din `rel=next`:
             # `<link rel="next" href="/resigilate/laptop-tablete-telefoane/p2/d">`.
+            #
+            # DISC-1 — `channel` PER INTRARE. eMAG Resigilate e singurul domeniu
+            # unde un canal la nivel de magazin ar minti: cele 12 departamente
+            # acopera catalogul intreg, de la laptopuri la scutece. Domeniul
+            # declara `electronice` (patru din primele cinci departamente sunt
+            # exact asta), iar intrarile care NU sunt electronice si-l suprascriu.
+            # `gaming-carti-birotica` ramane pe implicit deliberat: consolele si
+            # perifericele resigilate domina departamentul, iar cartile si
+            # birotica n-au canal propriu.
             "entries": [
             # Laptop, Tablete & Telefoane
             {"url": "https://www.emag.ro/resigilate/laptop-tablete-telefoane/d",
@@ -389,31 +428,38 @@ SHOP_REGISTRY: dict[str, dict] = {
             # Bacanie
             {"url": "https://www.emag.ro/resigilate/alimente-bauturi/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/alimente-bauturi/p{n}/d"},
+                 "https://www.emag.ro/resigilate/alimente-bauturi/p{n}/d",
+             "channel": "diverse"},
             # Fashion
             {"url": "https://www.emag.ro/resigilate/fashion/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/fashion/p{n}/d"},
+                 "https://www.emag.ro/resigilate/fashion/p{n}/d",
+             "channel": "haine"},
             # Ingrijire personala & Cosmetice
             {"url": "https://www.emag.ro/resigilate/ingrijire-personala-cosmetice/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/ingrijire-personala-cosmetice/p{n}/d"},
+                 "https://www.emag.ro/resigilate/ingrijire-personala-cosmetice/p{n}/d",
+             "channel": "beauty"},
             # Casa, Gradina & Bricolaj
             {"url": "https://www.emag.ro/resigilate/casa-bricolaj-petshop/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/casa-bricolaj-petshop/p{n}/d"},
+                 "https://www.emag.ro/resigilate/casa-bricolaj-petshop/p{n}/d",
+             "channel": "diverse"},
             # Sport & Travel
             {"url": "https://www.emag.ro/resigilate/sport-activitati-aer-liber/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/sport-activitati-aer-liber/p{n}/d"},
+                 "https://www.emag.ro/resigilate/sport-activitati-aer-liber/p{n}/d",
+             "channel": "diverse"},
             # Auto, Moto & RCA
             {"url": "https://www.emag.ro/resigilate/auto-moto-rca/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/auto-moto-rca/p{n}/d"},
+                 "https://www.emag.ro/resigilate/auto-moto-rca/p{n}/d",
+             "channel": "diverse"},
             # Jucarii, Copii & Bebe
             {"url": "https://www.emag.ro/resigilate/jucarii-copii-bebe/d",
              "page_url_template":
-                 "https://www.emag.ro/resigilate/jucarii-copii-bebe/p{n}/d"},
+                 "https://www.emag.ro/resigilate/jucarii-copii-bebe/p{n}/d",
+             "channel": "jucarii"},
             ],
             # UNIC la nivel de descriptor, si nu din comoditate: hub-ul publica UN
             # total (7996 de produse) si NICIUN numar per categorie, iar singura
@@ -516,6 +562,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sole.ro": {
         "label": "Sole",
         "category": "beauty",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "custom",
@@ -529,6 +576,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "farmaciatei.ro": {
         "label": "Farmacia Tei",
         "category": "farmacie",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "custom",
@@ -542,6 +590,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "cel.ro": {
         "label": "CEL.ro",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -579,6 +628,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "vexio.ro": {
         "label": "Vexio",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -637,6 +687,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "mediagalaxy.ro": {
         "label": "Media Galaxy",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -673,6 +724,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "answear.ro": {
         "label": "Answear",
         "category": "fashion",
+        "channel": "haine",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -744,6 +796,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "fashiondays.ro": {
         "label": "Fashion Days",
         "category": "fashion",
+        "channel": "haine",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -784,6 +837,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "epantofi.ro": {
         "label": "ePantofi",
         "category": "fashion",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -827,6 +881,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "modivo.ro": {
         "label": "Modivo",
         "category": "fashion",
+        "channel": "haine",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -924,6 +979,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "bstn.com": {
         "label": "BSTN",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -980,6 +1036,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "en.afew-store.com": {
         "label": "Afew Store",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -993,6 +1050,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "prm.com": {
         "label": "PRM",
         "category": "fashion",
+        "channel": "sneakers",
         # Tara exacta NU e confirmata de sonda; se corecteaza la un val viitor,
         # nu se ghiceste.
         "country": "EU",
@@ -1081,6 +1139,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sneakersnstuff.com": {
         "label": "Sneakersnstuff",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "SE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -1125,6 +1184,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "aboutyou.ro": {
         "label": "About You",
         "category": "fashion",
+        "channel": "haine",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -1174,6 +1234,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "trendyol.com": {
         "label": "Trendyol",
         "category": "fashion",
+        "channel": "haine",
         "country": "TR",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -1208,6 +1269,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "endclothing.com": {
         "label": "END.",
         "category": "sneakers",
+        "channel": "haine",
         "country": "GB",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -1267,6 +1329,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "zalando.ro": {
         "label": "Zalando",
         "category": "fashion",
+        "channel": "haine",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -1314,6 +1377,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "43einhalb.com": {
         "label": "43einhalb",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -1380,6 +1444,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "flanco.ro": {
         "label": "Flanco",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "og",
@@ -1428,6 +1493,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "evomag.ro": {
         "label": "evoMAG",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "microdata",
@@ -1487,6 +1553,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "footshop.ro": {
         "label": "Footshop",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "microdata",
@@ -1537,6 +1604,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "asos.com": {
         "label": "ASOS",
         "category": "fashion",
+        "channel": "haine",
         "country": "GB",
         "delivery": "ro_confirmed",
         "method": "custom",
@@ -1584,6 +1652,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "asphaltgold.com": {
         "label": "Asphaltgold",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -1595,6 +1664,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "footdistrict.com": {
         "label": "Footdistrict",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "ES",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -1606,6 +1676,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "overkillshop.com": {
         "label": "Overkill",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -1617,6 +1688,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "nakedcph.com": {
         "label": "NAKED Copenhagen",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DK",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -1628,6 +1700,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "patta.nl": {
         "label": "Patta",
         "category": "sneakers",
+        "channel": "haine",
         "country": "NL",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -1639,6 +1712,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "slamjam.com": {
         "label": "Slam Jam",
         "category": "sneakers",
+        "channel": "haine",
         "country": "IT",
         "delivery": "ro_confirmed",
         "method": "shopify",
@@ -1650,6 +1724,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "redgoblin.ro": {
         "label": "Red Goblin",
         "category": "tcg",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "shopify",
@@ -1661,6 +1736,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "ada-shoes.ro": {
         "label": "Ada Shoes",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "shopify",
@@ -1672,6 +1748,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "rocashoes.ro": {
         "label": "Roca Shoes",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "shopify",
@@ -1683,6 +1760,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "shopium.ro": {
         "label": "Shopium",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "shopify",
@@ -1694,6 +1772,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sosukicks.ro": {
         "label": "Sosu Kicks",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "shopify",
@@ -1710,6 +1789,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "itgalaxy.ro": {
         "label": "IT Galaxy",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -1782,6 +1862,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "carrefour.ro": {
         "label": "Carrefour",
         "category": "electronice",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -1869,6 +1950,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "flip.ro": {
         "label": "Flip",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -1922,6 +2004,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "usedproducts.ro": {
         "label": "Used Products",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -1935,6 +2018,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "senetic.ro": {
         "label": "Senetic",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -2004,6 +2088,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "pcgarage.ro": {
         "label": "PC Garage",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "microdata",
@@ -2091,6 +2176,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "orange.ro": {
         "label": "Orange",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
@@ -2100,6 +2186,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "powerup.ro": {
         "label": "PowerUp",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "custom",
@@ -2168,6 +2255,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "computeruniverse.net": {
         "label": "computeruniverse",
         "category": "electronice",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2262,6 +2350,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "jb-spielwaren.de": {
         "label": "JB Spielwaren",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2295,6 +2384,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "caseking.de": {
         "label": "Caseking",
         "category": "electronice",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2325,6 +2415,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "bergfreunde.eu": {
         "label": "Bergfreunde",
         "category": "outdoor",
+        "channel": "haine",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2386,6 +2477,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "alternate.de": {
         "label": "Alternate",
         "category": "electronice",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2448,6 +2540,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "cyberport.at": {
         "label": "Cyberport",
         "category": "electronice",
+        "channel": "electronice",
         "country": "AT",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2491,6 +2584,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sportvision.ro": {
         "label": "Sport Vision",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -2556,6 +2650,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sizeer.ro": {
         "label": "Sizeer",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -2673,6 +2768,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "intersport.ro": {
         "label": "Intersport",
         "category": "incaltaminte",
+        "channel": "haine",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "custom",
@@ -2764,6 +2860,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "toolnation.nl": {
         "label": "Toolnation",
         "category": "bricolaj",
+        "channel": "diverse",
         "country": "NL",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2827,6 +2924,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "direct-running.com": {
         "label": "Direct Running",
         "category": "incaltaminte",
+        "channel": "sneakers",
         # Sediul NU e dovedit juridic: singurul semnal masurat, prezent identic pe
         # home, PDP si listare, e „Customer service in France". E serviciu de clienti,
         # nu sediu, si sta in tensiune cu moneda USD — de aici mentiunea din notes.
@@ -2897,6 +2995,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "zooplus.ro": {
         "label": "Zooplus",
         "category": "pet",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -2967,6 +3066,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "hornbach.ro": {
         "label": "Hornbach",
         "category": "bricolaj",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -2997,6 +3097,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "bonami.ro": {
         "label": "Bonami",
         "category": "general",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3051,6 +3152,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "action.com": {
         "label": "Action",
         "category": "general",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3124,6 +3226,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "ro.vivre.eu": {
         "label": "Vivre",
         "category": "general",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3175,6 +3278,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "biciclop.eu": {
         "label": "Biciclop",
         "category": "biciclete",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3208,6 +3312,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "cellini.ro": {
         "label": "Cellini",
         "category": "bijuterii-ceasuri",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "custom",
@@ -3283,6 +3388,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "foto-erhardt.com": {
         "label": "Foto Erhardt",
         "category": "foto",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3353,6 +3459,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "f64.ro": {
         "label": "F64",
         "category": "foto",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3418,6 +3525,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "elefant.ro": {
         "label": "Elefant",
         "category": "general",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "custom",
@@ -3461,6 +3569,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sivasdescalzo.com": {
         "label": "Sivasdescalzo",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "ES",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3530,6 +3639,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "tezyo.ro": {
         "label": "Tezyo",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3582,6 +3692,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "buzzsneakers.ro": {
         "label": "Buzz Sneakers",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3635,6 +3746,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "officeshoes.ro": {
         "label": "Office Shoes",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "microdata",
@@ -3676,6 +3788,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "otter.ro": {
         "label": "Otter",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3718,6 +3831,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "spartoo.ro": {
         "label": "Spartoo",
         "category": "incaltaminte",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3755,6 +3869,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "boozt.com": {
         "label": "Boozt",
         "category": "fashion",
+        "channel": "haine",
         "country": "DK",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3766,6 +3881,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "booztlet.com": {
         "label": "Booztlet",
         "category": "fashion",
+        "channel": "haine",
         "country": "DK",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3831,6 +3947,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "marionnaud.ro": {
         "label": "Marionnaud",
         "category": "beauty",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3868,6 +3985,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "notino.ro": {
         "label": "Notino",
         "category": "beauty",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3902,6 +4020,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "parfumdreams.de": {
         "label": "Parfumdreams",
         "category": "beauty",
+        "channel": "beauty",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "jsonld",
@@ -3947,6 +4066,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "douglas.ro": {
         "label": "Douglas",
         "category": "beauty",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -3996,6 +4116,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sephora.ro": {
         "label": "Sephora",
         "category": "beauty",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
@@ -4009,6 +4130,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "makeup.ro": {
         "label": "Makeup",
         "category": "beauty",
+        "channel": "beauty",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
@@ -4058,6 +4180,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "hhv.de": {
         "label": "HHV",
         "category": "fashion",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "ro_confirmed",
         "method": "browser",
@@ -4086,6 +4209,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "noriel.ro": {
         "label": "Noriel",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -4120,6 +4244,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "regatuljocurilor.ro": {
         "label": "Regatul Jocurilor",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -4211,6 +4336,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "jucarii-vorbarete.ro": {
         "label": "Jucarii Vorbarete",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "shopify",
@@ -4227,6 +4353,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "nichiduta.ro": {
         "label": "Nichiduta",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -4319,6 +4446,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "brickdepot.ro": {
         "label": "BrickDepot",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -4388,6 +4516,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "bb-shop.ro": {
         "label": "B&B SHOP",
         "category": "bijuterii-ceasuri",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "browser",
@@ -4417,6 +4546,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "conrad.com": {
         "label": "Conrad",
         "category": "electronice",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "unconfirmed",
         "method": "browser",
@@ -4520,6 +4650,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "forit.ro": {
         "label": "Forit",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -4598,6 +4729,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "istyle.ro": {
         "label": "iSTYLE",
         "category": "electronice",
+        "channel": "electronice",
         "country": "RO",
         "delivery": "ro_storefront",
         # DEAL-D1: `jsonld` -> `shopify`. Nota WL-4 spunea „Shopify, dar NU pe
@@ -4671,6 +4803,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "snipes.com": {
         "label": "SNIPES",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "unconfirmed",
         "method": "jsonld",
@@ -4725,6 +4858,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "solebox.com": {
         "label": "solebox",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "DE",
         "delivery": "unconfirmed",
         "method": "browser",
@@ -4792,6 +4926,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "lego.com": {
         "label": "LEGO",
         "category": "jucarii",
+        "channel": "jucarii",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -4864,6 +4999,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "cardmarket.com": {
         "label": "Cardmarket",
         "category": "tcg",
+        "channel": "diverse",
         "country": "DE",
         "delivery": "unconfirmed",
         "method": "browser",
@@ -4901,6 +5037,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "notebooksbilliger.de": {
         "label": "notebooksbilliger",
         "category": "electronice",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "unconfirmed",
         "method": "browser",
@@ -4964,6 +5101,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "footlocker.ro": {
         "label": "Foot Locker",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -5035,6 +5173,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "decathlon.ro": {
         "label": "Decathlon",
         "category": "outdoor",
+        "channel": "diverse",
         "country": "RO",
         "delivery": "ro_storefront",
         # ── DEAL-D11 — MIGRAT de pe browser pe HTTP (sonda LST-D10 §3.2) ──────
@@ -5099,6 +5238,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "reichelt.de": {
         "label": "reichelt elektronik",
         "category": "electronice",
+        "channel": "electronice",
         "country": "DE",
         "delivery": "unconfirmed",
         "method": "microdata",
@@ -5208,6 +5348,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "sneakerindustry.ro": {
         "label": "Sneaker Industry",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         # DEAL-D1: `og` -> `shopify`. Enumerarea e DESCHISA, masurat — vezi `notes`.
@@ -5278,6 +5419,7 @@ SHOP_REGISTRY: dict[str, dict] = {
     "nike.com": {
         "label": "Nike",
         "category": "sneakers",
+        "channel": "sneakers",
         "country": "RO",
         "delivery": "ro_storefront",
         "method": "jsonld",
@@ -5406,6 +5548,93 @@ def _valideaza_extra_headers(registru: dict) -> None:
 
 
 _valideaza_extra_headers(SHOP_REGISTRY)
+
+
+# DISC-1 — canalele Discord pe care se imparte axa D. Multimea e INCHISA si mica:
+# sunt exact canalele care exista in serverul lui David, iar un al saptelea ar
+# cere intai un canal acolo si abia apoi o valoare aici.
+#
+# `toate` NU e in lista, deliberat: el nu e un canal AL UNUI MAGAZIN, ci o
+# destinatie care primeste orice deal indiferent de canal. Un domeniu cu
+# `channel: "toate"` ar fi o confuzie intre cele doua, deci garda il respinge.
+CANALE_DEAL = ("electronice", "sneakers", "haine", "jucarii", "beauty", "diverse")
+
+# Canalul pe care cade un domeniu care nu-si declara niciunul.
+CANAL_IMPLICIT = "diverse"
+
+
+def _valideaza_channel(registru: dict) -> None:
+    """DISC-1. O valoare de `channel` din afara setului = RESPINS la import.
+
+    Ridica la IMPORT din acelasi motiv ca `_valideaza_extra_headers`: registrul e
+    un literal Python, deci `"electronic"` in loc de `"electronice"` e o greseala
+    de SCRIERE, si trebuie sa cada imediat. Fallback-ul tacut ar fi aici mai rau
+    decat de obicei — `deal_channel` intoarce `diverse` pentru orice necunoscut,
+    deci o typo ar trimite un magazin intreg pe canalul de fund fara ca nimeni sa
+    observe, iar simptomul (deal-uri „lipsa" dintr-un canal) nu arata catre cauza.
+
+    Verifica AMBELE nivele, fiindca amandoua sunt scrise de mana: cheia de pe
+    domeniu si cheia de pe fiecare intrare din `listing.entries`.
+
+    Ia registrul ca ARGUMENT ca sa poata fi verificata si pe unul sintetic, in
+    teste — o garda care se poate rula doar pe registrul real n-are cum sa
+    dovedeasca ce respinge.
+    """
+    def _verifica(valoare, unde: str) -> None:
+        if valoare is None:
+            return
+        if valoare not in CANALE_DEAL:
+            raise ValueError(
+                f"{unde}: `channel` necunoscut {valoare!r} — valorile permise "
+                f"sunt {', '.join(CANALE_DEAL)} (absenta = {CANAL_IMPLICIT})")
+
+    for domain, meta in (registru or {}).items():
+        _verifica(meta.get("channel"), domain)
+        intrari = (meta.get("listing") or {}).get("entries") or []
+        for indice, intrare in enumerate(intrari):
+            if isinstance(intrare, dict):
+                _verifica(intrare.get("channel"), f"{domain}: intrarea {indice}")
+
+
+_valideaza_channel(SHOP_REGISTRY)
+
+
+def deal_channel(domain: str, entry: dict | None = None) -> str:
+    """DISC-1 — canalul Discord al unui deal: intrare > domeniu > `diverse`.
+
+    SINGURUL loc unde regula de rutare traieste. Notificatorul primeste de aici un
+    string si atat: daca ar tine el o lista de domenii per canal, ea ar diverge de
+    registru la primul magazin nou — exact bug-ul tacut pentru care exista REG-1.
+
+    `entry` e intrarea de listare din care a iesit deal-ul, cand domeniul are mai
+    multe (eMAG). Pe domeniile cu o singura listare se cheama fara ea. Un `entry`
+    fara `channel` nu suprascrie nimic: cade pe cel al domeniului.
+
+    Toleranta la necunoscut e ASIMETRICA fata de garzi, si deliberat, pe doua
+    nivele: o valoare gresita SCRISA in registru cade la import
+    (`_valideaza_channel`), un domeniu din registru fara eticheta cade la test
+    (DISC-1b), dar un domeniu care nu mai e DELOC in registru intoarce `diverse`
+    in loc sa ridice. Ultimul caz nu e o scapare de configurare, ci un rand vechi
+    al unui magazin scos intre timp — iar acolo un deal fara canal trebuie sa
+    ajunga undeva, nu sa rupa scanul.
+    """
+    canal = None
+    if isinstance(entry, dict):
+        canal = entry.get("channel")
+    if not canal:
+        canal = (SHOP_REGISTRY.get(domain) or {}).get("channel")
+    return canal if canal in CANALE_DEAL else CANAL_IMPLICIT
+
+
+def label_of(domain: str) -> str:
+    """Numele lizibil al magazinului, cu domeniul ca rezerva.
+
+    Acelasi tipar `meta.get("label") or domain` pe care il scriau deja de mana
+    `search_service` si `routers/deals`; DISC-1 i-ar fi adaugat a treia copie, in
+    embed-ul de Discord. Lookup direct, fara copie, ca la `url_identity_of`:
+    valoarea e un scalar imutabil.
+    """
+    return (SHOP_REGISTRY.get(domain) or {}).get("label") or domain
 
 
 def option_map(key: str) -> dict:

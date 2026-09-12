@@ -24,6 +24,14 @@ import requests as req
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.utils.listing_dates import acum_local, este_reactualizat
+# DISC-1 — import la NIVEL DE MODUL, nu lenes in functie: shop_registry e frunza
+# prin constructie (nu importa nimic din `app.*`), deci nu poate inchide un ciclu.
+from app.services.shop_registry import (
+    CANALE_DEAL,
+    deal_channel,
+    label_of,
+    listing_descriptor,
+)
 
 
 class DiscordNotificationService:
@@ -504,8 +512,14 @@ def build_flash_deal_embed(product_name: str, old_price: float, new_price: float
     return embed
 
 
-def _build_deal_embed(deal) -> dict:
-    """SHOP-2a — cardul unui chilipir descoperit de scannerul Shopify."""
+def build_deal_embed(deal, canal: Optional[str] = None) -> dict:
+    """SHOP-2a — cardul unui chilipir descoperit de scannerul de magazine.
+
+    DISC-1: poarta si CANALUL pe care a fost rutat. Mesajul ajunge in doua locuri
+    (canalul lui si `#feed-dealuri-toate`), iar in cel agregat „pe ce canal ar fi
+    trebuit sa fie asta" e singura informatie care nu se poate deduce din restul
+    cardului — un magazin nou rutat gresit se vede din citit, nu din SQL.
+    """
     moneda = deal.currency or ""
     fields = [
         {"name": "💰 Pret", "value": f"{deal.price} {moneda}".strip(), "inline": True},
@@ -519,8 +533,24 @@ def _build_deal_embed(deal) -> dict:
     if deal.min_price_seen:
         fields.append({"name": "📊 Minim vazut",
                        "value": f"{deal.min_price_seen} {moneda}".strip(), "inline": True})
-    fields.append({"name": "🏪 Magazin", "value": deal.shop_domain, "inline": True})
+    # Numele lizibil, nu domeniul gol: „Media Galaxy", nu „mediagalaxy.ro".
+    # `label_of` cade inapoi pe domeniu pentru randurile vechi ale unui magazin
+    # scos din registru intre timp.
+    fields.append({"name": "🏪 Magazin", "value": label_of(deal.shop_domain), "inline": True})
     fields.append({"name": "🎯 Referinta", "value": deal.reason, "inline": True})
+    fields.append({"name": "📡 Canal", "value": canal or deal_channel(deal.shop_domain),
+                   "inline": True})
+
+    # Avertismentul de SEMANTICA, nu o eticheta in plus: pe magazinele cu
+    # `reference_kind: "nemarcat"` pretul taiat nu poarta nicio declaratie legala
+    # (nici PRP, nici minimul pe 30 de zile), deci procentul e fata de un numar pe
+    # care magazinul nu si-l asuma. Se scrie DOAR acolo: pe `min30` si `prp`
+    # referinta are inteles definit si n-are nevoie de nota de subsol.
+    if _reference_kind_of(deal.shop_domain) == "nemarcat":
+        fields.append({"name": "⚠️ Referinta nemarcata",
+                       "value": "Pretul taiat nu e declarat ca PRP sau minim pe 30 de zile.",
+                       "inline": False})
+
     if deal.sizes_available:
         marimi = ", ".join(str(m) for m in deal.sizes_available[:10])
         fields.append({"name": "📏 Marimi in stoc", "value": marimi[:1024], "inline": False})
@@ -538,22 +568,59 @@ def _build_deal_embed(deal) -> dict:
     return embed
 
 
-def send_deal_notification(deal, settings) -> bool:
-    """Enqueue pe webhook-ul dedicat de deal-uri. True daca a fost pus in coada.
+def _reference_kind_of(domain: str) -> Optional[str]:
+    """Semantica referintei de pret a unui domeniu, sau None daca n-are listare.
 
-    Pe modelul lui send_price_alert_notification: lipsa webhook-ului nu e eroare,
-    doar absenta canalului. Deduplicarea pe 24h vine gratis din coada, prin
-    listing_id + module.
+    Sta in descriptorul de LISTARE (per domeniu, la nivelul de sus — vezi
+    `_LISTING_DOAR_LISTARE`), deci calea Shopify si cea de API n-au niciuna si
+    intorc None: acolo `compare_at` vine din payload-ul platformei, nu de pe un
+    card de raft, si nu poarta problema.
     """
-    wh = getattr(settings, "discord_webhook_deals", None)
-    if not wh:
+    return (listing_descriptor(domain) or {}).get("reference_kind")
+
+
+def send_deal_notification(deal, settings, canal: Optional[str] = None) -> bool:
+    """DISC-1 — ruteaza un deal pe `toate` SI pe canalul lui. True daca a plecat
+    macar unul.
+
+    `canal` se paseaza de catre apelantii care STIU din ce intrare de listare a
+    iesit deal-ul (eMAG isi imparte catalogul pe 12 departamente, iar canalul
+    intrarii bate canalul magazinului). Apelantii cu o singura listare per domeniu
+    il lasa None si canalul se deduce din registru.
+
+    Lipsa unui webhook nu e eroare, doar absenta canalului — modelul lui
+    `send_price_alert_notification`. Fara NICIUN webhook configurat nu se intampla
+    nimic si nu se ridica nimic: scanul nu are de ce sa cada fiindca Discord-ul nu
+    e pus la punct.
+
+    Cand `toate` si canalul arata spre ACELASI webhook, deduplicarea existenta din
+    coada (listing_id + module + webhook_url) lasa sa treaca un singur mesaj —
+    deci nu e nevoie de nicio verificare aici.
+    """
+    if canal not in CANALE_DEAL:
+        canal = deal_channel(deal.shop_domain)
+    harta = getattr(settings, "discord_webhooks_deals", None) or {}
+    if not isinstance(harta, dict):
         return False
-    # Coloana discord_queue.grade e VARCHAR(2) -> "DL" (deal), nu "deal".
-    discord_service.enqueue(
-        webhook_url=wh, embed=_build_deal_embed(deal),
-        listing_id=f"deal-{deal.shop_domain}-{deal.external_id}",
-        module="deals", grade="DL", mention_here=False)
-    return True
+
+    embed = None
+    trimise = 0
+    for cheie in ("toate", canal):
+        wh = (harta.get(cheie) or "").strip()
+        if not wh:
+            continue
+        # Construit LENES: pe instantele fara niciun webhook configurat (cazul
+        # implicit) embed-ul nu se mai construieste deloc, iar el atinge registrul.
+        if embed is None:
+            embed = build_deal_embed(deal, canal)
+        # `grade=None`: gradele A/B/C/D sunt o notiune a Radarului, iar deal-urile
+        # n-au asa ceva — vechiul "DL" era o eticheta inventata ca sa umple campul.
+        # Coloana e nullable.
+        discord_service.enqueue(
+            webhook_url=wh, embed=embed, listing_id=f"deal_{deal.id}",
+            module="deals", grade=None, mention_here=False)
+        trimise += 1
+    return trimise > 0
 
 
 def send_price_alert_notification(embed: dict, settings, listing_id: str) -> bool:

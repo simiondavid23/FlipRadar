@@ -618,7 +618,7 @@ def test_primul_scan_nu_notifica(scan, monkeypatch):
     de baza in tacere."""
     trimise = []
     monkeypatch.setattr("app.services.discord_service.send_deal_notification",
-                        lambda deal, settings: trimise.append(deal) or True)
+                        lambda deal, settings, canal=None: trimise.append((deal, canal)) or True)
 
     scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
 
@@ -631,7 +631,7 @@ def test_al_doilea_scan_notifica_doar_produsele_noi(scan, monkeypatch):
     import re
     trimise = []
     monkeypatch.setattr("app.services.discord_service.send_deal_notification",
-                        lambda deal, settings: trimise.append(deal) or True)
+                        lambda deal, settings, canal=None: trimise.append((deal, canal)) or True)
 
     scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())
     assert trimise == []
@@ -656,7 +656,7 @@ def test_plafonul_de_alerte_per_domeniu(scan, monkeypatch):
     import re
     trimise = []
     monkeypatch.setattr("app.services.discord_service.send_deal_notification",
-                        lambda deal, settings: trimise.append(deal) or True)
+                        lambda deal, settings, canal=None: trimise.append((deal, canal)) or True)
     monkeypatch.setattr(listing_scanner, "_MAX_ALERTE", 1)
 
     scan([_fixture("otter.ro"), ""], descriptor=_descriptor_test())   # linia de baza

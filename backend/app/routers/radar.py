@@ -38,6 +38,7 @@ from app.services.radar.excel_exporter import build_listings_xlsx
 from app.services.radar.facebook_auth import start_facebook_login_session
 from app.services.radar.facebook_scraper import is_facebook_session_valid
 from app.services.radar.scorer import calculate_fee_ceiling, calculate_score
+from app.services.shop_registry import CANALE_DEAL
 from app.services.log_manager import set_log_user
 from app.utils.auth import get_current_user, require_admin
 from app.utils.id_csv import parse_id_csv
@@ -137,6 +138,13 @@ def _validate_discord_webhook(v):
     return v
 
 
+# DISC-1 — cheile permise in harta de webhook-uri a modulului Magazine: `toate`
+# (primeste orice deal) plus cele sase canale ale registrului. Derivata din
+# CANALE_DEAL, nu rescrisa: un canal nou se adauga intr-un singur loc, iar aici
+# ajunge automat.
+_CHEI_WEBHOOK_DEALS = ("toate",) + CANALE_DEAL
+
+
 class ListingStatusUpdate(BaseModel):
     status: str
 
@@ -152,18 +160,56 @@ class SettingsUpdate(BaseModel):
     discord_webhook_imob_a: Optional[str] = None
     discord_webhook_imob_b: Optional[str] = None
     discord_webhook_alerts: Optional[str] = None
-    # SHOP-2a — webhook dedicat pentru deal-urile Shopify.
-    discord_webhook_deals: Optional[str] = None
+    # SHOP-2a — webhook dedicat pentru deal-urile Shopify. SCOS la DISC-1: harta
+    # `discord_webhooks_deals` de mai jos l-a inlocuit, iar coloana veche nu mai e
+    # citita de nimeni. Un camp care se salveaza dar nu ruteaza nimic e mai rau
+    # decat unul absent — pydantic ignora cheia, deci un client vechi nu cade.
+
+    # DISC-1 — harta canal -> webhook a modulului Magazine.
+    discord_webhooks_deals: Optional[dict] = None
 
     @field_validator(
         "discord_webhook_all", "discord_webhook_buy_now", "discord_webhook_maybe",
         "discord_webhook_auto", "discord_webhook_auto_all", "discord_webhook_auto_b",
         "discord_webhook_imob_all", "discord_webhook_imob_a", "discord_webhook_imob_b",
-        "discord_webhook_alerts", "discord_webhook_deals",
+        "discord_webhook_alerts",
     )
     @classmethod
     def _check_webhooks(cls, v):
         return _validate_discord_webhook(v)
+
+    @field_validator("discord_webhooks_deals")
+    @classmethod
+    def _check_webhooks_deals(cls, v):
+        """DISC-1 — chei din multimea inchisa, valori webhook-uri Discord reale.
+
+        Cheile necunoscute se RESPING (422) in loc sa fie ignorate: harta e scrisa
+        INTREAGA de formular, deci o cheie in plus inseamna ori o typo, ori un
+        client care crede ca exista un canal inexistent — si in amandoua cazurile
+        tacerea ar arata ca o salvare reusita dupa care nu mai vine nimic.
+
+        Valorile goale STERG cheia (nu se pastreaza ca "" si nu devin None): asta e
+        felul in care formularul dezactiveaza un canal, si tot el face ca harta
+        salvata sa contina exact canalele configurate.
+
+        Fiecare URL trece prin aceeasi garda anti-SSRF ca webhook-urile scalare —
+        serverul face POST catre valorile astea.
+        """
+        if v is None:
+            return None
+        if not isinstance(v, dict):
+            raise ValueError("discord_webhooks_deals trebuie sa fie un dicționar.")
+        curatat = {}
+        for cheie, valoare in v.items():
+            if cheie not in _CHEI_WEBHOOK_DEALS:
+                raise ValueError(
+                    f"Canal necunoscut: {cheie!r}. Permise: "
+                    f"{', '.join(_CHEI_WEBHOOK_DEALS)}.")
+            text = (valoare or "").strip() if isinstance(valoare, str) else ""
+            if not text:
+                continue
+            curatat[cheie] = _validate_discord_webhook(text)
+        return curatat
 
     discord_here_radar: Optional[bool] = None
     discord_here_auto: Optional[bool] = None
@@ -433,6 +479,11 @@ def _settings_to_dict(s: RadarSettings) -> dict:
         "discord_webhook_imob_a": getattr(s, "discord_webhook_imob_a", None),
         "discord_webhook_imob_b": getattr(s, "discord_webhook_imob_b", None),
         "discord_webhook_alerts": getattr(s, "discord_webhook_alerts", None),
+        # DISC-1 — niciodata None spre frontend: formularul indexeaza direct in el.
+        # Perechea lui `discord_webhook_deals`, care lipsea de aici si din cauza
+        # careia inputul aparea gol dupa fiecare reincarcare (acelasi bug ca la
+        # SET-1, mai jos).
+        "discord_webhooks_deals": getattr(s, "discord_webhooks_deals", None) or {},
         "discord_here_radar": bool(getattr(s, "discord_here_radar", False)),
         "discord_here_auto": bool(getattr(s, "discord_here_auto", False)),
         "discord_here_imob": bool(getattr(s, "discord_here_imob", False)),
@@ -1276,8 +1327,12 @@ def update_settings(
         s.discord_webhook_imob_b = data.discord_webhook_imob_b or None
     if data.discord_webhook_alerts is not None:
         s.discord_webhook_alerts = data.discord_webhook_alerts or None
-    if data.discord_webhook_deals is not None:
-        s.discord_webhook_deals = data.discord_webhook_deals or None
+    # DISC-1 — harta se inlocuieste INTREAGA, nu se fuzioneaza: validatorul a scos
+    # deja cheile cu valoare goala, iar formularul trimite toate cele sapte campuri
+    # odata. O fuziune ar face imposibila stergerea unui canal — golirea inputului
+    # n-ar mai avea niciun efect.
+    if data.discord_webhooks_deals is not None:
+        s.discord_webhooks_deals = dict(data.discord_webhooks_deals)
     if data.deal_discount_threshold is not None:
         s.deal_discount_threshold = float(data.deal_discount_threshold)
     if data.listing_r1_threshold is not None:

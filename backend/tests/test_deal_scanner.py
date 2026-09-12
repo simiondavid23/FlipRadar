@@ -17,7 +17,8 @@ from app.models.radar_settings import RadarSettings
 from app.models.shop_price_memory import ShopPriceMemory
 from app.models.user import User
 from app.services import deal_scanner
-from app.services.shop_registry import listing_domains, shopify_domains
+from app.services.shop_registry import (SHOP_REGISTRY, listing_domains,
+                                         shopify_domains)
 from app.utils import alert_checker
 
 DOM = "asphaltgold.com"          # intrare reala in registru, currency EUR
@@ -256,15 +257,44 @@ def test_discord_doar_la_nou(scan, monkeypatch):
     assert apeluri == []
 
     # Cu webhook -> exact o alerta la crearea deal-ului.
+    # DISC-1: webhook-ul unic a devenit harta canal -> URL. Aici e configurata DOAR
+    # cheia `toate`, deci tot un singur enqueue — canalul magazinului (`sneakers`,
+    # vezi testul urmator) nu are unde sa plece.
     scan([[_produs(2, [_varianta("100.00", compare_at="200.00")])]],
-         discord_webhook_deals="https://discord.com/api/webhooks/1/abc")
+         discord_webhooks_deals={"toate": "https://discord.com/api/webhooks/1/abc"})
     assert len(apeluri) == 1
     assert apeluri[0]["module"] == "deals"
-    assert apeluri[0]["grade"] == "DL"
+    assert apeluri[0]["grade"] is None
 
     # Reaparitia aceluiasi deal NU realerteaza.
     scan([[_produs(2, [_varianta("95.00", compare_at="200.00")])]])
     assert len(apeluri) == 1
+
+
+def test_discord_calea_shopify_ruteaza_pe_canalul_din_registru(scan, monkeypatch):
+    """DISC-1b — calea `shopify_enum` NU-si paseaza canalul: il deduce
+    `send_deal_notification` din `shop_domain`, prin `deal_channel`.
+
+    Testul exista fiindca nimic din deal_scanner.py nu pomeneste canale — apelul e
+    `send_deal_notification(deal, settings)`, doi parametri, ca inainte de DISC-1.
+    Asta e tocmai ce vrem (rutarea sta intr-un singur loc), dar inseamna ca o
+    regresie aici n-ar face niciun zgomot local. Perechea pentru calea de listare,
+    care pasează canalul intrarii, e in test_disc1_canale_dealuri.
+    """
+    apeluri = []
+    monkeypatch.setattr("app.services.discord_service.discord_service.enqueue",
+                        lambda **kw: apeluri.append(kw))
+    assert SHOP_REGISTRY[DOM]["channel"] == "sneakers", \
+        "magazinul de test trebuie sa aiba un canal DIFERIT de `diverse`"
+
+    webhookuri = {canal: f"https://discord.com/api/webhooks/{canal}/t"
+                  for canal in ("toate", "sneakers", "electronice", "diverse")}
+    scan([[_produs(1, [_varianta("100.00", compare_at="200.00")])]],
+         deal_discount_threshold=20.0, discord_webhooks_deals=webhookuri)
+
+    assert sorted(a["webhook_url"] for a in apeluri) == sorted(
+        [webhookuri["toate"], webhookuri["sneakers"]]), \
+        "doar agregatul si canalul magazinului din registru"
 
 
 def test_paginare_si_cap(scan):
